@@ -1,0 +1,44 @@
+# Оверлей для локальной разработки:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Отличия от прода: порты наружу, код примонтирован, бот в режиме polling,
+# nginx и certbot не нужны.
+
+services:
+  postgres:
+    ports: ["5432:5432"]
+
+  redis:
+    ports: ["6379:6379"]
+
+  api:
+    volumes:
+      - .:/app
+    ports: ["8000:8000"]
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "true"
+      LOG_FORMAT: console
+      API_DOCS_ENABLED: "true"
+
+  bot:
+    volumes:
+      - .:/app
+    ports: ["8081:8081"]
+    environment:
+      APP_ENV: dev
+      BOT_MODE: polling
+      LOG_FORMAT: console
+
+  worker:
+    volumes:
+      - .:/app
+    ports: ["8082:8082"]
+    environment:
+      APP_ENV: dev
+      LOG_FORMAT: console
+
+  nginx:
+    profiles: ["disabled"]
+
+  certbot:
+    profiles: ["disabled"]

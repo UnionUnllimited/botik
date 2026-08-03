@@ -1,0 +1,46 @@
+[project]
+name = "router-shop"
+version = "1.0.0"
+description = "Продажа роутеров с подпиской на сервис стабильного доступа: Telegram-бот, API устройств, админка"
+requires-python = ">=3.13,<3.14"
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+src = ["."]
+extend-exclude = ["migrations/versions", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "T20", "S", "BLE", "PLW"]
+ignore = [
+    "B008",   # FastAPI Depends() в дефолтах аргументов — идиома фреймворка
+    "RUF001", # кириллица в строках
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["T20"]
+"tests/*" = ["S101", "S105", "S106"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "bot", "api", "worker"]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = false
+exclude = "migrations/versions"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:core.*"]
+
+[tool.coverage.run]
+source = ["core", "api", "bot", "worker"]
+omit = ["*/migrations/*", "*/tests/*"]
