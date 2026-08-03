@@ -37,10 +37,16 @@ class TestListParsing:
 
     def test_reminder_days(self, monkeypatch):
         monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_BEFORE", "7,3,1,0")
+        assert SubscriptionSettings().reminder_days_before == [7, 3, 1, 0]
+
+    def test_empty_list_falls_back_to_default(self, monkeypatch):
+        """Пустая строка = «не задано», поэтому подставляется дефолт, а не []."""
         monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_AFTER", "")
-        settings = SubscriptionSettings()
-        assert settings.reminder_days_before == [7, 3, 1, 0]
-        assert settings.reminder_days_after == []
+        assert SubscriptionSettings().reminder_days_after == [1, 3]
+
+    def test_explicit_zero_list_is_respected(self, monkeypatch):
+        monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_AFTER", "0")
+        assert SubscriptionSettings().reminder_days_after == [0]
 
     def test_allowed_ips(self, monkeypatch):
         monkeypatch.setenv("PLATEGA_ALLOWED_IPS", "1.2.3.4, 5.6.7.0/24")
@@ -49,6 +55,50 @@ class TestListParsing:
     def test_empty_allowed_ips(self, monkeypatch):
         monkeypatch.setenv("PLATEGA_ALLOWED_IPS", "")
         assert PlategaSettings().allowed_ips == []
+
+
+class TestEmptyValues:
+    """Пустая переменная в .env = «не задано». Шаблон полон таких строк."""
+
+    @pytest.mark.parametrize(
+        "variable",
+        ["BOT_OWNER_ID", "BOT_SUPPORT_GROUP_ID", "BOT_ALERTS_CHAT_ID", "BOT_INTERNAL_PORT"],
+    )
+    def test_empty_int_falls_back_to_default(self, monkeypatch, variable):
+        monkeypatch.setenv(variable, "")
+        settings = BotSettings()
+        assert isinstance(getattr(settings, variable.removeprefix("BOT_").lower()), int)
+
+    def test_empty_optional_ids_are_zero(self, monkeypatch):
+        monkeypatch.setenv("BOT_SUPPORT_GROUP_ID", "")
+        monkeypatch.setenv("BOT_ALERTS_CHAT_ID", "")
+        settings = BotSettings()
+        assert settings.support_group_id == 0
+        assert settings.alerts_chat_id == 0
+
+    def test_empty_secret_is_empty_not_error(self, monkeypatch):
+        monkeypatch.setenv("BOT_TOKEN", "")
+        assert BotSettings().token.get_secret_value() == ""
+
+    def test_empty_float_falls_back(self, monkeypatch):
+        monkeypatch.setenv("PLATEGA_TIMEOUT_SEC", "")
+        assert PlategaSettings().timeout_sec == 20.0
+
+    def test_whole_config_builds_with_empty_optionals(self, monkeypatch):
+        for variable in (
+            "BOT_ADMIN_IDS",
+            "BOT_SUPPORT_GROUP_ID",
+            "BOT_ALERTS_CHAT_ID",
+            "PLATEGA_ALLOWED_IPS",
+            "PLATEGA_MERCHANT_ID",
+            "SENTRY_DSN",
+            "API_WORKERS",
+        ):
+            monkeypatch.setenv(variable, "")
+        monkeypatch.setenv("APP_ENV", "dev")
+        settings = Settings()
+        assert settings.bot.alerts_chat_id == 0
+        assert settings.platega.enabled is False
 
 
 class TestAdminCheck:

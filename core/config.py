@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BeforeValidator, Field, SecretStr, field_validator, model_validator
+from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings.sources import PydanticBaseSettingsSource
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BASE_DIR / ".env"
@@ -23,6 +25,49 @@ _CONFIG = SettingsConfigDict(
     extra="ignore",
     case_sensitive=False,
 )
+
+
+class _SkipEmptySource(PydanticBaseSettingsSource):
+    """Пустое значение в .env означает «не задано», а не «пустая строка».
+
+    Без этого `BOT_ALERTS_CHAT_ID=` роняет запуск всех процессов: pydantic
+    не умеет привести пустую строку к int. Шаблон .env.example специально
+    содержит пустые необязательные переменные, поэтому обрабатываем это
+    в одном месте, а не аннотацией на каждом поле.
+    """
+
+    def __init__(self, source: PydanticBaseSettingsSource) -> None:
+        super().__init__(source.settings_cls)
+        self._source = source
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return self._source.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        return {key: value for key, value in self._source().items() if value != ""}
+
+    def __repr__(self) -> str:
+        return f"SkipEmpty({self._source!r})"
+
+
+class EnvSettings(BaseSettings):
+    """База для всех секций конфигурации."""
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            _SkipEmptySource(env_settings),
+            _SkipEmptySource(dotenv_settings),
+            file_secret_settings,
+        )
 
 
 def _split_ints(value: Any) -> Any:
@@ -45,7 +90,7 @@ IdList = Annotated[list[int], NoDecode, BeforeValidator(_split_ints)]
 StrList = Annotated[list[str], NoDecode, BeforeValidator(_split_strings)]
 
 
-class AppSettings(BaseSettings):
+class AppSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="APP_")
 
     env: Literal["dev", "prod"] = "dev"
@@ -63,7 +108,7 @@ class AppSettings(BaseSettings):
         return self.env == "prod"
 
 
-class LogSettings(BaseSettings):
+class LogSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="LOG_")
 
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -71,7 +116,7 @@ class LogSettings(BaseSettings):
     sql_echo: bool = False
 
 
-class DatabaseSettings(BaseSettings):
+class DatabaseSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="POSTGRES_")
 
     host: str = "postgres"
@@ -99,7 +144,7 @@ class DatabaseSettings(BaseSettings):
         return self.dsn(driver="postgresql+psycopg")
 
 
-class RedisSettings(BaseSettings):
+class RedisSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="REDIS_")
 
     url: str = "redis://redis:6379/0"
@@ -112,7 +157,7 @@ class RedisSettings(BaseSettings):
         return ":".join((self.key_prefix, *parts))
 
 
-class BotSettings(BaseSettings):
+class BotSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="BOT_")
 
     token: SecretStr = SecretStr("")
@@ -142,7 +187,7 @@ class BotSettings(BaseSettings):
         return tg_id == self.owner_id or tg_id in self.admin_ids
 
 
-class ApiSettings(BaseSettings):
+class ApiSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="API_")
 
     host: str = "0.0.0.0"  # noqa: S104
@@ -156,7 +201,7 @@ class ApiSettings(BaseSettings):
     docs_enabled: bool = False
 
 
-class SecuritySettings(BaseSettings):
+class SecuritySettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SECURITY_")
 
     secret_key: SecretStr = SecretStr("")
@@ -192,7 +237,7 @@ class SecuritySettings(BaseSettings):
         return value
 
 
-class SubscriptionSettings(BaseSettings):
+class SubscriptionSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SUBSCRIPTION_")
 
     grace_days: int = 3
@@ -213,7 +258,7 @@ class SubscriptionSettings(BaseSettings):
     """Обязательный префикс имени узла — по нему фильтрует клиент на роутере."""
 
 
-class PlategaSettings(BaseSettings):
+class PlategaSettings(EnvSettings):
     """Реквизиты и пути API PLATEGA (docs.platega.io).
 
     Пути вынесены в настройки намеренно: в документации соседствуют
@@ -241,7 +286,7 @@ class PlategaSettings(BaseSettings):
         return bool(self.merchant_id and self.secret.get_secret_value())
 
 
-class SentrySettings(BaseSettings):
+class SentrySettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SENTRY_")
 
     dsn: str = ""
@@ -255,7 +300,7 @@ class SentrySettings(BaseSettings):
         return self
 
 
-class Settings(BaseSettings):
+class Settings(EnvSettings):
     model_config = _CONFIG
 
     app: AppSettings = Field(default_factory=AppSettings)
