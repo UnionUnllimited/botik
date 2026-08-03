@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from core.services.frp import mac_from_proxy_name, proxy_kind, proxy_names_for
@@ -38,7 +40,7 @@ class TestProxyNames:
 
 
 class TestParseStats:
-    payload = {
+    payload: ClassVar[dict] = {
         "mac": "a0:b1:c2:d3:e4:f5",
         "board": "zbt-z8103ax",
         "fw": "23.05.3",
