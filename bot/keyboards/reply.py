@@ -1,4 +1,9 @@
-"""Reply-клавиатуры бота."""
+"""Reply-клавиатуры.
+
+Главное меню живёт в инлайн-кнопках под сообщением (bot/keyboards/inline.py) —
+так оно не занимает место внизу экрана и остаётся привязанным к контексту.
+Reply-клавиатура нужна только там, где Telegram иначе не умеет: запрос контакта.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +14,10 @@ from bot.texts import ru
 REMOVE = ReplyKeyboardRemove()
 
 
-def main_menu() -> ReplyKeyboardMarkup:
+def request_phone() -> ReplyKeyboardMarkup:
+    """Кнопка «Отправить номер» — единственный способ получить контакт одним тапом."""
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=ru.BTN_BUY), KeyboardButton(text=ru.BTN_MY_DEVICE)],
-            [KeyboardButton(text=ru.BTN_SUBSCRIPTION), KeyboardButton(text=ru.BTN_GUIDES)],
-            [KeyboardButton(text=ru.BTN_SUPPORT), KeyboardButton(text=ru.BTN_REFERRAL)],
-        ],
+        keyboard=[[KeyboardButton(text=ru.BTN_SHARE_PHONE, request_contact=True)]],
         resize_keyboard=True,
-        is_persistent=True,
+        one_time_keyboard=True,
     )

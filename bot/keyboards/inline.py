@@ -42,6 +42,29 @@ class NavCB(CallbackData, prefix="nav"):
     action: str
 
 
+class MenuCB(CallbackData, prefix="menu"):
+    section: str
+
+
+def main_menu() -> InlineKeyboardMarkup:
+    """Главное меню — инлайн-кнопками под сообщением, по две в ряд."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=ru.BTN_BUY, callback_data=MenuCB(section="buy"))
+    builder.button(text=ru.BTN_MY_DEVICE, callback_data=MenuCB(section="device"))
+    builder.button(text=ru.BTN_SUBSCRIPTION, callback_data=MenuCB(section="subscription"))
+    builder.button(text=ru.BTN_GUIDES, callback_data=MenuCB(section="guides"))
+    builder.button(text=ru.BTN_SUPPORT, callback_data=MenuCB(section="support"))
+    builder.button(text=ru.BTN_REFERRAL, callback_data=MenuCB(section="referral"))
+    builder.adjust(2, 2, 2)
+    return builder.as_markup()
+
+
+def back_to_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=ru.BTN_MENU, callback_data=NavCB(action="menu"))
+    return builder.as_markup()
+
+
 def catalog(products: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for product in products:

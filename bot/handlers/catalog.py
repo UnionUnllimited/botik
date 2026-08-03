@@ -7,12 +7,12 @@ from dataclasses import fields
 import structlog
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards import inline
-from bot.keyboards.reply import REMOVE, main_menu
+from bot.keyboards.reply import REMOVE, request_phone
 from bot.states import OrderFlow
 from bot.texts import ru
 from bot.utils import validators
@@ -45,19 +45,19 @@ async def _store(state: FSMContext, **values: object) -> None:
     await state.update_data(**values)
 
 
-def phone_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=ru.BTN_SHARE_PHONE, request_contact=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
 # ------------------------------------------------------------------ каталог
+
+
+@router.callback_query(inline.MenuCB.filter(F.section == "buy"))
+async def open_catalog(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await show_catalog(callback.message, session, state)
 
 
 @router.message(F.text == ru.BTN_BUY)
 async def show_catalog(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Открывается инлайн-кнопкой; текстовый вход оставлен для старой клавиатуры."""
     await state.clear()
     products = list(
         await session.scalars(
@@ -65,11 +65,11 @@ async def show_catalog(message: Message, session: AsyncSession, state: FSMContex
         )
     )
     if not products:
-        await message.answer(ru.CATALOG_EMPTY, reply_markup=main_menu())
+        await message.answer(ru.CATALOG_EMPTY, reply_markup=inline.main_menu())
         return
 
     await state.set_state(OrderFlow.product)
-    await message.answer(ru.CATALOG_TITLE, reply_markup=main_menu())
+    await message.answer(ru.CATALOG_TITLE, reply_markup=inline.main_menu())
     for product in products:
         card = ru.product_card(
             title=product.title,
@@ -166,7 +166,7 @@ async def enter_name(message: Message, state: FSMContext, user: User) -> None:
     prompt = ru.ASK_PHONE
     if user.phone:
         prompt += f"\n\nПрошлый раз: <code>{validators.format_phone(user.phone)}</code>"
-    await message.answer(prompt, reply_markup=phone_keyboard())
+    await message.answer(prompt, reply_markup=request_phone())
 
 
 @router.message(OrderFlow.phone, F.contact)
@@ -291,7 +291,7 @@ async def enter_promo(message: Message, session: AsyncSession, state: FSMContext
         await message.answer(ru.PROMO_FAILED.format(reason=exc), reply_markup=inline.skip_promo())
         return
     except OrderError as exc:
-        await message.answer(str(exc), reply_markup=main_menu())
+        await message.answer(str(exc), reply_markup=inline.main_menu())
         await state.clear()
         return
 
@@ -322,7 +322,7 @@ async def _show_confirmation(message: Message, session: AsyncSession, state: FSM
     try:
         totals = await order_service.calculate_totals(session, draft=draft, user_id=user.id)
     except (OrderError, promo_service.PromoError) as exc:
-        await message.answer(str(exc), reply_markup=main_menu())
+        await message.answer(str(exc), reply_markup=inline.main_menu())
         await state.clear()
         return
 
@@ -376,7 +376,7 @@ async def submit_order(
     try:
         order = await order_service.create_order(session, user=user, draft=draft)
     except (OrderError, promo_service.PromoError) as exc:
-        await callback.message.answer(str(exc), reply_markup=main_menu())
+        await callback.message.answer(str(exc), reply_markup=inline.main_menu())
         await state.clear()
         return
 
@@ -392,7 +392,7 @@ async def submit_order(
                 total=ru.money(order.total),
                 shipping_days=shipping_days,
             ),
-            reply_markup=main_menu(),
+            reply_markup=inline.main_menu(),
         )
         await _notify_admins_new_order(session, order=order, payment_kind="при получении")
         return
@@ -413,7 +413,7 @@ async def _create_payment_and_reply(message: Message, session: AsyncSession, *, 
         )
     except Exception as exc:
         log.exception("payment.create_failed", order_id=order.id, error=str(exc))
-        await message.answer(ru.PAYMENT_UNAVAILABLE, reply_markup=main_menu())
+        await message.answer(ru.PAYMENT_UNAVAILABLE, reply_markup=inline.main_menu())
         return
 
     minutes = 15
@@ -421,7 +421,7 @@ async def _create_payment_and_reply(message: Message, session: AsyncSession, *, 
         minutes = max(int((payment.expires_at - payment.created_at).total_seconds() // 60), 1)
 
     if not payment.confirmation_url:
-        await message.answer(ru.PAYMENT_UNAVAILABLE, reply_markup=main_menu())
+        await message.answer(ru.PAYMENT_UNAVAILABLE, reply_markup=inline.main_menu())
         return
 
     await message.answer(
@@ -505,10 +505,10 @@ async def cancel_flow(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.clear()
     if callback.message is not None:
-        await callback.message.answer(ru.CANCELLED, reply_markup=main_menu())
+        await callback.message.answer(ru.CANCELLED, reply_markup=inline.main_menu())
 
 
 @router.message(F.text == ru.BTN_CANCEL)
 async def cancel_by_text(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer(ru.CANCELLED, reply_markup=main_menu())
+    await message.answer(ru.CANCELLED, reply_markup=inline.main_menu())

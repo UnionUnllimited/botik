@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards import inline
-from bot.keyboards.reply import main_menu
 from bot.states import OrderFlow
 from bot.texts import ru
 from bot.utils.deeplink import referral_link
@@ -22,6 +21,13 @@ from core.services import subscriptions as subscription_service
 
 router = Router(name="subscription")
 log = structlog.get_logger("bot.subscription")
+
+
+@router.callback_query(inline.MenuCB.filter(F.section == "subscription"))
+async def open_subscription(callback: CallbackQuery, session: AsyncSession, user: User) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await show_subscription(callback.message, session, user)
 
 
 @router.message(F.text == ru.BTN_SUBSCRIPTION)
@@ -41,7 +47,7 @@ async def show_subscription(message: Message, session: AsyncSession, user: User)
                 plan=subscription.plan.title if subscription.plan else "—",
                 deadline=deadline,
             ),
-            reply_markup=main_menu(),
+            reply_markup=inline.main_menu(),
         )
         return
 
@@ -84,6 +90,13 @@ async def buy_subscription(callback: CallbackQuery, session: AsyncSession, state
     await state.set_state(OrderFlow.plan)
     await state.update_data(product_id=None)
     await callback.message.answer(ru.PLAN_TITLE, reply_markup=inline.plans(plans, with_device=False))
+
+
+@router.callback_query(inline.MenuCB.filter(F.section == "referral"))
+async def open_referral(callback: CallbackQuery, session: AsyncSession, user: User) -> None:
+    await callback.answer()
+    if callback.message is not None:
+        await show_referral(callback.message, session, user)
 
 
 @router.message(F.text == ru.BTN_REFERRAL)
