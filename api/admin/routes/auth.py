@@ -9,6 +9,7 @@ import qrcode
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from qrcode.image.svg import SvgPathImage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import audit
@@ -219,9 +220,14 @@ async def logout(request: Request) -> RedirectResponse:
 
 
 def _qr_data_uri(uri: str) -> str:
-    """QR рисуем сами: внешние генераторы получили бы наш TOTP-секрет."""
-    image = qrcode.make(uri)
+    """QR рисуем сами: внешние генераторы получили бы наш TOTP-секрет.
+
+    Формат SVG, а не PNG: растровый вывод qrcode тянет за собой Pillow —
+    лишняя зависимость с системными библиотеками ради картинки, которая
+    по природе векторная.
+    """
+    image = qrcode.make(uri, image_factory=SvgPathImage, box_size=10, border=2)
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    image.save(buffer)
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+    return f"data:image/svg+xml;base64,{encoded}"

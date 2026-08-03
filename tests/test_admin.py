@@ -118,6 +118,27 @@ class TestAudit:
         assert _jsonable(payload) == {"items": [{"price": "10.00"}, {"price": "20.50"}]}
 
 
+class TestTotpQr:
+    """QR рисуется локально: отдавать TOTP-секрет внешнему генератору нельзя."""
+
+    def test_returns_svg_data_uri(self):
+        from api.admin.routes.auth import _qr_data_uri
+
+        uri = _qr_data_uri("otpauth://totp/owner?secret=JBSWY3DPEHPK3PXP&issuer=Test")
+        assert uri.startswith("data:image/svg+xml;base64,")
+
+    def test_svg_is_valid_and_not_empty(self):
+        """Растровый вывод потребовал бы Pillow, которого в образе нет."""
+        import base64 as b64
+
+        from api.admin.routes.auth import _qr_data_uri
+
+        payload = b64.b64decode(_qr_data_uri("otpauth://totp/x?secret=ABC").split(",", 1)[1])
+        assert payload.startswith(b"<?xml") or payload.lstrip().startswith(b"<svg")
+        assert b"<svg" in payload
+        assert len(payload) > 500
+
+
 class TestFormatting:
     @pytest.mark.parametrize(
         ("value", "expected"),

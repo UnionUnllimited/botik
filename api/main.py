@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api import admin
@@ -89,6 +89,26 @@ async def observability_middleware(
     return response
 
 
+def _is_admin_page(request: Request) -> bool:
+    """Страницам админки нужен HTML: голый JSON в браузере ничего не объясняет."""
+    return request.url.path.startswith("/admin") and "text/html" in request.headers.get("accept", "")
+
+
+def _admin_error_page(message: str, status_code: int) -> HTMLResponse:
+    return HTMLResponse(
+        f"""<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
+<title>Ошибка · {settings.app.brand}</title></head>
+<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0f1115;color:#e6e8ee;font:15px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif">
+<div style="max-width:460px;padding:26px;background:#171a21;border:1px solid #2a2f3a;border-radius:12px">
+<h1 style="font-size:19px;margin:0 0 10px">Ошибка {status_code}</h1>
+<p style="color:#99a0ae;margin:0 0 18px">{message}</p>
+<a href="/admin/" style="color:#4c8dff">← в админку</a>
+</div></body></html>""",
+        status_code=status_code,
+    )
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=f"{settings.app.brand} API",
@@ -106,7 +126,9 @@ def create_app() -> FastAPI:
     app.add_exception_handler(admin.LoginRequired, admin.login_redirect_handler)  # type: ignore[arg-type]
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+        if _is_admin_page(request):
+            return _admin_error_page(str(exc.detail), exc.status_code)
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(RequestValidationError)
@@ -114,8 +136,10 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"error": "invalid_request", "detail": exc.errors()})
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
-        log.exception("api.unhandled", error=str(exc))
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
+        log.exception("api.unhandled", error=str(exc), path=request.url.path)
+        if _is_admin_page(request):
+            return _admin_error_page("Внутренняя ошибка. Подробности в логах: docker compose logs api", 500)
         return JSONResponse(status_code=500, content={"error": "internal_error"})
 
     return app
