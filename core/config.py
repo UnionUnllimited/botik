@@ -305,6 +305,8 @@ class FrpSettings(EnvSettings):
     token: SecretStr = SecretStr("")
     stcp_secret: SecretStr = SecretStr("")
     """Ключ STCP: без него visitor не подключится к прокси роутера."""
+    tls_enabled: bool = True
+    """У frps включён TLS на транспорте — visitor обязан подключаться так же."""
 
     dashboard_url: str = ""
     """Например https://origin.example.ru:7500 — API дашборда frps."""

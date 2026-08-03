@@ -35,6 +35,7 @@ def render_config(devices: list[Device]) -> str:
         f'serverAddr = "{frp.server_host}"',
         f"serverPort = {frp.server_port}",
         f'auth.token = "{frp.token.get_secret_value()}"',
+        f"transport.tls.enable = {str(frp.tls_enabled).lower()}",
         "",
         'webServer.addr = "0.0.0.0"',
         "webServer.port = 7400",
