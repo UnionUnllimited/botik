@@ -102,6 +102,7 @@ async def fleet_list(
         page=page,
         pages=max((total + PAGE_SIZE - 1) // PAGE_SIZE, 1),
         frp_configured=settings.frp.is_configured,
+        frp_missing=settings.frp.missing_keys,
         frps_error=frps_error,
         server_info=server_info,
         poll_interval=settings.frp.poll_interval_sec,

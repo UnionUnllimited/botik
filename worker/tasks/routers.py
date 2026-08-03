@@ -36,10 +36,7 @@ async def _poll_one(device_id: int, port: int) -> tuple[int, dict | None, str | 
 async def sync_routers() -> int:
     """Синхронизирует статусы с frps и собирает телеметрию."""
     if not settings.frp.is_configured:
-        log.info(
-            "routers.frp_not_configured",
-            hint="Заполните FRP_ENABLED, FRP_DASHBOARD_URL и FRP_DASHBOARD_PASSWORD в .env",
-        )
+        log.info("routers.frp_not_configured", missing=settings.frp.missing_keys)
         return 0
 
     try:

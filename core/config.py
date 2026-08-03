@@ -328,7 +328,26 @@ class FrpSettings(EnvSettings):
     """Префиксы имён прокси: luci<MAC> — веб-панель роутера, ssh<MAC> — SSH."""
 
     @property
+    def missing_keys(self) -> list[str]:
+        """Каких переменных не хватает — сообщение оператору должно быть точным."""
+        missing: list[str] = []
+        if not self.enabled:
+            missing.append("FRP_ENABLED=true")
+        if not self.dashboard_url:
+            missing.append("FRP_DASHBOARD_URL")
+        if not self.dashboard_password.get_secret_value():
+            missing.append("FRP_DASHBOARD_PASSWORD")
+        if not self.token.get_secret_value():
+            missing.append("FRP_TOKEN")
+        if not self.stcp_secret.get_secret_value():
+            missing.append("FRP_STCP_SECRET")
+        if not self.server_host:
+            missing.append("FRP_SERVER_HOST")
+        return missing
+
+    @property
     def is_configured(self) -> bool:
+        """Для чтения статусов хватает дашборда: туннели нужны только для показаний."""
         return bool(self.enabled and self.dashboard_url and self.dashboard_password.get_secret_value())
 
 

@@ -5,9 +5,10 @@
 
 {% if not frp_configured %}
 <div class="msg err">
-  Доступ к роутерам не настроен. Заполните <code>FRP_*</code> в <code>.env</code>:
-  адрес дашборда frps, логин и пароль. Роутеры подключаются к frps сами —
-  их менять не нужно.
+  Доступ к роутерам не настроен. В <code>.env</code> не хватает:
+  {% for key in frp_missing %}<code>{{ key }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+  После правки — <code>docker compose up -d</code>. Роутеры подключаются к frps
+  сами, их трогать не нужно.
 </div>
 {% elif frps_error %}
 <div class="msg err">frps недоступен: {{ frps_error }}</div>
