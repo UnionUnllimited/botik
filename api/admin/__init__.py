@@ -11,7 +11,18 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from api.admin.auth import LoginRequired
-from api.admin.routes import auth, catalog, clients, dashboard, infra, orders, promo, subscriptions, system
+from api.admin.routes import (
+    auth,
+    catalog,
+    clients,
+    dashboard,
+    fleet,
+    infra,
+    orders,
+    promo,
+    subscriptions,
+    system,
+)
 
 router = APIRouter(prefix="/admin", include_in_schema=False)
 
@@ -21,6 +32,7 @@ router.include_router(dashboard.router)
 router.include_router(orders.router)
 router.include_router(clients.router)
 router.include_router(subscriptions.router)
+router.include_router(fleet.router)
 router.include_router(infra.router)
 router.include_router(catalog.router)
 router.include_router(promo.router)

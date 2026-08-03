@@ -1,0 +1,106 @@
+"""Генерация конфига visitor-контейнера frpc.
+
+Роутеры публикуют свои туннели на frps как STCP-прокси. Чтобы ходить к ним,
+нужен visitor на каждый роутер со своим локальным портом. Конфиг собирается
+из таблицы устройств и перечитывается через admin API frpc — без перезапуска
+контейнера и без обрыва работающих туннелей.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+from pathlib import Path
+
+import httpx
+import structlog
+from sqlalchemy import select
+
+from core.config import settings
+from core.db import session_scope
+from core.models import Device
+
+log = structlog.get_logger("worker.frpc")
+
+CONFIG_PATH = Path("/frpc/frpc.toml")
+ADMIN_URL = "http://frpc:7400/api/reload"
+
+
+def render_config(devices: list[Device]) -> str:
+    """TOML для frpc: общий блок плюс visitor на каждый роутер."""
+    frp = settings.frp
+    lines = [
+        "# Файл создаётся автоматически: worker/tasks/frpc_config.py",
+        "# Правки руками потеряются при следующем обновлении.",
+        f'serverAddr = "{frp.server_host}"',
+        f"serverPort = {frp.server_port}",
+        f'auth.token = "{frp.token.get_secret_value()}"',
+        "",
+        'webServer.addr = "0.0.0.0"',
+        "webServer.port = 7400",
+        "",
+        'log.to = "console"',
+        'log.level = "info"',
+        "",
+    ]
+
+    secret = frp.stcp_secret.get_secret_value()
+    for device in devices:
+        if not device.frp_luci_name or not device.frp_visitor_port:
+            continue
+        safe_name = device.mac.replace(":", "").lower()
+        lines += [
+            "[[visitors]]",
+            f'name = "visitor_{safe_name}"',
+            'type = "stcp"',
+            f'serverName = "{device.frp_luci_name}"',
+            f'secretKey = "{secret}"',
+            'bindAddr = "0.0.0.0"',
+            f"bindPort = {device.frp_visitor_port}",
+            "",
+        ]
+    return "\n".join(lines)
+
+
+async def sync_frpc_config() -> int:
+    """Пересобирает конфиг, если состав роутеров изменился."""
+    if not settings.frp.is_configured:
+        return 0
+
+    async with session_scope() as session:
+        devices = list(
+            await session.scalars(
+                select(Device)
+                .where(Device.frp_luci_name.is_not(None), Device.frp_visitor_port.is_not(None))
+                .order_by(Device.frp_visitor_port)
+            )
+        )
+
+    content = render_config(devices)
+    digest = hashlib.sha256(content.encode()).hexdigest()
+
+    def write_if_changed() -> bool:
+        # Файловые операции синхронные — уводим их с цикла событий.
+        if CONFIG_PATH.exists() and hashlib.sha256(CONFIG_PATH.read_bytes()).hexdigest() == digest:
+            return False
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(content, encoding="utf-8")
+        return True
+
+    try:
+        if not await asyncio.to_thread(write_if_changed):
+            return 0
+    except OSError as exc:
+        log.warning("frpc.config_write_failed", error=str(exc))
+        return 0
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(ADMIN_URL)
+        reloaded = response.status_code < 400
+    except Exception as exc:  # noqa: BLE001 — контейнера может не быть, конфиг всё равно записан
+        log.warning("frpc.reload_failed", error=str(exc))
+        reloaded = False
+
+    log.info("frpc.config_updated", visitors=len(devices), reloaded=reloaded)
+    return len(devices)

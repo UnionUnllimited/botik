@@ -286,6 +286,50 @@ class PlategaSettings(EnvSettings):
         return bool(self.merchant_id and self.secret.get_secret_value())
 
 
+class FrpSettings(EnvSettings):
+    """Доступ к роутерам через frp.
+
+    Сервер frps остаётся на российской площадке — роутеры подключаются к нему
+    и держат обратные туннели. Наша админка работает с ним снаружи:
+      * дашборд frps отдаёт список подключённых прокси — это онлайн-статус;
+      * контейнер frpc в режиме visitor открывает локальные порты к роутерам,
+        через них мы зовём их HTTP-API.
+    """
+
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="FRP_")
+
+    enabled: bool = False
+    server_host: str = ""
+    """Хост frps — тот же, к которому подключаются роутеры."""
+    server_port: int = 8443
+    token: SecretStr = SecretStr("")
+    stcp_secret: SecretStr = SecretStr("")
+    """Ключ STCP: без него visitor не подключится к прокси роутера."""
+
+    dashboard_url: str = ""
+    """Например https://origin.example.ru:7500 — API дашборда frps."""
+    dashboard_user: str = "admin"
+    dashboard_password: SecretStr = SecretStr("")
+    dashboard_timeout_sec: float = 10.0
+
+    visitor_host: str = "frpc"
+    """Имя контейнера frpc в docker-сети."""
+    visitor_base_port: int = 20000
+    """Порты visitor'ов раздаются подряд от этой границы."""
+    router_http_timeout_sec: float = 8.0
+    stats_path: str = "/cgi-bin/stats"
+    poll_interval_sec: int = 60
+    metrics_retention_days: int = 14
+
+    luci_prefix: str = "luci"
+    ssh_prefix: str = "ssh"
+    """Префиксы имён прокси: luci<MAC> — веб-панель роутера, ssh<MAC> — SSH."""
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.enabled and self.dashboard_url and self.dashboard_password.get_secret_value())
+
+
 class SentrySettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SENTRY_")
 
@@ -312,6 +356,7 @@ class Settings(EnvSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     subscription: SubscriptionSettings = Field(default_factory=SubscriptionSettings)
     platega: PlategaSettings = Field(default_factory=PlategaSettings)
+    frp: FrpSettings = Field(default_factory=FrpSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
 
     @model_validator(mode="after")

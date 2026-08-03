@@ -3,7 +3,13 @@
 from core.models.base import Base
 from core.models.catalog import Plan, Product
 from core.models.content import Article, Broadcast, BroadcastTarget
-from core.models.device import Device, DeviceCommand, Heartbeat, SubscriptionAccessLog
+from core.models.device import (
+    Device,
+    DeviceCommand,
+    DeviceEvent,
+    Heartbeat,
+    SubscriptionAccessLog,
+)
 from core.models.node import Node, NodeAssignment, NodeGroup
 from core.models.order import Delivery, Order, OrderItem
 from core.models.payment import Payment
@@ -25,6 +31,7 @@ __all__ = [
     "Delivery",
     "Device",
     "DeviceCommand",
+    "DeviceEvent",
     "Heartbeat",
     "Node",
     "NodeAssignment",

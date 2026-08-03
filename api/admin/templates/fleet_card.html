@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Роутер {{ device.mac }}{% endblock %}
+
+{% macro chart(title, points, unit, tone) %}
+{% if points %}
+{% set top = points | map(attribute=1) | max %}
+{% set peak = top if top and top > 0 else 1 %}
+<div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px">
+  <div style="display:flex; justify-content:space-between; align-items:baseline">
+    <b>{{ title }}</b>
+    <span class="muted">сейчас {{ points[-1][1] }}{{ unit }} · пик {{ peak }}{{ unit }}</span>
+  </div>
+  <div style="display:flex; align-items:flex-end; gap:2px; height:70px; margin-top:10px">
+    {% for moment, value in points %}
+    <div title="{{ moment | short_dt }} — {{ value }}{{ unit }}"
+         style="flex:1; min-width:2px; border-radius:2px 2px 0 0; background:var(--{{ tone }});
+                height:{{ (value / peak * 100) | round | int }}%; opacity:.85"></div>
+    {% endfor %}
+  </div>
+  <div class="muted" style="font-size:12px; margin-top:6px">
+    {{ points[0][0] | short_dt }} — {{ points[-1][0] | short_dt }}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<h1>
+  <code>{{ device.mac }}</code>
+  {% if device.frp_online %}<span class="badge ok">на связи</span>
+  {% else %}<span class="badge muted">офлайн</span>{% endif %}
+  <span class="badge {{ device.status | status_tone }}">{{ device.status | status_label }}</span>
+</h1>
+<p class="muted">
+  {{ device.board or device.model or 'модель неизвестна' }}
+  {% if device.fw_version %} · прошивка {{ device.fw_version }}{% endif %}
+  {% if device.frp_visitor_port %} · туннель на порту {{ device.frp_visitor_port }}{% endif %}
+</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Процессор</div>
+    <div class="value">{{ device.cpu_pct if device.cpu_pct is not none else '—' }}{% if device.cpu_pct is not none %}%{% endif %}</div>
+    <div class="hint">нагрузка {{ device.load_avg if device.load_avg is not none else '—' }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Память</div>
+    <div class="value">{{ device.ram_pct if device.ram_pct is not none else '—' }}{% if device.ram_pct is not none %}%{% endif %}</div>
+    <div class="hint">{{ '%.0f°C'|format(device.temp_c) if device.temp_c else 'температура неизвестна' }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Клиенты</div>
+    <div class="value">{{ device.clients_wifi + device.clients_dhcp }}</div>
+    <div class="hint">Wi-Fi: {{ device.clients_wifi }} · по кабелю и DHCP: {{ device.clients_dhcp }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Сервис доступа</div>
+    <div class="value" style="font-size:19px">
+      {% if device.service_status.value == 'running' %}<span style="color:var(--ok)">работает</span>
+      {% elif device.service_status.value == 'stopped' %}<span style="color:var(--bad)">остановлен</span>
+      {% else %}<span class="muted">неизвестно</span>{% endif %}
+    </div>
+    <div class="hint">туннель на роутере: {{ 'поднят' if device.tunnel_running else 'нет' }}</div>
+  </div>
+</div>
+
+<div class="grid2" style="margin-top:22px">
+  <div>
+    <h2>Метрики за сутки</h2>
+    {% if has_history %}
+      {{ chart('Процессор, %', series.cpu, '%', 'accent') }}
+      {{ chart('Память, %', series.ram, '%', 'warn') }}
+      {{ chart('Клиентов в сети', series.clients, '', 'ok') }}
+    {% else %}
+      <p class="muted">История пуста — она наполняется при опросе роутера.</p>
+    {% endif %}
+
+    <h2>Журнал устройства</h2>
+    {% if events %}
+    <table>
+      <tr><th>Когда</th><th>Событие</th></tr>
+      {% for event in events %}
+      <tr>
+        <td class="nowrap muted">{{ event.created_at | short_dt }}</td>
+        <td>
+          <span class="badge {{ 'ok' if event.level == 'success' else ('bad' if event.level == 'error' else ('warn' if event.level == 'warning' else 'info')) }}">{{ event.level }}</span>
+          {{ event.message }}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Событий нет.</p>{% endif %}
+  </div>
+
+  <div>
+    <h2>Состояние</h2>
+    <table>
+      <tr><td class="muted">Клиент</td>
+        <td>{% if device.user %}<a href="/admin/clients/{{ device.user_id }}">{{ device.user.display_name }}</a>{% else %}не привязан{% endif %}</td></tr>
+      <tr><td class="muted">WAN IP</td><td>{{ device.last_wan_ip or '—' }}</td></tr>
+      <tr><td class="muted">Аптайм</td>
+        <td>{{ (device.uptime_sec // 3600) }} ч {{ (device.uptime_sec % 3600) // 60 }} мин</td></tr>
+      <tr><td class="muted">Трафик</td>
+        <td>{{ (device.rx_bytes / 1073741824) | round(2) }} ГБ вход / {{ (device.tx_bytes / 1073741824) | round(2) }} ГБ исход</td></tr>
+      <tr><td class="muted">Туннель виден с</td><td>{{ device.frp_last_seen_at | datetime_ru }}</td></tr>
+      <tr><td class="muted">Опрошен</td><td>{{ device.last_poll_at | datetime_ru }}</td></tr>
+      <tr><td class="muted">Активирован</td><td>{{ device.activated_at | datetime_ru }}</td></tr>
+      <tr><td class="muted">Имена туннелей</td>
+        <td class="muted" style="font-size:12px">{{ device.frp_luci_name or '—' }}<br>{{ device.frp_ssh_name or '—' }}</td></tr>
+    </table>
+
+    <h2>Действия</h2>
+    <form method="post" action="/admin/fleet/{{ device.id }}/poll">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <button type="submit" {% if not device.frp_online %}disabled title="Роутер офлайн"{% endif %}>
+        Снять показания сейчас
+      </button>
+    </form>
+
+    <div style="margin-top:12px">
+      <form class="inline" method="post" action="/admin/devices/{{ device.id }}/command">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <select name="command">
+          <option value="update_subscription">обновить подписку</option>
+          <option value="restart_service">перезапустить сервис</option>
+          <option value="reboot">перезагрузить роутер</option>
+          <option value="update_panel">обновить панель</option>
+        </select>
+        <button class="ghost" type="submit">Поставить в очередь</button>
+      </form>
+      <p class="muted" style="font-size:12px; margin-top:6px">
+        Команда ждёт в очереди: роутер заберёт её сам при следующем обращении.
+      </p>
+    </div>
+
+    <h2>Заметка</h2>
+    <form method="post" action="/admin/fleet/{{ device.id }}/note">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <textarea name="admin_note">{{ device.admin_note or '' }}</textarea>
+      <button type="submit" style="margin-top:8px">Сохранить</button>
+    </form>
+  </div>
+</div>
+<p style="margin-top:24px"><a href="/admin/fleet">← ко всем роутерам</a></p>
+{% endblock %}

@@ -97,12 +97,26 @@ services:
     <<: *app
     command: ["python", "-m", "worker"]
     expose: ["8082"]
+    volumes:
+      - frpc_config:/frpc
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8082/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # Visitor-туннели к роутерам. Конфиг генерирует worker, frpc его перечитывает.
+  frpc:
+    image: snowdreamtech/frpc:0.65.0
+    restart: unless-stopped
+    profiles: ["frp"]
+    volumes:
+      - frpc_config:/frpc
+    command: ["frpc", "-c", "/frpc/frpc.toml"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
 
   nginx:
     image: nginx:1.29-alpine
@@ -146,3 +160,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  frpc_config:

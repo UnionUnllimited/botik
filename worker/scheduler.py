@@ -19,7 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from core.config import settings
 from core.metrics import worker_job_errors_total, worker_job_seconds
-from worker.tasks import maintenance, payments, subscriptions
+from worker.tasks import frpc_config, maintenance, payments, routers, subscriptions
 
 log = structlog.get_logger("worker.scheduler")
 
@@ -101,6 +101,24 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=4, minute=10),
         id="expire_unactivated",
         name="Сгорание неактивированных подписок",
+    )
+    scheduler.add_job(
+        instrumented("sync_routers", routers.sync_routers),
+        IntervalTrigger(seconds=settings.frp.poll_interval_sec),
+        id="sync_routers",
+        name="Опрос роутеров через frp",
+    )
+    scheduler.add_job(
+        instrumented("sync_frpc_config", frpc_config.sync_frpc_config),
+        IntervalTrigger(minutes=2),
+        id="sync_frpc_config",
+        name="Конфиг visitor-туннелей",
+    )
+    scheduler.add_job(
+        instrumented("cleanup_router_metrics", routers.cleanup_router_metrics),
+        CronTrigger(hour=3, minute=50),
+        id="cleanup_router_metrics",
+        name="Чистка истории метрик роутеров",
     )
     scheduler.add_job(
         instrumented("cleanup_heartbeats", maintenance.cleanup_heartbeats),

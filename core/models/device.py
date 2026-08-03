@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -75,6 +76,26 @@ class Device(IntPkMixin, TimestampMixin, Base):
     tx_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     load_avg: Mapped[float | None] = mapped_column(Float)
     active_nodes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # --- телеметрия железа: приходит из /cgi-bin/stats роутера ---
+    board: Mapped[str | None] = mapped_column(String(64))
+    """Модель платы по данным самого роутера."""
+    cpu_pct: Mapped[int | None] = mapped_column(Integer)
+    ram_pct: Mapped[int | None] = mapped_column(Integer)
+    temp_c: Mapped[float | None] = mapped_column(Float)
+    clients_wifi: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    clients_dhcp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tunnel_running: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    """Поднят ли обратный туннель на самом роутере (по его же данным)."""
+
+    # --- доступ через frp ---
+    frp_luci_name: Mapped[str | None] = mapped_column(String(64))
+    frp_ssh_name: Mapped[str | None] = mapped_column(String(64))
+    frp_visitor_port: Mapped[int | None] = mapped_column(Integer, unique=True)
+    """Локальный порт visitor-контейнера, через который мы зовём роутер."""
+    frp_online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    frp_last_seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_poll_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
     admin_note: Mapped[str | None] = mapped_column(Text)
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
@@ -149,8 +170,37 @@ class Heartbeat(BigIntPkMixin, Base):
     tx_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     load_avg: Mapped[float | None] = mapped_column(Float)
     remote_ip: Mapped[str | None] = mapped_column(String(45))
+    cpu_pct: Mapped[int | None] = mapped_column(Integer)
+    ram_pct: Mapped[int | None] = mapped_column(Integer)
+    temp_c: Mapped[float | None] = mapped_column(Float)
+    clients_wifi: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    clients_dhcp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), default="device", nullable=False)
+    """device — прислал роутер сам, poll — забрали опросом через туннель."""
 
     __table_args__ = (Index("ix_heartbeats_device_id_created_at", "device_id", "created_at"),)
+
+
+class DeviceEvent(BigIntPkMixin, Base):
+    """Журнал по устройству: подключился, отключился, выполнил команду."""
+
+    __tablename__ = "device_events"
+
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    mac: Mapped[str | None] = mapped_column(String(17))
+    """Дублируем MAC: события бывают и по роутерам, которых у нас ещё нет в базе."""
+    level: Mapped[str] = mapped_column(String(16), default="info", nullable=False)
+    """info / success / warning / error."""
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_device_events_device_id_created_at", "device_id", "created_at"),
+        Index("ix_device_events_created_at", "created_at"),
+    )
 
 
 class SubscriptionAccessLog(BigIntPkMixin, Base):
