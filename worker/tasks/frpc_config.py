@@ -46,6 +46,12 @@ def render_config(devices: list[Device]) -> str:
     ]
 
     secret = frp.stcp_secret.get_secret_value()
+    if not secret:
+        # Без ключа STCP visitor подключиться не сможет: пишем только общий блок,
+        # чтобы контейнер жил и не заполнял лог отказами.
+        lines.append("# FRP_STCP_SECRET не задан — visitor'ы не создаются")
+        return "\n".join(lines)
+
     for device in devices:
         if not device.frp_luci_name or not device.frp_visitor_port:
             continue
@@ -76,6 +82,12 @@ async def sync_frpc_config() -> int:
                 .where(Device.frp_luci_name.is_not(None), Device.frp_visitor_port.is_not(None))
                 .order_by(Device.frp_visitor_port)
             )
+        )
+
+    if not settings.frp.stcp_secret.get_secret_value():
+        log.info(
+            "frpc.no_stcp_secret",
+            hint="Показания с роутеров не снимаются: заполните FRP_STCP_SECRET",
         )
 
     content = render_config(devices)
