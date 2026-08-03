@@ -129,6 +129,33 @@ sed -i 's/^BOT_MODE=polling/BOT_MODE=webhook/' .env
 make up
 ```
 
+### 5а. Если 80 и 443 уже заняты другим прокси
+
+Проверить:
+
+```bash
+ss -tlnp | grep -E ':(80|443)\s'
+```
+
+Если порты держит `docker-proxy`, на сервере уже работает обратный прокси
+(nginx-proxy-manager, Traefik, Caddy). Тогда наши `nginx` и `certbot` не нужны —
+встраиваемся за существующий:
+
+```bash
+docker network ls
+```
+
+Имя сети прокси записать в `.env` как `PROXY_NETWORK=...` и поднимать стек
+с оверлеем:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+```
+
+В самом прокси добавить хосты: `api.<домен>` и `admin.<домен>` → `http://router-shop-api:8000`,
+а для вебхука Telegram — отдельный location `/tg/webhook` → `http://router-shop-bot:8081`.
+Сертификаты в этом случае выпускает прокси, скрипт `init-letsencrypt.sh` не запускается.
+
 ### 6. Проверка
 
 ```bash

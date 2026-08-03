@@ -1,0 +1,41 @@
+# Оверлей для сервера, где 80 и 443 уже заняты другим обратным прокси
+# (nginx-proxy-manager, Traefik, Caddy, чужой nginx в контейнере).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+#
+# Наши nginx и certbot выключены — TLS выпускает существующий прокси.
+# Контейнеры api и bot дополнительно подключаются к его сети, чтобы прокси
+# мог обращаться к ним по имени, без публикации портов наружу.
+#
+# В .env указать имя внешней сети:
+#   PROXY_NETWORK=имя_сети_прокси   (docker network ls)
+#
+# Дальше в прокси добавить хосты:
+#   api.<домен>   -> http://router-shop-api:8000
+#   admin.<домен> -> http://router-shop-api:8000
+#   а для вебхука Telegram — отдельный location:
+#   api.<домен>/tg/webhook -> http://router-shop-bot:8081
+
+services:
+  nginx:
+    profiles: ["disabled"]
+
+  certbot:
+    profiles: ["disabled"]
+
+  api:
+    networks:
+      default: {}
+      proxy:
+        aliases: [router-shop-api]
+
+  bot:
+    networks:
+      default: {}
+      proxy:
+        aliases: [router-shop-bot]
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}
