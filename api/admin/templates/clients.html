@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Клиенты{% endblock %}
+{% block content %}
+<h1>Клиенты <span class="muted" style="font-size:15px">({{ total }})</span></h1>
+
+<form class="toolbar" method="get" action="/admin/clients">
+  <div style="flex:1; min-width:240px">
+    <label for="q">Поиск</label>
+    <input id="q" name="q" value="{{ query_text }}" style="width:100%"
+           placeholder="имя, @username, телефон, TG-id, MAC, номер заказа">
+  </div>
+  <button type="submit">Найти</button>
+</form>
+
+{% if users %}
+<table>
+  <tr><th>Клиент</th><th>TG</th><th>Телефон</th><th>Город</th><th>Регистрация</th><th>Статус</th></tr>
+  {% for user in users %}
+  <tr>
+    <td><a href="/admin/clients/{{ user.id }}">{{ user.display_name }}</a></td>
+    <td class="nowrap muted">{% if user.username %}@{{ user.username }}{% else %}{{ user.tg_id }}{% endif %}</td>
+    <td class="nowrap">{{ user.phone | phone }}</td>
+    <td>{{ user.city or '—' }}</td>
+    <td class="nowrap muted">{{ user.created_at | short_dt }}</td>
+    <td>
+      {% if user.is_blocked %}<span class="badge bad">заблокирован</span>
+      {% elif user.bot_blocked %}<span class="badge muted">закрыл бота</span>
+      {% else %}<span class="badge ok">активен</span>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% if page > 1 %}<a class="btn ghost" href="/admin/clients?q={{ query_text }}&page={{ page - 1 }}">Назад</a>{% endif %}
+  <span class="muted">Страница {{ page }} из {{ pages }}</span>
+  {% if page < pages %}<a class="btn ghost" href="/admin/clients?q={{ query_text }}&page={{ page + 1 }}">Вперёд</a>{% endif %}
+</div>
+{% else %}
+<p class="muted">Ничего не найдено.</p>
+{% endif %}
+{% endblock %}

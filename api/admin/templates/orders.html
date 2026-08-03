@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Заказы{% endblock %}
+{% block content %}
+<h1>Заказы <span class="muted" style="font-size:15px">({{ total }})</span></h1>
+
+<form class="toolbar" method="get" action="/admin/orders">
+  <div>
+    <label for="q">Поиск</label>
+    <input id="q" name="q" value="{{ query_text }}" placeholder="номер, имя, телефон, город">
+  </div>
+  <div>
+    <label for="status">Статус</label>
+    <select id="status" name="status">
+      <option value="">все</option>
+      {% for item in statuses %}
+      <option value="{{ item.value }}" {% if status_filter == item.value %}selected{% endif %}>
+        {{ item | status_label }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Показать</button>
+  <a class="btn ghost" href="/admin/orders/export{% if status_filter %}?status={{ status_filter }}{% endif %}">Выгрузить CSV</a>
+</form>
+
+{% if orders %}
+<table>
+  <tr>
+    <th>Номер</th><th>Создан</th><th>Клиент</th><th>Телефон</th>
+    <th>Доставка</th><th class="right">Сумма</th><th>Оплата</th><th>Статус</th>
+  </tr>
+  {% for order in orders %}
+  <tr>
+    <td class="nowrap"><a href="/admin/orders/{{ order.id }}">{{ order.public_number }}</a></td>
+    <td class="nowrap muted">{{ order.created_at | short_dt }}</td>
+    <td>{{ order.customer_name or order.user.display_name }}</td>
+    <td class="nowrap">{{ order.customer_phone | phone }}</td>
+    <td>{{ order.customer_city or '—' }}</td>
+    <td class="right nowrap">{{ order.total | money }}</td>
+    <td class="nowrap">{{ 'при получении' if order.is_cod else 'онлайн' }}</td>
+    <td><span class="badge {{ order.status | status_tone }}">{{ order.status | status_label }}</span></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% set base = '/admin/orders?q=' ~ query_text ~ '&status=' ~ status_filter %}
+  {% if page > 1 %}<a class="btn ghost" href="{{ base }}&page={{ page - 1 }}">Назад</a>{% endif %}
+  <span class="muted">Страница {{ page }} из {{ pages }}</span>
+  {% if page < pages %}<a class="btn ghost" href="{{ base }}&page={{ page + 1 }}">Вперёд</a>{% endif %}
+</div>
+{% else %}
+<p class="muted">Ничего не найдено.</p>
+{% endif %}
+{% endblock %}

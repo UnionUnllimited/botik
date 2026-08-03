@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Промокоды и коды активации{% endblock %}
+
+{% macro promo_form(promo, discount_types, csrf_field, csrf_token) %}
+<form method="post" action="/admin/promo/codes/{{ promo.id if promo else 0 }}"
+      style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <div class="grid2">
+    <div>
+      {% if not promo %}
+      <label>Код</label>
+      <input name="code" required style="width:100%" placeholder="SALE10">
+      {% endif %}
+      <label>Описание для себя</label>
+      <input name="description" value="{{ promo.description if promo else '' }}" style="width:100%">
+      <label>Тип скидки</label>
+      <select name="discount_type">
+        {% for item in discount_types %}
+        <option value="{{ item.value }}" {% if promo and promo.discount_type == item %}selected{% endif %}>
+          {{ 'процент' if item.value == 'percent' else 'фиксированная сумма' }}
+        </option>
+        {% endfor %}
+      </select>
+      <label>Величина (проценты или рубли)</label>
+      <input name="value" value="{{ promo.value if promo else '' }}" required style="width:100%">
+      <label>Минимальная сумма заказа, ₽</label>
+      <input name="min_amount" value="{{ promo.min_amount if promo else 0 }}">
+    </div>
+    <div>
+      <label>Всего использований (0 — без лимита)</label>
+      <input name="max_uses" type="number" value="{{ promo.max_uses if promo else 0 }}">
+      <label>На одного клиента</label>
+      <input name="per_user_limit" type="number" value="{{ promo.per_user_limit if promo else 1 }}">
+      <label>Действует с</label>
+      <input name="valid_from" type="date" value="{{ promo.valid_from.strftime('%Y-%m-%d') if promo and promo.valid_from else '' }}">
+      <label>Действует до</label>
+      <input name="valid_until" type="date" value="{{ promo.valid_until.strftime('%Y-%m-%d') if promo and promo.valid_until else '' }}">
+      <label style="display:flex; gap:8px; align-items:center; margin-top:14px">
+        <input type="checkbox" name="new_clients_only" style="width:auto" {% if promo and promo.new_clients_only %}checked{% endif %}> только для первого заказа
+      </label>
+      <label style="display:flex; gap:8px; align-items:center">
+        <input type="checkbox" name="is_active" style="width:auto" {% if not promo or promo.is_active %}checked{% endif %}> активен
+      </label>
+    </div>
+  </div>
+  <button type="submit" style="margin-top:14px">{{ 'Сохранить' if promo else 'Создать промокод' }}</button>
+</form>
+{% endmacro %}
+
+{% block content %}
+<h1>Промокоды и коды активации</h1>
+
+<h2>Промокоды</h2>
+{% if codes %}
+<table>
+  <tr><th>Код</th><th>Скидка</th><th>Использовано</th><th>Действует</th><th>Статус</th></tr>
+  {% for promo in codes %}
+  <tr>
+    <td><code>{{ promo.code }}</code></td>
+    <td class="nowrap">{% if promo.discount_type.value == 'percent' %}{{ promo.value }}%{% else %}{{ promo.value | money }}{% endif %}</td>
+    <td>{{ promo.used_count }}{% if promo.max_uses %} / {{ promo.max_uses }}{% endif %}</td>
+    <td class="nowrap muted">{{ promo.valid_until | date_ru }}</td>
+    <td>{% if promo.is_active %}<span class="badge ok">активен</span>{% else %}<span class="badge muted">выключен</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Промокодов нет.</p>{% endif %}
+
+<div style="margin-top:14px">
+{% for promo in codes %}
+  <details>
+    <summary style="cursor:pointer; padding:6px 0">Изменить <code>{{ promo.code }}</code></summary>
+    {{ promo_form(promo, discount_types, csrf_field, csrf_token) }}
+  </details>
+{% endfor %}
+<details>
+  <summary style="cursor:pointer; padding:8px 0"><b>+ создать промокод</b></summary>
+  {{ promo_form(None, discount_types, csrf_field, csrf_token) }}
+</details>
+</div>
+
+<h2>Партии кодов активации</h2>
+<p class="muted">Одноразовые коды формата XXXX-XXXX-XXXX для печати на коробках.
+По такому коду клиент активирует подписку без покупки роутера у нас.</p>
+
+{% if batches %}
+<table>
+  <tr><th>Партия</th><th>Тариф</th><th>Размер</th><th>Использовано</th><th>Годен до</th><th>Создана</th><th></th></tr>
+  {% for batch in batches %}
+  <tr>
+    <td>{{ batch.title }}</td>
+    <td class="nowrap">{{ batch.months }} мес{% if batch.extra_days %} + {{ batch.extra_days }} дн{% endif %}</td>
+    <td>{{ batch.size }}</td>
+    <td>{{ used_counts.get(batch.id, 0) }}</td>
+    <td class="nowrap muted">{{ batch.expires_at | date_ru }}</td>
+    <td class="nowrap muted">{{ batch.created_at | short_dt }}</td>
+    <td class="nowrap">
+      <a class="btn ghost" href="/admin/promo/batches/{{ batch.id }}/export">CSV</a>
+      <form class="inline" method="post" action="/admin/promo/batches/{{ batch.id }}/revoke"
+            onsubmit="return confirm('Погасить все неиспользованные коды партии?')">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <button class="ghost" type="submit">Погасить</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Партий пока нет.</p>{% endif %}
+
+<h2>Новая партия</h2>
+<form method="post" action="/admin/promo/batches"
+      style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <div class="grid2">
+    <div>
+      <label>Название партии</label>
+      <input name="title" style="width:100%" placeholder="Коробки, сентябрь">
+      <label>Тариф (определит срок подписки)</label>
+      <select name="plan_id">
+        <option value="">задать вручную</option>
+        {% for plan in plans %}<option value="{{ plan.id }}">{{ plan.title }}</option>{% endfor %}
+      </select>
+      <label>Если вручную — месяцев</label>
+      <input name="months" type="number" min="1" value="1">
+    </div>
+    <div>
+      <label>Сколько кодов</label>
+      <input name="size" type="number" min="1" max="5000" value="100" required>
+      <label>Коды действительны до</label>
+      <input name="expires_at" type="date">
+      <label>Комментарий</label>
+      <input name="comment" style="width:100%">
+    </div>
+  </div>
+  <button type="submit" style="margin-top:14px">Сгенерировать</button>
+</form>
+{% endblock %}

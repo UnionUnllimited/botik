@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<h1>Дашборд</h1>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Выручка за сутки</div>
+    <div class="value">{{ data.day.revenue | money }}</div>
+    <div class="hint">заказов: {{ data.day.orders }}, оплачено: {{ data.day.paid_orders }}</div>
+  </div>
+  <div class="card">
+    <div class="label">За неделю</div>
+    <div class="value">{{ data.week.revenue | money }}</div>
+    <div class="hint">средний чек {{ data.week.average_check | money }}</div>
+  </div>
+  <div class="card">
+    <div class="label">За месяц</div>
+    <div class="value">{{ data.month.revenue | money }}</div>
+    <div class="hint">конверсия в оплату {{ data.month.conversion }}%</div>
+  </div>
+  <div class="card">
+    <div class="label">MRR</div>
+    <div class="value">{{ data.mrr | money }}</div>
+    <div class="hint">по активным подпискам</div>
+  </div>
+</div>
+
+<h2>Подписки и устройства</h2>
+<div class="cards">
+  <div class="card">
+    <div class="label">Активные подписки</div>
+    <div class="value">{{ data.subscriptions_active }}</div>
+    <div class="hint">в льготном периоде: {{ data.subscriptions_grace }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Истекают за 7 дней</div>
+    <div class="value">{{ data.expiring_7d }}</div>
+    <div class="hint"><a href="/admin/subscriptions?filter=expiring">посмотреть</a></div>
+  </div>
+  <div class="card">
+    <div class="label">Ждут активации</div>
+    <div class="value">{{ data.subscriptions_pending }}</div>
+    <div class="hint">оплачены, роутер не включён</div>
+  </div>
+  <div class="card">
+    <div class="label">Устройства на связи</div>
+    <div class="value">{{ data.devices_online }}</div>
+    <div class="hint">всего активировано: {{ data.devices_active }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Клиенты</div>
+    <div class="value">{{ data.users_total }}</div>
+    <div class="hint">за месяц +{{ data.month.new_users }}, заблокировали бота: {{ data.users_blocked_bot }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Требуют внимания</div>
+    <div class="value">{{ data.orders_to_ship }}</div>
+    <div class="hint">к отгрузке · ждут оплаты: {{ data.orders_awaiting }} · тикетов: {{ data.tickets_open }}</div>
+  </div>
+</div>
+
+{% if series %}
+<h2>Выручка за две недели</h2>
+<table>
+  <tr><th>День</th><th style="width:70%">Сумма</th></tr>
+  {% for day, amount, percent in series %}
+  <tr>
+    <td class="nowrap">{{ day.strftime('%d.%m') }}</td>
+    <td>
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="height:10px; border-radius:5px; background:#4c8dff; width:{{ percent }}%; min-width:2px"></div>
+        <span class="muted nowrap">{{ amount | money }}</span>
+      </div>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<div class="grid2">
+  <div>
+    <h2>Последние заказы</h2>
+    {% if recent_orders %}
+    <table>
+      <tr><th>Номер</th><th>Клиент</th><th>Сумма</th><th>Статус</th></tr>
+      {% for order in recent_orders %}
+      <tr>
+        <td class="nowrap"><a href="/admin/orders/{{ order.id }}">{{ order.public_number }}</a></td>
+        <td>{{ order.customer_name or order.user.display_name }}</td>
+        <td class="nowrap">{{ order.total | money }}</td>
+        <td><span class="badge {{ order.status | status_tone }}">{{ order.status | status_label }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Заказов пока нет.</p>{% endif %}
+  </div>
+  <div>
+    <h2>Ближайшие окончания</h2>
+    {% if expiring %}
+    <table>
+      <tr><th>Клиент</th><th>Тариф</th><th>До</th><th>Дней</th></tr>
+      {% for item in expiring %}
+      <tr>
+        <td><a href="/admin/clients/{{ item.user_id }}">{{ item.user.display_name }}</a></td>
+        <td>{{ item.plan.title if item.plan else '—' }}</td>
+        <td class="nowrap">{{ item.expires_at | date_ru }}</td>
+        <td>{{ item.expires_at | days_until }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Активных подписок пока нет.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

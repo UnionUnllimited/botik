@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Журнал{% endblock %}
+{% block content %}
+<h1>Журнал действий <span class="muted" style="font-size:15px">({{ total }})</span></h1>
+<p class="muted">Фиксируется всё, что меняет деньги, подписки, права и настройки.</p>
+
+<form class="toolbar" method="get" action="/admin/audit">
+  <div>
+    <label for="action">Действие</label>
+    <input id="action" name="action" value="{{ action_filter }}" placeholder="order.status_changed">
+  </div>
+  <div>
+    <label for="entity">Объект</label>
+    <input id="entity" name="entity" value="{{ entity_filter }}" placeholder="order / user / subscription">
+  </div>
+  <button type="submit">Фильтровать</button>
+</form>
+
+{% if entries %}
+<table>
+  <tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Объект</th><th>Было</th><th>Стало</th><th>IP</th></tr>
+  {% for entry in entries %}
+  <tr>
+    <td class="nowrap muted">{{ entry.created_at | short_dt }}</td>
+    <td class="nowrap">{{ admins.get(entry.admin_id, entry.actor_type.value) }}</td>
+    <td class="nowrap"><code>{{ entry.action }}</code></td>
+    <td class="nowrap muted">{{ entry.entity_type }}{% if entry.entity_id %} #{{ entry.entity_id }}{% endif %}</td>
+    <td class="muted" style="font-size:12px">{{ entry.old_value if entry.old_value else '—' }}</td>
+    <td style="font-size:12px">{{ entry.new_value if entry.new_value else '—' }}</td>
+    <td class="nowrap muted">{{ entry.ip or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pager">
+  {% set base = '/admin/audit?action=' ~ action_filter ~ '&entity=' ~ entity_filter %}
+  {% if page > 1 %}<a class="btn ghost" href="{{ base }}&page={{ page - 1 }}">Назад</a>{% endif %}
+  <span class="muted">Страница {{ page }} из {{ pages }}</span>
+  {% if page < pages %}<a class="btn ghost" href="{{ base }}&page={{ page + 1 }}">Вперёд</a>{% endif %}
+</div>
+{% else %}
+<p class="muted">Записей нет.</p>
+{% endif %}
+{% endblock %}

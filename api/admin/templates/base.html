@@ -1,0 +1,123 @@
+{# Базовый макет админки. Никаких внешних библиотек: панель должна открываться
+   с телефона на плохой связи и не зависеть от доступности чужих CDN. #}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}Админка{% endblock %} · {{ brand }}</title>
+<style>
+:root {
+  --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
+  --text: #e6e8ee; --muted: #99a0ae; --accent: #4c8dff; --ok: #37c978;
+  --warn: #f0b429; --bad: #ff5c5c; --info: #6ba4ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.layout { display: flex; min-height: 100vh; }
+.side { width: 220px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
+  padding: 16px 0; }
+.side .logo { padding: 0 18px 16px; font-weight: 600; font-size: 17px; }
+.side a { display: block; padding: 9px 18px; color: var(--text); }
+.side a:hover { background: var(--panel-2); text-decoration: none; }
+.side a.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 15px; }
+.side .who { padding: 14px 18px; margin-top: 12px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 13px; }
+.main { flex: 1; padding: 22px 26px 60px; min-width: 0; }
+h1 { font-size: 22px; margin: 0 0 18px; }
+h2 { font-size: 17px; margin: 26px 0 12px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.card .label { color: var(--muted); font-size: 13px; }
+.card .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+.card .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+table { width: 100%; border-collapse: collapse; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; }
+th { color: var(--muted); font-weight: 500; background: var(--panel-2); white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #1b1f28; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px;
+  border: 1px solid var(--line); }
+.badge.ok { color: var(--ok); border-color: #23593c; background: #12291d; }
+.badge.warn { color: var(--warn); border-color: #5b4a17; background: #2a2312; }
+.badge.bad { color: var(--bad); border-color: #5e2626; background: #2b1414; }
+.badge.info { color: var(--info); border-color: #274063; background: #131d2b; }
+.badge.muted { color: var(--muted); }
+form.inline { display: inline; }
+input, select, textarea { background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font: inherit; max-width: 100%; }
+input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+textarea { width: 100%; min-height: 90px; }
+label { display: block; color: var(--muted); font-size: 13px; margin: 12px 0 4px; }
+button, .btn { background: var(--accent); border: none; color: #fff; padding: 8px 14px;
+  border-radius: 8px; font: inherit; cursor: pointer; display: inline-block; }
+button:hover, .btn:hover { filter: brightness(1.1); text-decoration: none; }
+button.ghost, .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+button.danger { background: var(--bad); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
+.msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+.msg.ok { background: #12291d; border: 1px solid #23593c; color: var(--ok); }
+.msg.err { background: #2b1414; border: 1px solid #5e2626; color: var(--bad); }
+.muted { color: var(--muted); }
+.right { text-align: right; }
+.nowrap { white-space: nowrap; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.pager { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
+code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+@media (max-width: 800px) {
+  .layout { flex-direction: column; }
+  .side { width: 100%; display: flex; flex-wrap: wrap; padding: 8px; }
+  .side .logo, .side .who { width: 100%; }
+  .side a { padding: 8px 12px; }
+  .side a.active { border-left: none; border-bottom: 2px solid var(--accent); padding-left: 12px; }
+  .main { padding: 16px 12px 40px; }
+  .grid2 { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="logo">{{ brand }}</div>
+    {% macro nav(href, title, section) %}
+      {% if principal.can(section) %}
+        <a href="{{ href }}" class="{{ 'active' if current_path.startswith(href) and href != '/admin/' or current_path == href else '' }}">{{ title }}</a>
+      {% endif %}
+    {% endmacro %}
+    {{ nav('/admin/', 'Дашборд', 'dashboard') }}
+    {{ nav('/admin/orders', 'Заказы', 'orders') }}
+    {{ nav('/admin/clients', 'Клиенты', 'clients') }}
+    {{ nav('/admin/subscriptions', 'Подписки', 'subscriptions') }}
+    {{ nav('/admin/devices', 'Устройства', 'devices') }}
+    {{ nav('/admin/nodes', 'Узлы', 'nodes') }}
+    {{ nav('/admin/catalog', 'Товары и тарифы', 'catalog') }}
+    {{ nav('/admin/promo', 'Промокоды и коды', 'promo') }}
+    {{ nav('/admin/settings', 'Настройки', 'settings') }}
+    {{ nav('/admin/audit', 'Журнал', 'audit') }}
+    {{ nav('/admin/admins', 'Администраторы', 'admins') }}
+    <div class="who">
+      {{ principal.admin.login }} · {{ principal.role }}
+      <form method="post" action="/admin/logout" style="margin-top:8px">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <button class="ghost" type="submit">Выйти</button>
+      </form>
+    </div>
+  </nav>
+  <main class="main">
+    {% if request.query_params.get('ok') %}
+      <div class="msg ok">{{ request.query_params.get('ok') }}</div>
+    {% endif %}
+    {% if request.query_params.get('err') %}
+      <div class="msg err">{{ request.query_params.get('err') }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

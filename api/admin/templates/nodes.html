@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Узлы{% endblock %}
+
+{% macro node_form(node, groups, protocols, statuses, prefix, csrf_field, csrf_token) %}
+<form method="post" action="/admin/nodes/{{ node.id if node else 0 }}"
+      style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <div class="grid2">
+    <div>
+      <label>Имя в подписке (обязательно с {{ prefix }})</label>
+      <input name="remarks" value="{{ node.remarks if node else prefix }}" required style="width:100%">
+      <label>Локация</label>
+      <input name="location" value="{{ node.location if node else '' }}" style="width:100%">
+      <label>Код страны</label>
+      <input name="country_code" value="{{ node.country_code if node else '' }}" maxlength="2">
+      <label>Хост</label>
+      <input name="host" value="{{ node.host if node else '' }}" required style="width:100%">
+      <label>Порт</label>
+      <input name="port" type="number" value="{{ node.port if node else 443 }}">
+      <label>Заметка</label>
+      <input name="admin_note" value="{{ node.admin_note or '' if node else '' }}" style="width:100%">
+    </div>
+    <div>
+      <label>Протокол</label>
+      <select name="protocol">
+        {% for item in protocols %}
+        <option value="{{ item.value }}" {% if node and node.protocol == item %}selected{% endif %}>{{ item.value }}</option>
+        {% endfor %}
+      </select>
+      <label>Статус</label>
+      <select name="status">
+        {% for item in statuses %}
+        <option value="{{ item.value }}" {% if node and node.status == item %}selected{% endif %}>{{ item.value }}</option>
+        {% endfor %}
+      </select>
+      <label>Приоритет (меньше — выше в списке)</label>
+      <input name="priority" type="number" value="{{ node.priority if node else 100 }}">
+      <label>Лимит устройств (0 — без лимита)</label>
+      <input name="device_limit" type="number" value="{{ node.device_limit if node else 0 }}">
+      <label>Добавить в группу</label>
+      <select name="group_id">
+        <option value="">не менять</option>
+        {% for group in groups %}<option value="{{ group.id }}">{{ group.title }}</option>{% endfor %}
+      </select>
+      <label>Параметры подключения (JSON)</label>
+      <textarea name="config">{{ (node.config | tojson) if node and node.config else '{}' }}</textarea>
+    </div>
+  </div>
+  <button type="submit" style="margin-top:14px">{{ 'Сохранить' if node else 'Добавить узел' }}</button>
+</form>
+{% endmacro %}
+
+{% block content %}
+<h1>Узлы</h1>
+<p class="muted">Имя узла обязано начинаться с <code>{{ node_prefix }}</code> — клиент на роутере
+фильтрует список по этому префиксу и без него отбросит узел.</p>
+
+{% if nodes %}
+<table>
+  <tr><th>Имя</th><th>Локация</th><th>Адрес</th><th>Статус</th><th>Устройств</th><th>Приоритет</th><th>Проверен</th></tr>
+  {% for node in nodes %}
+  <tr>
+    <td><code>{{ node.remarks }}</code></td>
+    <td>{{ node.location or '—' }}</td>
+    <td class="nowrap muted">{{ node.host }}:{{ node.port }}</td>
+    <td>
+      <span class="badge {{ 'ok' if node.status.value == 'active' and node.is_healthy else ('warn' if node.status.value == 'maintenance' else 'muted') }}">
+        {{ node.status.value }}
+      </span>
+    </td>
+    <td>{{ node.devices_count }}{% if node.device_limit %} / {{ node.device_limit }}{% endif %}</td>
+    <td>{{ node.priority }}</td>
+    <td class="nowrap muted">{{ node.last_check_at | short_dt }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">Узлов пока нет. Добавьте первый — он попадёт в подписку клиентов.</p>
+{% endif %}
+
+<div style="margin-top:16px">
+{% for node in nodes %}
+  <details>
+    <summary style="cursor:pointer; padding:6px 0">Изменить <code>{{ node.remarks }}</code></summary>
+    {{ node_form(node, groups, protocols, statuses, node_prefix, csrf_field, csrf_token) }}
+  </details>
+{% endfor %}
+<details>
+  <summary style="cursor:pointer; padding:8px 0"><b>+ добавить узел</b></summary>
+  {{ node_form(None, groups, protocols, statuses, node_prefix, csrf_field, csrf_token) }}
+</details>
+</div>
+
+<h2>Группы узлов</h2>
+{% if groups %}
+<table>
+  <tr><th>Группа</th><th>Slug</th><th>Узлов на устройство</th><th>По умолчанию</th></tr>
+  {% for group in groups %}
+  <tr>
+    <td>{{ group.title }}</td>
+    <td class="muted"><code>{{ group.slug }}</code></td>
+    <td>{{ group.max_nodes_per_device }}</td>
+    <td>{% if group.is_default %}<span class="badge ok">да</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<details style="margin-top:14px">
+  <summary style="cursor:pointer; padding:8px 0"><b>+ создать группу</b></summary>
+  <form method="post" action="/admin/nodes/groups/new"
+        style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px">
+    <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+    <div class="grid2">
+      <div>
+        <label>Slug</label><input name="slug" required style="width:100%">
+        <label>Название</label><input name="title" style="width:100%">
+      </div>
+      <div>
+        <label>Описание</label><input name="description" style="width:100%">
+        <label>Максимум узлов в подписке одного устройства</label>
+        <input name="max_nodes_per_device" type="number" value="5">
+      </div>
+    </div>
+    <button type="submit" style="margin-top:14px">Создать</button>
+  </form>
+</details>
+{% endblock %}

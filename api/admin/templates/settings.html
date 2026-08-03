@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+<p class="muted">Меняются на лету: бот подхватывает новые значения в течение минуты.</p>
+
+<form method="post" action="/admin/settings">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  {% for key, value in values.items() %}
+  <div style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:12px">
+    <label for="{{ key }}" style="margin-top:0">
+      <code>{{ key }}</code> — {{ descriptions.get(key, '') }}
+    </label>
+    {% if key in bool_keys %}
+      <label style="display:flex; gap:8px; align-items:center">
+        <input type="checkbox" id="{{ key }}" name="{{ key }}" style="width:auto" {% if value == 'да' %}checked{% endif %}>
+        включено
+      </label>
+    {% elif key in complex_keys %}
+      <textarea id="{{ key }}" name="{{ key }}" style="min-height:150px; font-family:ui-monospace, monospace">{{ value }}</textarea>
+    {% else %}
+      <input id="{{ key }}" name="{{ key }}" value="{{ value }}" style="width:100%">
+    {% endif %}
+  </div>
+  {% endfor %}
+  <button type="submit">Сохранить всё</button>
+</form>
+{% endblock %}
