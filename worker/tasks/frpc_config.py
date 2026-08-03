@@ -66,6 +66,7 @@ def render_config(devices: list[Device]) -> str:
 async def sync_frpc_config() -> int:
     """Пересобирает конфиг, если состав роутеров изменился."""
     if not settings.frp.is_configured:
+        log.info("frpc.not_configured", hint="Блок FRP_* в .env не заполнен")
         return 0
 
     async with session_scope() as session:

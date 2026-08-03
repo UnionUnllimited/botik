@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -107,12 +108,16 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(seconds=settings.frp.poll_interval_sec),
         id="sync_routers",
         name="Опрос роутеров через frp",
+        # Первый прогон сразу: иначе парк появится в админке только через минуту.
+        next_run_time=dt.datetime.now(dt.UTC),
     )
     scheduler.add_job(
         instrumented("sync_frpc_config", frpc_config.sync_frpc_config),
         IntervalTrigger(minutes=2),
         id="sync_frpc_config",
         name="Конфиг visitor-туннелей",
+        # Контейнер frpc без файла конфигурации не стартует — пишем его сразу.
+        next_run_time=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=10),
     )
     scheduler.add_job(
         instrumented("cleanup_router_metrics", routers.cleanup_router_metrics),
