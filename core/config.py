@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BeforeValidator, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BASE_DIR / ".env"
@@ -26,13 +26,23 @@ _CONFIG = SettingsConfigDict(
 
 
 def _split_ints(value: Any) -> Any:
-    """Позволяет писать списки id через запятую: ADMIN_IDS=1,2,3."""
+    """Позволяет писать списки id через запятую: BOT_ADMIN_IDS=1,2,3."""
     if isinstance(value, str):
         return [int(chunk) for chunk in value.replace(";", ",").split(",") if chunk.strip()]
     return value
 
 
-IdList = Annotated[list[int], BeforeValidator(_split_ints)]
+def _split_strings(value: Any) -> Any:
+    """То же для строковых списков: PLATEGA_ALLOWED_IPS=1.2.3.4,5.6.7.0/24."""
+    if isinstance(value, str):
+        return [chunk.strip() for chunk in value.split(",") if chunk.strip()]
+    return value
+
+
+# NoDecode обязателен: без него pydantic-settings пытается разобрать значение
+# как JSON ещё до валидатора, и пустая строка в .env роняет весь конфиг.
+IdList = Annotated[list[int], NoDecode, BeforeValidator(_split_ints)]
+StrList = Annotated[list[str], NoDecode, BeforeValidator(_split_strings)]
 
 
 class AppSettings(BaseSettings):
@@ -223,15 +233,8 @@ class PlategaSettings(BaseSettings):
     default_method: str = "any"
     """any | sbp | card | international | crypto либо числовой код провайдера."""
     timeout_sec: float = 20.0
-    allowed_ips: list[str] = Field(default_factory=list)
+    allowed_ips: StrList = Field(default_factory=list)
     """Необязательный белый список IP для колбэков (через запятую)."""
-
-    @field_validator("allowed_ips", mode="before")
-    @classmethod
-    def _split_ips(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return [chunk.strip() for chunk in value.split(",") if chunk.strip()]
-        return value
 
     @property
     def enabled(self) -> bool:

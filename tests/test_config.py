@@ -1,0 +1,131 @@
+"""Разбор конфигурации из окружения.
+
+Списки через запятую — отдельная история: pydantic-settings по умолчанию
+пытается разобрать значение поля-списка как JSON ещё до валидаторов,
+и пустая строка в .env роняет запуск всех процессов.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from core.config import BotSettings, PlategaSettings, Settings, SubscriptionSettings
+
+
+class TestListParsing:
+    def test_empty_admin_ids_gives_empty_list(self, monkeypatch):
+        monkeypatch.setenv("BOT_ADMIN_IDS", "")
+        assert BotSettings().admin_ids == []
+
+    def test_unset_admin_ids_gives_empty_list(self, monkeypatch):
+        monkeypatch.delenv("BOT_ADMIN_IDS", raising=False)
+        assert BotSettings().admin_ids == []
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("111", [111]),
+            ("111,222", [111, 222]),
+            ("111, 222 , 333", [111, 222, 333]),
+            ("111;222", [111, 222]),
+            ("111,,222", [111, 222]),
+        ],
+    )
+    def test_admin_ids_variants(self, monkeypatch, raw, expected):
+        monkeypatch.setenv("BOT_ADMIN_IDS", raw)
+        assert BotSettings().admin_ids == expected
+
+    def test_reminder_days(self, monkeypatch):
+        monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_BEFORE", "7,3,1,0")
+        monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_AFTER", "")
+        settings = SubscriptionSettings()
+        assert settings.reminder_days_before == [7, 3, 1, 0]
+        assert settings.reminder_days_after == []
+
+    def test_allowed_ips(self, monkeypatch):
+        monkeypatch.setenv("PLATEGA_ALLOWED_IPS", "1.2.3.4, 5.6.7.0/24")
+        assert PlategaSettings().allowed_ips == ["1.2.3.4", "5.6.7.0/24"]
+
+    def test_empty_allowed_ips(self, monkeypatch):
+        monkeypatch.setenv("PLATEGA_ALLOWED_IPS", "")
+        assert PlategaSettings().allowed_ips == []
+
+
+class TestAdminCheck:
+    def test_owner_is_admin(self, monkeypatch):
+        monkeypatch.setenv("BOT_OWNER_ID", "500")
+        monkeypatch.setenv("BOT_ADMIN_IDS", "")
+        settings = BotSettings()
+        assert settings.is_admin(500) is True
+        assert settings.is_admin(501) is False
+
+    def test_listed_admin(self, monkeypatch):
+        monkeypatch.setenv("BOT_OWNER_ID", "500")
+        monkeypatch.setenv("BOT_ADMIN_IDS", "600,700")
+        settings = BotSettings()
+        assert settings.is_admin(600) is True
+        assert settings.is_admin(800) is False
+
+
+class TestWebhookUrl:
+    def test_url_is_assembled(self, monkeypatch):
+        monkeypatch.setenv("BOT_WEBHOOK_BASE_URL", "https://api.example.ru/")
+        monkeypatch.setenv("BOT_WEBHOOK_PATH", "/tg/webhook")
+        assert BotSettings().webhook_url == "https://api.example.ru/tg/webhook"
+
+
+class TestProdValidation:
+    """В проде процесс обязан падать на старте, а не работать с полуконфигом."""
+
+    @pytest.fixture
+    def prod_env(self, monkeypatch):
+        for key, value in {
+            "APP_ENV": "prod",
+            "BOT_TOKEN": "123:abc",
+            "BOT_MODE": "polling",
+            "SECURITY_SECRET_KEY": "x" * 32,
+            "SECURITY_ENCRYPTION_KEY": "ERERERERERERERERERERERERERERERERERERERERERE=",
+            "POSTGRES_PASSWORD": "secret",
+            "API_PUBLIC_BASE_URL": "https://api.example.ru",
+        }.items():
+            monkeypatch.setenv(key, value)
+        return monkeypatch
+
+    def test_valid_prod_config(self, prod_env):
+        assert Settings().app.is_prod is True
+
+    def test_missing_bot_token_fails(self, prod_env):
+        prod_env.setenv("BOT_TOKEN", "")
+        with pytest.raises(ValueError, match="BOT_TOKEN"):
+            Settings()
+
+    def test_plain_http_public_url_fails(self, prod_env):
+        """Ссылки подписки прошиваются в роутеры — там не может быть http."""
+        prod_env.setenv("API_PUBLIC_BASE_URL", "http://localhost:8000")
+        with pytest.raises(ValueError, match="API_PUBLIC_BASE_URL"):
+            Settings()
+
+    def test_webhook_mode_requires_secret(self, prod_env):
+        prod_env.setenv("BOT_MODE", "webhook")
+        prod_env.setenv("BOT_WEBHOOK_BASE_URL", "https://api.example.ru")
+        prod_env.setenv("BOT_WEBHOOK_SECRET", "")
+        with pytest.raises(ValueError, match="BOT_WEBHOOK_SECRET"):
+            Settings()
+
+    def test_dev_env_skips_checks(self, monkeypatch):
+        monkeypatch.setenv("APP_ENV", "dev")
+        monkeypatch.setenv("BOT_TOKEN", "")
+        monkeypatch.setenv("API_PUBLIC_BASE_URL", "http://localhost:8000")
+        assert Settings().app.is_prod is False
+
+
+class TestEncryptionKey:
+    def test_invalid_base64_rejected(self, monkeypatch):
+        monkeypatch.setenv("SECURITY_ENCRYPTION_KEY", "не base64!")
+        with pytest.raises(ValueError, match="base64"):
+            Settings()
+
+    def test_wrong_length_rejected(self, monkeypatch):
+        monkeypatch.setenv("SECURITY_ENCRYPTION_KEY", "c2hvcnQ=")  # 5 байт
+        with pytest.raises(ValueError, match="32 байта"):
+            Settings()
