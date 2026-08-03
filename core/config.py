@@ -203,6 +203,41 @@ class SubscriptionSettings(BaseSettings):
     """Обязательный префикс имени узла — по нему фильтрует клиент на роутере."""
 
 
+class PlategaSettings(BaseSettings):
+    """Реквизиты и пути API PLATEGA (docs.platega.io).
+
+    Пути вынесены в настройки намеренно: в документации соседствуют
+    `/v2/transaction/process` и `/transaction/process`, и провайдер может
+    поменять префикс без нашего релиза.
+    """
+
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="PLATEGA_")
+
+    merchant_id: str = ""
+    secret: SecretStr = SecretStr("")
+    base_url: str = "https://app.platega.io"
+    create_path: str = "/v2/transaction/process"
+    """Создание ссылки без заданного метода — способ выбирает клиент."""
+    create_path_with_method: str = "/transaction/process"
+    status_path: str = "/transaction"
+    default_method: str = "any"
+    """any | sbp | card | international | crypto либо числовой код провайдера."""
+    timeout_sec: float = 20.0
+    allowed_ips: list[str] = Field(default_factory=list)
+    """Необязательный белый список IP для колбэков (через запятую)."""
+
+    @field_validator("allowed_ips", mode="before")
+    @classmethod
+    def _split_ips(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [chunk.strip() for chunk in value.split(",") if chunk.strip()]
+        return value
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.merchant_id and self.secret.get_secret_value())
+
+
 class SentrySettings(BaseSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SENTRY_")
 
@@ -228,6 +263,7 @@ class Settings(BaseSettings):
     api: ApiSettings = Field(default_factory=ApiSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     subscription: SubscriptionSettings = Field(default_factory=SubscriptionSettings)
+    platega: PlategaSettings = Field(default_factory=PlategaSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
 
     @model_validator(mode="after")

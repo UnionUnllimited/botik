@@ -17,11 +17,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.routes import health
+from api.routes import health, webhooks
 from core.config import settings
 from core.db import check_database, dispose_engine
 from core.logging import configure_logging
 from core.metrics import api_request_seconds, api_requests_total
+from core.notifications import close_bot
+from core.payments import close_providers
 from core.redis_client import check_redis, close_redis
 from core.sentry import init_sentry
 
@@ -42,6 +44,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await close_providers()
+        await close_bot()
         await close_redis()
         await dispose_engine()
         log.info("api.shutdown")
@@ -95,6 +99,7 @@ def create_app() -> FastAPI:
     )
     app.middleware("http")(observability_middleware)
     app.include_router(health.router)
+    app.include_router(webhooks.router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:

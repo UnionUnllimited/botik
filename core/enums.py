@@ -51,8 +51,9 @@ class OrderItemType(StrEnum):
 
 
 class PaymentProviderName(StrEnum):
+    PLATEGA = "platega"
+    """Основной провайдер: карты, СБП, международные платежи, крипта."""
     YOOKASSA = "yookassa"
-    SBP = "sbp"
     CRYPTOBOT = "cryptobot"
     COD = "cod"
     """Оплата при получении — деньги забирает служба доставки."""

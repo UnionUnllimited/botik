@@ -41,6 +41,8 @@ class Payment(IntPkMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)
 
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    """Срок жизни платёжной ссылки (у PLATEGA — 15 минут)."""
     paid_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     refunded_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     processed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
@@ -58,6 +60,7 @@ class Payment(IntPkMixin, TimestampMixin, Base):
         Index("ix_payments_user_id", "user_id"),
         Index("ix_payments_order_id", "order_id"),
         Index("ix_payments_status_created_at", "status", "created_at"),
+        Index("ix_payments_status_expires_at", "status", "expires_at"),
     )
 
     @property

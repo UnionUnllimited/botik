@@ -19,7 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from core.config import settings
 from core.metrics import worker_job_errors_total, worker_job_seconds
-from worker.tasks import maintenance
+from worker.tasks import maintenance, payments, subscriptions
 
 log = structlog.get_logger("worker.scheduler")
 
@@ -71,6 +71,36 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(hours=1),
         id="fleet_summary",
         name="Сводка по устройствам",
+    )
+    scheduler.add_job(
+        instrumented("sync_pending_payments", payments.sync_pending_payments),
+        IntervalTrigger(minutes=3),
+        id="sync_pending_payments",
+        name="Досмотр висящих платежей",
+    )
+    scheduler.add_job(
+        instrumented("expire_payments", payments.expire_payments),
+        IntervalTrigger(minutes=15),
+        id="expire_payments",
+        name="Погасить просроченные платёжные ссылки",
+    )
+    scheduler.add_job(
+        instrumented("refresh_subscription_statuses", subscriptions.refresh_statuses),
+        IntervalTrigger(minutes=30),
+        id="refresh_subscription_statuses",
+        name="Пересчёт статусов подписок",
+    )
+    scheduler.add_job(
+        instrumented("subscription_reminders", subscriptions.send_reminders),
+        CronTrigger(hour=7, minute=0),
+        id="subscription_reminders",
+        name="Напоминания об окончании подписки (10:00 МСК)",
+    )
+    scheduler.add_job(
+        instrumented("expire_unactivated", subscriptions.expire_unactivated),
+        CronTrigger(hour=4, minute=10),
+        id="expire_unactivated",
+        name="Сгорание неактивированных подписок",
     )
     scheduler.add_job(
         instrumented("cleanup_heartbeats", maintenance.cleanup_heartbeats),

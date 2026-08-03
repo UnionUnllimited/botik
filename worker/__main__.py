@@ -13,6 +13,8 @@ from core.config import settings
 from core.db import check_database, dispose_engine
 from core.logging import configure_logging
 from core.metrics import METRICS_CONTENT_TYPE, render_metrics
+from core.notifications import close_bot
+from core.payments import close_providers
 from core.redis_client import check_redis, close_redis
 from core.sentry import init_sentry
 from worker.scheduler import create_scheduler
@@ -67,6 +69,8 @@ async def main() -> int:
     finally:
         scheduler.shutdown(wait=True)
         await runner.cleanup()
+        await close_providers()
+        await close_bot()
         await close_redis()
         await dispose_engine()
         log.info("worker.stopped")

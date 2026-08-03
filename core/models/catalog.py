@@ -72,8 +72,12 @@ class Plan(IntPkMixin, TimestampMixin, Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
     def apply_to(self, start: dt.datetime) -> dt.datetime:
-        """Дата окончания при старте `start`: календарные месяцы + бонусные дни."""
-        return add_period(start, months=self.months, days=self.extra_days)
+        """Дата окончания при старте `start`: календарные месяцы + бонусные дни.
+
+        `or 0` не декоративный: у ещё не сохранённого объекта серверные
+        значения по умолчанию не проставлены и поле равно None.
+        """
+        return add_period(start, months=self.months or 0, days=self.extra_days or 0)
 
     @property
     def price_per_month(self) -> Decimal:
