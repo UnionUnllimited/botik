@@ -13,6 +13,7 @@ import signal
 
 import structlog
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -63,12 +64,26 @@ async def on_startup(bot: Bot) -> None:
     me = await bot.get_me()
     log.info("bot.started", username=me.username, mode=settings.bot.mode, env=settings.app.env)
     if settings.bot.mode == "webhook":
-        await bot.set_webhook(
-            url=settings.bot.webhook_url,
-            secret_token=settings.bot.webhook_secret.get_secret_value(),
-            drop_pending_updates=settings.bot.drop_pending_updates,
-            allowed_updates=["message", "edited_message", "callback_query", "my_chat_member"],
-        )
+        try:
+            await bot.set_webhook(
+                url=settings.bot.webhook_url,
+                secret_token=settings.bot.webhook_secret.get_secret_value(),
+                drop_pending_updates=settings.bot.drop_pending_updates,
+                allowed_updates=["message", "edited_message", "callback_query", "my_chat_member"],
+            )
+        except TelegramBadRequest as exc:
+            # Телеграм отказывает по трём причинам: домен не резолвится с их стороны,
+            # сертификат невалиден или адрес недоступен. Трейсбек этого не объясняет.
+            log.error(
+                "bot.webhook_rejected",
+                url=settings.bot.webhook_url,
+                reason=str(exc),
+                hint=(
+                    "Проверьте: A-запись домена разошлась по публичным DNS, "
+                    "сертификат выпущен, порт 443 доступен снаружи"
+                ),
+            )
+            raise
         log.info("bot.webhook_set", url=settings.bot.webhook_url)
 
 
