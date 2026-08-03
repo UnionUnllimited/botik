@@ -3,7 +3,8 @@ SHELL := /bin/bash
 
 COMPOSE      := docker compose
 COMPOSE_DEV  := docker compose -f docker-compose.yml -f docker-compose.dev.yml
-PY           := python
+# На сервере Python не нужен — он требуется только для локальных тестов и линтера.
+PY           := $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python3)
 
 .PHONY: help
 help: ## Список команд
@@ -13,11 +14,13 @@ help: ## Список команд
 # --- окружение -------------------------------------------------------------
 .PHONY: env
 env: ## Создать .env из шаблона и сгенерировать ключи
-	@$(PY) scripts/init_env.py
+	@bash deploy/init-env.sh
 
 .PHONY: secrets
-secrets: ## Показать свежесгенерированные ключи (для ручной вставки в .env)
-	@$(PY) -c "import base64,os,secrets;print('SECURITY_SECRET_KEY=',secrets.token_urlsafe(48),sep='');print('SECURITY_ENCRYPTION_KEY=',base64.b64encode(os.urandom(32)).decode(),sep='');print('BOT_WEBHOOK_SECRET=',secrets.token_urlsafe(32),sep='')"
+secrets: ## Показать свежие ключи (для ручной вставки в .env)
+	@printf 'SECURITY_SECRET_KEY=%s\n' "$$(head -c 36 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_')"
+	@printf 'SECURITY_ENCRYPTION_KEY=%s\n' "$$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+	@printf 'BOT_WEBHOOK_SECRET=%s\n' "$$(head -c 24 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_')"
 
 # --- прод ------------------------------------------------------------------
 .PHONY: build
