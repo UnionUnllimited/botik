@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import secrets
 from decimal import Decimal, InvalidOperation
@@ -22,11 +23,18 @@ from api.admin.auth import (
 )
 from api.admin.templating import render
 from api.deps import get_session, get_transaction
-from core.enums import OFFERED_DELIVERY_METHODS, AdminRole
-from core.models import AdminUser, AuditLog
+from core.dates import utcnow
+from core.enums import (
+    OFFERED_DELIVERY_METHODS,
+    AdminRole,
+    SubscriptionEventType,
+    SubscriptionStatus,
+)
+from core.models import AdminUser, AuditLog, Subscription
 from core.security import hash_password
 from core.services import delivery as delivery_service
 from core.services import settings_service
+from core.services import subscriptions as subscription_service
 
 router = APIRouter()
 log = structlog.get_logger("admin.system")
@@ -62,6 +70,7 @@ async def settings_page(
         values=values,
         descriptions=settings_service.DESCRIPTIONS,
         delivery_options=await delivery_service.get_options(session, only_enabled=False),
+        bulk_filters=BULK_FILTERS,
         complex_keys={
             key for key, value in settings_service.DEFAULTS.items() if isinstance(value, (dict, list))
         },
@@ -113,6 +122,75 @@ def _money(raw: str, fallback: str) -> str:
         return str(Decimal(raw.replace(",", ".").strip()).quantize(Decimal("0.01")))
     except (InvalidOperation, AttributeError):
         return str(fallback)
+
+
+# ------------------------------------------------- массовое продление подписок
+
+BULK_FILTERS = {
+    "active": "активные",
+    "expiring": "истекают за 7 дней",
+    "grace": "льготный период",
+    "all": "все, кроме отменённых",
+}
+
+
+def _bulk_query(name: str, now: dt.datetime):
+    query = select(Subscription)
+    match name:
+        case "expiring":
+            return query.where(
+                Subscription.status == SubscriptionStatus.ACTIVE,
+                Subscription.expires_at > now,
+                Subscription.expires_at <= now + dt.timedelta(days=7),
+            )
+        case "grace":
+            return query.where(Subscription.status == SubscriptionStatus.GRACE)
+        case "all":
+            return query.where(Subscription.status != SubscriptionStatus.CANCELLED)
+        case _:
+            return query.where(Subscription.status == SubscriptionStatus.ACTIVE)
+
+
+@router.post("/settings/bulk-days", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def bulk_add_days(
+    request: Request,
+    principal: Principal = Depends(require_section("subscriptions")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    """Компенсация всем после аварии. Живёт в настройках: делается раз в полгода."""
+    form = await request.form()
+    name = form_value(form, "filter", "active")
+    comment = form_value(form, "comment") or "Массовая компенсация"
+    try:
+        days = int(form_value(form, "days", "0"))
+    except ValueError:
+        days = 0
+
+    if days <= 0 or days > 60:
+        return RedirectResponse("/admin/settings?err=Укажите+от+1+до+60+дней", status_code=303)
+
+    now = utcnow()
+    items = list(await session.scalars(_bulk_query(name, now)))
+    for subscription in items:
+        subscription_service.add_days(
+            subscription,
+            days,
+            event=SubscriptionEventType.MANUAL_ADJUST,
+            admin_id=principal.admin.id,
+            comment=comment,
+            now=now,
+        )
+
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="subscription.bulk_adjust",
+        entity_type="subscription",
+        new={"filter": name, "days": days, "count": len(items), "comment": comment},
+        request=request,
+    )
+    log.info("admin.subscriptions.bulk", filter=name, days=days, count=len(items))
+    return RedirectResponse(f"/admin/settings?ok=Изменено+подписок:+{len(items)}", status_code=303)
 
 
 @router.post("/settings", include_in_schema=False, dependencies=[Depends(verify_csrf)])

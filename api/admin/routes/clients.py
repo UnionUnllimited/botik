@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,17 +15,98 @@ from api.admin import audit
 from api.admin.auth import Principal, form_value, require_section, verify_csrf
 from api.admin.templating import render
 from api.deps import get_session, get_transaction
+from core.config import settings
 from core.dates import utcnow
-from core.enums import SubscriptionEventType
+from core.enums import SubscriptionEventType, SubscriptionStatus
 from core.models import Device, Order, Payment, Plan, Referral, Subscription, Ticket, User
 from core.notifications import send_message
 from core.security import normalize_mac
 from core.services import subscriptions as subscription_service
+from core.services.stats import PAID_STATUSES as PAID_ORDER_STATUSES
 
 router = APIRouter(prefix="/clients")
 log = structlog.get_logger("admin.clients")
 
 PAGE_SIZE = 30
+
+
+LIVE_SUBSCRIPTION_STATUSES = (
+    SubscriptionStatus.ACTIVE,
+    SubscriptionStatus.GRACE,
+    SubscriptionStatus.PENDING,
+)
+
+CLIENT_FILTERS = {
+    "": "все",
+    "expiring": "истекают за 7 дней",
+    "grace": "льготный период",
+    "pending": "ждут активации",
+    "expired": "истёкшие",
+    "none": "без подписки",
+}
+
+
+def _subscription_filter(query, name: str, now: dt.datetime):
+    """Отбор клиентов по состоянию подписки.
+
+    Раздел подписок жил отдельным списком, но поддержка всё равно шла
+    от клиента: искала человека, а не строку подписки. Поэтому выборки
+    переехали сюда фильтрами.
+    """
+    owners = select(Subscription.user_id)
+    match name:
+        case "expiring":
+            condition = owners.where(
+                Subscription.status == SubscriptionStatus.ACTIVE,
+                Subscription.expires_at > now,
+                Subscription.expires_at <= now + dt.timedelta(days=7),
+            )
+        case "grace":
+            condition = owners.where(Subscription.status == SubscriptionStatus.GRACE)
+        case "pending":
+            condition = owners.where(Subscription.status == SubscriptionStatus.PENDING)
+        case "expired":
+            condition = owners.where(Subscription.status == SubscriptionStatus.EXPIRED)
+        case "none":
+            return query.where(User.id.notin_(owners))
+        case _:
+            return query
+    return query.where(User.id.in_(condition))
+
+
+async def _client_summaries(
+    session: AsyncSession, users: list[User]
+) -> tuple[dict[int, Subscription], dict[int, Device], dict[int, tuple[int, object]]]:
+    """Подписка, роутер и оплаты для списка клиентов — тремя запросами, не в цикле."""
+    ids = [user.id for user in users]
+    if not ids:
+        return {}, {}, {}
+
+    subscriptions: dict[int, Subscription] = {}
+    rows = await session.scalars(
+        select(Subscription)
+        .where(Subscription.user_id.in_(ids), Subscription.status.in_(LIVE_SUBSCRIPTION_STATUSES))
+        .order_by(Subscription.expires_at.desc().nulls_last())
+        .options(selectinload(Subscription.plan))
+    )
+    for item in rows:
+        # Первая по порядку — самая поздняя, она и показывается в карточке.
+        subscriptions.setdefault(item.user_id, item)
+
+    devices: dict[int, Device] = {}
+    for device in await session.scalars(
+        select(Device).where(Device.user_id.in_(ids)).order_by(Device.id.desc())
+    ):
+        if device.user_id is not None:
+            devices.setdefault(device.user_id, device)
+
+    money_rows = await session.execute(
+        select(Order.user_id, func.count(), func.coalesce(func.sum(Order.total), 0))
+        .where(Order.user_id.in_(ids), Order.status.in_(PAID_ORDER_STATUSES))
+        .group_by(Order.user_id)
+    )
+    spend = {row[0]: (row[1], row[2]) for row in money_rows}
+    return subscriptions, devices, spend
 
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
@@ -33,10 +116,12 @@ async def client_list(
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     query_text = request.query_params.get("q", "").strip()
+    active_filter = request.query_params.get("filter", "").strip()
     page = max(int(request.query_params.get("page", "1") or 1), 1)
+    now = utcnow()
 
-    query = select(User)
-    counter = select(func.count()).select_from(User)
+    query = _subscription_filter(select(User), active_filter, now)
+    counter = _subscription_filter(select(func.count()).select_from(User), active_filter, now)
 
     if query_text:
         pattern = f"%{query_text}%"
@@ -63,16 +148,24 @@ async def client_list(
     users = list(
         await session.scalars(query.order_by(User.id.desc()).limit(PAGE_SIZE).offset((page - 1) * PAGE_SIZE))
     )
+    subscriptions, devices, spend = await _client_summaries(session, users)
 
     return render(
         request,
         "clients.html",
         principal,
         users=users,
+        subscriptions=subscriptions,
+        devices=devices,
+        spend=spend,
+        filters=CLIENT_FILTERS,
+        active_filter=active_filter,
         query_text=query_text,
         page=page,
         pages=max((total + PAGE_SIZE - 1) // PAGE_SIZE, 1),
         total=total,
+        online_threshold=settings.subscription.heartbeat_offline_min,
+        now=now,
     )
 
 

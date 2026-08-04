@@ -109,34 +109,76 @@
 <p class="muted">Изменения видны в боте сразу — деплой не нужен.</p>
 
 <h2>Роутеры</h2>
-{% for product in products %}
-  <details {% if loop.first %}open{% endif %}>
-    <summary style="cursor:pointer; padding:8px 0">
-      <b>{{ product.title }}</b> — {{ product.price | money }}
-      {% if product.is_active %}<span class="badge ok">в продаже</span>{% else %}<span class="badge muted">скрыт</span>{% endif %}
-      <span class="muted">остаток: {{ product.stock }}</span>
-    </summary>
-    {{ product_form(product, groups, vat_codes, csrf_field, csrf_token) }}
-  </details>
-{% endfor %}
-<details>
-  <summary style="cursor:pointer; padding:8px 0"><b>+ добавить роутер</b></summary>
+{% if products %}
+<div class="cards" style="grid-template-columns:repeat(auto-fill, minmax(270px, 1fr))">
+  {% for product in products %}
+  <div class="card {{ 'tone-ok' if product.is_active else '' }}">
+    <div style="display:flex; align-items:start; gap:8px">
+      <div style="min-width:0">
+        <b style="font-size:15px">{{ product.title }}</b>
+        <div class="hint">{{ product.subtitle or product.model_code or '—' }}</div>
+      </div>
+      <span style="margin-left:auto">
+        {% if product.is_active %}<span class="badge ok">в продаже</span>
+        {% else %}<span class="badge muted">скрыт</span>{% endif %}
+      </span>
+    </div>
+    <div class="value" style="font-size:22px; margin-top:10px">{{ product.price | money }}</div>
+    <div class="hint">
+      {% if product.old_price %}<s>{{ product.old_price | money }}</s> · {% endif %}
+      остаток: <b class="{{ 'muted' if product.stock else 'dim' }}">{{ product.stock }}</b>
+      {% if not product.stock and product.allow_preorder %} · предзаказ разрешён{% endif %}
+    </div>
+    <details style="margin-top:10px">
+      <summary>Изменить</summary>
+      {{ product_form(product, groups, vat_codes, csrf_field, csrf_token) }}
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">Роутеров пока нет — добавьте первый, он сразу появится в боте.</div>
+{% endif %}
+<details style="margin-top:14px">
+  <summary><b>+ добавить роутер</b></summary>
   {{ product_form(None, groups, vat_codes, csrf_field, csrf_token) }}
 </details>
 
 <h2>Тарифы подписки</h2>
-{% for plan in plans %}
-  <details>
-    <summary style="cursor:pointer; padding:8px 0">
-      <b>{{ plan.title }}</b> — {{ plan.price | money }}
-      <span class="muted">{{ plan.months }} мес{% if plan.extra_days %} + {{ plan.extra_days }} дн{% endif %}</span>
-      {% if plan.is_active %}<span class="badge ok">активен</span>{% else %}<span class="badge muted">скрыт</span>{% endif %}
-    </summary>
-    {{ plan_form(plan, groups, vat_codes, csrf_field, csrf_token) }}
-  </details>
-{% endfor %}
-<details>
-  <summary style="cursor:pointer; padding:8px 0"><b>+ добавить тариф</b></summary>
+{% if plans %}
+<div class="cards" style="grid-template-columns:repeat(auto-fill, minmax(240px, 1fr))">
+  {% for plan in plans %}
+  <div class="card {{ 'tone-accent' if plan.is_default else ('tone-ok' if plan.is_active else '') }}">
+    <div style="display:flex; align-items:start; gap:8px">
+      <div style="min-width:0">
+        <b style="font-size:15px">{{ plan.title }}</b>
+        <div class="hint">
+          {{ plan.months }} мес{% if plan.extra_days %} + {{ plan.extra_days }} дн{% endif %}
+        </div>
+      </div>
+      <span style="margin-left:auto">
+        {% if plan.is_active %}<span class="badge ok">активен</span>
+        {% else %}<span class="badge muted">скрыт</span>{% endif %}
+      </span>
+    </div>
+    <div class="value" style="font-size:22px; margin-top:10px">{{ plan.price | money }}</div>
+    <div class="hint">
+      {% if plan.months > 1 %}{{ (plan.price / plan.months) | round | int | money }}/мес{% endif %}
+      {% if plan.discount_percent %} · скидка {{ plan.discount_percent | round | int }}%{% endif %}
+      {% if plan.is_default %} · выделен как выгодный{% endif %}
+    </div>
+    <details style="margin-top:10px">
+      <summary>Изменить</summary>
+      {{ plan_form(plan, groups, vat_codes, csrf_field, csrf_token) }}
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">Тарифов пока нет — без них подписку не купить.</div>
+{% endif %}
+<details style="margin-top:14px">
+  <summary><b>+ добавить тариф</b></summary>
   {{ plan_form(None, groups, vat_codes, csrf_field, csrf_token) }}
 </details>
 {% endblock %}

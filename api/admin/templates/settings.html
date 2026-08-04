@@ -64,4 +64,32 @@
   {% endfor %}
   <button type="submit">Сохранить всё</button>
 </form>
+
+{% if principal.can('subscriptions') %}
+<h2>Массовое продление</h2>
+<p class="muted">Добавляет дни всем подпискам выбранной группы. Используется как
+компенсация после аварии — действие попадает в журнал.</p>
+<form method="post" action="/admin/settings/bulk-days" class="panel">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <div class="toolbar" style="margin:0">
+    <div>
+      <label for="bulk-filter">Кому</label>
+      <select id="bulk-filter" name="filter">
+        {% for key, title in bulk_filters.items() %}
+        <option value="{{ key }}">{{ title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="bulk-days">Дней</label>
+      <input id="bulk-days" name="days" type="number" min="1" max="60" value="3" style="width:90px">
+    </div>
+    <div style="flex:1; min-width:220px">
+      <label for="bulk-comment">Причина</label>
+      <input id="bulk-comment" name="comment" style="width:100%" placeholder="простой сервиса 14 августа">
+    </div>
+    <button type="submit">Добавить всем</button>
+  </div>
+</form>
+{% endif %}
 {% endblock %}

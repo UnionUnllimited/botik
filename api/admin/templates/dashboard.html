@@ -12,7 +12,7 @@
   <h1>Дашборд</h1>
   <span class="spacer"></span>
   <a class="btn ghost small" href="/admin/orders">Все заказы</a>
-  <a class="btn ghost small" href="/admin/subscriptions">Все подписки</a>
+  <a class="btn ghost small" href="/admin/clients">Все клиенты</a>
 </div>
 
 <div class="cards">
@@ -71,7 +71,7 @@
   <div class="card {{ 'tone-warn' if data.expiring_7d else '' }}">
     <div class="label">Истекают за 7 дней</div>
     <div class="value">{{ data.expiring_7d }}</div>
-    <div class="hint"><a href="/admin/subscriptions?filter=expiring">посмотреть</a></div>
+    <div class="hint"><a href="/admin/clients?filter=expiring">посмотреть</a></div>
   </div>
   <div class="card">
     <div class="label">Ждут активации</div>

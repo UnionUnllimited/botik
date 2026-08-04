@@ -31,7 +31,6 @@ class TestAccessWithoutSession:
             "/admin/",
             "/admin/orders",
             "/admin/clients",
-            "/admin/subscriptions",
             "/admin/devices",
             "/admin/nodes",
             "/admin/remnawave",
