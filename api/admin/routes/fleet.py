@@ -21,6 +21,7 @@ from api.admin.templating import render
 from api.deps import get_session, get_transaction
 from core.config import settings
 from core.dates import utcnow
+from core.enums import DeviceStatus
 from core.models import Device, DeviceEvent
 from core.security import normalize_mac
 from core.services import routers as router_service
@@ -185,6 +186,101 @@ async def poll_now(
         payload={"by": principal.admin.login},
     )
     return RedirectResponse(f"/admin/fleet/{device_id}?ok=Показания+обновлены", status_code=303)
+
+
+@router.post("/{device_id}/bind", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def bind_client(
+    device_id: int,
+    request: Request,
+    principal: Principal = Depends(require_section("devices")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    """Привязка роутера к клиенту вручную — до самостоятельной активации в боте."""
+    device = await session.get(Device, device_id)
+    if device is None:
+        return RedirectResponse("/admin/fleet?err=Роутер+не+найден", status_code=303)
+
+    form = await request.form()
+    query = form_value(form, "client")
+    user = await router_service.find_user(session, query)
+    if user is None:
+        return RedirectResponse(
+            f"/admin/fleet/{device_id}?err=Клиент+не+найден:+{query[:40]}", status_code=303
+        )
+
+    previous = device.user_id
+    if previous and previous != user.id:
+        # Один MAC — один аккаунт: молча переклеивать устройство нельзя.
+        router_service.add_event(
+            session,
+            device_id=device.id,
+            mac=device.mac,
+            level="warning",
+            message=f"Устройство переписано с клиента #{previous} на #{user.id}",
+            payload={"by": principal.admin.login},
+        )
+
+    device.user_id = user.id
+    if device.status is DeviceStatus.NEW:
+        device.status = DeviceStatus.ASSIGNED
+
+    router_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message=f"Привязан клиент {user.display_name}",
+        payload={"by": principal.admin.login, "user_id": user.id},
+    )
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="fleet.client_bound",
+        entity_type="device",
+        entity_id=device.id,
+        old={"user_id": previous},
+        new={"user_id": user.id, "mac": device.mac},
+        request=request,
+    )
+    log.info("fleet.client_bound", device_id=device.id, user_id=user.id)
+    return RedirectResponse(
+        f"/admin/fleet/{device_id}?ok=Клиент+{user.display_name}+привязан", status_code=303
+    )
+
+
+@router.post("/{device_id}/unbind", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def unbind_client(
+    device_id: int,
+    request: Request,
+    principal: Principal = Depends(require_section("devices")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    device = await session.get(Device, device_id)
+    if device is None:
+        return RedirectResponse("/admin/fleet?err=Роутер+не+найден", status_code=303)
+
+    previous = device.user_id
+    device.user_id = None
+    device.status = DeviceStatus.NEW if device.activated_at is None else DeviceStatus.REVOKED
+    router_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="warning",
+        message="Клиент отвязан",
+        payload={"by": principal.admin.login},
+    )
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="fleet.client_unbound",
+        entity_type="device",
+        entity_id=device.id,
+        old={"user_id": previous},
+        new={"user_id": None},
+        request=request,
+    )
+    return RedirectResponse(f"/admin/fleet/{device_id}?ok=Клиент+отвязан", status_code=303)
 
 
 @router.post("/{device_id}/note", include_in_schema=False, dependencies=[Depends(verify_csrf)])

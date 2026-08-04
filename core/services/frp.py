@@ -186,11 +186,27 @@ class RouterApi:
         return f"http://{self._config.visitor_host}:{self.port}"
 
     async def _request(self, path: str, *, method: str = "GET", **kwargs: Any) -> httpx.Response:
-        async with httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=httpx.Timeout(self._config.router_http_timeout_sec),
-        ) as client:
-            return await client.request(method, path, **kwargs)
+        """Сначала HTTP, затем HTTPS.
+
+        Часть прошивок отдаёт панель только по HTTPS с самоподписанным
+        сертификатом, поэтому проверка сертификата на втором заходе выключена:
+        мы уже внутри туннеля к конкретному роутеру, подлинность которого
+        подтверждена ключом STCP, а имя в сертификате — localhost.
+        """
+        host = self._config.visitor_host
+        timeout = httpx.Timeout(self._config.router_http_timeout_sec)
+        last_error: Exception | None = None
+
+        for scheme, verify in (("http", True), ("https", False)):
+            try:
+                async with httpx.AsyncClient(
+                    base_url=f"{scheme}://{host}:{self.port}", timeout=timeout, verify=verify
+                ) as client:
+                    return await client.request(method, path, **kwargs)
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                last_error = exc
+
+        raise FrpError(f"Роутер недоступен через туннель: {last_error}")
 
     async def stats(self) -> dict[str, Any]:
         """Снимок состояния роутера: загрузка, память, клиенты, трафик."""

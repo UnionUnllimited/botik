@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceServiceStatus, DeviceStatus
-from core.models import Device, DeviceEvent, Heartbeat
+from core.models import Device, DeviceEvent, Heartbeat, User
 from core.security import normalize_mac
 from core.services.frp import FrpProxy, proxy_names_for
 
@@ -239,6 +239,32 @@ async def mark_offline(session: AsyncSession, device: Device) -> bool:
     )
     log.info("router.offline", mac=device.mac)
     return True
+
+
+async def find_user(session: AsyncSession, query: str) -> User | None:
+    """Ищет клиента по TG-id, телефону, @username или внутреннему id."""
+    cleaned = query.strip().lstrip("@")
+    if not cleaned:
+        return None
+
+    if cleaned.isdigit():
+        number = int(cleaned)
+        user = await session.scalar(select(User).where(User.tg_id == number))
+        if user is not None:
+            return user
+        user = await session.get(User, number)
+        if user is not None:
+            return user
+
+    digits = "".join(ch for ch in cleaned if ch.isdigit())
+    if len(digits) >= 10:
+        # Телефон мог быть записан как +7..., 8... или без разделителей.
+        tail = digits[-10:]
+        user = await session.scalar(select(User).where(User.phone.like(f"%{tail}")))
+        if user is not None:
+            return user
+
+    return await session.scalar(select(User).where(User.username.ilike(cleaned)))
 
 
 async def recent_events(

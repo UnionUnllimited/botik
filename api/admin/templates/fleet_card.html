@@ -109,6 +109,30 @@
         <td class="muted" style="font-size:12px">{{ device.frp_luci_name or '—' }}<br>{{ device.frp_ssh_name or '—' }}</td></tr>
     </table>
 
+    <h2>Клиент</h2>
+    {% if device.user %}
+    <p>
+      <a href="/admin/clients/{{ device.user_id }}">{{ device.user.display_name }}</a>
+      {% if device.user.phone %}<span class="muted">· {{ device.user.phone | phone }}</span>{% endif %}
+    </p>
+    <form method="post" action="/admin/fleet/{{ device.id }}/unbind"
+          onsubmit="return confirm('Отвязать клиента от этого роутера?')">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <button class="ghost" type="submit">Отвязать</button>
+    </form>
+    {% else %}
+    <form method="post" action="/admin/fleet/{{ device.id }}/bind">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <label for="client">TG-id, телефон или @username</label>
+      <input id="client" name="client" style="width:100%" placeholder="+7 900 123-45-67" required>
+      <button type="submit" style="margin-top:12px">Привязать клиента</button>
+    </form>
+    <p class="muted" style="font-size:12px">
+      Обычно клиент привязывает роутер сам при активации. Здесь — если нужно
+      сделать это за него.
+    </p>
+    {% endif %}
+
     <h2>Действия</h2>
     <form method="post" action="/admin/fleet/{{ device.id }}/poll">
       <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
