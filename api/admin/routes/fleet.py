@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -85,7 +87,11 @@ async def fleet_list(
     frps_error: str | None = None
     if settings.frp.is_configured:
         try:
-            server_info = await dashboard().server_info()
+            # Жёсткий предел: страница не должна ждать внешний сервис.
+            # Статусы роутеров всё равно берутся из базы, их собирает воркер.
+            server_info = await asyncio.wait_for(dashboard().server_info(), timeout=3)
+        except TimeoutError:
+            frps_error = "дашборд не ответил за 3 секунды"
         except Exception as exc:  # noqa: BLE001 — страница обязана открыться и без frps
             frps_error = str(exc)[:200]
 
