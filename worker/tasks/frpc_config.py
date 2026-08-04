@@ -105,7 +105,12 @@ async def sync_frpc_config() -> int:
         if not await asyncio.to_thread(write_if_changed):
             return 0
     except OSError as exc:
-        log.warning("frpc.config_write_failed", error=str(exc))
+        log.error(
+            "frpc.config_write_failed",
+            path=str(CONFIG_PATH),
+            error=str(exc),
+            hint="Проверьте права на том frpc_config: он должен принадлежать пользователю app",
+        )
         return 0
 
     try:

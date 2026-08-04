@@ -31,6 +31,10 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Каталог для конфига visitor-туннелей: docker переносит владельца из образа
+# в пустой том, иначе воркер не сможет туда писать от пользователя app.
+RUN mkdir -p /frpc && chown app:app /frpc
+
 WORKDIR /app
 COPY --chown=app:app . .
 
