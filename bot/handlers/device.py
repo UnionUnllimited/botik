@@ -16,12 +16,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards import inline
+from bot.states import ActivationFlow
 from bot.texts import ru
 from bot.utils import screen
 from core.config import settings
 from core.dates import days_left, format_date_ru, utcnow
 from core.enums import DeviceServiceStatus, DeviceStatus, SubscriptionStatus
 from core.models import Device, Subscription, User
+from core.services import activation
 from core.services import subscriptions as subscription_service
 
 router = Router(name="device")
@@ -67,14 +69,26 @@ def _subscription_line(subscription: Subscription | None) -> str:
 async def render(event: Message | CallbackQuery, session: AsyncSession, user: User) -> None:
     device = await _device_of(session, user.id)
     subscription = await subscription_service.get_current(session, user.id)
+    paid_but_waiting = subscription is not None and subscription.status is SubscriptionStatus.PENDING
 
-    if device is None:
-        # Оплаченная подписка без устройства значит «роутер едет» — так и пишем.
-        waiting = subscription is not None and subscription.status is SubscriptionStatus.PENDING
+    if device is None or device.activated_at is None:
+        # Подписка оплачена, но отсчёт не начат — значит роутер ещё не включали.
+        # Предлагаем активацию даже без привязанного устройства: MAC клиент
+        # видит на наклейке, а привязку мог не успеть сделать логист.
+        if paid_but_waiting:
+            text, can_activate = ru.DEVICE_READY_TO_ACTIVATE, True
+        elif device is not None:
+            text, can_activate = ru.DEVICE_WAITING, False
+        else:
+            text, can_activate = ru.DEVICE_NONE, False
         await screen.show(
             event,
-            ru.DEVICE_WAITING if waiting else ru.DEVICE_NONE,
-            markup=inline.device_actions(has_device=False, has_subscription=subscription is not None),
+            text,
+            markup=inline.device_actions(
+                has_device=False,
+                has_subscription=subscription is not None,
+                can_activate=can_activate,
+            ),
         )
         return
 
@@ -120,3 +134,44 @@ async def show_device(message: Message, session: AsyncSession, user: User, state
     """Вход с прежней reply-клавиатуры — она ещё висит у старых клиентов."""
     await state.clear()
     await render(message, session, user)
+
+
+# ------------------------------------------------------------------ активация
+
+
+@router.callback_query(inline.NavCB.filter(F.action == "activate"))
+async def ask_mac(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(ActivationFlow.mac)
+    await screen.show(callback, ru.ACTIVATION_ASK_MAC, markup=inline.waiting_for_text())
+
+
+@router.message(ActivationFlow.mac, F.text)
+async def submit_mac(message: Message, session: AsyncSession, user: User, state: FSMContext) -> None:
+    """Настройка идёт до минуты, поэтому сначала показываем, что процесс пошёл."""
+    await screen.show(message, ru.ACTIVATION_WORKING)
+
+    try:
+        device = await activation.activate(session, user=user, raw_mac=message.text or "")
+    except activation.ActivationError as exc:
+        await screen.show(
+            message,
+            ru.ACTIVATION_FAILED.format(reason=exc),
+            markup=inline.activation_retry(),
+            drop_incoming=False,
+        )
+        return
+
+    await state.clear()
+    subscription = await subscription_service.get_current(session, user.id)
+    expires_at = subscription.expires_at if subscription else None
+    plan = subscription.plan.title if subscription and subscription.plan else "—"
+    until = format_date_ru(expires_at) if expires_at else "—"
+    days = ru.days_phrase(max(days_left(expires_at), 0)) if expires_at else "—"
+
+    await screen.show(
+        message,
+        ru.activation_done(model=device.model or "Роутер", plan=plan, until=until, days=days),
+        markup=inline.device_actions(has_device=True, has_subscription=True),
+        drop_incoming=False,
+    )

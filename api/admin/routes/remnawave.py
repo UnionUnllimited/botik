@@ -76,6 +76,7 @@ async def panel(
 
     nodes: list[remnawave.RemnaNode] = []
     hosts: list[remnawave.RemnaHost] = []
+    squads: list[remnawave.RemnaSquad] = []
     if status.ok:
         # probe уже сходил за этими данными, но повторный запрос дешевле,
         # чем тащить их через объект статуса и путать его назначение.
@@ -85,6 +86,11 @@ async def panel(
         except remnawave.RemnawaveError as exc:
             status.ok = False
             status.error = str(exc)
+        try:
+            squads = await client.squads()
+        except remnawave.RemnawaveError as exc:
+            # Сквады нужны только для активации: без них остальная страница живая.
+            log.warning("admin.remnawave_squads_failed", error=str(exc))
 
     ours = list(await session.scalars(select(Node).order_by(Node.priority, Node.id)))
     imported = {host_uuid_of(node): node for node in ours if host_uuid_of(node)}
@@ -96,6 +102,8 @@ async def panel(
         status=status,
         nodes=nodes,
         hosts=hosts,
+        squads=squads,
+        chosen_squads=list(settings.remnawave.squad_uuids),
         imported=imported,
         our_nodes_total=len(ours),
         node_prefix=settings.subscription.node_prefix,

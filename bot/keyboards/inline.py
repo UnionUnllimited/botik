@@ -137,8 +137,7 @@ def plans(plan_list: list, *, with_device: bool) -> InlineKeyboardMarkup:
 def delivery_methods(options: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for option in options:
-        price = option.pvz_price if not option.is_pickup else Decimal("0.00")
-        suffix = "бесплатно" if price <= 0 else ru.money(price)
+        suffix = "бесплатно" if option.pvz_price <= 0 else f"от {ru.money(option.pvz_price)}"
         builder.button(
             text=f"{option.title} — {suffix}",
             callback_data=DeliveryCB(method=option.method.value),
@@ -218,15 +217,29 @@ def subscription_actions(*, has_subscription: bool) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def device_actions(*, has_device: bool, has_subscription: bool) -> InlineKeyboardMarkup:
+def device_actions(
+    *, has_device: bool, has_subscription: bool, can_activate: bool = False
+) -> InlineKeyboardMarkup:
     """Экран «Мой роутер»: обновить показания и уйти туда, где что-то можно сделать."""
     builder = InlineKeyboardBuilder()
+    if can_activate:
+        builder.button(text=ru.BTN_ACTIVATE, callback_data=NavCB(action="activate"))
     if has_device:
         builder.button(text=ru.BTN_REFRESH, callback_data=MenuCB(section="device"))
     if has_subscription:
         builder.button(text=ru.BTN_SUBSCRIPTION, callback_data=MenuCB(section="subscription"))
     else:
         builder.button(text=ru.BTN_BUY, callback_data=MenuCB(section="buy"))
+    builder.adjust(1)
+    _nav(builder)
+    return builder.as_markup()
+
+
+def activation_retry() -> InlineKeyboardMarkup:
+    """Отказ при активации — почти всегда дело поправимое, даём попробовать снова."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=ru.BTN_ACTIVATE_RETRY, callback_data=NavCB(action="activate"))
+    builder.button(text=ru.BTN_MY_DEVICE, callback_data=MenuCB(section="device"))
     builder.adjust(1)
     _nav(builder)
     return builder.as_markup()

@@ -76,6 +76,34 @@
 </table>
 {% endif %}
 
+{% if squads %}
+<h2>Сквады для активации</h2>
+<p class="muted">При активации роутера клиент заводится в панели и попадает в эти сквады —
+именно они определяют, какие узлы окажутся в его подписке. Без них учётка создастся,
+но список узлов у роутера будет пустым. Нужные UUID перечислите в
+<code>REMNAWAVE_SQUAD_UUIDS</code> через запятую.</p>
+<table>
+  <tr><th>Название</th><th>UUID</th><th class="num">Клиентов</th><th>Используем</th></tr>
+  {% for squad in squads %}
+  <tr>
+    <td>{{ squad.name }}</td>
+    <td><code>{{ squad.uuid }}</code></td>
+    <td class="num">{{ squad.members }}</td>
+    <td>
+      {% if squad.uuid in chosen_squads %}<span class="badge ok">да</span>
+      {% else %}<span class="dim">нет</span>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% if not chosen_squads %}
+<div class="msg warn" style="margin-top:12px">
+  <div><b>Сквад не выбран.</b> Активация роутера сейчас не сработает: клиенту нечего выдать.
+    Скопируйте UUID нужного сквада в <code>REMNAWAVE_SQUAD_UUIDS</code> и перезапустите.</div>
+</div>
+{% endif %}
+{% endif %}
+
 {% if hosts %}
 <h2>Точки подключения и импорт</h2>
 <p class="muted">При импорте создаётся или обновляется наш узел: адрес, порт и параметры

@@ -21,6 +21,12 @@ class OrderFlow(StatesGroup):
     payment = State()
 
 
+class ActivationFlow(StatesGroup):
+    """Активация роутера: клиент называет MAC с наклейки, мы настраиваем устройство."""
+
+    mac = State()
+
+
 class SubscriptionFlow(StatesGroup):
     """Покупка или продление подписки без роутера."""
 

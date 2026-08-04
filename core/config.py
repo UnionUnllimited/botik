@@ -388,6 +388,14 @@ class RemnawaveSettings(EnvSettings):
     nodes_path: str = "/api/nodes"
     hosts_path: str = "/api/hosts"
     users_path: str = "/api/users"
+    squads_path: str = "/api/internal-squads"
+
+    squad_uuids: StrList = Field(default_factory=list)
+    """Сквады, в которые попадает новый клиент. Без них панель не выдаст ему узлов."""
+    username_template: str = "tg{tg_id}_{mac}"
+    """Имя учётки в панели. Панель принимает только латиницу, цифры, дефис и подчёркивание."""
+    traffic_limit_bytes: int = 0
+    """0 — без ограничения трафика."""
 
     @property
     def missing_keys(self) -> list[str]:
