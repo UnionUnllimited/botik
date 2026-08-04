@@ -58,6 +58,17 @@ class TestAsList:
     def test_skips_non_dict_items(self):
         assert as_list([{"uuid": "a"}, "мусор", None]) == [{"uuid": "a"}]
 
+    def test_finds_list_under_unknown_key(self):
+        """Сквады приходят под `internalSquads`, и у каждой сущности ключ свой."""
+        payload = {"response": {"total": 1, "internalSquads": [{"uuid": "a"}]}}
+        assert as_list(payload) == [{"uuid": "a"}]
+
+    def test_counters_are_not_mistaken_for_a_list(self):
+        assert as_list({"response": {"total": 5, "page": 1}}) == []
+
+    def test_empty_list_stays_empty(self):
+        assert as_list({"response": {"internalSquads": []}}) == []
+
 
 class TestNodeParsing:
     def test_camel_case_fields(self):

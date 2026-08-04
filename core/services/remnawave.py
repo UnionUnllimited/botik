@@ -90,15 +90,28 @@ def unwrap(payload: Any) -> Any:
 
 
 def as_list(payload: Any) -> list[dict[str, Any]]:
-    """Достаёт список словарей из чего угодно, что вернула панель."""
+    """Достаёт список словарей из чего угодно, что вернула панель.
+
+    Известные имена ключей проверяются первыми, но полагаться только на них
+    нельзя: у сквадов список лежит под `internalSquads`, и такой ключ будет
+    у каждой новой сущности свой. Поэтому если ничего не совпало — берём
+    первый же список объектов внутри. Конверт к этому моменту уже снят,
+    так что перепутать его не с чем.
+    """
     payload = unwrap(payload)
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
-    if isinstance(payload, dict):
-        for key in _LIST_KEYS:
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+
+    for key in _LIST_KEYS:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+
+    for value in payload.values():
+        if isinstance(value, list) and any(isinstance(item, dict) for item in value):
+            return [item for item in value if isinstance(item, dict)]
     return []
 
 
