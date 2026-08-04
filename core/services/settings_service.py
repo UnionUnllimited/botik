@@ -25,13 +25,29 @@ CACHE_TTL_SEC = 60
 
 DEFAULTS: dict[str, Any] = {
     "delivery.methods": {
-        "cdek": {"title": "СДЭК", "pvz": "350.00", "courier": "550.00", "days": "3–7 дней"},
-        "post": {"title": "Почта России", "pvz": "300.00", "courier": "450.00", "days": "7–14 дней"},
-        "boxberry": {"title": "Boxberry", "pvz": "320.00", "courier": "500.00", "days": "4–8 дней"},
-        "pickup": {"title": "Самовывоз", "pvz": "0.00", "courier": "0.00", "days": "в день заказа"},
+        "cdek": {
+            "title": "СДЭК",
+            "pvz": "350.00",
+            "courier": "550.00",
+            "days": "3–7 дней",
+            "enabled": True,
+        },
+        "post": {
+            "title": "Почта России",
+            "pvz": "300.00",
+            "courier": "450.00",
+            "days": "7–14 дней",
+            "enabled": True,
+        },
+        "yandex": {
+            "title": "Яндекс Go",
+            "pvz": "300.00",
+            "courier": "450.00",
+            "days": "1–3 дня",
+            "enabled": True,
+        },
     },
     "delivery.free_from": "0.00",
-    "delivery.pickup_address": "",
     "order.shipping_days": "1–2 рабочих дня",
     "order.cod_enabled": True,
     "order.cod_surcharge": "0.00",
@@ -42,7 +58,6 @@ DEFAULTS: dict[str, Any] = {
 DESCRIPTIONS = {
     "delivery.methods": "Способы доставки: цена до ПВЗ и курьером, срок",
     "delivery.free_from": "Сумма заказа, от которой доставка бесплатна (0 — выключено)",
-    "delivery.pickup_address": "Адрес самовывоза",
     "order.shipping_days": "Срок отправки заказа после оплаты",
     "order.cod_enabled": "Разрешить оплату при получении",
     "order.cod_surcharge": "Наценка за оплату при получении",

@@ -4,6 +4,45 @@
 <h1>Настройки</h1>
 <p class="muted">Меняются на лету: бот подхватывает новые значения в течение минуты.</p>
 
+<h2>Доставка</h2>
+<p class="muted">Выключенный способ пропадает из бота сразу. Цены — за доставку
+до пункта выдачи и курьером до двери.</p>
+
+<form method="post" action="/admin/settings/delivery">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <div class="cards" style="grid-template-columns:repeat(auto-fill, minmax(280px, 1fr))">
+    {% for option in delivery_options %}
+    {% set key = option.method.value %}
+    <div class="card {{ 'tone-ok' if option.enabled else '' }}">
+      <label style="display:flex; gap:9px; align-items:center; margin:0 0 12px; color:var(--text)">
+        <input type="checkbox" name="{{ key }}.enabled" {% if option.enabled %}checked{% endif %}>
+        <b>{{ option.title }}</b>
+        <span class="badge {{ 'ok' if option.enabled else 'muted' }}" style="margin-left:auto">
+          {{ 'включён' if option.enabled else 'выключен' }}
+        </span>
+      </label>
+      <label for="{{ key }}.title">Название для клиента</label>
+      <input id="{{ key }}.title" name="{{ key }}.title" value="{{ option.title }}" style="width:100%">
+      <div class="grid2" style="gap:10px">
+        <div>
+          <label for="{{ key }}.pvz">До пункта выдачи, ₽</label>
+          <input id="{{ key }}.pvz" name="{{ key }}.pvz" value="{{ option.pvz_price }}" style="width:100%">
+        </div>
+        <div>
+          <label for="{{ key }}.courier">Курьером, ₽</label>
+          <input id="{{ key }}.courier" name="{{ key }}.courier" value="{{ option.courier_price }}"
+                 style="width:100%">
+        </div>
+      </div>
+      <label for="{{ key }}.days">Срок</label>
+      <input id="{{ key }}.days" name="{{ key }}.days" value="{{ option.days }}" style="width:100%">
+    </div>
+    {% endfor %}
+  </div>
+  <button type="submit" style="margin-top:14px">Сохранить доставку</button>
+</form>
+
+<h2>Остальное</h2>
 <form method="post" action="/admin/settings">
   <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
   {% for key, value in values.items() %}

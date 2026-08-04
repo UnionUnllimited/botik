@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from decimal import Decimal, InvalidOperation
 
 import structlog
 from fastapi import APIRouter, Depends, Request
@@ -21,9 +22,10 @@ from api.admin.auth import (
 )
 from api.admin.templating import render
 from api.deps import get_session, get_transaction
-from core.enums import AdminRole
+from core.enums import OFFERED_DELIVERY_METHODS, AdminRole
 from core.models import AdminUser, AuditLog
 from core.security import hash_password
+from core.services import delivery as delivery_service
 from core.services import settings_service
 
 router = APIRouter()
@@ -49,17 +51,68 @@ async def settings_page(
             if isinstance(value, (dict, list))
             else ("да" if value is True else "нет" if value is False else str(value))
         )
+    # Способы доставки правятся отдельными блоками, а не сырым JSON:
+    # включить-выключить перевозчика должно быть делом одного клика.
+    values.pop("delivery.methods", None)
+
     return render(
         request,
         "settings.html",
         principal,
         values=values,
         descriptions=settings_service.DESCRIPTIONS,
+        delivery_options=await delivery_service.get_options(session, only_enabled=False),
         complex_keys={
             key for key, value in settings_service.DEFAULTS.items() if isinstance(value, (dict, list))
         },
         bool_keys={key for key, value in settings_service.DEFAULTS.items() if isinstance(value, bool)},
     )
+
+
+@router.post("/settings/delivery", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def save_delivery(
+    request: Request,
+    principal: Principal = Depends(require_section("settings")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    """Сохраняет блоки доставки целиком: так проще, чем чинить JSON руками."""
+    form = await request.form()
+    current = await settings_service.get_setting(session, "delivery.methods") or {}
+    updated = dict(current) if isinstance(current, dict) else {}
+
+    for method in OFFERED_DELIVERY_METHODS:
+        key = method.value
+        existing = updated.get(key) if isinstance(updated.get(key), dict) else {}
+        updated[key] = {
+            "title": form_value(form, f"{key}.title") or existing.get("title", key),
+            "pvz": _money(form_value(form, f"{key}.pvz"), existing.get("pvz", "0.00")),
+            "courier": _money(form_value(form, f"{key}.courier"), existing.get("courier", "0.00")),
+            "days": form_value(form, f"{key}.days") or existing.get("days", ""),
+            # Снятый чекбокс в форму не приходит — отсутствие означает «выключено».
+            "enabled": f"{key}.enabled" in form,
+        }
+
+    await settings_service.set_setting(
+        session, "delivery.methods", updated, admin_id=principal.admin.id
+    )
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="settings.delivery_updated",
+        entity_type="setting",
+        entity_id="delivery.methods",
+        new={key: value["enabled"] for key, value in updated.items() if isinstance(value, dict)},
+        request=request,
+    )
+    return RedirectResponse("/admin/settings?ok=Доставка+сохранена", status_code=303)
+
+
+def _money(raw: str, fallback: str) -> str:
+    """Цена всегда хранится строкой: Decimal из jsonb вернулся бы float'ом."""
+    try:
+        return str(Decimal(raw.replace(",", ".").strip()).quantize(Decimal("0.01")))
+    except (InvalidOperation, AttributeError):
+        return str(fallback)
 
 
 @router.post("/settings", include_in_schema=False, dependencies=[Depends(verify_csrf)])

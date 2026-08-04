@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.enums import DeliveryMethod
+from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod
 from core.models import Delivery, Order
 from core.services import settings_service
 
@@ -22,6 +22,7 @@ TRACKING_URLS = {
     DeliveryMethod.POST: "https://www.pochta.ru/tracking#{track}",
     DeliveryMethod.BOXBERRY: "https://boxberry.ru/tracking-page?id={track}",
 }
+"""Для Яндекс Go ссылки нет: он присылает её клиенту сам, придумывать свою незачем."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,21 +32,27 @@ class DeliveryOption:
     pvz_price: Decimal
     courier_price: Decimal
     days: str
-
-    @property
-    def is_pickup(self) -> bool:
-        return self.method is DeliveryMethod.PICKUP
+    enabled: bool = True
 
     def price_for(self, *, to_pvz: bool) -> Decimal:
         return self.pvz_price if to_pvz else self.courier_price
 
 
-async def get_options(session: AsyncSession) -> list[DeliveryOption]:
+async def get_options(session: AsyncSession, *, only_enabled: bool = True) -> list[DeliveryOption]:
+    """Способы доставки в порядке перечисления.
+
+    `only_enabled=False` нужен админке: там показываются и выключенные,
+    иначе их нельзя было бы включить обратно.
+    """
     raw = await settings_service.get_setting(session, "delivery.methods") or {}
     options: list[DeliveryOption] = []
-    for method in DeliveryMethod:
+    for method in OFFERED_DELIVERY_METHODS:
         config = raw.get(method.value)
         if not isinstance(config, dict):
+            continue
+        # Ключа может не быть у настроек, сохранённых до появления переключателей.
+        enabled = bool(config.get("enabled", True))
+        if only_enabled and not enabled:
             continue
         options.append(
             DeliveryOption(
@@ -54,6 +61,7 @@ async def get_options(session: AsyncSession) -> list[DeliveryOption]:
                 pvz_price=Decimal(str(config.get("pvz", "0.00"))),
                 courier_price=Decimal(str(config.get("courier", "0.00"))),
                 days=str(config.get("days", "")),
+                enabled=enabled,
             )
         )
     return options

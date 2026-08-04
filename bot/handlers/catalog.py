@@ -256,14 +256,6 @@ async def choose_delivery(
 
     await callback.answer()
     await _store(state, delivery_method=method.value)
-
-    if option.is_pickup:
-        address = await settings_service.get_str(session, "delivery.pickup_address")
-        await _store(state, delivery_to_pvz=True, pvz_address=address, delivery_address="")
-        await _ask_promo(callback, state)
-        await screen.notify(callback, ru.PICKUP_INFO.format(address=address or "уточним в чате"))
-        return
-
     await state.set_state(OrderFlow.delivery_target)
     await screen.show(
         callback,

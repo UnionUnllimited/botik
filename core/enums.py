@@ -78,8 +78,15 @@ class PaymentPurpose(StrEnum):
 class DeliveryMethod(StrEnum):
     CDEK = "cdek"
     POST = "post"
+    YANDEX = "yandex"
     BOXBERRY = "boxberry"
+    """Не предлагается клиентам. Оставлен ради заказов, оформленных раньше."""
     PICKUP = "pickup"
+    """То же: самовывоза нет, но старые записи должны читаться."""
+
+
+OFFERED_DELIVERY_METHODS = (DeliveryMethod.CDEK, DeliveryMethod.POST, DeliveryMethod.YANDEX)
+"""Что показываем в боте. Остальное живёт в перечислении только ради истории."""
 
 
 class DeliveryStatus(StrEnum):
