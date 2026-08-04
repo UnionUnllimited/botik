@@ -15,6 +15,7 @@ from api.admin.routes import (
     auth,
     catalog,
     clients,
+    console,
     dashboard,
     fleet,
     infra,
@@ -33,6 +34,7 @@ router.include_router(orders.router)
 router.include_router(clients.router)
 router.include_router(subscriptions.router)
 router.include_router(fleet.router)
+router.include_router(console.router)
 router.include_router(infra.router)
 router.include_router(catalog.router)
 router.include_router(promo.router)

@@ -133,6 +133,23 @@
     </p>
     {% endif %}
 
+    <h2>Доступ к роутеру</h2>
+    {% if principal.can('console') %}
+    <div class="toolbar">
+      <form class="inline" method="post" action="/admin/fleet/{{ device.id }}/open" target="_blank">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <button type="submit" {% if not device.frp_online %}disabled{% endif %}>Открыть панель роутера</button>
+      </form>
+      <a class="btn ghost" href="/admin/console/{{ device.id }}">Консоль и журналы</a>
+    </div>
+    <p class="muted" style="font-size:12px">
+      Панель открывается в новой вкладке через туннель. Одновременно открыт
+      один роутер: следующая кнопка переключит на него.
+    </p>
+    {% else %}
+    <p class="muted">Доступ к панели и консоли роутера есть у владельца и администратора.</p>
+    {% endif %}
+
     <h2>Действия</h2>
     <form method="post" action="/admin/fleet/{{ device.id }}/poll">
       <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">

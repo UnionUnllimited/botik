@@ -39,6 +39,7 @@ ROLE_SECTIONS: dict[AdminRole, set[str]] = {
         "dashboard",
         "orders",
         "clients",
+        "console",
         "devices",
         "subscriptions",
         "nodes",
@@ -52,6 +53,7 @@ ROLE_SECTIONS: dict[AdminRole, set[str]] = {
         "dashboard",
         "orders",
         "clients",
+        "console",
         "devices",
         "subscriptions",
         "nodes",
@@ -91,6 +93,9 @@ class AdminSession:
     csrf: str
     ip: str
     created_at: str
+    router_port: int | None = None
+    """Порт туннеля роутера, чью панель сейчас открыл администратор."""
+    router_mac: str | None = None
 
     @property
     def role_enum(self) -> AdminRole:
@@ -184,12 +189,14 @@ def set_session_cookie(response: Response, token: str) -> None:
         httponly=True,
         secure=settings.app.is_prod,
         samesite="lax",
-        path="/admin",
+        # Панель роутера открывается по корневым путям (/cgi-bin, /luci-static),
+        # поэтому кука нужна на всём сайте, а не только на /admin.
+        path="/",
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE, path="/admin")
+    response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 # --------------------------------------------------------------------- вход

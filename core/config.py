@@ -323,6 +323,13 @@ class FrpSettings(EnvSettings):
     poll_interval_sec: int = 60
     metrics_retention_days: int = 14
 
+    ssh_user: str = "root"
+    ssh_password: SecretStr = SecretStr("")
+    """Пароль SSH по умолчанию. Для отдельного роутера можно задать свой в админке."""
+    ssh_timeout_sec: float = 15.0
+    ssh_visitor_offset: int = 10000
+    """Порт SSH-туннеля = порт панели + это смещение."""
+
     luci_prefix: str = "luci"
     ssh_prefix: str = "ssh"
     """Префиксы имён прокси: luci<MAC> — веб-панель роутера, ssh<MAC> — SSH."""

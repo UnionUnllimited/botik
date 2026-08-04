@@ -56,6 +56,7 @@ def render_config(devices: list[Device]) -> str:
         if not device.frp_luci_name or not device.frp_visitor_port:
             continue
         safe_name = device.mac.replace(":", "").lower()
+        # Веб-панель роутера: через неё снимаются показания и открывается LuCI.
         lines += [
             "[[visitors]]",
             f'name = "visitor_{safe_name}"',
@@ -66,6 +67,18 @@ def render_config(devices: list[Device]) -> str:
             f"bindPort = {device.frp_visitor_port}",
             "",
         ]
+        # SSH: порт панели плюс смещение — отдельная колонка в базе не нужна.
+        if device.frp_ssh_name:
+            lines += [
+                "[[visitors]]",
+                f'name = "visitor_ssh_{safe_name}"',
+                'type = "stcp"',
+                f'serverName = "{device.frp_ssh_name}"',
+                f'secretKey = "{secret}"',
+                'bindAddr = "0.0.0.0"',
+                f"bindPort = {device.frp_visitor_port + frp.ssh_visitor_offset}",
+                "",
+            ]
     return "\n".join(lines)
 
 

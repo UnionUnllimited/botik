@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api import admin
+from api.admin.routes import luci
 from api.routes import health, webhooks
 from core.config import settings
 from core.db import check_database, dispose_engine
@@ -122,6 +123,8 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(webhooks.router)
     app.include_router(admin.router)
+    # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
+    app.include_router(luci.router)
 
     app.add_exception_handler(admin.LoginRequired, admin.login_redirect_handler)  # type: ignore[arg-type]
 

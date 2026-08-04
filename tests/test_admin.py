@@ -159,3 +159,56 @@ class TestFormatting:
         past = dt.datetime.now(dt.UTC) - dt.timedelta(days=5)
         assert "просрочено" in days_until(past)
         assert days_until(None) == "—"
+
+
+class TestRouterAccess:
+    """Панель роутера и консоль закрыты так же плотно, как остальная админка."""
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/admin/console/1", "/cgi-bin/luci/", "/luci-static/style.css", "/ubus", "/luci/admin"],
+    )
+    def test_requires_login(self, client, path):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/login"
+
+    def test_console_is_not_for_support(self):
+        """Консоль работает под root на устройстве клиента — не для всех ролей."""
+        assert "console" in ROLE_SECTIONS[AdminRole.OWNER]
+        assert "console" in ROLE_SECTIONS[AdminRole.ADMIN]
+        assert "console" not in ROLE_SECTIONS[AdminRole.SUPPORT]
+        assert "console" not in ROLE_SECTIONS[AdminRole.LOGIST]
+
+
+class TestShellSafety:
+    @pytest.mark.parametrize(
+        "command",
+        ["sysupgrade -n /tmp/fw.bin", "mkfs.ext4 /dev/sda1", "rm -rf /", "dd if=/dev/zero of=/dev/mtd0"],
+    )
+    def test_destructive_commands_are_blocked(self, command):
+        from api.admin.routes.console import FORBIDDEN
+
+        assert any(bad in command.lower() for bad in FORBIDDEN)
+
+    @pytest.mark.parametrize("command", ["logread | tail -n 50", "uci show network", "ps"])
+    def test_normal_commands_pass(self, command):
+        from api.admin.routes.console import FORBIDDEN
+
+        assert not any(bad in command.lower() for bad in FORBIDDEN)
+
+    def test_ssh_port_derived_from_panel_port(self, monkeypatch):
+        from core.config import settings
+        from core.models import Device
+        from core.services.router_shell import ssh_port_for
+
+        monkeypatch.setattr(settings.frp, "ssh_visitor_offset", 10000, raising=False)
+        device = Device(mac="A0:B1:C2:D3:E4:F5", frp_visitor_port=20003)
+        assert ssh_port_for(device) == 30003
+
+    def test_ssh_port_requires_tunnel(self):
+        from core.models import Device
+        from core.services.router_shell import ShellError, ssh_port_for
+
+        with pytest.raises(ShellError):
+            ssh_port_for(Device(mac="A0:B1:C2:D3:E4:F5"))

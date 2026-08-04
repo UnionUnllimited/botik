@@ -31,6 +31,9 @@ tzdata==2026.3            # IANA-база для zoneinfo: не полагаем
 phonenumbers==9.0.36
 APScheduler==3.11.3
 
+# --- Доступ к роутерам ---
+asyncssh==2.24.0        # SSH к роутерам через visitor-туннель
+
 # --- Безопасность ---
 cryptography==50.0.0
 argon2-cffi==25.1.0

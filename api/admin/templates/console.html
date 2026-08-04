@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Консоль {{ device.mac }}{% endblock %}
+{% block content %}
+<h1>
+  Консоль <code>{{ device.mac }}</code>
+  {% if device.frp_online %}<span class="badge ok">на связи</span>
+  {% else %}<span class="badge muted">офлайн</span>{% endif %}
+</h1>
+<p class="muted">
+  Команды выполняются на роутере от root через обратный туннель
+  {% if ssh_port %}(SSH на порту {{ ssh_port }}){% endif %}.
+  Каждый запуск записывается в журнал устройства и в аудит.
+</p>
+
+{% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+
+{% if not device.frp_online %}
+<div class="msg err">Роутер не на связи — команды выполнить не получится.</div>
+{% endif %}
+
+<div class="grid2">
+  <div>
+    <h2>Журналы</h2>
+    <form method="post" action="/admin/console/{{ device.id }}" class="toolbar">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <input type="hidden" name="kind" value="log">
+      <div>
+        <label for="source">Что смотрим</label>
+        <select id="source" name="source">
+          {% for key, entry in log_sources.items() %}
+          <option value="{{ key }}">{{ entry[0] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Показать</button>
+    </form>
+
+    <h2>Быстрые команды</h2>
+    <div class="toolbar">
+      {% for key, entry in quick_commands.items() %}
+      <form class="inline" method="post" action="/admin/console/{{ device.id }}">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <input type="hidden" name="kind" value="quick">
+        <input type="hidden" name="name" value="{{ key }}">
+        <button class="ghost" type="submit">{{ entry[0] }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    <h2>Своя команда</h2>
+    <form method="post" action="/admin/console/{{ device.id }}">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+      <input type="hidden" name="kind" value="command">
+      <label for="command">Выполнить на роутере</label>
+      <input id="command" name="command" style="width:100%; font-family:ui-monospace, monospace"
+             placeholder="uci show network" autocomplete="off">
+      <button type="submit" style="margin-top:12px">Выполнить</button>
+    </form>
+    <p class="muted" style="font-size:12px">
+      Перепрошивка, форматирование и удаление разделов из веб-консоли запрещены —
+      для этого есть прямой доступ по SSH.
+    </p>
+  </div>
+</div>
+
+{% if result %}
+<h2>
+  Результат
+  {% if result.ok %}<span class="badge ok">код 0</span>
+  {% else %}<span class="badge bad">код {{ result.exit_status }}</span>{% endif %}
+</h2>
+<p class="muted"><code>{{ result.command }}</code></p>
+<pre style="background:var(--panel); border:1px solid var(--line); border-radius:10px;
+            padding:14px 16px; overflow-x:auto; font-size:13px; line-height:1.45;
+            max-height:520px; overflow-y:auto; white-space:pre-wrap; word-break:break-word">{{ result.output }}</pre>
+{% endif %}
+
+<p style="margin-top:24px">
+  <a href="/admin/fleet/{{ device.id }}">← к карточке роутера</a>
+</p>
+{% endblock %}

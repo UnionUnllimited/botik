@@ -16,7 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.admin import audit
-from api.admin.auth import Principal, form_value, require_section, verify_csrf
+from api.admin.auth import (
+    Principal,
+    form_value,
+    load_session,
+    require_section,
+    update_session,
+    verify_csrf,
+)
 from api.admin.templating import render
 from api.deps import get_session, get_transaction
 from core.config import settings
@@ -186,6 +193,40 @@ async def poll_now(
         payload={"by": principal.admin.login},
     )
     return RedirectResponse(f"/admin/fleet/{device_id}?ok=Показания+обновлены", status_code=303)
+
+
+@router.post("/{device_id}/open", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def open_panel(
+    device_id: int,
+    request: Request,
+    principal: Principal = Depends(require_section("console")),
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    """Запоминает роутер в сессии и открывает его веб-панель."""
+    device = await session.get(Device, device_id)
+    if device is None or not device.frp_visitor_port:
+        return RedirectResponse("/admin/fleet?err=Туннель+не+выделен", status_code=303)
+
+    loaded = await load_session(request)
+    if loaded is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    session_id, data = loaded
+    data.router_port = device.frp_visitor_port
+    data.router_mac = device.mac
+    await update_session(session_id, data)
+
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="fleet.panel_opened",
+        entity_type="device",
+        entity_id=device.id,
+        new={"mac": device.mac},
+        request=request,
+    )
+    await session.commit()
+    log.info("fleet.panel_opened", device_id=device.id, admin=principal.admin.login)
+    return RedirectResponse("/cgi-bin/luci/", status_code=303)
 
 
 @router.post("/{device_id}/bind", include_in_schema=False, dependencies=[Depends(verify_csrf)])
