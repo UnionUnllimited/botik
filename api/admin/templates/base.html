@@ -1,115 +1,318 @@
 {# Базовый макет админки. Никаких внешних библиотек: панель должна открываться
-   с телефона на плохой связи и не зависеть от доступности чужих CDN. #}
+   с телефона на плохой связи и не зависеть от доступности чужих CDN.
+   Иконки — инлайновый SVG по той же причине. #}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
 <title>{% block title %}Админка{% endblock %} · {{ brand }}</title>
 <style>
 :root {
-  --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
-  --text: #e6e8ee; --muted: #99a0ae; --accent: #4c8dff; --ok: #37c978;
-  --warn: #f0b429; --bad: #ff5c5c; --info: #6ba4ff;
+  --bg: #0b0d12; --panel: #14171f; --panel-2: #1b1f29; --panel-3: #222735;
+  --line: #262b37; --line-soft: #1d222c;
+  --text: #e8ebf2; --muted: #939bab; --dim: #6d7585;
+  --accent: #5b8dff; --accent-ink: #0b0d12; --accent-soft: rgba(91, 141, 255, .13);
+  --ok: #3ddc91; --ok-soft: rgba(61, 220, 145, .12);
+  --warn: #f5b73d; --warn-soft: rgba(245, 183, 61, .12);
+  --bad: #ff6b6b; --bad-soft: rgba(255, 107, 107, .12);
+  --info: #6ba4ff; --info-soft: rgba(107, 164, 255, .12);
+  --radius: 12px; --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -12px rgba(0, 0, 0, .6);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(900px 500px at 18% -10%, rgba(91, 141, 255, .07), transparent 70%);
+  background-attachment: fixed;
+}
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+::selection { background: var(--accent-soft); }
+
+/* ------------------------------------------------------------- каркас */
 .layout { display: flex; min-height: 100vh; }
-.side { width: 220px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
-  padding: 16px 0; }
-.side .logo { padding: 0 18px 16px; font-weight: 600; font-size: 17px; }
-.side a { display: block; padding: 9px 18px; color: var(--text); }
-.side a:hover { background: var(--panel-2); text-decoration: none; }
-.side a.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 15px; }
-.side .who { padding: 14px 18px; margin-top: 12px; border-top: 1px solid var(--line);
-  color: var(--muted); font-size: 13px; }
-.main { flex: 1; padding: 22px 26px 60px; min-width: 0; }
-h1 { font-size: 22px; margin: 0 0 18px; }
-h2 { font-size: 17px; margin: 26px 0 12px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-.card .label { color: var(--muted); font-size: 13px; }
-.card .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
-.card .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
-table { width: 100%; border-collapse: collapse; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; }
-th { color: var(--muted); font-weight: 500; background: var(--panel-2); white-space: nowrap; }
+.side {
+  width: 238px; flex: none; background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.side .logo {
+  display: flex; align-items: center; gap: 9px;
+  padding: 16px 18px 14px; font-weight: 600; font-size: 15px; letter-spacing: .2px;
+}
+.side .logo .mark {
+  width: 26px; height: 26px; flex: none; border-radius: 7px;
+  background: linear-gradient(140deg, var(--accent), #8a6bff);
+  display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 700;
+}
+.side nav { padding: 4px 10px 10px; flex: 1; }
+.side .cap {
+  padding: 14px 8px 6px; color: var(--dim);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .7px; font-weight: 600;
+}
+.side a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; margin-bottom: 1px; border-radius: var(--radius-sm);
+  color: var(--muted); font-size: 14px;
+}
+.side a svg { flex: none; opacity: .75; }
+.side a:hover { background: var(--panel-2); color: var(--text); text-decoration: none; }
+.side a.active { background: var(--accent-soft); color: var(--text); font-weight: 500; }
+.side a.active svg { opacity: 1; color: var(--accent); }
+.side .who {
+  padding: 12px 16px 16px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 13px; background: var(--panel);
+  position: sticky; bottom: 0;
+}
+.side .who b { color: var(--text); font-weight: 500; }
+.side .who form { margin-top: 9px; }
+.main { flex: 1; padding: 26px 28px 72px; min-width: 0; max-width: 1440px; }
+
+/* -------------------------------------------------------- типографика */
+h1 { font-size: 23px; line-height: 1.25; margin: 0 0 20px; letter-spacing: -.2px; }
+h2 { font-size: 15px; margin: 30px 0 12px; letter-spacing: .2px; }
+h3 { font-size: 14px; margin: 20px 0 10px; color: var(--muted); font-weight: 600; }
+.page-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+.page-head h1 { margin: 0; }
+.page-head .spacer { flex: 1; }
+.subtitle { color: var(--muted); margin: -12px 0 20px; max-width: 70ch; }
+
+/* ------------------------------------------------------------ карточки */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
+.card {
+  position: relative; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow);
+}
+.card .label { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.card .value {
+  font-size: 26px; font-weight: 650; margin-top: 5px; letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums;
+}
+.card .hint { color: var(--dim); font-size: 12px; margin-top: 5px; line-height: 1.45; }
+.card.tone-ok::before, .card.tone-warn::before, .card.tone-bad::before, .card.tone-accent::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+}
+.card.tone-ok::before { background: var(--ok); }
+.card.tone-warn::before { background: var(--warn); }
+.card.tone-bad::before { background: var(--bad); }
+.card.tone-accent::before { background: var(--accent); }
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow);
+}
+
+/* Изменение к прошлому периоду. */
+.delta { font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.delta.up { color: var(--ok); background: var(--ok-soft); }
+.delta.down { color: var(--bad); background: var(--bad-soft); }
+.delta.flat { color: var(--dim); background: var(--panel-2); }
+
+/* ------------------------------------------------------------- таблицы */
+table {
+  width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow);
+}
+th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+th {
+  color: var(--muted); font-weight: 500; background: var(--panel-2); white-space: nowrap;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+  border-bottom: 1px solid var(--line);
+}
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #1b1f28; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px;
-  border: 1px solid var(--line); }
-.badge.ok { color: var(--ok); border-color: #23593c; background: #12291d; }
-.badge.warn { color: var(--warn); border-color: #5b4a17; background: #2a2312; }
-.badge.bad { color: var(--bad); border-color: #5e2626; background: #2b1414; }
-.badge.info { color: var(--info); border-color: #274063; background: #131d2b; }
+tbody tr:hover td, table tr:hover td { background: var(--panel-2); }
+table tr:hover th { background: var(--panel-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------- плашки */
+.badge {
+  display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 12px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); white-space: nowrap;
+}
+.badge.ok { color: var(--ok); border-color: transparent; background: var(--ok-soft); }
+.badge.warn { color: var(--warn); border-color: transparent; background: var(--warn-soft); }
+.badge.bad { color: var(--bad); border-color: transparent; background: var(--bad-soft); }
+.badge.info { color: var(--info); border-color: transparent; background: var(--info-soft); }
 .badge.muted { color: var(--muted); }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+
+/* --------------------------------------------------------------- формы */
 form.inline { display: inline; }
-input, select, textarea { background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
-  border-radius: 8px; padding: 8px 10px; font: inherit; max-width: 100%; }
-input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
-textarea { width: 100%; min-height: 90px; }
-label { display: block; color: var(--muted); font-size: 13px; margin: 12px 0 4px; }
-button, .btn { background: var(--accent); border: none; color: #fff; padding: 8px 14px;
-  border-radius: 8px; font: inherit; cursor: pointer; display: inline-block; }
-button:hover, .btn:hover { filter: brightness(1.1); text-decoration: none; }
-button.ghost, .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
-button.danger { background: var(--bad); }
-.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
-.msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
-.msg.ok { background: #12291d; border: 1px solid #23593c; color: var(--ok); }
-.msg.err { background: #2b1414; border: 1px solid #5e2626; color: var(--bad); }
+input, select, textarea {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: var(--radius-sm); padding: 8px 11px; font: inherit; max-width: 100%;
+  accent-color: var(--accent);
+}
+input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; padding: 0; vertical-align: -3px; }
+input:hover, select:hover, textarea:hover { border-color: var(--panel-3); }
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+input::placeholder, textarea::placeholder { color: var(--dim); }
+textarea { width: 100%; min-height: 90px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+label { display: block; color: var(--muted); font-size: 13px; margin: 12px 0 5px; }
+button, .btn {
+  background: var(--accent); border: 1px solid transparent; color: #fff;
+  padding: 8px 15px; border-radius: var(--radius-sm); font: inherit; font-weight: 500;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 7px; line-height: 1.3;
+}
+button:hover, .btn:hover { filter: brightness(1.12); text-decoration: none; }
+button:active, .btn:active { transform: translateY(1px); }
+button.ghost, .btn.ghost { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+button.ghost:hover, .btn.ghost:hover { background: var(--panel-3); filter: none; }
+button.danger, .btn.danger { background: var(--bad); color: #2b0f0f; }
+button.small, .btn.small { padding: 5px 11px; font-size: 13px; }
+.toolbar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 16px;
+}
+
+/* ------------------------------------------------------------ сообщения */
+.msg {
+  padding: 11px 15px; border-radius: var(--radius); margin-bottom: 18px;
+  border: 1px solid transparent; display: flex; gap: 9px; align-items: flex-start;
+}
+.msg.ok { background: var(--ok-soft); border-color: rgba(61, 220, 145, .25); color: var(--ok); }
+.msg.err { background: var(--bad-soft); border-color: rgba(255, 107, 107, .25); color: var(--bad); }
+.msg.warn { background: var(--warn-soft); border-color: rgba(245, 183, 61, .25); color: var(--warn); }
+
+/* ------------------------------------------------------------- утилиты */
 .muted { color: var(--muted); }
+.dim { color: var(--dim); }
 .right { text-align: right; }
 .nowrap { white-space: nowrap; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-.pager { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
-code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
-@media (max-width: 800px) {
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.pager { margin-top: 16px; display: flex; gap: 10px; align-items: center; }
+code {
+  background: var(--panel-2); border: 1px solid var(--line-soft);
+  padding: 1px 6px; border-radius: 5px; font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.empty {
+  padding: 26px; text-align: center; color: var(--muted);
+  background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius);
+}
+details > summary { cursor: pointer; padding: 8px 0; color: var(--muted); }
+details > summary:hover { color: var(--text); }
+details[open] > summary { color: var(--text); margin-bottom: 4px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 24px 0; }
+
+/* --------------------------------------------------------------- мобильные */
+@media (max-width: 900px) {
   .layout { flex-direction: column; }
-  .side { width: 100%; display: flex; flex-wrap: wrap; padding: 8px; }
-  .side .logo, .side .who { width: 100%; }
-  .side a { padding: 8px 12px; }
-  .side a.active { border-left: none; border-bottom: 2px solid var(--accent); padding-left: 12px; }
-  .main { padding: 16px 12px 40px; }
+  .side {
+    width: 100%; height: auto; position: static;
+    border-right: none; border-bottom: 1px solid var(--line);
+  }
+  .side .logo { padding: 12px 14px 8px; }
+  .side nav {
+    display: flex; gap: 4px; overflow-x: auto; padding: 0 10px 10px;
+    scrollbar-width: none;
+  }
+  .side nav::-webkit-scrollbar { display: none; }
+  .side .cap { display: none; }
+  .side a { white-space: nowrap; padding: 7px 12px; }
+  .side .who { position: static; display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+  .side .who form { margin: 0 0 0 auto; }
+  .side .who br { display: none; }
+  .side .who .dim::before { content: " · "; }
+  .main { padding: 18px 14px 48px; }
   .grid2 { grid-template-columns: 1fr; }
-  table { display: block; overflow-x: auto; }
+  h1 { font-size: 20px; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }
 </style>
 </head>
 <body>
+{% macro icon(name) %}
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if name == 'dashboard' %}<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>
+  {%- elif name == 'orders' %}<path d="M6 2h9l4 4v16H6z"/><path d="M14 2v5h5"/><path d="M9 13h7M9 17h5"/>
+  {%- elif name == 'clients' %}<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5"/><path d="M17 11.5a2.8 2.8 0 1 0-1.5-5.2"/><path d="M17.5 15c2 .6 3.5 2.1 3.5 5"/>
+  {%- elif name == 'subscriptions' %}<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/>
+  {%- elif name == 'fleet' %}<rect x="2.5" y="13" width="19" height="7" rx="2"/><path d="M6 16.5h.01M9.5 16.5h.01"/><path d="M18 16.5h1"/><path d="M8 9.5a5.5 5.5 0 0 1 8 0"/><path d="M10.5 12a2.5 2.5 0 0 1 3 0"/>
+  {%- elif name == 'devices' %}<path d="M3 7.5 12 3l9 4.5-9 4.5z"/><path d="M3 12l9 4.5L21 12"/><path d="M3 16.5 12 21l9-4.5"/>
+  {%- elif name == 'nodes' %}<circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 7.5v4M10.3 13 6.6 15.8M13.7 13l3.7 2.8"/>
+  {%- elif name == 'panel' %}<path d="M12 2.5 21 7v10l-9 4.5L3 17V7z"/><path d="M12 12 21 7M12 12v9.5M12 12 3 7"/>
+  {%- elif name == 'catalog' %}<path d="M4 7h16l-1.2 13.5H5.2z"/><path d="M8.5 9.5V6a3.5 3.5 0 1 1 7 0v3.5"/>
+  {%- elif name == 'promo' %}<path d="M20.5 9.5V6.5a1.5 1.5 0 0 0-1.5-1.5H5a1.5 1.5 0 0 0-1.5 1.5v3a2.5 2.5 0 0 1 0 5v3A1.5 1.5 0 0 0 5 19h14a1.5 1.5 0 0 0 1.5-1.5v-3a2.5 2.5 0 0 1 0-5z"/><path d="M14 9l-4 6"/>
+  {%- elif name == 'settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.5 15a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.2a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1.3z"/>
+  {%- elif name == 'audit' %}<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/>
+  {%- elif name == 'admins' %}<path d="M12 2.5 20 6v6c0 5-3.4 8.4-8 9.5-4.6-1.1-8-4.5-8-9.5V6z"/><path d="m9 12 2 2 4-4"/>
+  {%- elif name == 'console' %}<rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>
+  {%- endif -%}
+</svg>
+{% endmacro %}
+
+{% macro nav_item(href, title, section, glyph) %}
+  {% if principal.can(section) %}
+    <a href="{{ href }}" class="{{ 'active' if (current_path.startswith(href) and href != '/admin/') or current_path == href else '' }}">
+      {{ icon(glyph) }}<span>{{ title }}</span>
+    </a>
+  {% endif %}
+{% endmacro %}
+
+{# Заголовок группы показываем, только если внутри есть хоть один доступный пункт. #}
+{% macro nav_group(caption, items) %}
+  {% set visible = [] %}
+  {% for item in items %}{% if principal.can(item[2]) %}{% set _ = visible.append(item) %}{% endif %}{% endfor %}
+  {% if visible %}
+    <div class="cap">{{ caption }}</div>
+    {% for item in visible %}{{ nav_item(item[0], item[1], item[2], item[3]) }}{% endfor %}
+  {% endif %}
+{% endmacro %}
+
 <div class="layout">
-  <nav class="side">
-    <div class="logo">{{ brand }}</div>
-    {% macro nav(href, title, section) %}
-      {% if principal.can(section) %}
-        <a href="{{ href }}" class="{{ 'active' if current_path.startswith(href) and href != '/admin/' or current_path == href else '' }}">{{ title }}</a>
-      {% endif %}
-    {% endmacro %}
-    {{ nav('/admin/', 'Дашборд', 'dashboard') }}
-    {{ nav('/admin/orders', 'Заказы', 'orders') }}
-    {{ nav('/admin/clients', 'Клиенты', 'clients') }}
-    {{ nav('/admin/subscriptions', 'Подписки', 'subscriptions') }}
-    {{ nav('/admin/fleet', 'Роутеры', 'devices') }}
-    {{ nav('/admin/devices', 'Склад устройств', 'devices') }}
-    {{ nav('/admin/nodes', 'Узлы', 'nodes') }}
-    {{ nav('/admin/catalog', 'Товары и тарифы', 'catalog') }}
-    {{ nav('/admin/promo', 'Промокоды и коды', 'promo') }}
-    {{ nav('/admin/settings', 'Настройки', 'settings') }}
-    {{ nav('/admin/audit', 'Журнал', 'audit') }}
-    {{ nav('/admin/admins', 'Администраторы', 'admins') }}
+  <aside class="side">
+    <div class="logo"><span class="mark">{{ brand[0] | upper }}</span>{{ brand }}</div>
+    <nav>
+      {{ nav_group('Продажи', [
+        ('/admin/', 'Дашборд', 'dashboard', 'dashboard'),
+        ('/admin/orders', 'Заказы', 'orders', 'orders'),
+        ('/admin/clients', 'Клиенты', 'clients', 'clients'),
+        ('/admin/subscriptions', 'Подписки', 'subscriptions', 'subscriptions'),
+      ]) }}
+      {{ nav_group('Инфраструктура', [
+        ('/admin/fleet', 'Роутеры', 'devices', 'fleet'),
+        ('/admin/devices', 'Склад устройств', 'devices', 'devices'),
+        ('/admin/nodes', 'Узлы', 'nodes', 'nodes'),
+        ('/admin/remnawave', 'Панель Remnawave', 'remnawave', 'panel'),
+      ]) }}
+      {{ nav_group('Магазин', [
+        ('/admin/catalog', 'Товары и тарифы', 'catalog', 'catalog'),
+        ('/admin/promo', 'Промокоды и коды', 'promo', 'promo'),
+      ]) }}
+      {{ nav_group('Система', [
+        ('/admin/settings', 'Настройки', 'settings', 'settings'),
+        ('/admin/audit', 'Журнал', 'audit', 'audit'),
+        ('/admin/admins', 'Администраторы', 'admins', 'admins'),
+      ]) }}
+    </nav>
     <div class="who">
-      {{ principal.admin.login }} · {{ principal.role }}
-      <form method="post" action="/admin/logout" style="margin-top:8px">
+      <div><b>{{ principal.admin.login }}</b><br><span class="dim">{{ principal.role }}</span></div>
+      <form method="post" action="/admin/logout">
         <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
-        <button class="ghost" type="submit">Выйти</button>
+        <button class="ghost small" type="submit">Выйти</button>
       </form>
     </div>
-  </nav>
+  </aside>
   <main class="main">
     {% if request.query_params.get('ok') %}
       <div class="msg ok">{{ request.query_params.get('ok') }}</div>

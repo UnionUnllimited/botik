@@ -111,6 +111,20 @@ def days_until(value: dt.datetime | None) -> str:
     return str(remaining)
 
 
+def bytes_human(value: int | float | None) -> str:
+    """Трафик в привычных единицах: точные байты в таблице всё равно не читают."""
+    if not value:
+        return "0"
+    amount = float(value)
+    for unit in ("Б", "КБ", "МБ", "ГБ", "ТБ"):
+        if amount < 1024 or unit == "ТБ":
+            # Десятая доля важна только на мелких числах: «1,5 ГБ», но «128 ГБ».
+            precision = 0 if unit == "Б" or amount >= 10 else 1
+            return f"{amount:.{precision}f} {unit}".replace(".", ",")
+        amount /= 1024
+    return f"{amount:.0f} ТБ"  # недостижимо: цикл всегда возвращает на ТБ
+
+
 def phone_pretty(value: str | None) -> str:
     if not value:
         return "—"
@@ -131,6 +145,7 @@ templates.env.filters.update(
         "status_tone": status_tone,
         "days_until": days_until,
         "phone": phone_pretty,
+        "bytes_human": bytes_human,
     }
 )
 templates.env.globals.update(

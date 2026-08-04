@@ -52,10 +52,46 @@ class PeriodStats:
 
 
 @dataclass(slots=True)
+class Trend:
+    """Изменение показателя к предыдущему такому же периоду.
+
+    Голая сумма за сутки ничего не говорит: важно, больше её стало или меньше.
+    """
+
+    current: Decimal = Decimal("0.00")
+    previous: Decimal = Decimal("0.00")
+
+    @property
+    def percent(self) -> int | None:
+        """None — сравнивать не с чем: в прошлом периоде выручки не было."""
+        if self.previous <= 0:
+            return None
+        return round((self.current - self.previous) / self.previous * 100)
+
+    @property
+    def direction(self) -> str:
+        percent = self.percent
+        if percent is None or percent == 0:
+            return "flat"
+        return "up" if percent > 0 else "down"
+
+    @property
+    def label(self) -> str:
+        percent = self.percent
+        if percent is None:
+            return "—"
+        return f"{percent:+d}%"
+
+
+@dataclass(slots=True)
 class Dashboard:
     day: PeriodStats = field(default_factory=PeriodStats)
     week: PeriodStats = field(default_factory=PeriodStats)
     month: PeriodStats = field(default_factory=PeriodStats)
+
+    day_trend: Trend = field(default_factory=Trend)
+    week_trend: Trend = field(default_factory=Trend)
+    month_trend: Trend = field(default_factory=Trend)
 
     users_total: int = 0
     users_blocked_bot: int = 0
@@ -105,6 +141,22 @@ async def _period(session: AsyncSession, since: dt.datetime) -> PeriodStats:
     return stats
 
 
+async def _revenue_between(session: AsyncSession, since: dt.datetime, until: dt.datetime) -> Decimal:
+    """Выручка за окно. Отдельный лёгкий запрос — только чтобы посчитать тренд."""
+    return Decimal(
+        str(
+            await session.scalar(
+                select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                    Payment.paid_at >= since,
+                    Payment.paid_at < until,
+                    Payment.status == PaymentStatus.SUCCEEDED,
+                )
+            )
+            or 0
+        )
+    )
+
+
 async def collect(session: AsyncSession) -> Dashboard:
     now = utcnow()
     data = Dashboard()
@@ -112,6 +164,15 @@ async def collect(session: AsyncSession) -> Dashboard:
     data.day = await _period(session, now - dt.timedelta(days=1))
     data.week = await _period(session, now - dt.timedelta(days=7))
     data.month = await _period(session, now - dt.timedelta(days=30))
+
+    for days, stats, attribute in (
+        (1, data.day, "day_trend"),
+        (7, data.week, "week_trend"),
+        (30, data.month, "month_trend"),
+    ):
+        window = dt.timedelta(days=days)
+        previous = await _revenue_between(session, now - window * 2, now - window)
+        setattr(data, attribute, Trend(current=stats.revenue, previous=previous))
 
     data.users_total = await session.scalar(select(func.count()).select_from(User)) or 0
     data.users_blocked_bot = (
@@ -195,8 +256,15 @@ async def collect(session: AsyncSession) -> Dashboard:
 
 
 async def revenue_series(session: AsyncSession, *, days: int = 14) -> list[tuple[dt.date, Decimal]]:
-    """Выручка по дням — для простого графика на дашборде."""
-    since = utcnow() - dt.timedelta(days=days)
+    """Выручка по дням — для графика на дашборде.
+
+    Дни без платежей возвращаются нулями. Иначе на пустой базе график
+    исчезает целиком, а при редких оплатах рисует их подряд и врёт формой.
+    """
+    now = utcnow()
+    first_day = (now - dt.timedelta(days=days - 1)).date()
+    since = dt.datetime.combine(first_day, dt.time.min, tzinfo=dt.UTC)
+
     rows = await session.execute(
         select(
             func.date_trunc("day", Payment.paid_at).label("day"),
@@ -206,4 +274,8 @@ async def revenue_series(session: AsyncSession, *, days: int = 14) -> list[tuple
         .group_by("day")
         .order_by("day")
     )
-    return [(row[0].date(), Decimal(str(row[1]))) for row in rows]
+    paid = {row[0].date(): Decimal(str(row[1])) for row in rows}
+    return [
+        (day, paid.get(day, Decimal("0.00")))
+        for day in (first_day + dt.timedelta(days=offset) for offset in range(days))
+    ]
