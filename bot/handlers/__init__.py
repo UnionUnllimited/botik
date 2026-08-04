@@ -2,7 +2,7 @@
 
 from aiogram import Router
 
-from bot.handlers import catalog, common, errors, fallback, subscription
+from bot.handlers import catalog, common, device, errors, fallback, subscription
 
 
 def build_router() -> Router:
@@ -11,6 +11,7 @@ def build_router() -> Router:
     root.include_router(common.router)
     root.include_router(catalog.router)
     root.include_router(subscription.router)
+    root.include_router(device.router)
     root.include_router(fallback.router)
     return root
 

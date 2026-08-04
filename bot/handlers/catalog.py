@@ -1,4 +1,12 @@
-"""Покупка роутера: каталог → комплект → данные → доставка → промокод → оплата."""
+"""Покупка роутера: каталог → карточка → комплект → данные → доставка → оплата.
+
+Каталог не вываливает карточки всех моделей подряд: сначала список кнопок,
+карточка открывается по нажатию и заменяет собой список. Один экран на шаг,
+переход правит его на месте — см. `bot.utils.screen`.
+
+Исключение — сообщения, к которым клиент вернётся позже: ссылка на оплату
+и номер заказа отправляются с `persist=True` и остаются в переписке.
+"""
 
 from __future__ import annotations
 
@@ -12,10 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards import inline
-from bot.keyboards.reply import REMOVE, request_phone
+from bot.keyboards.reply import request_phone
 from bot.states import OrderFlow
 from bot.texts import ru
-from bot.utils import validators
+from bot.utils import screen, validators
 from core.enums import DeliveryMethod, PaymentProviderName, PaymentPurpose
 from core.models import Plan, Product, User
 from core.payments import online_provider
@@ -28,6 +36,8 @@ from core.services.orders import OrderDraft, OrderError
 
 router = Router(name="catalog")
 log = structlog.get_logger("bot.catalog")
+
+Event = Message | CallbackQuery
 
 
 def _draft_from_state(data: dict) -> OrderDraft:
@@ -45,19 +55,37 @@ async def _store(state: FSMContext, **values: object) -> None:
     await state.update_data(**values)
 
 
+async def _active_plans(session: AsyncSession) -> list[Plan]:
+    return list(
+        await session.scalars(
+            select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order, Plan.months)
+        )
+    )
+
+
 # ------------------------------------------------------------------ каталог
 
 
 @router.callback_query(inline.MenuCB.filter(F.section == "buy"))
 async def open_catalog(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await callback.answer()
-    if callback.message is not None:
-        await show_catalog(callback.message, session, state)
+    await show_catalog(callback, session, state)
+
+
+@router.callback_query(inline.NavCB.filter(F.action == "catalog"))
+async def back_to_catalog(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    await callback.answer()
+    await show_catalog(callback, session, state)
 
 
 @router.message(F.text == ru.BTN_BUY)
-async def show_catalog(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    """Открывается инлайн-кнопкой; текстовый вход оставлен для старой клавиатуры."""
+async def catalog_by_text(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Вход с прежней reply-клавиатуры."""
+    await screen.remove_reply_keyboard(message)
+    await show_catalog(message, session, state)
+
+
+async def show_catalog(event: Event, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     products = list(
         await session.scalars(
@@ -65,34 +93,42 @@ async def show_catalog(message: Message, session: AsyncSession, state: FSMContex
         )
     )
     if not products:
-        await message.answer(ru.CATALOG_EMPTY, reply_markup=inline.main_menu())
+        await screen.show(event, ru.CATALOG_EMPTY, markup=inline.back_to_menu())
         return
 
     await state.set_state(OrderFlow.product)
-    await message.answer(ru.CATALOG_TITLE, reply_markup=inline.main_menu())
-    for product in products:
-        card = ru.product_card(
-            title=product.title,
-            subtitle=product.subtitle,
-            description=product.description,
-            price=product.price,
-            specs=product.specs or {},
-        )
-        markup = inline.catalog([product])
-        if product.photo_file_id:
-            await message.answer_photo(product.photo_file_id, caption=card, reply_markup=markup)
-        else:
-            await message.answer(card, reply_markup=markup)
+    await screen.show(event, ru.CATALOG_TITLE, markup=inline.catalog(products))
 
 
-@router.callback_query(inline.NavCB.filter(F.action == "catalog"))
-async def back_to_catalog(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+@router.callback_query(inline.ProductCB.filter(F.action == "open"))
+async def open_product(
+    callback: CallbackQuery,
+    callback_data: inline.ProductCB,
+    session: AsyncSession,
+) -> None:
+    """Карточка модели вместо списка. Фото, если оно есть, — тем же экраном."""
+    product = await session.get(Product, callback_data.product_id)
+    if product is None or not product.is_active:
+        await callback.answer(ru.OUT_OF_STOCK, show_alert=True)
+        return
+
     await callback.answer()
-    if callback.message is not None:
-        await show_catalog(callback.message, session, state)
+    card = ru.product_card(
+        title=product.title,
+        subtitle=product.subtitle,
+        description=product.description,
+        price=product.price,
+        specs=product.specs or {},
+    )
+    await screen.show(
+        callback,
+        card,
+        markup=inline.product_card(product.id, in_stock=product.in_stock),
+        photo=product.photo_file_id or None,
+    )
 
 
-@router.callback_query(inline.ProductCB.filter())
+@router.callback_query(inline.ProductCB.filter(F.action == "take"))
 async def choose_product(
     callback: CallbackQuery,
     callback_data: inline.ProductCB,
@@ -100,24 +136,18 @@ async def choose_product(
     state: FSMContext,
 ) -> None:
     product = await session.get(Product, callback_data.product_id)
-    if product is None or not product.is_active:
-        await callback.answer(ru.OUT_OF_STOCK, show_alert=True)
-        return
-    if not product.in_stock:
+    if product is None or not product.is_active or not product.in_stock:
         await callback.answer(ru.OUT_OF_STOCK, show_alert=True)
         return
 
     await callback.answer()
     await _store(state, product_id=product.id)
     await state.set_state(OrderFlow.plan)
-
-    plans = list(
-        await session.scalars(
-            select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order, Plan.months)
-        )
+    await screen.show(
+        callback,
+        ru.PLAN_TITLE,
+        markup=inline.plans(await _active_plans(session), with_device=True),
     )
-    if callback.message is not None:
-        await callback.message.answer(ru.PLAN_TITLE, reply_markup=inline.plans(plans, with_device=True))
 
 
 @router.callback_query(inline.PlanCB.filter())
@@ -130,7 +160,7 @@ async def choose_plan(
 ) -> None:
     plan = await session.get(Plan, callback_data.plan_id)
     if plan is None or not plan.is_active:
-        await callback.answer("Тариф больше не доступен", show_alert=True)
+        await callback.answer(ru.PLAN_GONE, show_alert=True)
         return
 
     await callback.answer()
@@ -140,16 +170,14 @@ async def choose_plan(
         # Покупка подписки без роутера — контакты и доставка не нужны.
         await _store(state, product_id=None)
         await state.set_state(OrderFlow.promo)
-        if callback.message is not None:
-            await callback.message.answer(ru.ASK_PROMO, reply_markup=inline.skip_promo())
+        await screen.show(callback, ru.ASK_PROMO, markup=inline.skip_promo())
         return
 
     await state.set_state(OrderFlow.name)
-    if callback.message is not None:
-        prompt = ru.ASK_NAME
-        if user.full_name:
-            prompt += f"\n\nПрошлый раз: <code>{user.full_name}</code>"
-        await callback.message.answer(prompt, reply_markup=REMOVE)
+    prompt = ru.ASK_NAME
+    if user.full_name:
+        prompt += f"\n\nПрошлый раз: <code>{user.full_name}</code>"
+    await screen.show(callback, prompt, markup=inline.waiting_for_text())
 
 
 # ------------------------------------------------------------ данные клиента
@@ -159,21 +187,25 @@ async def choose_plan(
 async def enter_name(message: Message, state: FSMContext, user: User) -> None:
     name = validators.clean_full_name(message.text or "")
     if not name:
-        await message.answer(ru.ASK_NAME_INVALID)
+        await screen.show(message, ru.ASK_NAME_INVALID, markup=inline.waiting_for_text())
         return
     await _store(state, customer_name=name)
     await state.set_state(OrderFlow.phone)
+
     prompt = ru.ASK_PHONE
     if user.phone:
         prompt += f"\n\nПрошлый раз: <code>{validators.format_phone(user.phone)}</code>"
-    await message.answer(prompt, reply_markup=request_phone())
+    await screen.show(message, prompt, markup=inline.waiting_for_text())
+    # Кнопка «отправить номер» живёт только на reply-клавиатуре, а её нельзя
+    # приложить к экрану с инлайн-кнопками. Отдельное сообщение уйдёт следующим шагом.
+    await screen.notify_with_keyboard(message, ru.ASK_PHONE_HINT, markup=request_phone())
 
 
 @router.message(OrderFlow.phone, F.contact)
 async def enter_phone_contact(message: Message, state: FSMContext) -> None:
     phone = validators.clean_phone(message.contact.phone_number if message.contact else "")
     if not phone:
-        await message.answer(ru.ASK_PHONE_INVALID)
+        await screen.show(message, ru.ASK_PHONE_INVALID, markup=inline.waiting_for_text())
         return
     await _finish_phone(message, state, phone)
 
@@ -182,7 +214,7 @@ async def enter_phone_contact(message: Message, state: FSMContext) -> None:
 async def enter_phone_text(message: Message, state: FSMContext) -> None:
     phone = validators.clean_phone(message.text or "")
     if not phone:
-        await message.answer(ru.ASK_PHONE_INVALID)
+        await screen.show(message, ru.ASK_PHONE_INVALID, markup=inline.waiting_for_text())
         return
     await _finish_phone(message, state, phone)
 
@@ -190,19 +222,20 @@ async def enter_phone_text(message: Message, state: FSMContext) -> None:
 async def _finish_phone(message: Message, state: FSMContext, phone: str) -> None:
     await state.update_data(customer_phone=phone)
     await state.set_state(OrderFlow.city)
-    await message.answer(ru.ASK_CITY, reply_markup=REMOVE)
+    await screen.remove_reply_keyboard(message)
+    await screen.show(message, ru.ASK_CITY, markup=inline.waiting_for_text())
 
 
 @router.message(OrderFlow.city, F.text)
 async def enter_city(message: Message, session: AsyncSession, state: FSMContext) -> None:
     city = validators.clean_city(message.text or "")
     if not city:
-        await message.answer(ru.ASK_CITY_INVALID)
+        await screen.show(message, ru.ASK_CITY_INVALID, markup=inline.waiting_for_text())
         return
     await _store(state, customer_city=city)
     await state.set_state(OrderFlow.delivery_method)
     options = await delivery_service.get_options(session)
-    await message.answer(ru.ASK_DELIVERY, reply_markup=inline.delivery_methods(options))
+    await screen.show(message, ru.ASK_DELIVERY, markup=inline.delivery_methods(options))
 
 
 # ---------------------------------------------------------------- доставка
@@ -218,7 +251,7 @@ async def choose_delivery(
     method = DeliveryMethod(callback_data.method)
     option = await delivery_service.get_option(session, method)
     if option is None:
-        await callback.answer("Способ недоступен", show_alert=True)
+        await callback.answer(ru.DELIVERY_GONE, show_alert=True)
         return
 
     await callback.answer()
@@ -227,19 +260,18 @@ async def choose_delivery(
     if option.is_pickup:
         address = await settings_service.get_str(session, "delivery.pickup_address")
         await _store(state, delivery_to_pvz=True, pvz_address=address, delivery_address="")
-        if callback.message is not None:
-            await callback.message.answer(ru.PICKUP_INFO.format(address=address or "уточним в чате"))
-        await _ask_promo(callback.message, state)
+        await _ask_promo(callback, state)
+        await screen.notify(callback, ru.PICKUP_INFO.format(address=address or "уточним в чате"))
         return
 
     await state.set_state(OrderFlow.delivery_target)
-    if callback.message is not None:
-        await callback.message.answer(
-            ru.ASK_DELIVERY_TARGET,
-            reply_markup=inline.delivery_targets(
-                courier_price=option.courier_price, pvz_price=option.pvz_price
-            ),
-        )
+    await screen.show(
+        callback,
+        ru.ASK_DELIVERY_TARGET,
+        markup=inline.delivery_targets(
+            courier_price=option.courier_price, pvz_price=option.pvz_price
+        ),
+    )
 
 
 @router.callback_query(OrderFlow.delivery_target, inline.DeliveryTargetCB.filter())
@@ -251,8 +283,11 @@ async def choose_delivery_target(
     await callback.answer()
     await _store(state, delivery_to_pvz=callback_data.to_pvz)
     await state.set_state(OrderFlow.delivery_address)
-    if callback.message is not None:
-        await callback.message.answer(ru.ASK_PVZ if callback_data.to_pvz else ru.ASK_ADDRESS)
+    await screen.show(
+        callback,
+        ru.ASK_PVZ if callback_data.to_pvz else ru.ASK_ADDRESS,
+        markup=inline.waiting_for_text(),
+    )
 
 
 @router.message(OrderFlow.delivery_address, F.text)
@@ -262,7 +297,11 @@ async def enter_address(message: Message, state: FSMContext) -> None:
     raw = message.text or ""
     value = validators.clean_pvz(raw) if to_pvz else validators.clean_address(raw)
     if not value:
-        await message.answer(ru.ASK_PVZ if to_pvz else ru.ASK_ADDRESS_INVALID)
+        await screen.show(
+            message,
+            ru.ASK_PVZ if to_pvz else ru.ASK_ADDRESS_INVALID,
+            markup=inline.waiting_for_text(),
+        )
         return
     if to_pvz:
         await _store(state, pvz_address=value, delivery_address="")
@@ -274,10 +313,9 @@ async def enter_address(message: Message, state: FSMContext) -> None:
 # ----------------------------------------------------------------- промокод
 
 
-async def _ask_promo(message: Message | None, state: FSMContext) -> None:
+async def _ask_promo(event: Event, state: FSMContext) -> None:
     await state.set_state(OrderFlow.promo)
-    if message is not None:
-        await message.answer(ru.ASK_PROMO, reply_markup=inline.skip_promo())
+    await screen.show(event, ru.ASK_PROMO, markup=inline.skip_promo())
 
 
 @router.message(OrderFlow.promo, F.text)
@@ -288,42 +326,39 @@ async def enter_promo(message: Message, session: AsyncSession, state: FSMContext
     try:
         totals = await order_service.calculate_totals(session, draft=draft, user_id=user.id)
     except promo_service.PromoError as exc:
-        await message.answer(ru.PROMO_FAILED.format(reason=exc), reply_markup=inline.skip_promo())
+        await screen.show(message, ru.PROMO_FAILED.format(reason=exc), markup=inline.skip_promo())
         return
     except OrderError as exc:
-        await message.answer(str(exc), reply_markup=inline.main_menu())
         await state.clear()
+        await screen.show(message, str(exc), markup=inline.back_to_menu())
         return
 
-    await _store(state, promo_code=promo_service.normalize_code(draft.promo_code))
-    await message.answer(
-        ru.PROMO_APPLIED.format(
-            code=promo_service.normalize_code(draft.promo_code),
-            discount=ru.money(totals.discount),
-        )
-    )
+    code = promo_service.normalize_code(draft.promo_code)
+    await _store(state, promo_code=code)
     await _show_confirmation(message, session, state, user)
+    await screen.notify(
+        message, ru.PROMO_APPLIED.format(code=code, discount=ru.money(totals.discount))
+    )
 
 
 @router.callback_query(OrderFlow.promo, inline.NavCB.filter(F.action == "skip_promo"))
 async def skip_promo(callback: CallbackQuery, session: AsyncSession, state: FSMContext, user: User) -> None:
     await callback.answer()
     await _store(state, promo_code="")
-    if callback.message is not None:
-        await _show_confirmation(callback.message, session, state, user)
+    await _show_confirmation(callback, session, state, user)
 
 
 # ------------------------------------------------------------ подтверждение
 
 
-async def _show_confirmation(message: Message, session: AsyncSession, state: FSMContext, user: User) -> None:
+async def _show_confirmation(event: Event, session: AsyncSession, state: FSMContext, user: User) -> None:
     data = await state.get_data()
     draft = _draft_from_state(data)
     try:
         totals = await order_service.calculate_totals(session, draft=draft, user_id=user.id)
     except (OrderError, promo_service.PromoError) as exc:
-        await message.answer(str(exc), reply_markup=inline.main_menu())
         await state.clear()
+        await screen.show(event, str(exc), markup=inline.back_to_menu())
         return
 
     delivery_text = "—"
@@ -336,7 +371,8 @@ async def _show_confirmation(message: Message, session: AsyncSession, state: FSM
     provider = online_provider()
 
     await state.set_state(OrderFlow.confirm)
-    await message.answer(
+    await screen.show(
+        event,
         ru.order_summary(
             product_title=totals.product.title if totals.product else None,
             plan_title=totals.plan.title if totals.plan else None,
@@ -349,7 +385,7 @@ async def _show_confirmation(message: Message, session: AsyncSession, state: FSM
             city=draft.customer_city,
             delivery_text=delivery_text,
         ),
-        reply_markup=inline.confirm_order(
+        markup=inline.confirm_order(
             cod_enabled=cod_enabled and totals.product is not None,
             online_enabled=provider is not None,
         ),
@@ -365,8 +401,6 @@ async def submit_order(
     user: User,
 ) -> None:
     await callback.answer()
-    if callback.message is None:
-        return
 
     data = await state.get_data()
     draft = _draft_from_state(data)
@@ -376,8 +410,8 @@ async def submit_order(
     try:
         order = await order_service.create_order(session, user=user, draft=draft)
     except (OrderError, promo_service.PromoError) as exc:
-        await callback.message.answer(str(exc), reply_markup=inline.main_menu())
         await state.clear()
+        await screen.show(callback, str(exc), markup=inline.back_to_menu())
         return
 
     await session.flush()
@@ -386,21 +420,23 @@ async def submit_order(
     if draft.is_cod:
         # Деньги заберёт перевозчик — заказ сразу уходит в работу логисту.
         shipping_days = await settings_service.get_str(session, "order.shipping_days")
-        await callback.message.answer(
+        await screen.show(
+            callback,
             ru.ORDER_COD_CREATED.format(
                 number=order.public_number,
                 total=ru.money(order.total),
                 shipping_days=shipping_days,
             ),
-            reply_markup=inline.main_menu(),
+            markup=inline.back_to_menu(),
+            persist=True,
         )
         await _notify_admins_new_order(session, order=order, payment_kind="при получении")
         return
 
-    await _create_payment_and_reply(callback.message, session, user=user, order=order)
+    await _create_payment_and_reply(callback, session, user=user, order=order)
 
 
-async def _create_payment_and_reply(message: Message, session: AsyncSession, *, user: User, order) -> None:
+async def _create_payment_and_reply(event: Event, session: AsyncSession, *, user: User, order) -> None:
     try:
         payment = await payment_service.start_payment(
             session,
@@ -413,7 +449,7 @@ async def _create_payment_and_reply(message: Message, session: AsyncSession, *, 
         )
     except Exception as exc:
         log.exception("payment.create_failed", order_id=order.id, error=str(exc))
-        await message.answer(ru.PAYMENT_UNAVAILABLE, reply_markup=inline.main_menu())
+        await screen.show(event, ru.PAYMENT_UNAVAILABLE, markup=inline.back_to_menu())
         return
 
     minutes = 15
@@ -421,16 +457,19 @@ async def _create_payment_and_reply(message: Message, session: AsyncSession, *, 
         minutes = max(int((payment.expires_at - payment.created_at).total_seconds() // 60), 1)
 
     if not payment.confirmation_url:
-        await message.answer(ru.PAYMENT_UNAVAILABLE, reply_markup=inline.main_menu())
+        await screen.show(event, ru.PAYMENT_UNAVAILABLE, markup=inline.back_to_menu())
         return
 
-    await message.answer(
+    # Ссылку на оплату оставляем в переписке: клиент вернётся к ней позже.
+    await screen.show(
+        event,
         ru.PAYMENT_LINK.format(
             number=order.public_number,
             total=ru.money(order.total),
             minutes=minutes,
         ),
-        reply_markup=inline.payment_link(payment.confirmation_url, order.id),
+        markup=inline.payment_link(payment.confirmation_url, order.id),
+        persist=True,
     )
     await _notify_admins_new_order(session, order=order, payment_kind="онлайн, ожидаем")
 
@@ -474,13 +513,15 @@ async def check_payment(
         await payment_service.sync_pending_payment(session, payment)
 
     if payment.status is PaymentStatus.SUCCEEDED:
-        await callback.answer("Оплата подтверждена ✅", show_alert=True)
+        await callback.answer(ru.PAYMENT_CONFIRMED, show_alert=True)
     elif payment.status is PaymentStatus.CANCELED:
         await callback.answer(ru.PAYMENT_EXPIRED, show_alert=True)
-        if callback.message is not None:
-            await callback.message.answer(
-                ru.PAYMENT_EXPIRED, reply_markup=inline.retry_payment(callback_data.order_id)
-            )
+        await screen.show(
+            callback,
+            ru.PAYMENT_EXPIRED,
+            markup=inline.retry_payment(callback_data.order_id),
+            persist=True,
+        )
     else:
         await callback.answer(ru.PAYMENT_PENDING, show_alert=True)
 
@@ -496,19 +537,18 @@ async def repay(
     order = await order_service.get_order(session, callback_data.order_id)
     if order is None or order.user_id != user.id:
         return
-    if callback.message is not None:
-        await _create_payment_and_reply(callback.message, session, user=user, order=order)
+    await _create_payment_and_reply(callback, session, user=user, order=order)
 
 
 @router.callback_query(inline.NavCB.filter(F.action == "cancel"))
 async def cancel_flow(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.clear()
-    if callback.message is not None:
-        await callback.message.answer(ru.CANCELLED, reply_markup=inline.main_menu())
+    await screen.show(callback, ru.CANCELLED, markup=inline.main_menu())
 
 
 @router.message(F.text == ru.BTN_CANCEL)
 async def cancel_by_text(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer(ru.CANCELLED, reply_markup=inline.main_menu())
+    await screen.remove_reply_keyboard(message)
+    await screen.show(message, ru.CANCELLED, markup=inline.main_menu())

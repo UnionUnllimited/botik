@@ -7,10 +7,12 @@ from aiogram.types import Message
 
 from bot.keyboards import inline
 from bot.texts import ru
+from bot.utils import screen
 
 router = Router(name="fallback")
 
 
 @router.message()
 async def unknown_message(message: Message) -> None:
-    await message.answer(ru.FALLBACK, reply_markup=inline.main_menu())
+    """Непонятое сообщение убираем вместе с ответом — оно ничего не значит."""
+    await screen.show(message, ru.FALLBACK, markup=inline.main_menu())

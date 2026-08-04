@@ -23,6 +23,8 @@ BTN_CANCEL = "✖️ Отмена"
 BTN_MENU = "🏠 Главное меню"
 BTN_SKIP = "Пропустить"
 BTN_SHARE_PHONE = "📱 Отправить номер"
+BTN_CHOOSE = "✅ Выбрать эту модель"
+BTN_REFRESH = "🔄 Обновить"
 
 # --- приветствие -----------------------------------------------------------
 START_NEW = (
@@ -49,12 +51,6 @@ FALLBACK = "Не понял сообщение 🤔 Выберите разде�
 MENU_MOVED = "Меню переехало под сообщения — старая клавиатура больше не нужна."
 
 SECTION_PENDING = {
-    "device": (
-        "📶 <b>Мой роутер</b>\n\n"
-        "Здесь появятся статус устройства, ссылка на подписку и активация — "
-        "как только вы получите роутер и мы включим приём устройств.\n\n"
-        "Если роутер уже у вас, напишите в поддержку: {contact}"
-    ),
     "guides": (
         "❓ <b>Инструкции</b>\n\n"
         "Раздел наполняется: подключение роутера, вход в панель, смена пароля Wi-Fi, "
@@ -97,6 +93,8 @@ def money(value: Decimal | int | str) -> str:
 CATALOG_TITLE = "🛒 <b>Выберите роутер</b>\n\nОба работают из коробки — включили и пользуетесь."
 CATALOG_EMPTY = "Каталог временно пуст. Загляните позже или напишите в поддержку."
 OUT_OF_STOCK = "Этой модели сейчас нет в наличии. Выберите другую или напишите в поддержку."
+PLAN_GONE = "Этот тариф больше не доступен. Выберите другой."
+DELIVERY_GONE = "Этот способ доставки сейчас недоступен. Выберите другой."
 
 
 def product_card(*, title: str, subtitle: str, description: str, price: Decimal, specs: dict) -> str:
@@ -136,6 +134,7 @@ ASK_PHONE = (
     "📱 Номер телефона для связи и доставки.\n\n"
     "Нажмите кнопку ниже или напишите номер вручную: +7 900 123-45-67"
 )
+ASK_PHONE_HINT = "Можно отправить номер кнопкой ниже 👇"
 ASK_PHONE_INVALID = "Не похоже на российский номер. Пример: +7 900 123-45-67"
 ASK_CITY = "🏙 В какой город доставляем?"
 ASK_CITY_INVALID = "Напишите название города, например: Екатеринбург."
@@ -205,6 +204,8 @@ PAYMENT_LINK = (
     "После оплаты вернитесь в бот, подтверждение придёт автоматически."
 )
 PAYMENT_BUTTON = "💳 Перейти к оплате"
+PAYMENT_CHECK = "🔄 Проверить оплату"
+PAYMENT_CONFIRMED = "Оплата подтверждена ✅"
 PAYMENT_PENDING = "Платёж ещё не подтверждён. Если вы уже оплатили — подождите минуту, деньги идут."
 PAYMENT_FAILED = "Оплата не прошла. Попробуйте ещё раз или выберите другой способ."
 PAYMENT_EXPIRED = "Срок действия ссылки истёк. Нажмите «Оплатить заново», чтобы создать новую."
@@ -284,6 +285,102 @@ SUBSCRIPTION_EXPIRED = (
     "Доступ к зарубежным сервисам через роутер отключён. "
     "Продлите подписку — всё восстановится в течение пары минут."
 )
+
+# --- мой роутер ------------------------------------------------------------
+DEVICE_NONE = (
+    "📶 <b>Мой роутер</b>\n\n"
+    "К вашему профилю пока не привязано устройство.\n\n"
+    "Роутер с подпиской можно купить прямо здесь — он приходит настроенным, "
+    "включаете в розетку и пользуетесь."
+)
+DEVICE_WAITING = (
+    "📶 <b>Мой роутер</b>\n\n"
+    "Подписка оплачена, роутер едет к вам. Показания появятся здесь, "
+    "как только устройство первый раз выйдет на связь.\n\n"
+    "Трек-номер пришлём в этот чат."
+)
+DEVICE_OFFLINE_HINT = (
+    "\n\nЕсли роутер включён, проверьте кабель провайдера и питание. "
+    "Не помогло — напишите в поддержку, мы посмотрим со своей стороны."
+)
+
+
+def traffic(value: int) -> str:
+    """Байты в привычных единицах: точное число клиенту ничего не даёт."""
+    amount = float(value or 0)
+    for unit in ("Б", "КБ", "МБ", "ГБ", "ТБ"):
+        if amount < 1024 or unit == "ТБ":
+            # Десятая доля важна только на мелких числах: «1,5 ГБ», но «128 ГБ».
+            precision = 0 if unit == "Б" or amount >= 10 else 1
+            return f"{amount:.{precision}f} {unit}".replace(".", ",")
+        amount /= 1024
+    return f"{amount:.0f} ТБ"
+
+
+def device_card(
+    *,
+    title: str,
+    mac: str,
+    online: bool,
+    last_seen,
+    service_ok: bool,
+    uptime_sec: int,
+    clients_wifi: int,
+    clients_dhcp: int,
+    cpu_pct: int | None,
+    ram_pct: int | None,
+    rx_bytes: int,
+    tx_bytes: int,
+    subscription_line: str,
+) -> str:
+    """Карточка устройства. Показываем только то, что реально знаем."""
+    from core.dates import ago_phrase, uptime_phrase
+
+    lines = ["📶 <b>Мой роутер</b>", "", f"<b>{title}</b>", f"Идентификатор: <code>{mac}</code>", ""]
+
+    if online:
+        seen = f" · показания {ago_phrase(last_seen)}" if last_seen else ""
+        lines.append(f"🟢 <b>На связи</b>{seen}")
+        lines.append(f"Доступ к зарубежным сервисам: {'работает' if service_ok else 'не запущен'}")
+    else:
+        seen = (
+            f"последний раз был на связи {ago_phrase(last_seen)}"
+            if last_seen
+            else "ещё не выходил на связь"
+        )
+        lines.append(f"🔴 <b>Нет связи</b> — {seen}")
+
+    if online:
+        clients = clients_wifi + clients_dhcp
+        if clients:
+            lines.append(f"Устройств в сети: {clients} (по Wi-Fi {clients_wifi})")
+        if uptime_sec > 0:
+            lines.append(f"Работает без перезагрузки: {uptime_phrase(uptime_sec)}")
+        if cpu_pct is not None or ram_pct is not None:
+            load = " · ".join(
+                part
+                for part in (
+                    f"процессор {cpu_pct}%" if cpu_pct is not None else "",
+                    f"память {ram_pct}%" if ram_pct is not None else "",
+                )
+                if part
+            )
+            lines.append(f"Загрузка: {load}")
+        if rx_bytes or tx_bytes:
+            lines.append(f"Трафик: ↓ {traffic(rx_bytes)} · ↑ {traffic(tx_bytes)}")
+
+    lines.append("")
+    lines.append(subscription_line)
+    if not online:
+        lines.append(DEVICE_OFFLINE_HINT.strip())
+    return "\n".join(lines)
+
+
+DEVICE_SUB_NONE = "💎 Подписка: не оформлена — доступ работать не будет."
+DEVICE_SUB_PENDING = "💎 Подписка: {plan}, ждёт активации роутера."
+DEVICE_SUB_ACTIVE = "💎 Подписка: {plan}, до {until} (осталось {days})."
+DEVICE_SUB_GRACE = "⚠️ Подписка истекла, доступ работает ещё {days}. Продлите, чтобы не отключился."
+DEVICE_SUB_EXPIRED = "🔴 Подписка закончилась — доступ отключён. Продлите, и всё восстановится."
 
 REMINDER_BEFORE = "⏳ Подписка заканчивается через {days}.\nПродлите заранее, чтобы доступ не прерывался."
 REMINDER_LAST_DAY = "⏳ Сегодня последний день подписки. Продлите, чтобы доступ не отключился."

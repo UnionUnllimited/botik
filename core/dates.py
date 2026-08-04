@@ -88,3 +88,38 @@ def plural_ru(number: int, one: str, few: str, many: str) -> str:
 
 def days_phrase(number: int) -> str:
     return f"{number} {plural_ru(number, 'день', 'дня', 'дней')}"
+
+
+def ago_phrase(value: dt.datetime, *, now: dt.datetime | None = None) -> str:
+    """«7 минут назад».
+
+    Когда речь о свежести показаний роутера, точная дата ничего не говорит:
+    важно, минуты прошли или третьи сутки.
+    """
+    seconds = int((ensure_utc(now or utcnow()) - ensure_utc(value)).total_seconds())
+    if seconds < 60:
+        return "только что"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} {plural_ru(minutes, 'минуту', 'минуты', 'минут')} назад"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} {plural_ru(hours, 'час', 'часа', 'часов')} назад"
+    days = hours // 24
+    if days < 30:
+        return f"{days_phrase(days)} назад"
+    return format_date_ru(value)
+
+
+def uptime_phrase(seconds: int) -> str:
+    """Непрерывная работа устройства. Точность до минут нужна только в первый час."""
+    if seconds <= 0:
+        return "—"
+    days = seconds // 86400
+    if days:
+        return days_phrase(days)
+    hours = seconds // 3600
+    if hours:
+        return f"{hours} {plural_ru(hours, 'час', 'часа', 'часов')}"
+    minutes = max(seconds // 60, 1)
+    return f"{minutes} {plural_ru(minutes, 'минута', 'минуты', 'минут')}"
