@@ -212,14 +212,27 @@ class RemnaSquad:
     uuid: str
     name: str
     members: int = 0
+    inbounds: int = 0
 
     @classmethod
     def parse(cls, item: dict[str, Any]) -> RemnaSquad:
+        # Счётчики панель прячет во вложенный `info`, а не держит в корне.
+        info = item.get("info") if isinstance(item.get("info"), dict) else {}
+        listed = item.get("inbounds")
         return cls(
             uuid=str(_pick(item, "uuid", "id", default="")),
             name=str(_pick(item, "name", "title", default="без имени")),
-            members=_as_int(_pick(item, "membersCount", "usersCount", "info.membersCount")),
+            members=_as_int(_pick(item, "membersCount", "usersCount", default=_pick(info, "membersCount"))),
+            inbounds=_as_int(
+                _pick(item, "inboundsCount", default=_pick(info, "inboundsCount"))
+                or (len(listed) if isinstance(listed, list) else 0)
+            ),
         )
+
+    @property
+    def is_usable(self) -> bool:
+        """Сквад без входов создаст клиенту учётку с пустым списком узлов."""
+        return self.inbounds > 0
 
 
 @dataclass(frozen=True, slots=True)

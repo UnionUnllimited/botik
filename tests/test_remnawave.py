@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from api.admin.routes.remnawave import host_uuid_of, protocol_for, remarks_for
@@ -16,6 +18,7 @@ from core.services.remnawave import (
     PanelStatus,
     RemnaHost,
     RemnaNode,
+    RemnaSquad,
     as_list,
     unwrap,
 )
@@ -179,6 +182,43 @@ class TestImportRules:
     def test_own_node_has_no_host_uuid(self, config):
         node = Node(remarks="Router_own", host="h", port=443, config=config)
         assert host_uuid_of(node) == ""
+
+
+class TestSquadParsing:
+    """Форма ответа взята с боевой панели: счётчики лежат во вложенном `info`."""
+
+    PAYLOAD: ClassVar[dict] = {
+        "uuid": "45253f89-b01f-4891-9765-a95656fef3b5",
+        "viewPosition": 1,
+        "name": "Default-Squad",
+        "info": {"membersCount": 1, "inboundsCount": 2},
+        "inbounds": [{"uuid": "a", "tag": "VLESS-XHTTP-REALITY"}, {"uuid": "b", "tag": "X"}],
+    }
+
+    def test_reads_nested_counters(self):
+        squad = RemnaSquad.parse(self.PAYLOAD)
+        assert squad.name == "Default-Squad"
+        assert squad.uuid == "45253f89-b01f-4891-9765-a95656fef3b5"
+        assert squad.members == 1
+        assert squad.inbounds == 2
+
+    def test_falls_back_to_counting_inbounds(self):
+        payload = dict(self.PAYLOAD)
+        payload.pop("info")
+        assert RemnaSquad.parse(payload).inbounds == 2
+
+    def test_squad_without_inbounds_is_flagged(self):
+        """Такой сквад создаст учётку с пустым списком узлов — это надо видеть."""
+        squad = RemnaSquad.parse({"uuid": "x", "name": "Пустой", "inbounds": []})
+        assert squad.is_usable is False
+
+    def test_usable_squad(self):
+        assert RemnaSquad.parse(self.PAYLOAD).is_usable is True
+
+    def test_found_in_panel_response(self):
+        payload = {"response": {"total": 1, "internalSquads": [self.PAYLOAD]}}
+        squads = [RemnaSquad.parse(item) for item in as_list(payload)]
+        assert [squad.name for squad in squads] == ["Default-Squad"]
 
 
 class TestPanelStatus:
