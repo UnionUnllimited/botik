@@ -51,6 +51,33 @@ async def console_page(
     )
 
 
+@router.post("/{device_id}/password", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def set_password(
+    device_id: int,
+    request: Request,
+    principal: Principal = Depends(require_section("console")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    """Нестандартный пароль конкретного роутера. Пустое поле возвращает вывод из MAC."""
+    device = await session.scalar(select(Device).where(Device.id == device_id))
+    if device is None:
+        return RedirectResponse("/admin/fleet?err=Роутер+не+найден", status_code=303)
+
+    form = await request.form()
+    router_shell.store_password(device, form_value(form, "password"))
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="console.password_set",
+        entity_type="device",
+        entity_id=device.id,
+        new={"custom": bool(device.ssh_password_enc)},
+        request=request,
+    )
+    message = "Пароль+сохранён" if device.ssh_password_enc else "Вернулись+к+паролю+из+MAC"
+    return RedirectResponse(f"/admin/console/{device_id}?ok={message}", status_code=303)
+
+
 @router.post(
     "/{device_id}",
     include_in_schema=False,

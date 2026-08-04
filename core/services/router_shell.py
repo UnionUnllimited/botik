@@ -8,6 +8,7 @@ STCP на уровне frp. Проверять при этом отпечато�
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 import asyncssh
@@ -15,7 +16,7 @@ import structlog
 
 from core.config import settings
 from core.models import Device
-from core.security import decrypt_secret
+from core.security import decrypt_secret, encrypt_secret
 
 log = structlog.get_logger("services.router_shell")
 
@@ -68,14 +69,35 @@ def ssh_port_for(device: Device) -> int:
     return device.frp_visitor_port + settings.frp.ssh_visitor_offset
 
 
+def derive_password(mac: str, salt: str) -> str:
+    """Пароль root, как его считает прошивка при первом запуске.
+
+    MAC без разделителей в нижнем регистре, к нему приписывается соль,
+    от строки берётся sha256 и первые 16 символов шестнадцатеричной записи.
+    """
+    normalized = mac.replace(":", "").replace("-", "").lower()
+    digest = hashlib.sha256(f"{normalized}{salt}".encode()).hexdigest()
+    return digest[:16]
+
+
 def password_for(device: Device) -> str:
-    """Пароль устройства, если задан индивидуально, иначе общий из настроек."""
-    if device.secret_enc:
+    """Порядок: индивидуальный пароль роутера, затем вывод из MAC, затем общий."""
+    if device.ssh_password_enc:
         try:
-            return decrypt_secret(device.secret_enc, aad=f"ssh:{device.id}")
-        except Exception:  # noqa: BLE001 — поле могло хранить не пароль SSH
-            log.debug("router_shell.device_password_unreadable", device_id=device.id)
+            return decrypt_secret(device.ssh_password_enc, aad=f"ssh:{device.id}")
+        except Exception:  # noqa: BLE001 — ключ шифрования мог смениться
+            log.warning("router_shell.device_password_unreadable", device_id=device.id)
+
+    salt = settings.frp.ssh_password_salt.get_secret_value()
+    if salt:
+        return derive_password(device.mac, salt)
+
     return settings.frp.ssh_password.get_secret_value()
+
+
+def store_password(device: Device, password: str) -> None:
+    """Сохраняет индивидуальный пароль роутера в зашифрованном виде."""
+    device.ssh_password_enc = encrypt_secret(password, aad=f"ssh:{device.id}") if password else None
 
 
 async def run(
@@ -87,7 +109,7 @@ async def run(
     """Выполняет одну команду и возвращает её вывод."""
     password = password_for(device)
     if not password:
-        raise ShellError("Не задан пароль SSH: заполните FRP_SSH_PASSWORD")
+        raise ShellError("Пароль SSH неизвестен: задайте FRP_SSH_PASSWORD_SALT или пароль роутера вручную")
 
     port = ssh_port_for(device)
     limit = timeout or settings.frp.ssh_timeout_sec

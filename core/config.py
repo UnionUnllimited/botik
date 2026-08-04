@@ -325,7 +325,9 @@ class FrpSettings(EnvSettings):
 
     ssh_user: str = "root"
     ssh_password: SecretStr = SecretStr("")
-    """Пароль SSH по умолчанию. Для отдельного роутера можно задать свой в админке."""
+    """Запасной статический пароль, если вывод из MAC не используется."""
+    ssh_password_salt: SecretStr = SecretStr("")
+    """Соль для вывода пароля из MAC — так их назначает прошивка при первом запуске."""
     ssh_timeout_sec: float = 15.0
     ssh_visitor_offset: int = 10000
     """Порт SSH-туннеля = порт панели + это смещение."""

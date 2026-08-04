@@ -97,6 +97,9 @@ class Device(IntPkMixin, TimestampMixin, Base):
     frp_last_seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     last_poll_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
+    ssh_password_enc: Mapped[str | None] = mapped_column(String(512))
+    """AES-GCM(пароль SSH). Заполняется, только если у роутера он нестандартный."""
+
     admin_note: Mapped[str | None] = mapped_column(Text)
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 

@@ -92,3 +92,34 @@ class TestParseStats:
         stats = parse_stats({"uptime_sec": "3600", "network": {"rx_bytes": "512"}})
         assert stats.uptime_sec == 3600
         assert stats.rx_bytes == 512
+
+
+class TestSshPassword:
+    """Прошивка назначает пароль root по MAC — админка должна считать так же."""
+
+    def test_matches_firmware_algorithm(self):
+        from core.services.router_shell import derive_password
+
+        # printf "%stests" d40dab034bce | sha256sum | cut -c1-16
+        assert derive_password("D4:0D:AB:03:4B:CE", "tests") == "7600a1bd651d639c"
+
+    @pytest.mark.parametrize(
+        "mac", ["D4:0D:AB:03:4B:CE", "d4:0d:ab:03:4b:ce", "d4-0d-ab-03-4b-ce", "d40dab034bce"]
+    )
+    def test_mac_format_does_not_matter(self, mac):
+        from core.services.router_shell import derive_password
+
+        assert derive_password(mac, "tests") == "7600a1bd651d639c"
+
+    def test_different_routers_get_different_passwords(self):
+        from core.services.router_shell import derive_password
+
+        first = derive_password("D4:0D:AB:03:4B:CE", "tests")
+        second = derive_password("D4:0D:AB:28:32:18", "tests")
+        assert first != second
+        assert len(first) == len(second) == 16
+
+    def test_salt_changes_result(self):
+        from core.services.router_shell import derive_password
+
+        assert derive_password("D4:0D:AB:03:4B:CE", "other") != "7600a1bd651d639c"
