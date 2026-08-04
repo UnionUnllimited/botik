@@ -37,14 +37,14 @@ def create_storage() -> RedisStorage:
 def create_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=create_storage())
 
-    # Порядок outer-middleware: контекст логов → сессия БД → пользователь.
+    # Порядок outer-middleware: контекст логов → антифлуд → сессия БД → пользователь.
+    # Антифлуд стоит перед сессией намеренно: иначе на каждый мусорный апдейт
+    # открывалась бы транзакция, и флуд выедал бы пул соединений к Postgres
+    # раньше, чем срабатывал лимит.
     dp.update.outer_middleware(LoggingContextMiddleware())
+    dp.update.outer_middleware(ThrottlingMiddleware())
     dp.update.outer_middleware(DatabaseMiddleware())
     dp.update.outer_middleware(UserMiddleware())
-
-    throttling = ThrottlingMiddleware()
-    dp.message.middleware(throttling)
-    dp.callback_query.middleware(throttling)
 
     dp.include_router(build_router())
     return dp
