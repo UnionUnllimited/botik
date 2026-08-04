@@ -108,6 +108,8 @@
 <h1>Товары и тарифы</h1>
 <p class="muted">Изменения видны в боте сразу — деплой не нужен.</p>
 
+{# Карточки показывают сводку, а формы живут ниже во всю ширину: двухколоночная
+   форма в карточке шириной 270px не помещается и разъезжается. #}
 <h2>Роутеры</h2>
 {% if products %}
 <div class="cards" style="grid-template-columns:repeat(auto-fill, minmax(270px, 1fr))">
@@ -129,17 +131,23 @@
       остаток: <b class="{{ 'muted' if product.stock else 'dim' }}">{{ product.stock }}</b>
       {% if not product.stock and product.allow_preorder %} · предзаказ разрешён{% endif %}
     </div>
-    <details style="margin-top:10px">
-      <summary>Изменить</summary>
-      {{ product_form(product, groups, vat_codes, csrf_field, csrf_token) }}
-    </details>
+    <a class="btn ghost small" style="margin-top:12px" href="#product-{{ product.id }}">Изменить</a>
   </div>
+  {% endfor %}
+</div>
+
+<div style="margin-top:18px">
+  {% for product in products %}
+  <details id="product-{{ product.id }}">
+    <summary>Изменить <b>{{ product.title }}</b></summary>
+    {{ product_form(product, groups, vat_codes, csrf_field, csrf_token) }}
+  </details>
   {% endfor %}
 </div>
 {% else %}
 <div class="empty">Роутеров пока нет — добавьте первый, он сразу появится в боте.</div>
 {% endif %}
-<details style="margin-top:14px">
+<details style="margin-top:6px">
   <summary><b>+ добавить роутер</b></summary>
   {{ product_form(None, groups, vat_codes, csrf_field, csrf_token) }}
 </details>
@@ -167,17 +175,23 @@
       {% if plan.discount_percent %} · скидка {{ plan.discount_percent | round | int }}%{% endif %}
       {% if plan.is_default %} · выделен как выгодный{% endif %}
     </div>
-    <details style="margin-top:10px">
-      <summary>Изменить</summary>
-      {{ plan_form(plan, groups, vat_codes, csrf_field, csrf_token) }}
-    </details>
+    <a class="btn ghost small" style="margin-top:12px" href="#plan-{{ plan.id }}">Изменить</a>
   </div>
+  {% endfor %}
+</div>
+
+<div style="margin-top:18px">
+  {% for plan in plans %}
+  <details id="plan-{{ plan.id }}">
+    <summary>Изменить <b>{{ plan.title }}</b></summary>
+    {{ plan_form(plan, groups, vat_codes, csrf_field, csrf_token) }}
+  </details>
   {% endfor %}
 </div>
 {% else %}
 <div class="empty">Тарифов пока нет — без них подписку не купить.</div>
 {% endif %}
-<details style="margin-top:14px">
+<details style="margin-top:6px">
   <summary><b>+ добавить тариф</b></summary>
   {{ plan_form(None, groups, vat_codes, csrf_field, csrf_token) }}
 </details>

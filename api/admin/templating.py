@@ -135,6 +135,9 @@ def phone_pretty(value: str | None) -> str:
 
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+# Без ensure_ascii=False фильтр `tojson` экранирует кириллицу в escape-последовательности,
+# и характеристики товара в форме становится невозможно прочитать, не то что править.
+templates.env.policies["json.dumps_kwargs"] = {"sort_keys": True, "ensure_ascii": False}
 templates.env.filters.update(
     {
         "money": money,

@@ -161,6 +161,18 @@ async def submit_mac(message: Message, session: AsyncSession, user: User, state:
             drop_incoming=False,
         )
         return
+    except Exception:
+        # Активация ходит в панель и по SSH — предусмотреть все отказы нельзя.
+        # Общий обработчик показал бы «что-то пошло не так» и увёл клиента в тупик,
+        # поэтому ловим здесь: клиент видит кнопку повтора, мы — стектрейс с MAC.
+        log.exception("activation.unexpected", user_id=user.id, mac=(message.text or "")[:32])
+        await screen.show(
+            message,
+            ru.ACTIVATION_FAILED.format(reason=ru.ACTIVATION_UNEXPECTED),
+            markup=inline.activation_retry(),
+            drop_incoming=False,
+        )
+        return
 
     await state.clear()
     subscription = await subscription_service.get_current(session, user.id)

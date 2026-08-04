@@ -15,7 +15,7 @@ from pathlib import Path
 
 from api.admin.routes.dashboard import CHART_HEIGHT, CHART_WIDTH, SERIES_DAYS, _chart
 from api.admin.templating import templates
-from core.enums import OrderStatus, SubscriptionStatus
+from core.enums import OrderStatus, SubscriptionStatus, VatCode
 from core.services import stats
 from core.services.remnawave import PanelStatus, RemnaHost, RemnaNode
 
@@ -102,6 +102,65 @@ def _expiring() -> list[types.SimpleNamespace]:
             status=SubscriptionStatus.ACTIVE,
         )
         for index, (name, plan, days) in enumerate(rows, start=1)
+    ]
+
+
+def _products() -> list[types.SimpleNamespace]:
+    return [
+        types.SimpleNamespace(
+            id=1,
+            title="Роутер Basic",
+            subtitle="Для квартиры и небольшого офиса",
+            description="Работает сразу после включения.",
+            price=Decimal("9999"),
+            old_price=None,
+            stock=25,
+            model_code="basic",
+            photo_file_id="",
+            sort_order=10,
+            is_active=True,
+            allow_preorder=False,
+            specs={"Wi-Fi": "до 1,8 Гбит/с", "Порты": "3 LAN + 1 WAN"},
+            vat_code=None,
+        ),
+        types.SimpleNamespace(
+            id=2,
+            title="Роутер Pro",
+            subtitle="Для большой квартиры и дома",
+            description="Мощнее базовой модели.",
+            price=Decimal("10900"),
+            old_price=Decimal("12900"),
+            stock=0,
+            model_code="pro",
+            photo_file_id="",
+            sort_order=20,
+            is_active=True,
+            allow_preorder=True,
+            specs={"Wi-Fi": "до 3 Гбит/с", "Порты": "4 LAN + 1 WAN, USB 3.0"},
+            vat_code=None,
+        ),
+    ]
+
+
+def _plans() -> list[types.SimpleNamespace]:
+    rows = [(1, "1 месяц", "399", 1, 0, 0, False), (4, "12 месяцев", "3490", 12, 30, 27, True)]
+    return [
+        types.SimpleNamespace(
+            id=index,
+            title=title,
+            description="",
+            price=Decimal(price),
+            old_price=None,
+            months=months,
+            extra_days=extra,
+            discount_percent=Decimal(discount),
+            sort_order=index * 10,
+            is_active=True,
+            is_default=default,
+            node_group_id=None,
+            vat_code=None,
+        )
+        for index, title, price, months, extra, discount, default in rows
     ]
 
 
@@ -194,6 +253,14 @@ def main() -> None:
             ("Панель Remnawave", False, "REMNAWAVE_TOKEN"),
         ],
         awaiting_statuses=[],
+    )
+    render(
+        "catalog.html",
+        current_path="/admin/catalog",
+        products=_products(),
+        plans=_plans(),
+        groups=[types.SimpleNamespace(id=1, title="Основная")],
+        vat_codes=list(VatCode),
     )
     render(
         "remnawave.html",

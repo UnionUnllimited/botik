@@ -86,6 +86,10 @@ services:
     <<: *app
     command: ["python", "-m", "bot"]
     expose: ["8081"]
+    # Активация роутера идёт из бота, и туннель к нему нужен сразу же:
+    # без этого тома конфиг visitor'ов писать некуда.
+    volumes:
+      - frpc_config:/frpc
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8081/healthz"]
       interval: 30s
