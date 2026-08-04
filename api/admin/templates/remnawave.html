@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Панель Remnawave{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Панель Remnawave</h1>
+  <span class="badge {{ status.tone }}">{{ status.label }}</span>
+  <span class="spacer"></span>
+  <a class="btn ghost small" href="/admin/remnawave">Проверить связь</a>
+  <a class="btn ghost small" href="/admin/nodes">Наши узлы ({{ our_nodes_total }})</a>
+</div>
+
+<p class="subtitle">Узлы заводятся в панели — там же, где стоят сами серверы. Отсюда мы забираем
+их адреса и параметры к себе, чтобы не держать одно и то же в двух местах. Обратно в панель
+ничего не пишем.</p>
+
+{% if not status.configured %}
+<div class="msg warn">
+  <div>
+    <b>Связь не настроена.</b> Добавьте в <code>.env</code> и перезапустите
+    (<code>make deploy</code>):<br>
+    <code>{{ status.missing_keys | join(', ') }}</code><br>
+    Токен создаётся в самой панели: настройки → API-токены.
+  </div>
+</div>
+{% elif not status.ok %}
+<div class="msg err"><div><b>Панель не отвечает.</b> {{ status.error }}</div></div>
+{% endif %}
+
+{% if status.ok %}
+<div class="cards">
+  <div class="card tone-ok">
+    <div class="label"><span class="dot ok"></span> Связь</div>
+    <div class="value" style="font-size:19px">есть</div>
+    <div class="hint">проверено {{ status.checked_at | short_dt }}{% if status.version %}
+      · версия {{ status.version }}{% endif %}</div>
+  </div>
+  <div class="card">
+    <div class="label">Узлы панели</div>
+    <div class="value">{{ status.nodes_online }}<span class="dim" style="font-size:16px">
+      / {{ status.nodes_total }}</span></div>
+    <div class="hint">на связи из заведённых</div>
+  </div>
+  <div class="card">
+    <div class="label">Точки подключения</div>
+    <div class="value">{{ status.hosts_total }}</div>
+    <div class="hint">импортировано к нам: {{ imported | length }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Учётки в панели</div>
+    <div class="value">{{ status.users_total }}</div>
+    <div class="hint">онлайн за минуту: {{ status.users_online }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if nodes %}
+<h2>Серверы панели</h2>
+<table>
+  <tr>
+    <th>Имя</th><th>Адрес</th><th>Состояние</th>
+    <th class="num">Онлайн</th><th class="num">Трафик</th><th>Xray</th>
+  </tr>
+  {% for node in nodes %}
+  <tr>
+    <td>
+      {% if node.country_code %}<span class="dim">{{ node.country_code }}</span> {% endif %}{{ node.name }}
+      {% if node.status_message %}<br><span class="dim" style="font-size:12px">{{ node.status_message }}</span>{% endif %}
+    </td>
+    <td class="nowrap muted">{{ node.address }}{% if node.port %}:{{ node.port }}{% endif %}</td>
+    <td><span class="badge {{ node.tone }}">{{ node.state_label }}</span></td>
+    <td class="num">{{ node.users_online }}</td>
+    <td class="num nowrap">{{ node.traffic_used_bytes | bytes_human }}</td>
+    <td class="nowrap dim">{{ node.xray_version or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if hosts %}
+<h2>Точки подключения и импорт</h2>
+<p class="muted">При импорте создаётся или обновляется наш узел: адрес, порт и параметры
+подключения берутся из панели, имя получает обязательный префикс <code>{{ node_prefix }}</code>.
+Связь запоминается, повторный импорт обновляет ту же запись, а не плодит копии.</p>
+
+<form method="post" action="/admin/remnawave/import">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+  <table>
+    <tr>
+      <th style="width:36px"></th><th>Название</th><th>Адрес</th>
+      <th>В панели</th><th>У нас</th>
+    </tr>
+    {% for host in hosts %}
+    {% set ours = imported.get(host.uuid) %}
+    <tr>
+      <td><input type="checkbox" name="host_uuid" value="{{ host.uuid }}"
+                 {% if not host.is_disabled %}checked{% endif %}></td>
+      <td>{{ host.remark }}</td>
+      <td class="nowrap muted">{{ host.address }}{% if host.port %}:{{ host.port }}{% endif %}</td>
+      <td>
+        <span class="badge {{ 'muted' if host.is_disabled else 'ok' }}">
+          {{ 'выключен' if host.is_disabled else 'включён' }}
+        </span>
+      </td>
+      <td>
+        {% if ours %}<code>{{ ours.remarks }}</code>
+        {% else %}<span class="dim">не импортирован</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="toolbar" style="margin-top:14px">
+    <button type="submit">Импортировать отмеченные</button>
+    <label style="margin:0; display:flex; align-items:center; gap:7px">
+      <input type="checkbox" name="include_disabled"> импортировать и выключенные
+    </label>
+  </div>
+</form>
+{% elif status.ok %}
+<div class="empty" style="margin-top:18px">В панели нет точек подключения — заводить нечего.</div>
+{% endif %}
+
+<details style="margin-top:26px">
+  <summary>Куда мы ходим</summary>
+  <div class="panel">
+    <dl class="kv">
+      <dt>Адрес панели</dt><dd><code>{{ base_url or 'не задан' }}</code></dd>
+      {% for title, path in paths.items() %}
+      <dt>Путь: {{ title }}</dt><dd><code>{{ path }}</code></dd>
+      {% endfor %}
+    </dl>
+    <p class="muted" style="margin-bottom:0">Пути настраиваются переменными
+      <code>REMNAWAVE_*_PATH</code>: панель развивается быстро, и переезд ручки
+      не должен требовать нашего релиза.</p>
+  </div>
+</details>
+{% endblock %}

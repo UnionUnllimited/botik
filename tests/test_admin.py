@@ -34,6 +34,7 @@ class TestAccessWithoutSession:
             "/admin/subscriptions",
             "/admin/devices",
             "/admin/nodes",
+            "/admin/remnawave",
             "/admin/catalog",
             "/admin/promo",
             "/admin/settings",
@@ -70,6 +71,13 @@ class TestRoleMatrix:
         assert "settings" not in support
         assert "catalog" not in support
         assert "promo" not in support
+
+    def test_panel_integration_is_not_for_everyone(self):
+        """Импорт узлов из Remnawave меняет то, что уедет клиентам в подписке."""
+        assert "remnawave" in ROLE_SECTIONS[AdminRole.OWNER]
+        assert "remnawave" in ROLE_SECTIONS[AdminRole.ADMIN]
+        assert "remnawave" not in ROLE_SECTIONS[AdminRole.SUPPORT]
+        assert "remnawave" not in ROLE_SECTIONS[AdminRole.LOGIST]
 
     def test_logist_sees_only_fulfilment(self):
         logist = ROLE_SECTIONS[AdminRole.LOGIST]
@@ -159,6 +167,69 @@ class TestFormatting:
         past = dt.datetime.now(dt.UTC) - dt.timedelta(days=5)
         assert "просрочено" in days_until(past)
         assert days_until(None) == "—"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(0, "0"), (None, "0"), (512, "512 Б"), (1536, "1,5 КБ"), (137_438_953_472, "128 ГБ")],
+    )
+    def test_bytes_human(self, value, expected):
+        from api.admin.templating import bytes_human
+
+        assert bytes_human(value) == expected
+
+
+class TestDashboardWidgets:
+    def test_trend_direction(self):
+        from core.services.stats import Trend
+
+        assert Trend(Decimal("120"), Decimal("100")).direction == "up"
+        assert Trend(Decimal("80"), Decimal("100")).direction == "down"
+        assert Trend(Decimal("100"), Decimal("100")).direction == "flat"
+
+    def test_trend_label_has_sign(self):
+        from core.services.stats import Trend
+
+        assert Trend(Decimal("150"), Decimal("100")).label == "+50%"
+        assert Trend(Decimal("50"), Decimal("100")).label == "-50%"
+
+    def test_trend_without_history_is_not_infinite_growth(self):
+        """Делить на нулевую базу нельзя, и «+∞%» ничего не сообщает."""
+        from core.services.stats import Trend
+
+        trend = Trend(Decimal("500"), Decimal("0"))
+        assert trend.percent is None
+        assert trend.label == "—"
+        assert trend.direction == "flat"
+
+    def test_chart_renders_bars_for_every_day(self):
+        """Пустые дни должны рисоваться, иначе график врёт формой."""
+        from api.admin.routes.dashboard import CHART_HEIGHT, _chart
+
+        series = [(dt.date(2026, 8, day), Decimal(value)) for day, value in enumerate([0, 50, 100], 1)]
+        bars, peak = _chart(series)
+        assert len(bars) == 3
+        assert peak == Decimal("100")
+        assert bars[0]["empty"] is True
+        # Столбец максимума достаёт до верха, нулевой остаётся видимой полоской.
+        assert bars[2]["height"] > bars[1]["height"] > bars[0]["height"]
+        assert bars[0]["height"] > 0
+        assert bars[2]["y"] + bars[2]["height"] == pytest.approx(CHART_HEIGHT)
+
+    def test_chart_survives_empty_series(self):
+        from api.admin.routes.dashboard import _chart
+
+        bars, peak = _chart([])
+        assert bars == []
+        assert peak == Decimal("0")
+
+    def test_chart_without_any_revenue(self):
+        """На пустой базе деление на пик не должно ронять дашборд."""
+        from api.admin.routes.dashboard import _chart
+
+        series = [(dt.date(2026, 8, day), Decimal("0")) for day in range(1, 5)]
+        bars, peak = _chart(series)
+        assert peak == Decimal("0")
+        assert all(bar["empty"] for bar in bars)
 
 
 class TestRouterAccess:

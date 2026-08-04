@@ -28,6 +28,8 @@ from core.notifications import close_bot
 from core.payments import close_providers
 from core.redis_client import check_redis, close_redis
 from core.sentry import init_sentry
+from core.services.frp import close_dashboard
+from core.services.remnawave import close_client as close_remnawave
 
 log = structlog.get_logger("api")
 
@@ -48,6 +50,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await close_providers()
         await close_bot()
+        await close_dashboard()
+        await close_remnawave()
         await close_redis()
         await dispose_engine()
         log.info("api.shutdown")

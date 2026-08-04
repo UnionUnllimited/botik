@@ -360,6 +360,52 @@ class FrpSettings(EnvSettings):
         return bool(self.enabled and self.dashboard_url and self.dashboard_password.get_secret_value())
 
 
+class RemnawaveSettings(EnvSettings):
+    """Панель Remnawave — источник узлов доступа и учёток для роутеров.
+
+    Панель стоит на том же сервере в своей docker-сети, поэтому по умолчанию
+    зовём её по внутреннему имени контейнера, а не через публичный домен.
+
+    Пути вынесены в переменные по той же причине, что и у PLATEGA: панель
+    активно развивается, список узлов в разных её версиях лежал то на
+    `/api/nodes`, то на `/api/nodes/get-all`. Переезд ручки не должен
+    требовать нашего релиза — админ поправит переменную и перезапустит.
+    """
+
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="REMNAWAVE_")
+
+    enabled: bool = False
+    base_url: str = ""
+    """Например http://remnawave-backend:3000 внутри сети или https://panel.example."""
+    token: SecretStr = SecretStr("")
+    """Bearer-токен из настроек панели."""
+    proxy_token: SecretStr = SecretStr("")
+    """X-Api-Key, если панель дополнительно закрыта прокси."""
+    timeout_sec: float = 15.0
+    verify_tls: bool = True
+
+    stats_path: str = "/api/system/stats"
+    nodes_path: str = "/api/nodes"
+    hosts_path: str = "/api/hosts"
+    users_path: str = "/api/users"
+
+    @property
+    def missing_keys(self) -> list[str]:
+        """Каких переменных не хватает — сообщение оператору должно быть точным."""
+        missing: list[str] = []
+        if not self.enabled:
+            missing.append("REMNAWAVE_ENABLED=true")
+        if not self.base_url:
+            missing.append("REMNAWAVE_BASE_URL")
+        if not self.token.get_secret_value():
+            missing.append("REMNAWAVE_TOKEN")
+        return missing
+
+    @property
+    def is_configured(self) -> bool:
+        return not self.missing_keys
+
+
 class SentrySettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SENTRY_")
 
@@ -387,6 +433,7 @@ class Settings(EnvSettings):
     subscription: SubscriptionSettings = Field(default_factory=SubscriptionSettings)
     platega: PlategaSettings = Field(default_factory=PlategaSettings)
     frp: FrpSettings = Field(default_factory=FrpSettings)
+    remnawave: RemnawaveSettings = Field(default_factory=RemnawaveSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
 
     @model_validator(mode="after")

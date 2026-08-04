@@ -21,6 +21,7 @@ from api.admin.routes import (
     infra,
     orders,
     promo,
+    remnawave,
     subscriptions,
     system,
 )
@@ -36,6 +37,7 @@ router.include_router(subscriptions.router)
 router.include_router(fleet.router)
 router.include_router(console.router)
 router.include_router(infra.router)
+router.include_router(remnawave.router)
 router.include_router(catalog.router)
 router.include_router(promo.router)
 router.include_router(system.router)
