@@ -405,6 +405,14 @@ async def submit_order(
         await state.clear()
         await screen.show(callback, str(exc), markup=inline.back_to_menu())
         return
+    except Exception:
+        # Оформление трогает каталог, промокоды, доставку и подписку сразу.
+        # Общий обработчик показал бы «что-то пошло не так» и увёл в тупик,
+        # поэтому ловим здесь: клиент видит выход, мы — стектрейс с составом заказа.
+        log.exception("order.create_unexpected", user_id=user.id, is_cod=draft.is_cod)
+        await state.clear()
+        await screen.show(callback, ru.ORDER_FAILED, markup=inline.back_to_menu())
+        return
 
     await session.flush()
     await state.clear()

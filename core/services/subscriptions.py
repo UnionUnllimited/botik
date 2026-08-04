@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 
 import structlog
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -44,7 +45,12 @@ def _record(
         admin_id=admin_id,
         comment=comment,
     )
-    subscription.events.append(entry)
+    # Связь уже установлена конструктором, и этого достаточно, чтобы событие
+    # сохранилось каскадом. Дописываем в коллекцию только когда она уже в памяти:
+    # у подписки, поднятой из базы без selectinload, обращение к `events`
+    # запускает ленивую загрузку, а в async-сессии она падает MissingGreenlet.
+    if "events" not in sa_inspect(subscription).unloaded:
+        subscription.events.append(entry)
     return entry
 
 

@@ -58,6 +58,17 @@ class TestActivation:
         service.activate(subscription, plan=plan_month, now=NOW)
         assert subscription.events[-1].event is SubscriptionEventType.ACTIVATED
 
+    def test_event_is_linked_to_subscription_itself(self, plan_month):
+        """Событие держится связью, а не только присутствием в коллекции.
+
+        На этом стоит защита от MissingGreenlet: подписку из базы поднимают
+        без `events`, и обращение к коллекции запускало бы ленивую загрузку
+        посреди async-сессии. Каскад сохранит событие и без неё.
+        """
+        subscription = make_subscription()
+        service.activate(subscription, plan=plan_month, now=NOW)
+        assert subscription.events[-1].subscription is subscription
+
 
 class TestExtension:
     def test_active_subscription_extends_from_expiry(self, plan_month):
