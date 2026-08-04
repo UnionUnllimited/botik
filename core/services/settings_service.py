@@ -49,8 +49,6 @@ DEFAULTS: dict[str, Any] = {
     },
     "delivery.free_from": "0.00",
     "order.shipping_days": "1–2 рабочих дня",
-    "order.cod_enabled": True,
-    "order.cod_surcharge": "0.00",
     "support.contact": "",
     "support.working_hours": "ежедневно с 10:00 до 22:00 по Москве",
 }
@@ -59,8 +57,6 @@ DESCRIPTIONS = {
     "delivery.methods": "Способы доставки: цена до ПВЗ и курьером, срок",
     "delivery.free_from": "Сумма заказа, от которой доставка бесплатна (0 — выключено)",
     "order.shipping_days": "Срок отправки заказа после оплаты",
-    "order.cod_enabled": "Разрешить оплату при получении",
-    "order.cod_surcharge": "Наценка за оплату при получении",
     "support.contact": "Контакт поддержки для текстов бота",
     "support.working_hours": "Часы работы поддержки",
 }

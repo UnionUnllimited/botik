@@ -23,7 +23,7 @@ SCREENS = {
     "waiting_for_text": inline.waiting_for_text,
     "product_card": lambda: inline.product_card(1, in_stock=True),
     "product_card_out_of_stock": lambda: inline.product_card(1, in_stock=False),
-    "confirm_order": lambda: inline.confirm_order(cod_enabled=True, online_enabled=True),
+    "confirm_order": lambda: inline.confirm_order(online_enabled=True),
     "payment_link": lambda: inline.payment_link("https://pay.example", 1),
     "retry_payment": lambda: inline.retry_payment(1),
     "subscription_active": lambda: inline.subscription_actions(has_subscription=True),

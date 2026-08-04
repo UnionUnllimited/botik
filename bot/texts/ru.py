@@ -159,7 +159,6 @@ PROMO_FAILED = "❌ {reason}\n\nВведите другой промокод и�
 
 # --- подтверждение и оплата ------------------------------------------------
 PAY_ONLINE = "💳 Оплатить онлайн"
-PAY_ON_DELIVERY = "📦 Оплата при получении"
 
 
 def order_summary(
@@ -219,11 +218,6 @@ PAYMENT_UNAVAILABLE = (
     "Онлайн-оплата временно недоступна. Оформите заказ с оплатой при получении или напишите в поддержку."
 )
 
-ORDER_COD_CREATED = (
-    "📦 <b>Заказ {number} принят</b>\n\n"
-    "Сумма к оплате при получении: <b>{total}</b>\n"
-    "Отправим в течение {shipping_days}, трек-номер пришлём сюда."
-)
 
 
 def payment_success(*, number: str, total: str, shipping_days: str, has_device: bool) -> str:

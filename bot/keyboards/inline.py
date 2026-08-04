@@ -177,12 +177,11 @@ def skip_promo() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def confirm_order(*, cod_enabled: bool, online_enabled: bool) -> InlineKeyboardMarkup:
+def confirm_order(*, online_enabled: bool) -> InlineKeyboardMarkup:
+    """Оплата только онлайн: при получении деньги забирал бы перевозчик."""
     builder = InlineKeyboardBuilder()
     if online_enabled:
         builder.button(text=ru.PAY_ONLINE, callback_data=NavCB(action="pay_online"))
-    if cod_enabled:
-        builder.button(text=ru.PAY_ON_DELIVERY, callback_data=NavCB(action="pay_cod"))
     builder.adjust(1)
     _nav(builder, cancel=True)
     return builder.as_markup()

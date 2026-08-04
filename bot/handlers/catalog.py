@@ -31,7 +31,6 @@ from core.services import delivery as delivery_service
 from core.services import orders as order_service
 from core.services import payments as payment_service
 from core.services import promo as promo_service
-from core.services import settings_service
 from core.services.orders import OrderDraft, OrderError
 
 router = Router(name="catalog")
@@ -359,7 +358,6 @@ async def _show_confirmation(event: Event, session: AsyncSession, state: FSMCont
         target = draft.pvz_address or draft.delivery_address or draft.customer_city
         delivery_text = f"{option.title if option else draft.delivery_method}, {target}"
 
-    cod_enabled = await settings_service.get_bool(session, "order.cod_enabled")
     provider = online_provider()
 
     await state.set_state(OrderFlow.confirm)
@@ -377,17 +375,13 @@ async def _show_confirmation(event: Event, session: AsyncSession, state: FSMCont
             city=draft.customer_city,
             delivery_text=delivery_text,
         ),
-        markup=inline.confirm_order(
-            cod_enabled=cod_enabled and totals.product is not None,
-            online_enabled=provider is not None,
-        ),
+        markup=inline.confirm_order(online_enabled=provider is not None),
     )
 
 
-@router.callback_query(OrderFlow.confirm, inline.NavCB.filter(F.action.in_({"pay_online", "pay_cod"})))
+@router.callback_query(OrderFlow.confirm, inline.NavCB.filter(F.action == "pay_online"))
 async def submit_order(
     callback: CallbackQuery,
-    callback_data: inline.NavCB,
     session: AsyncSession,
     state: FSMContext,
     user: User,
@@ -396,7 +390,6 @@ async def submit_order(
 
     data = await state.get_data()
     draft = _draft_from_state(data)
-    draft.is_cod = callback_data.action == "pay_cod"
     draft.utm_source = user.utm_source
 
     try:
@@ -409,29 +402,13 @@ async def submit_order(
         # Оформление трогает каталог, промокоды, доставку и подписку сразу.
         # Общий обработчик показал бы «что-то пошло не так» и увёл в тупик,
         # поэтому ловим здесь: клиент видит выход, мы — стектрейс с составом заказа.
-        log.exception("order.create_unexpected", user_id=user.id, is_cod=draft.is_cod)
+        log.exception("order.create_unexpected", user_id=user.id)
         await state.clear()
         await screen.show(callback, ru.ORDER_FAILED, markup=inline.back_to_menu())
         return
 
     await session.flush()
     await state.clear()
-
-    if draft.is_cod:
-        # Деньги заберёт перевозчик — заказ сразу уходит в работу логисту.
-        shipping_days = await settings_service.get_str(session, "order.shipping_days")
-        await screen.show(
-            callback,
-            ru.ORDER_COD_CREATED.format(
-                number=order.public_number,
-                total=ru.money(order.total),
-                shipping_days=shipping_days,
-            ),
-            markup=inline.back_to_menu(),
-            persist=True,
-        )
-        await _notify_admins_new_order(session, order=order, payment_kind="при получении")
-        return
 
     await _create_payment_and_reply(callback, session, user=user, order=order)
 
