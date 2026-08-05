@@ -61,6 +61,14 @@ async def cmd_start(
     is_new_user: bool,
 ) -> None:
     await state.clear()
+    # /start — это «начать заново», и экран должен быть новым сообщением.
+    # Удаляя переписку, клиент убирает её только у себя: копия бота остаётся,
+    # правка старого экрана проходит успешно, и он молча редактирует то,
+    # чего клиент уже не видит. Со стороны выглядит как сломанный бот.
+    context = screen.context_of(message)
+    if context is not None:
+        await screen.forget(context[1])
+
     payload = parse_start_payload(command.args)
     referrer: User | None = None
 
