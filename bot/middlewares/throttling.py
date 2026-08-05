@@ -9,7 +9,9 @@
 
   * **лимит на пользователя** — обычный человек не жмёт кнопки чаще;
   * **тишина после предупреждения** — на флуд отвечать нельзя, ответ сам по себе
-    вызов к Telegram API, то есть усиление атаки;
+    вызов к Telegram API, то есть усиление атаки. Но сброшенный апдейт всегда
+    попадает в лог: молчаливый бот без единой записи неотличим от сломанного,
+    и разбираться приходится вслепую;
   * **общий лимит на бота** — защита от роя аккаунтов, каждый из которых
     по отдельности в норме. Лишнее просто отбрасывается.
 """
@@ -52,8 +54,8 @@ class ThrottlingMiddleware(BaseMiddleware):
         *,
         limit: int = 20,
         window_sec: int = 10,
-        strikes_before_mute: int = 3,
-        mute_sec: int = 300,
+        strikes_before_mute: int = 5,
+        mute_sec: int = 60,
         global_limit: int = 600,
         global_window_sec: int = 10,
     ) -> None:
@@ -81,8 +83,11 @@ class ThrottlingMiddleware(BaseMiddleware):
         limiter = RateLimiter(redis)
 
         # Замолчавших не проверяем дальше: цель — не тратить на них ничего.
+        # Но в лог пишем обязательно: молчаливый сброс без следа неотличим
+        # от сломанного бота, и разбираться в этом приходится вслепую.
         if await redis.get(self._mute_key(tg_user.id)):
             bot_errors_total.labels(kind="throttled_muted").inc()
+            log.warning("bot.update_dropped_muted", tg_id=tg_user.id)
             return None
 
         allowed, _ = await limiter.hit(
