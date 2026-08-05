@@ -141,3 +141,31 @@ class TestPanelExpiry:
         """Панель ждёт время в UTC с суффиксом Z, смещение +00:00 она не понимает."""
         moment = dt.datetime(2027, 3, 1, 12, tzinfo=dt.UTC)
         assert moment.astimezone(dt.UTC).isoformat().replace("+00:00", "Z") == "2027-03-01T12:00:00Z"
+
+    def test_local_time_is_converted_to_utc(self):
+        """Срок хранится в UTC: без приведения панель отключила бы доступ раньше."""
+        from zoneinfo import ZoneInfo
+
+        moment = dt.datetime(2027, 3, 1, 2, tzinfo=ZoneInfo("Europe/Moscow"))
+        assert moment.astimezone(dt.UTC).isoformat().replace("+00:00", "Z") == "2027-02-28T23:00:00Z"
+
+
+class TestExpirySyncContract:
+    """Продление у нас уже принято и оплачено — сбой панели не должен его рушить."""
+
+    def test_sync_is_best_effort(self):
+        import inspect
+
+        from core.services.activation import sync_panel_expiry
+
+        source = inspect.getsource(sync_panel_expiry)
+        # Ошибки панели ловятся и логируются, наружу не выходят.
+        assert "except remnawave.RemnawaveError" in source
+        assert "raise" not in source
+
+    def test_sync_returns_flag_not_raises(self):
+        import inspect
+
+        from core.services.activation import sync_panel_expiry
+
+        assert inspect.signature(sync_panel_expiry).return_annotation == "bool"

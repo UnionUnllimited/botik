@@ -22,6 +22,7 @@ from core.models import Device, Order, Payment, Plan, Referral, Subscription, Ti
 from core.notifications import send_message
 from core.security import normalize_mac
 from core.services import subscriptions as subscription_service
+from core.services.activation import sync_panel_expiry
 from core.services.stats import PAID_STATUSES as PAID_ORDER_STATUSES
 
 router = APIRouter(prefix="/clients")
@@ -336,6 +337,7 @@ async def extend_subscription(
     else:
         old_expires = subscription.expires_at
         subscription_service.extend(subscription, plan=plan, admin_id=principal.admin.id)
+        await sync_panel_expiry(session, subscription)
         audit.record(
             session,
             admin_id=principal.admin.id,

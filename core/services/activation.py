@@ -130,6 +130,58 @@ async def deliver_subscription(device: Device, url: str) -> str:
     return result.output[:2000]
 
 
+async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -> bool:
+    """Переносит срок подписки в учётку панели.
+
+    Вызывается после любого продления. Ничего не бросает: подписка у нас уже
+    продлена и оплата принята, и падать из-за недоступной панели нельзя —
+    расхождение поправит следующий вызов или админ руками.
+
+    Возвращает True, если срок в панели обновлён.
+    """
+    if subscription.expires_at is None:
+        return False
+
+    device = await session.scalar(
+        select(Device)
+        .where(
+            Device.user_id == subscription.user_id,
+            Device.status.notin_([DeviceStatus.REVOKED, DeviceStatus.BLOCKED]),
+        )
+        .order_by(Device.activated_at.desc().nulls_last(), Device.id.desc())
+        .limit(1)
+    )
+    if device is None:
+        # Роутер ещё не активирован — учётки в панели тоже нет, синхронизировать нечего.
+        return False
+
+    owner = await session.get(User, subscription.user_id)
+    if owner is None:
+        return False
+
+    username = username_for(owner, device.mac)
+    try:
+        panel = remnawave.client()
+        account = await panel.find_user(username)
+        if account is None:
+            log.warning("activation.expiry_sync_no_account", username=username)
+            return False
+        await panel.update_expiry(uuid=account.uuid, expire_at=subscription.expires_at)
+    except remnawave.RemnawaveError as exc:
+        log.warning("activation.expiry_sync_failed", username=username, error=str(exc))
+        return False
+
+    routers.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message=f"Срок в панели продлён до {subscription.expires_at:%d.%m.%Y}",
+        payload={"username": username},
+    )
+    return True
+
+
 async def activate(session: AsyncSession, *, user: User, raw_mac: str) -> Device:
     """Активация целиком. Любой отказ — `ActivationError` с текстом для клиента."""
     mac = normalize_mac(raw_mac)

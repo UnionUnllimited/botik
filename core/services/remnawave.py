@@ -416,6 +416,22 @@ class RemnawaveClient:
         log.info("remnawave.user_created", username=username, uuid=created.uuid)
         return created
 
+    async def update_expiry(self, *, uuid: str, expire_at: dt.datetime) -> RemnaUser:
+        """Двигает срок учётки в панели.
+
+        Нужно при продлении: срок ставится один раз при активации, и без этого
+        доступ отключился бы по старой дате, хотя клиент оплатил следующий период.
+        """
+        payload = {
+            "uuid": uuid,
+            "expireAt": expire_at.astimezone(dt.UTC).isoformat().replace("+00:00", "Z"),
+        }
+        answer = unwrap(await self.request("PATCH", self._config.users_path, json=payload))
+        if not isinstance(answer, dict):
+            raise RemnawaveError("Панель ответила на продление не объектом")
+        log.info("remnawave.expiry_updated", uuid=uuid, expire_at=payload["expireAt"])
+        return RemnaUser.parse(answer)
+
     async def probe(self) -> PanelStatus:
         """Состояние связи одним вызовом. Не бросает: страница обязана открыться."""
         status = PanelStatus(

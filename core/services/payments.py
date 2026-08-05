@@ -296,6 +296,11 @@ async def _grant_subscription(
     if existing is not None:
         subscription_service.extend(existing, plan=plan, payment_id=payment.id)
         payment.subscription_id = existing.id
+        # Срок в панели ставится один раз при активации: без переноса доступ
+        # отключился бы по старой дате, хотя клиент уже оплатил следующий период.
+        from core.services.activation import sync_panel_expiry
+
+        await sync_panel_expiry(session, existing)
         return existing
 
     subscription = await subscription_service.create_pending(
