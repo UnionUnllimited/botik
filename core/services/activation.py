@@ -17,6 +17,7 @@ Remnawave, а не наш `/sub/{token}`. Это заметно проще, но
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 import structlog
@@ -67,6 +68,125 @@ def username_for(user: User, mac: str) -> str:
         user_id=user.id,
     )
     return _USERNAME_ALLOWED.sub("", raw)[:34]
+
+
+def manual_username_for(mac: str) -> str:
+    """Имя учётки при ручной активации из админки — сам MAC роутера.
+
+    Клиента у такого устройства может не быть вовсе, и брать имя не от кого.
+    Двоеточия панель не принимает, поэтому разделителем идёт дефис: так строка
+    хотя бы читается как MAC, когда её ищут в панели глазами.
+    """
+    cleaned = _USERNAME_ALLOWED.sub("", mac.replace(":", "-").lower())
+    return cleaned[:34]
+
+
+def panel_expiry_of(account: remnawave.RemnaUser | None) -> dt.datetime | None:
+    """Срок учётки из ответа панели. Формат её версии нам не подконтролен."""
+    if account is None or not account.expire_at:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(account.expire_at.replace("Z", "+00:00"))
+    except ValueError:
+        log.warning("activation.panel_expiry_unparsed", value=account.expire_at)
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
+
+
+async def activate_manually(session: AsyncSession, *, device: Device, days: int) -> dt.datetime:
+    """Ручная активация роутера админом: учётка по MAC, срок на `days` и доставка ссылки.
+
+    Отдельный путь от клиентской активации и намеренно не трогает наши подписки:
+    здесь нет ни заказа, ни тарифа, а есть роутер, которому нужно выдать доступ —
+    служебный, подменный или проданный вне сайта. Возвращает срок в панели.
+    """
+    if device.status is DeviceStatus.BLOCKED:
+        raise ActivationError("Роутер заблокирован. Сначала снимите блокировку.")
+    if days < 1:
+        raise ActivationError("Срок должен быть хотя бы один день.")
+
+    username = manual_username_for(device.mac)
+    expire_at = utcnow() + dt.timedelta(days=days)
+
+    try:
+        panel = remnawave.client()
+        account = await panel.find_user(username)
+        if account is None:
+            account = await panel.create_user(
+                username=username,
+                expire_at=expire_at,
+                description=f"Ручная активация · {device.mac}",
+            )
+        else:
+            # Повторная активация того же роутера не должна плодить учётки:
+            # переиспользуем и просто переставляем срок.
+            await panel.update_expiry(uuid=account.uuid, expire_at=expire_at)
+    except remnawave.RemnawaveError as exc:
+        log.warning("activation.manual_panel_failed", mac=device.mac, error=str(exc))
+        raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
+
+    await _ensure_tunnel(session, device)
+    output = await deliver_subscription(device, account.subscription_url)
+
+    now = utcnow()
+    device.status = DeviceStatus.ACTIVE
+    device.activated_at = device.activated_at or now
+    routers.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="success",
+        message=f"Ручная активация на {days} дн., учётка {username}",
+        payload={"username": username, "until": expire_at.isoformat(), "output": output[:500]},
+    )
+    log.info("activation.manual_done", mac=device.mac, username=username, days=days)
+    return expire_at
+
+
+async def extend_manually(session: AsyncSession, *, device: Device, days: int) -> dt.datetime:
+    """Продлевает срок учётки, заведённой ручной активацией.
+
+    Считаем от текущего срока, а не от сегодня: продление истёкшей учётки
+    начинает отсчёт заново, а не дарит дни задним числом.
+    """
+    if days < 1:
+        raise ActivationError("Срок должен быть хотя бы один день.")
+
+    username = manual_username_for(device.mac)
+    try:
+        panel = remnawave.client()
+        account = await panel.find_user(username)
+        if account is None:
+            raise ActivationError(
+                f"В панели нет учётки {username} — сначала активируйте роутер."
+            )
+        now = utcnow()
+        current = panel_expiry_of(account)
+        expire_at = max(current or now, now) + dt.timedelta(days=days)
+        await panel.update_expiry(uuid=account.uuid, expire_at=expire_at)
+    except remnawave.RemnawaveError as exc:
+        log.warning("activation.manual_extend_failed", mac=device.mac, error=str(exc))
+        raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
+
+    routers.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message=f"Срок продлён на {days} дн. до {expire_at:%d.%m.%Y}",
+        payload={"username": username, "until": expire_at.isoformat()},
+    )
+    log.info("activation.manual_extended", mac=device.mac, username=username, days=days)
+    return expire_at
+
+
+async def panel_account_of(device: Device) -> remnawave.RemnaUser | None:
+    """Учётка ручной активации этого роутера, если она заведена."""
+    try:
+        return await remnawave.client().find_user(manual_username_for(device.mac))
+    except remnawave.RemnawaveError as exc:
+        log.warning("activation.manual_lookup_failed", mac=device.mac, error=str(exc))
+        return None
 
 
 async def _check_rate_limit(user: User) -> None:

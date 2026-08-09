@@ -185,3 +185,46 @@ class TestExpirySyncContract:
         from core.services.activation import sync_panel_expiry
 
         assert inspect.signature(sync_panel_expiry).return_annotation == "bool"
+
+
+class TestManualActivation:
+    """Ручная активация из админки: имя учётки — сам MAC, клиента может не быть."""
+
+    def test_username_is_the_mac(self):
+        from core.services.activation import manual_username_for
+
+        assert manual_username_for("D4:0D:AB:28:3B:80") == "d4-0d-ab-28-3b-80"
+
+    def test_username_fits_panel_rules(self):
+        """Панель принимает только латиницу, цифры, дефис и подчёркивание."""
+        from core.services.activation import manual_username_for
+
+        name = manual_username_for("D4:0D:AB:28:3B:80")
+        assert all(ch.isalnum() or ch in "-_" for ch in name)
+        assert len(name) <= 34
+
+    def test_username_does_not_collide_with_client_accounts(self):
+        """Иначе ручная активация перезаписала бы срок клиентской подписки."""
+        from core.services.activation import manual_username_for, username_for
+
+        mac = "D4:0D:AB:28:3B:80"
+        assert manual_username_for(mac) != username_for(make_user(), mac)
+
+    def test_expiry_parsed_from_panel(self):
+        import datetime as dt
+
+        from core.services.activation import panel_expiry_of
+        from core.services.remnawave import RemnaUser
+
+        account = RemnaUser(uuid="u", username="n", subscription_url="", expire_at="2026-09-26T12:00:00.000Z")
+        assert panel_expiry_of(account) == dt.datetime(2026, 9, 26, 12, tzinfo=dt.UTC)
+
+    def test_missing_expiry_is_not_an_error(self):
+        """Формат ответа панели меняется между версиями — падать на этом нельзя."""
+        from core.services.activation import panel_expiry_of
+        from core.services.remnawave import RemnaUser
+
+        assert panel_expiry_of(None) is None
+        assert panel_expiry_of(RemnaUser(uuid="u", username="n", subscription_url="")) is None
+        garbled = RemnaUser(uuid="u", username="n", subscription_url="", expire_at="скоро")
+        assert panel_expiry_of(garbled) is None

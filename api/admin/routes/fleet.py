@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
+from urllib.parse import quote
 
 import structlog
 from fastapi import APIRouter, Depends, Request
@@ -31,6 +33,7 @@ from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import Device, DeviceEvent, Heartbeat, Plan
 from core.security import normalize_mac
+from core.services import activation
 from core.services import routers as router_service
 from core.services import subscriptions as subscription_service
 from core.services.frp import FrpError, RouterApi, dashboard
@@ -169,6 +172,15 @@ async def fleet_card(
         if subscription is not None and subscription.plan_id:
             plan = await session.get(Plan, subscription.plan_id)
 
+    # Учётка ручной активации: без её срока кнопка продления — стрельба вслепую.
+    # Жёсткий предел, как и у дашборда frps: страница не должна ждать чужой сервис.
+    panel_account = None
+    if settings.remnawave.is_configured:
+        try:
+            panel_account = await asyncio.wait_for(activation.panel_account_of(device), timeout=3)
+        except TimeoutError:
+            log.warning("fleet.panel_lookup_timeout", device_id=device_id)
+
     series = {
         "cpu": [(item.created_at, item.cpu_pct or 0) for item in history],
         "ram": [(item.created_at, item.ram_pct or 0) for item in history],
@@ -186,6 +198,9 @@ async def fleet_card(
         series=series,
         subscription=subscription,
         plan=plan,
+        panel_account=panel_account,
+        panel_username=activation.manual_username_for(device.mac),
+        panel_expires_at=activation.panel_expiry_of(panel_account),
         has_history=bool(history),
         frp_configured=settings.frp.is_configured,
     )
@@ -259,6 +274,78 @@ async def open_panel(
     await session.commit()
     log.info("fleet.panel_opened", device_id=device.id, admin=principal.admin.login)
     return RedirectResponse("/cgi-bin/luci/", status_code=303)
+
+
+def _days_from(form: Any, default: int = 30) -> int:
+    raw = form_value(form, "days") or str(default)
+    try:
+        return max(min(int(raw), 3650), 1)
+    except ValueError:
+        return default
+
+
+@router.post("/{device_id}/activate", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def manual_activate(
+    device_id: int,
+    request: Request,
+    principal: Principal = Depends(require_section("devices")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    """Выдать роутеру доступ руками: учётка в панели по MAC и доставка ссылки."""
+    device = await session.get(Device, device_id)
+    if device is None:
+        return RedirectResponse("/admin/fleet?err=Роутер+не+найден", status_code=303)
+
+    days = _days_from(await request.form())
+    try:
+        until = await activation.activate_manually(session, device=device, days=days)
+    except activation.ActivationError as exc:
+        return RedirectResponse(f"/admin/fleet/{device_id}?err={quote(str(exc)[:160])}", status_code=303)
+
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="fleet.manual_activate",
+        entity_type="device",
+        entity_id=device.id,
+        new={"days": days, "until": until.isoformat()},
+        request=request,
+    )
+    return RedirectResponse(
+        f"/admin/fleet/{device_id}?ok={quote(f'Активирован до {until:%d.%m.%Y}')}", status_code=303
+    )
+
+
+@router.post("/{device_id}/extend", include_in_schema=False, dependencies=[Depends(verify_csrf)])
+async def manual_extend(
+    device_id: int,
+    request: Request,
+    principal: Principal = Depends(require_section("devices")),
+    session: AsyncSession = Depends(get_transaction),
+) -> RedirectResponse:
+    """Продлить срок учётки, заведённой ручной активацией."""
+    device = await session.get(Device, device_id)
+    if device is None:
+        return RedirectResponse("/admin/fleet?err=Роутер+не+найден", status_code=303)
+
+    days = _days_from(await request.form())
+    try:
+        until = await activation.extend_manually(session, device=device, days=days)
+    except activation.ActivationError as exc:
+        return RedirectResponse(f"/admin/fleet/{device_id}?err={quote(str(exc)[:160])}", status_code=303)
+
+    audit.record(
+        session,
+        admin_id=principal.admin.id,
+        action="fleet.manual_extend",
+        entity_type="device",
+        entity_id=device.id,
+        new={"days": days, "until": until.isoformat()},
+        request=request,
+    )
+    return RedirectResponse(
+        f"/admin/fleet/{device_id}?ok={quote(f'Продлён до {until:%d.%m.%Y}')}", status_code=303
+    )
 
 
 @router.post("/{device_id}/bind", include_in_schema=False, dependencies=[Depends(verify_csrf)])
