@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy import Numeric
 
 from core.enums import SubscriptionStatus
-from core.models import Base, Device, Plan, Subscription
+from core.models import Base, Device, Plan, Subscription, User
 
 
 def test_all_required_tables_declared():
@@ -88,6 +88,17 @@ def test_critical_indexes_exist():
     assert ("user_id",) in order_indexes
 
 
+def test_site_client_needs_no_telegram():
+    """Клиент с сайта заводится без tg_id, а почта остаётся уникальной.
+
+    Обратно tg_id в NOT NULL вернуть нельзя: такой клиент перестанет создаваться.
+    """
+    users = Base.metadata.tables["users"]
+    assert users.columns["tg_id"].nullable is True
+    assert users.columns["email"].unique is True
+    assert users.columns["email"].nullable is True, "у клиентов из бота почты нет"
+
+
 def test_no_forbidden_term_in_schema():
     """В именах таблиц и колонок запрещённой регламентом лексики быть не должно."""
     forbidden = "".join(("v", "p", "n"))  # само слово в репозитории не пишем
@@ -106,6 +117,12 @@ class TestModelHelpers:
     def test_plan_price_per_month(self):
         plan = Plan(slug="m3", title="3 месяца", months=3, price=Decimal("1500.00"))
         assert plan.price_per_month == Decimal("500.00")
+
+    def test_display_name_falls_back_to_email(self):
+        """У клиента с сайта нет ни имени из Telegram, ни username — остаётся почта."""
+        assert User(email="client@example.com").display_name == "client@example.com"
+        assert User(tg_id=42, username="ivan").display_name == "@ivan"
+        assert User(first_name="Иван", last_name="Петров").display_name == "Иван Петров"
 
     def test_device_online_threshold(self):
         now = dt.datetime(2026, 8, 3, 12, tzinfo=dt.UTC)

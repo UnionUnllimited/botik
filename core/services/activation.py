@@ -61,7 +61,9 @@ def username_for(user: User, mac: str) -> str:
 async def _check_rate_limit(user: User) -> None:
     limiter = RateLimiter()
     allowed, _ = await limiter.hit(
-        f"activation:{user.tg_id}",
+        # Ключ по нашему id, а не по tg_id: у клиента с сайта его нет,
+        # и все такие попали бы в общее ведро «activation:None» на всех.
+        f"activation:{user.id}",
         limit=settings.security.activation_attempts_per_hour,
         window_sec=3600,
     )

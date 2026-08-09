@@ -32,7 +32,12 @@ if TYPE_CHECKING:
 class User(IntPkMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    tg_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
+    """Заполнен только у клиентов, пришедших из бота. Регистрация на сайте его не ставит."""
+    email: Mapped[str | None] = mapped_column(String(254), unique=True)
+    """Логин на сайте. Хранится в нижнем регистре — сравнение идёт как есть, без функций."""
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    """Argon2id, тот же `core.security.hash_password`, что и у сотрудников админки."""
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(128))
     last_name: Mapped[str | None] = mapped_column(String(128))
@@ -80,7 +85,12 @@ class User(IntPkMixin, TimestampMixin, Base):
             return self.full_name
         parts = [self.first_name or "", self.last_name or ""]
         name = " ".join(p for p in parts if p).strip()
-        return name or (f"@{self.username}" if self.username else f"id{self.tg_id}")
+        if name:
+            return name
+        if self.username:
+            return f"@{self.username}"
+        # Клиент с сайта: имени из Telegram нет, до первого заказа известна одна почта.
+        return self.email or f"id{self.tg_id or self.id}"
 
 
 class AdminUser(IntPkMixin, TimestampMixin, Base):
