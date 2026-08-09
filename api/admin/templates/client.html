@@ -30,10 +30,15 @@
     <h2>Подписки</h2>
     {% if subscriptions %}
     <table>
-      <tr><th>Тариф</th><th>Статус</th><th>До</th><th>Дней</th></tr>
+      <tr><th>Тариф</th><th>Роутер</th><th>Статус</th><th>До</th><th>Дней</th></tr>
       {% for item in subscriptions %}
       <tr>
         <td>{{ item.plan.title if item.plan else '—' }}</td>
+        {# На каком роутере эта подписка. Связь ставится активацией, до неё пусто. #}
+        <td>
+          {% if item.device_id %}<code>{{ mac_by_device.get(item.device_id, '#' ~ item.device_id) }}</code>
+          {% else %}<span class="muted">не активирована</span>{% endif %}
+        </td>
         <td><span class="badge {{ item.status | status_tone }}">{{ item.status | status_label }}</span></td>
         <td class="nowrap">{{ item.expires_at | date_ru }}</td>
         <td>{{ item.expires_at | days_until }}</td>

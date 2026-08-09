@@ -197,3 +197,41 @@ class TestCabinetDeviceStates:
         page = self._page(device=device, activated=True, online=True)
         assert "Устройств в сети" in page
         assert "на связи" in page
+
+    def test_subscription_names_the_router_it_works_on(self):
+        """«Подписка активна» без роутера не отвечает на вопрос клиента: у него
+        их может быть несколько, и работает она на одном."""
+        from core.enums import DeviceStatus, SubscriptionStatus
+        from core.models import Subscription
+
+        device = self._device(DeviceStatus.ACTIVE)
+        device.id = 4
+        page = self._page(
+            device=device,
+            activated=True,
+            subscription=Subscription(user_id=1, device_id=4, status=SubscriptionStatus.ACTIVE),
+        )
+        assert "A0:B1:C2:D3:E4:F5" in page
+
+    def test_unactivated_subscription_says_so(self):
+        from core.enums import SubscriptionStatus
+        from core.models import Subscription
+
+        page = self._page(
+            subscription=Subscription(user_id=1, device_id=None, status=SubscriptionStatus.PENDING)
+        )
+        assert "ещё не привязана" in page
+
+    def test_subscription_on_another_router_is_not_passed_off_as_this_one(self):
+        """Иначе клиент будет чинить работающий роутер, а платит он за другой."""
+        from core.enums import DeviceStatus, SubscriptionStatus
+        from core.models import Subscription
+
+        device = self._device(DeviceStatus.ACTIVE)
+        device.id = 4
+        page = self._page(
+            device=device,
+            activated=True,
+            subscription=Subscription(user_id=1, device_id=9, status=SubscriptionStatus.ACTIVE),
+        )
+        assert "не привязана к этому роутеру" in page

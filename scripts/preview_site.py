@@ -65,6 +65,7 @@ def _plans() -> list[types.SimpleNamespace]:
 
 def _device() -> types.SimpleNamespace:
     return types.SimpleNamespace(
+        id=4,
         mac="A0:B1:C2:D3:E4:F5",
         model="ZBT Z8103AX",
         status=DeviceStatus.ACTIVE,
@@ -149,6 +150,7 @@ def main() -> None:
             status=SubscriptionStatus.ACTIVE,
             expires_at=NOW + dt.timedelta(days=48),
             pending_expires_at=None,
+            device_id=4,
         ),
         plan=types.SimpleNamespace(title="12 месяцев"),
         device=_device(),
@@ -171,6 +173,7 @@ def main() -> None:
             status=SubscriptionStatus.PENDING,
             expires_at=None,
             pending_expires_at=NOW + dt.timedelta(days=170),
+            device_id=None,
         ),
         plan=types.SimpleNamespace(title="12 месяцев"),
         device=None,

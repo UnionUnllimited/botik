@@ -118,6 +118,29 @@
       <a href="/admin/clients/{{ device.user_id }}">{{ device.user.display_name }}</a>
       {% if device.user.phone %}<span class="muted">· {{ device.user.phone | phone }}</span>{% endif %}
     </p>
+
+    {# Оплачен ли доступ — первый вопрос об умолкшем роутере. #}
+    <table>
+      <tr><td class="muted">Подписка</td>
+        <td>
+          {% if subscription %}
+            <span class="badge {{ subscription.status | status_tone }}">{{ subscription.status | status_label }}</span>
+            {% if plan %}<br><span class="muted">{{ plan.title }}</span>{% endif %}
+          {% else %}<span class="muted">нет</span>{% endif %}
+        </td></tr>
+      {% if subscription and subscription.expires_at %}
+      <tr><td class="muted">Действует до</td>
+        <td>{{ subscription.expires_at | date_ru }} · дней: {{ subscription.expires_at | days_until }}</td></tr>
+      {% endif %}
+      {% if subscription %}
+      <tr><td class="muted">На этом роутере</td>
+        <td>
+          {% if subscription.device_id == device.id %}да
+          {% elif subscription.device_id %}<span class="badge warn">нет, на другом</span>
+          {% else %}<span class="muted">не активирована</span>{% endif %}
+        </td></tr>
+      {% endif %}
+    </table>
     <form method="post" action="/admin/fleet/{{ device.id }}/unbind"
           onsubmit="return confirm('Отвязать клиента от этого роутера?')">
       <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">

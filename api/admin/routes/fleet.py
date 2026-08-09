@@ -29,9 +29,10 @@ from api.deps import get_session, get_transaction
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
-from core.models import Device, DeviceEvent, Heartbeat
+from core.models import Device, DeviceEvent, Heartbeat, Plan
 from core.security import normalize_mac
 from core.services import routers as router_service
+from core.services import subscriptions as subscription_service
 from core.services.frp import FrpError, RouterApi, dashboard
 
 router = APIRouter(prefix="/fleet")
@@ -158,6 +159,16 @@ async def fleet_card(
     history = _thin_out(await router_service.metrics_history(session, device_id, hours=24))
     events = await router_service.recent_events(session, device_id=device_id, limit=40)
 
+    # Подписка владельца прямо в карточке роутера: первый вопрос поддержки
+    # об умолкшем устройстве — оплачен ли доступ, и ради него не должно
+    # приходиться уходить в карточку клиента.
+    subscription = None
+    plan = None
+    if device.user_id is not None:
+        subscription = await subscription_service.get_current(session, device.user_id)
+        if subscription is not None and subscription.plan_id:
+            plan = await session.get(Plan, subscription.plan_id)
+
     series = {
         "cpu": [(item.created_at, item.cpu_pct or 0) for item in history],
         "ram": [(item.created_at, item.ram_pct or 0) for item in history],
@@ -173,6 +184,8 @@ async def fleet_card(
         device=device,
         events=events,
         series=series,
+        subscription=subscription,
+        plan=plan,
         has_history=bool(history),
         frp_configured=settings.frp.is_configured,
     )

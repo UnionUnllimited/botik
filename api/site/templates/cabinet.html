@@ -36,6 +36,19 @@
           <dt>Активировать до</dt>
           <dd>{{ subscription.pending_expires_at | date_ru }}</dd>
         {% endif %}
+
+        {# На каком роутере работает подписка: у клиента их может быть несколько,
+           и «подписка активна» без этой строки не отвечает на его вопрос. #}
+        <dt>Роутер</dt>
+        <dd>
+          {% if subscription.device_id and device and subscription.device_id == device.id %}
+            {{ device.mac }}
+          {% elif subscription.device_id %}
+            другой роутер
+          {% else %}
+            ещё не привязана — начнёт работать после активации
+          {% endif %}
+        </dd>
       </dl>
 
       {% if can_activate %}
@@ -88,6 +101,15 @@
       <dl class="facts">
         <dt>MAC</dt><dd>{{ device.mac }}</dd>
         <dt>Последний отклик</dt><dd>{{ last_seen | short_dt }}</dd>
+        <dt>Подписка</dt>
+        <dd>
+          {% if subscription and subscription.device_id == device.id %}
+            <span class="badge {{ subscription.status | status_tone }}">{{ subscription.status | status_label }}</span>
+            {% if subscription.expires_at %} · до {{ subscription.expires_at | date_ru }}{% endif %}
+          {% else %}
+            <span class="badge warn">не привязана к этому роутеру</span>
+          {% endif %}
+        </dd>
       </dl>
 
       {% if not online %}

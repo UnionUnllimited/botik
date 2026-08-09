@@ -209,6 +209,11 @@ async def client_card(
     referrals = list(await session.scalars(select(Referral).where(Referral.referrer_id == user_id)))
     plans = list(await session.scalars(select(Plan).order_by(Plan.sort_order, Plan.months)))
 
+    # Подписка и роутер связаны через subscriptions.device_id, но в двух отдельных
+    # таблицах эта связь не читается: поддержка не понимает, какой из роутеров
+    # клиента оплачен. Отдаём разбор MAC по id, чтобы показать его строкой подписки.
+    mac_by_device = {device.id: device.mac for device in devices}
+
     return render(
         request,
         "client.html",
@@ -218,6 +223,7 @@ async def client_card(
         payments=payments,
         devices=devices,
         subscriptions=subscriptions,
+        mac_by_device=mac_by_device,
         tickets=tickets,
         referrals=referrals,
         plans=plans,
