@@ -26,7 +26,7 @@ from api.site.auth import (
 from api.site.templating import render
 from core.config import settings
 from core.dates import utcnow
-from core.enums import SubscriptionStatus
+from core.enums import DeviceStatus, SubscriptionStatus
 from core.models import Plan
 from core.services import activation
 from core.services import orders as orders_service
@@ -155,17 +155,18 @@ async def _cabinet_page(
     # Тариф забираем отдельным запросом, а не через subscription.plan: ленивая
     # загрузка в async-сессии срабатывает уже при рендере шаблона и падает.
     plan = await session.get(Plan, subscription.plan_id) if subscription and subscription.plan_id else None
-    device = await routers_service.active_device_of(session, user.id)
+    device = await routers_service.latest_device_of(session, user.id)
     orders = await orders_service.list_user_orders(session, user.id)
 
     # Активацию предлагаем и без привязанного устройства: MAC клиент видит
     # на наклейке, а привязать роутер к заказу логист мог не успеть.
     waiting = subscription is not None and subscription.status is SubscriptionStatus.PENDING
-    activated = device is not None and device.activated_at is not None
+    closed = device is not None and device.status in (DeviceStatus.REVOKED, DeviceStatus.BLOCKED)
+    activated = device is not None and device.activated_at is not None and not closed
 
     online = False
     last_seen = None
-    if device is not None:
+    if device is not None and not closed:
         online = device.frp_online or device.is_online(
             threshold_min=settings.subscription.heartbeat_offline_min, now=utcnow()
         )
@@ -184,6 +185,7 @@ async def _cabinet_page(
         orders=orders,
         can_activate=waiting and not activated,
         activated=activated,
+        closed=closed,
         online=online,
         last_seen=last_seen,
         error=error,

@@ -120,6 +120,20 @@
         </div>
       </div>
     </div>
+  {% elif device and closed %}
+    {# Устройство за клиентом числится, но доступ к нему закрыт. Говорить «роутер
+       не привязан» здесь нельзя: человек пойдёт искать несуществующую проблему. #}
+    <div class="card">
+      <dl class="facts">
+        <dt>MAC</dt><dd>{{ device.mac }}</dd>
+        <dt>Состояние</dt>
+        <dd><span class="badge {{ device.status | status_tone }}">{{ device.status | status_label }}</span></dd>
+      </dl>
+      <p style="color:var(--muted); margin:16px 0 0">
+        Доступ к этому роутеру закрыт — показания и управление недоступны.
+        Напишите в поддержку, разберёмся.
+      </p>
+    </div>
   {% elif device %}
     <div class="card">
       <dl class="facts">

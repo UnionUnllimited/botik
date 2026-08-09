@@ -128,3 +128,72 @@ class TestPassword:
 
     def test_spaces_only_is_rejected(self):
         assert password_problem(" " * 20)
+
+
+class TestCabinetDeviceStates:
+    """«Роутера нет» и «доступ к роутеру закрыт» — для клиента разные вещи."""
+
+    @staticmethod
+    def _page(**context) -> str:
+        from api.site.templating import templates
+
+        payload = {
+            "request": None,
+            "client": object(),
+            "csrf_token": "t",
+            "current_path": "/cabinet",
+            "user": type("U", (), {"email": "client@example.com", "display_name": "client"})(),
+            "subscription": None,
+            "plan": None,
+            "device": None,
+            "orders": [],
+            "can_activate": False,
+            "activated": False,
+            "closed": False,
+            "online": False,
+            "last_seen": None,
+            "ok": "",
+            "error": "",
+        }
+        payload.update(context)
+        return templates.env.get_template("cabinet.html").render(**payload)
+
+    @staticmethod
+    def _device(status):
+        from core.models import Device
+
+        return Device(mac="A0:B1:C2:D3:E4:F5", status=status, model="ZBT")
+
+    def test_no_device_says_not_bound(self):
+        assert "не привязан" in self._page()
+
+    def test_revoked_device_does_not_claim_it_is_missing(self):
+        """Раньше отвязанный роутер показывался как «не привязан» — человек шёл искать
+        несуществующую проблему, хотя устройство за ним числится."""
+        from core.enums import DeviceStatus
+
+        page = self._page(device=self._device(DeviceStatus.REVOKED), closed=True)
+        assert "Доступ к этому роутеру закрыт" in page
+        assert "не привязан" not in page
+        assert "A0:B1:C2:D3:E4:F5" in page
+
+    def test_blocked_device_shows_the_same_closed_notice(self):
+        from core.enums import DeviceStatus
+
+        page = self._page(device=self._device(DeviceStatus.BLOCKED), closed=True)
+        assert "Доступ к этому роутеру закрыт" in page
+
+    def test_bound_but_not_activated(self):
+        from core.enums import DeviceStatus
+
+        page = self._page(device=self._device(DeviceStatus.ASSIGNED))
+        assert "ещё не активирован" in page
+
+    def test_activated_device_shows_readings(self):
+        from core.enums import DeviceStatus
+
+        device = self._device(DeviceStatus.ACTIVE)
+        device.clients_wifi, device.clients_dhcp = 3, 2
+        page = self._page(device=device, activated=True, online=True)
+        assert "Устройств в сети" in page
+        assert "на связи" in page

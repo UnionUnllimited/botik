@@ -281,7 +281,11 @@ async def bind_client(
         )
 
     device.user_id = user.id
-    if device.status is DeviceStatus.NEW:
+    if device.status in (DeviceStatus.NEW, DeviceStatus.REVOKED):
+        # REVOKED тоже: отвязанный роутер, привязанный заново, оставался отвязанным.
+        # В админке связь появлялась, а клиент видел «роутер не привязан» — кабинет
+        # такие устройства прячет. Заблокированный не трогаем: снятие блокировки —
+        # отдельное решение, а не побочный эффект привязки.
         device.status = DeviceStatus.ASSIGNED
 
     router_service.add_event(

@@ -278,15 +278,17 @@ async def find_user(session: AsyncSession, query: str) -> User | None:
     return await session.scalar(select(User).where(User.username.ilike(cleaned)))
 
 
-async def active_device_of(session: AsyncSession, user_id: int) -> Device | None:
-    """Роутер клиента. Отвязанные и заблокированные не показываем: для клиента
-    такое устройство перестало существовать, а показанный MAC он понесёт в поддержку."""
+async def latest_device_of(session: AsyncSession, user_id: int) -> Device | None:
+    """Последний роутер клиента — любой, включая отвязанный и заблокированный.
+
+    Фильтр по статусу сюда не зашит намеренно. Раньше он был, и кабинет из-за
+    этого говорил «роутер не привязан» о заблокированном устройстве: для клиента
+    «роутера нет» и «доступ к роутеру закрыт» — разные вещи, и путать их нельзя.
+    Что показать, решает страница.
+    """
     return await session.scalar(
         select(Device)
-        .where(
-            Device.user_id == user_id,
-            Device.status.notin_([DeviceStatus.REVOKED, DeviceStatus.BLOCKED]),
-        )
+        .where(Device.user_id == user_id)
         .order_by(Device.activated_at.desc().nulls_last(), Device.id.desc())
         .limit(1)
     )
