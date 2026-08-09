@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ product.title }}{% endblock %}
+
+{% block extra_css %}
+.product-top { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+.shot {
+  border-radius: 16px; border: 1px solid var(--line); background: linear-gradient(160deg, #eef1fb, #e4e9f9);
+  height: 320px; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.shot img { width: 100%; height: 100%; object-fit: cover; }
+.crumbs { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+@media (max-width: 780px) {
+  .product-top { grid-template-columns: 1fr; gap: 24px; }
+  .shot { height: 220px; }
+}
+{% endblock %}
+
+{% block content %}
+<p class="crumbs"><a href="/">Роутеры</a> → {{ product.title }}</p>
+
+<div class="product-top">
+  <div class="shot">
+    {% if product.photo_url %}
+      <img src="{{ product.photo_url }}" alt="{{ product.title }}">
+    {% else %}
+      <svg width="200" height="140" viewBox="0 0 120 80" fill="none" aria-hidden="true">
+        <rect x="12" y="42" width="96" height="26" rx="8" fill="#2c3a63" opacity="0.85"/>
+        <circle cx="28" cy="55" r="4" fill="#3ddc84"/>
+        <circle cx="42" cy="55" r="4" fill="#3355ff"/>
+        <g stroke="#3355ff" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.45">
+          <path d="M40 24a28 28 0 0 1 40 0"/>
+          <path d="M52 34a14 14 0 0 1 16 0"/>
+        </g>
+        <path d="M60 42v-8" stroke="#2c3a63" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+    {% endif %}
+  </div>
+
+  <div>
+    <h1 style="font-size:29px">{{ product.title }}</h1>
+    {% if product.subtitle %}<p class="lead" style="margin-bottom:20px">{{ product.subtitle }}</p>{% endif %}
+
+    <div class="card">
+      <div class="price">
+        {{ product.price | money }}
+        {% if product.old_price %}<span class="old">{{ product.old_price | money }}</span>{% endif %}
+      </div>
+      <p style="margin:12px 0 20px">
+        {% if product.in_stock %}
+          <span class="badge ok">в наличии</span>
+        {% else %}
+          <span class="badge">под заказ</span>
+        {% endif %}
+      </p>
+
+      {# Оформление заказа ещё не сделано: кнопка появится вместе с корзиной и оплатой. #}
+      <button class="btn wide" disabled>Оформление заказа скоро откроется</button>
+      <p style="color:var(--muted); font-size:14px; margin:14px 0 0">
+        Пока роутер можно заказать в поддержке — корзина и оплата на сайте в работе.
+      </p>
+    </div>
+  </div>
+</div>
+
+{% if product.description %}
+  <section style="margin-top:44px">
+    <h2>Описание</h2>
+    <div class="card">
+      <p style="margin:0; white-space:pre-line">{{ product.description }}</p>
+    </div>
+  </section>
+{% endif %}
+
+{% if product.specs %}
+  <section style="margin-top:44px">
+    <h2>Характеристики</h2>
+    <div class="card">
+      <dl class="facts">
+        {% for name, value in product.specs.items() %}
+          <dt>{{ name }}</dt><dd>{{ value }}</dd>
+        {% endfor %}
+      </dl>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

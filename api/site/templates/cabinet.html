@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Личный кабинет{% endblock %}
+
+{% block content %}
+<h1>Личный кабинет</h1>
+<p class="lead">{{ user.email }}</p>
+
+<h2 style="margin-top:0">Подписка</h2>
+{% if subscription %}
+  <div class="card">
+    <dl class="facts">
+      <dt>Состояние</dt>
+      <dd><span class="badge {{ subscription.status | status_tone }}">{{ subscription.status | status_label }}</span></dd>
+
+      {% if plan %}
+        <dt>Тариф</dt><dd>{{ plan.title }}</dd>
+      {% endif %}
+
+      {% if subscription.expires_at %}
+        <dt>Действует до</dt>
+        <dd>{{ subscription.expires_at | date_ru }} · осталось дней: {{ subscription.expires_at | days_until }}</dd>
+      {% elif subscription.pending_expires_at %}
+        <dt>Активировать до</dt>
+        <dd>{{ subscription.pending_expires_at | date_ru }}</dd>
+      {% endif %}
+    </dl>
+
+    {% if subscription.status == 'pending' %}
+      <p style="color:var(--muted); margin:18px 0 0">
+        Подписка оплачена, но отсчёт ещё не начался — он стартует после активации
+        роутера. Дни не сгорают, пока посылка едет.
+      </p>
+    {% endif %}
+  </div>
+{% else %}
+  <div class="card empty">Подписки пока нет.</div>
+{% endif %}
+
+<h2>Роутер</h2>
+{% if devices %}
+  {% for device in devices %}
+    <div class="card">
+      <dl class="facts">
+        <dt>MAC</dt><dd>{{ device.mac }}</dd>
+        {% if device.model %}<dt>Модель</dt><dd>{{ device.model }}</dd>{% endif %}
+        <dt>Состояние</dt>
+        <dd><span class="badge {{ device.status | status_tone }}">{{ device.status | status_label }}</span></dd>
+      </dl>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="card empty">
+    Роутер к учётной записи не привязан. Активация по MAC-адресу появится здесь
+    следующим шагом — пока её делает поддержка.
+  </div>
+{% endif %}
+
+<h2>Заказы</h2>
+{% if orders %}
+  <div class="card">
+    <table class="rows">
+      <thead>
+        <tr><th>Номер</th><th>Дата</th><th>Сумма</th><th>Состояние</th></tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+          <tr>
+            <td>{{ order.public_number }}</td>
+            <td>{{ order.created_at | short_dt }}</td>
+            <td>{{ order.total | money }}</td>
+            <td><span class="badge {{ order.status | status_tone }}">{{ order.status | status_label }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="card empty">Заказов пока нет.</div>
+{% endif %}
+{% endblock %}

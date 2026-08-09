@@ -222,6 +222,12 @@ class SecuritySettings(EnvSettings):
     admin_lockout_minutes: int = 15
     admin_session_ttl_hours: int = 12
 
+    client_session_ttl_days: int = 30
+    """Сессия клиента на сайте: заходить каждый день его никто не заставляет."""
+    client_login_attempts_per_hour: int = 20
+    """Лимит попыток входа на пару «IP + адрес». Учётку не блокируем: зная чужую
+    почту, конкурент запирал бы человека снаружи."""
+
     @field_validator("encryption_key")
     @classmethod
     def _check_encryption_key(cls, value: SecretStr) -> SecretStr:
