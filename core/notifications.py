@@ -45,7 +45,7 @@ async def close_bot() -> None:
 
 
 async def send_message(
-    chat_id: int,
+    chat_id: int | None,
     text: str,
     *,
     reply_markup: InlineKeyboardMarkup | None = None,

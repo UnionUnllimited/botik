@@ -21,6 +21,7 @@ from core.enums import DeviceServiceStatus, DeviceStatus
 from core.models import Device, DeviceEvent, Heartbeat, User
 from core.security import normalize_mac
 from core.services.frp import FrpProxy, proxy_names_for
+from core.validators import clean_email
 
 log = structlog.get_logger("services.routers")
 
@@ -242,10 +243,20 @@ async def mark_offline(session: AsyncSession, device: Device) -> bool:
 
 
 async def find_user(session: AsyncSession, query: str) -> User | None:
-    """Ищет клиента по TG-id, телефону, @username или внутреннему id."""
-    cleaned = query.strip().lstrip("@")
+    """Ищет клиента по почте, TG-id, телефону, @username или внутреннему id."""
+    raw = query.strip()
+    cleaned = raw.lstrip("@")
     if not cleaned:
         return None
+
+    # Почта проверяется первой: у клиента с сайта больше ничего и нет.
+    # `@` в середине — признак адреса, а `@username` его не даёт: там `@` первый
+    # и снимается lstrip выше.
+    address = clean_email(raw)
+    if address:
+        user = await session.scalar(select(User).where(User.email == address))
+        if user is not None:
+            return user
 
     if cleaned.isdigit():
         number = int(cleaned)
@@ -265,6 +276,20 @@ async def find_user(session: AsyncSession, query: str) -> User | None:
             return user
 
     return await session.scalar(select(User).where(User.username.ilike(cleaned)))
+
+
+async def active_device_of(session: AsyncSession, user_id: int) -> Device | None:
+    """Роутер клиента. Отвязанные и заблокированные не показываем: для клиента
+    такое устройство перестало существовать, а показанный MAC он понесёт в поддержку."""
+    return await session.scalar(
+        select(Device)
+        .where(
+            Device.user_id == user_id,
+            Device.status.notin_([DeviceStatus.REVOKED, DeviceStatus.BLOCKED]),
+        )
+        .order_by(Device.activated_at.desc().nulls_last(), Device.id.desc())
+        .limit(1)
+    )
 
 
 async def recent_events(

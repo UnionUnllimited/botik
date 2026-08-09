@@ -72,6 +72,16 @@ class TestCabinetAccess:
         response = client.post("/logout", data={"csrf_token": "x"}, follow_redirects=False)
         assert response.status_code == 303
 
+    def test_activation_needs_a_session(self, client):
+        """Активация меняет чужой роутер — без входа её не должно быть даже видно."""
+        response = client.post(
+            "/cabinet/activate",
+            data={"csrf_token": "x", "mac": "A0:B1:C2:D3:E4:F5"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
 
 class TestHoneypot:
     def test_filled_trap_is_a_bot(self):

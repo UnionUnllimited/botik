@@ -63,6 +63,20 @@ def _plans() -> list[types.SimpleNamespace]:
     ]
 
 
+def _device() -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        mac="A0:B1:C2:D3:E4:F5",
+        model="ZBT Z8103AX",
+        status=DeviceStatus.ACTIVE,
+        clients_wifi=4,
+        clients_dhcp=2,
+        cpu_pct=12,
+        ram_pct=38,
+        rx_bytes=48_318_382_080,
+        tx_bytes=3_221_225_472,
+    )
+
+
 def _orders() -> list[types.SimpleNamespace]:
     return [
         types.SimpleNamespace(
@@ -137,10 +151,36 @@ def main() -> None:
             pending_expires_at=None,
         ),
         plan=types.SimpleNamespace(title="12 месяцев"),
-        devices=[
-            types.SimpleNamespace(mac="A0:B1:C2:D3:E4:F5", model="ZBT Z8103AX", status=DeviceStatus.ACTIVE)
-        ],
+        device=_device(),
         orders=_orders(),
+        can_activate=False,
+        activated=True,
+        online=True,
+        last_seen=NOW - dt.timedelta(minutes=3),
+        ok="",
+        error="",
+    )
+    # Оплачено, но роутер ещё не активирован — на этом экране клиент вводит MAC.
+    render(
+        "cabinet.html",
+        "cabinet_activation.html",
+        current_path="/cabinet",
+        client=signed_in,
+        user=types.SimpleNamespace(email="client@example.com"),
+        subscription=types.SimpleNamespace(
+            status=SubscriptionStatus.PENDING,
+            expires_at=None,
+            pending_expires_at=NOW + dt.timedelta(days=170),
+        ),
+        plan=types.SimpleNamespace(title="12 месяцев"),
+        device=None,
+        orders=_orders()[:1],
+        can_activate=True,
+        activated=False,
+        online=False,
+        last_seen=None,
+        ok="",
+        error="Роутер не отвечает. Включите его, дождитесь, пока загорится индикатор интернета.",
     )
     render(
         "cabinet.html",
@@ -150,8 +190,14 @@ def main() -> None:
         user=types.SimpleNamespace(email="new@example.com"),
         subscription=None,
         plan=None,
-        devices=[],
+        device=None,
         orders=[],
+        can_activate=False,
+        activated=False,
+        online=False,
+        last_seen=None,
+        ok="",
+        error="",
     )
 
 

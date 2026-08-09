@@ -10,7 +10,7 @@
   <div style="flex:1; min-width:240px">
     <label for="q">Поиск</label>
     <input id="q" name="q" value="{{ query_text }}" style="width:100%"
-           placeholder="имя, @username, телефон, TG-id, MAC, номер заказа">
+           placeholder="почта, имя, @username, телефон, TG-id, MAC, номер заказа">
   </div>
   <button type="submit">Найти</button>
 </form>
@@ -33,7 +33,10 @@
       <div style="min-width:0">
         <a href="/admin/clients/{{ user.id }}" style="font-size:15px; font-weight:600">{{ user.display_name }}</a>
         <div class="hint" style="margin-top:2px">
-          {% if user.username %}@{{ user.username }}{% else %}TG {{ user.tg_id }}{% endif %}
+          {% if user.email %}{{ user.email }}
+          {% elif user.username %}@{{ user.username }}
+          {% elif user.tg_id %}TG {{ user.tg_id }}
+          {% else %}id {{ user.id }}{% endif %}
           {% if user.city %} · {{ user.city }}{% endif %}
         </div>
       </div>

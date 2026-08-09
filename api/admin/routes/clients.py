@@ -131,6 +131,9 @@ async def client_list(
             User.username.ilike(pattern),
             User.phone.ilike(pattern),
             User.first_name.ilike(pattern),
+            # У клиента с сайта из опознавательных знаков только почта:
+            # ни username, ни tg_id у него нет.
+            User.email.ilike(pattern),
         ]
         if query_text.isdigit():
             conditions.append(User.tg_id == int(query_text))

@@ -44,13 +44,24 @@ class ActivationError(RuntimeError):
 
 
 def username_for(user: User, mac: str) -> str:
-    """Имя учётки в панели: телеграм клиента и MAC роутера.
+    """Имя учётки в панели: кто клиент и с какого роутера.
 
     Панель принимает только латиницу, цифры, дефис и подчёркивание, поэтому
     разделители MAC убираем, а результат чистим на случай, если шаблон
     поменяют на что-то с пробелами.
+
+    У клиента с сайта нет Telegram, и основной шаблон дал бы «tgNone_...» —
+    одно и то же имя всем таким клиентам на одном роутере. Для них берётся
+    отдельный шаблон с нашим id. Имя учётки — ключ поиска в панели, поэтому
+    выбор шаблона обязан зависеть только от того, есть ли у клиента tg_id:
+    иначе повторная активация не найдёт заведённую учётку и создаст вторую.
     """
-    raw = settings.remnawave.username_template.format(
+    template = (
+        settings.remnawave.username_template
+        if user.tg_id is not None
+        else settings.remnawave.username_template_no_tg
+    )
+    raw = template.format(
         tg_id=user.tg_id,
         mac=mac.replace(":", "").lower(),
         user_id=user.id,

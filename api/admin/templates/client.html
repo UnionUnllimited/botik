@@ -7,7 +7,11 @@
   {% if user.bot_blocked %}<span class="badge muted">закрыл бота</span>{% endif %}
 </h1>
 <p class="muted">
-  TG-id {{ user.tg_id }}{% if user.username %} · @{{ user.username }}{% endif %} ·
+  {# Клиент приходит либо из бота (tg_id), либо с сайта (почта). Показываем то, что есть. #}
+  {% if user.email %}{{ user.email }}{% endif %}
+  {% if user.tg_id %}{% if user.email %} · {% endif %}TG-id {{ user.tg_id }}{% endif %}
+  {% if user.username %} · @{{ user.username }}{% endif %}
+  {% if not user.email and not user.tg_id %}id {{ user.id }}{% endif %} ·
   с нами с {{ user.created_at | date_ru }}{% if user.utm_source %} · источник: {{ user.utm_source }}{% endif %}
 </p>
 

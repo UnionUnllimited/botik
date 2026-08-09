@@ -41,6 +41,22 @@ class TestUsername:
         user = make_user()
         assert username_for(user, "A0:B1:C2:D3:E4:F5") != username_for(user, "A0:B1:C2:D3:E4:F6")
 
+    def test_site_client_gets_name_without_telegram(self):
+        """У клиента с сайта tg_id пустой: «tgNone_...» был бы одинаков у всех."""
+        name = username_for(User(id=42, email="client@example.com"), "A0:B1:C2:D3:E4:F5")
+        assert name == "id42_a0b1c2d3e4f5"
+        assert "None" not in name
+
+    def test_site_clients_do_not_collide(self):
+        mac = "A0:B1:C2:D3:E4:F5"
+        first = username_for(User(id=42, email="a@example.com"), mac)
+        second = username_for(User(id=43, email="b@example.com"), mac)
+        assert first != second
+
+    def test_telegram_client_name_is_unchanged(self):
+        """Имена уже заведённых учёток трогать нельзя: панель ищет их по имени."""
+        assert username_for(make_user(), "A0:B1:C2:D3:E4:F5") == "tg123456789_a0b1c2d3e4f5"
+
     def test_fits_panel_limit(self):
         name = username_for(User(id=1, tg_id=9999999999999999, first_name="x"), "A0:B1:C2:D3:E4:F5")
         assert len(name) <= 34

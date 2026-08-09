@@ -28,16 +28,37 @@ fi
 
 echo "Проверяю $BASE"
 failed=0
+health_ok=0
+root_failed=0
+
+status_of() {
+  curl -sS -o /dev/null -w '%{http_code}' --max-time "${2:-15}" "$BASE$1" 2>/dev/null
+}
+
+# make deploy заканчивается раньше, чем приложение успевает подняться, и запуск
+# проверки сразу за ним ловил 502 на всём. Ждём готовности, а не «пробуем разок».
+# Ждём около полуминуты: столько занимает старт api вместе с проверкой базы.
+printf '  жду готовности'
+for _ in $(seq 1 10); do
+  if [[ "$(status_of /healthz 5)" == "200" ]]; then
+    health_ok=1
+    break
+  fi
+  printf '.'
+  sleep 3
+done
+printf '\n'
 
 check() {
   local path="$1" expected="$2" what="$3"
   local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$BASE$path" 2>/dev/null)"
+  code="$(status_of "$path")"
   if [[ "$code" == "$expected" ]]; then
     printf '  ok   %-28s %s (%s)\n' "$path" "$code" "$what"
   else
     printf '  ПЛОХО %-27s %s, ждали %s (%s)\n' "$path" "${code:-нет ответа}" "$expected" "$what"
     failed=1
+    [[ "$path" == "/" ]] && root_failed=1
   fi
 }
 
@@ -51,12 +72,21 @@ check /cabinet  303 "кабинет закрыт без входа"
 check /admin/   303 "админка закрыта без входа"
 
 if [[ "$failed" -ne 0 ]]; then
-  cat >&2 <<'HINT'
+  if [[ "$health_ok" -eq 1 && "$root_failed" -eq 1 ]]; then
+    # Приложение живо, а корень нет — значит запрос до него просто не доходит.
+    cat >&2 <<'HINT'
 
-Если не отвечает только корень, а /healthz жив — дело в обратном прокси:
-он должен отдавать контейнеру api весь домен, а не отдельные пути.
-Нужный блок Caddy — в README, раздел «Сайт занимает корень домена».
+/healthz отвечает, а корень нет — дело в обратном прокси: он должен отдавать
+контейнеру api весь домен, а не отдельные пути. Нужный блок Caddy —
+в README, раздел «Сайт занимает корень домена».
 HINT
+  else
+    cat >&2 <<'HINT'
+
+Приложение не отвечает целиком. Смотреть логи:
+  docker compose ps api && docker compose logs api --tail=50
+HINT
+  fi
   exit 1
 fi
 
