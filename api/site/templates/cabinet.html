@@ -58,6 +58,27 @@
         </p>
       {% endif %}
     </div>
+  {% elif panel_expires_at %}
+    {# Доступ выдан вручную: своей подписки у него нет, срок знает только панель.
+       Молчать про работающий доступ нельзя — клиент решит, что он не оплачен. #}
+    <div class="card">
+      <dl class="facts">
+        <dt>Состояние</dt>
+        <dd>
+          {% if panel_active %}<span class="badge ok">активна</span>
+          {% else %}<span class="badge bad">истекла</span>{% endif %}
+        </dd>
+        <dt>{% if panel_active %}Действует до{% else %}Действовала до{% endif %}</dt>
+        <dd>
+          {{ panel_expires_at | date_ru }}
+          {% if panel_active %} · осталось дней: {{ panel_expires_at | days_until }}{% endif %}
+        </dd>
+        <dt>Роутер</dt><dd>{{ device.mac }}</dd>
+      </dl>
+      <p style="color:var(--muted); margin:18px 0 0">
+        Доступ подключён напрямую к роутеру. Продление — через поддержку.
+      </p>
+    </div>
   {% else %}
     <div class="card empty">Подписки пока нет.</div>
   {% endif %}
@@ -106,6 +127,10 @@
           {% if subscription and subscription.device_id == device.id %}
             <span class="badge {{ subscription.status | status_tone }}">{{ subscription.status | status_label }}</span>
             {% if subscription.expires_at %} · до {{ subscription.expires_at | date_ru }}{% endif %}
+          {% elif panel_expires_at %}
+            {# Доступ выдан вручную и живёт в панели: срок берём оттуда. #}
+            {% if panel_active %}<span class="badge ok">активна</span> · до {{ panel_expires_at | date_ru }}
+            {% else %}<span class="badge bad">истекла</span> · {{ panel_expires_at | date_ru }}{% endif %}
           {% else %}
             <span class="badge warn">не привязана к этому роутеру</span>
           {% endif %}

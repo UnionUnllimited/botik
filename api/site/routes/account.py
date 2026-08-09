@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -164,6 +166,18 @@ async def _cabinet_page(
     closed = device is not None and device.status in (DeviceStatus.REVOKED, DeviceStatus.BLOCKED)
     activated = device is not None and device.activated_at is not None and not closed
 
+    # Доступ, выданный вручную из админки, живёт только в панели: у него нет ни
+    # заказа, ни нашей подписки. Без этого запроса кабинет говорил бы «подписки
+    # нет» роутеру, который прямо сейчас работает.
+    panel_expires_at = None
+    if device is not None and not closed and settings.remnawave.is_configured:
+        try:
+            account = await asyncio.wait_for(activation.panel_account_of(device), timeout=3)
+            panel_expires_at = activation.panel_expiry_of(account)
+        except TimeoutError:
+            # Кабинет обязан открыться, даже когда панель молчит.
+            log.warning("site.cabinet.panel_timeout", user_id=user.id, mac=device.mac)
+
     online = False
     last_seen = None
     if device is not None and not closed:
@@ -186,6 +200,8 @@ async def _cabinet_page(
         can_activate=waiting and not activated,
         activated=activated,
         closed=closed,
+        panel_expires_at=panel_expires_at,
+        panel_active=panel_expires_at is not None and panel_expires_at > utcnow(),
         online=online,
         last_seen=last_seen,
         error=error,

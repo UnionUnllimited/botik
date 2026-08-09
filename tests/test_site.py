@@ -235,3 +235,42 @@ class TestCabinetDeviceStates:
             subscription=Subscription(user_id=1, device_id=9, status=SubscriptionStatus.ACTIVE),
         )
         assert "не привязана к этому роутеру" in page
+
+    def test_manual_access_is_shown_from_the_panel(self):
+        """Доступ, выданный вручную, живёт только в панели. Молчать про работающий
+        доступ нельзя: клиент решит, что он не оплачен, и пойдёт платить второй раз."""
+        import datetime as dt
+
+        from core.enums import DeviceStatus
+
+        device = self._device(DeviceStatus.ACTIVE)
+        device.id = 4
+        page = self._page(
+            device=device,
+            activated=True,
+            subscription=None,
+            panel_expires_at=dt.datetime(2026, 9, 26, tzinfo=dt.UTC),
+            panel_active=True,
+        )
+        assert "Подписки пока нет" not in page
+        assert "активна" in page
+        assert "26 сентября 2026" in page
+
+    def test_expired_manual_access_says_it_expired(self):
+        import datetime as dt
+
+        from core.enums import DeviceStatus
+
+        device = self._device(DeviceStatus.ACTIVE)
+        device.id = 4
+        page = self._page(
+            device=device,
+            activated=True,
+            subscription=None,
+            panel_expires_at=dt.datetime(2026, 7, 1, tzinfo=dt.UTC),
+            panel_active=False,
+        )
+        assert "истекла" in page
+
+    def test_no_access_anywhere_still_says_so(self):
+        assert "Подписки пока нет" in self._page(panel_expires_at=None)
