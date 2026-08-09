@@ -282,3 +282,36 @@ class TestShellSafety:
 
         with pytest.raises(ShellError):
             ssh_port_for(Device(mac="A0:B1:C2:D3:E4:F5"))
+
+
+class TestFleetChart:
+    """График за сутки не должен распирать страницу: столбиков больше, чем пикселей."""
+
+    @staticmethod
+    def _rows(count: int) -> list[object]:
+        from core.models import Heartbeat
+
+        return [Heartbeat(device_id=1, cpu_pct=index) for index in range(count)]
+
+    def test_long_history_is_thinned(self):
+        from api.admin.routes.fleet import CHART_POINTS, _thin_out
+
+        assert len(_thin_out(self._rows(288))) == CHART_POINTS
+
+    def test_short_history_is_left_alone(self):
+        from api.admin.routes.fleet import _thin_out
+
+        rows = self._rows(40)
+        assert _thin_out(rows) == rows
+
+    def test_last_measurement_survives(self):
+        """Правый край графика — «сейчас», он обязан совпасть с показаниями в карточке."""
+        from api.admin.routes.fleet import _thin_out
+
+        rows = self._rows(288)
+        assert _thin_out(rows)[-1] is rows[-1]
+
+    def test_empty_history_does_not_crash(self):
+        from api.admin.routes.fleet import _thin_out
+
+        assert _thin_out([]) == []

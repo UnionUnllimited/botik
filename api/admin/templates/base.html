@@ -191,7 +191,10 @@ button.small, .btn.small { padding: 5px 11px; font-size: 13px; }
 .dim { color: var(--dim); }
 .right { text-align: right; }
 .nowrap { white-space: nowrap; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+/* minmax(0, 1fr), а не 1fr: у `1fr` минимум равен ширине содержимого, и один
+   широкий блок (график из сотен столбиков) растягивал колонку, уводя соседнюю
+   за край экрана вместе с половиной страницы. */
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .pager { margin-top: 16px; display: flex; gap: 10px; align-items: center; }
 code {
   background: var(--panel-2); border: 1px solid var(--line-soft);

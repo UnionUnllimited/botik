@@ -29,7 +29,7 @@ from api.deps import get_session, get_transaction
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
-from core.models import Device, DeviceEvent
+from core.models import Device, DeviceEvent, Heartbeat
 from core.security import normalize_mac
 from core.services import routers as router_service
 from core.services.frp import FrpError, RouterApi, dashboard
@@ -38,6 +38,25 @@ router = APIRouter(prefix="/fleet")
 log = structlog.get_logger("admin.fleet")
 
 PAGE_SIZE = 40
+
+CHART_POINTS = 96
+"""Столбиков на графике за сутки. Роутер опрашивается раз в пять минут, то есть
+за сутки набегает под три сотни точек — в колонку такой ряд не влезает, и график
+либо распирал страницу, либо ужимался в неразличимые полоски."""
+
+
+def _thin_out(rows: list[Heartbeat], limit: int = CHART_POINTS) -> list[Heartbeat]:
+    """Прореживает ряд равномерно, сохраняя последнее измерение.
+
+    Считаем от конца: правый край графика — это «сейчас», и он должен совпадать
+    с показаниями в карточке. Потеря лишней точки в начале суток не значит ничего.
+    """
+    if len(rows) <= limit:
+        return rows
+    step = len(rows) / limit
+    picked = [rows[min(int(index * step), len(rows) - 1)] for index in range(limit)]
+    picked[-1] = rows[-1]
+    return picked
 
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
@@ -136,7 +155,7 @@ async def fleet_card(
     if device is None:
         return RedirectResponse("/admin/fleet?err=Роутер+не+найден", status_code=303)
 
-    history = await router_service.metrics_history(session, device_id, hours=24)
+    history = _thin_out(await router_service.metrics_history(session, device_id, hours=24))
     events = await router_service.recent_events(session, device_id=device_id, limit=40)
 
     series = {
