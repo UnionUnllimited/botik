@@ -274,3 +274,70 @@ class TestCabinetDeviceStates:
 
     def test_no_access_anywhere_still_says_so(self):
         assert "Подписки пока нет" in self._page(panel_expires_at=None)
+
+
+class TestOrderAccess:
+    """Заказ привязывается к клиенту, поэтому оформляется только после входа."""
+
+    def test_checkout_needs_a_session(self, client):
+        response = client.get("/order/zbt-z8103ax", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+
+    def test_submit_needs_a_session(self, client):
+        response = client.post(
+            "/order/zbt-z8103ax", data={"csrf_token": "x", "name": "Иванов Иван"}, follow_redirects=False
+        )
+        assert response.status_code == 303
+
+    def test_someone_elses_order_needs_a_session(self, client):
+        """Номер заказа угадать проще, чем кажется — карточка закрыта входом."""
+        response = client.get("/orders/RS-000412", follow_redirects=False)
+        assert response.status_code == 303
+
+
+class TestMediaUpload:
+    def test_only_browser_formats_are_accepted(self):
+        from core.services import media
+
+        assert set(media.ALLOWED_TYPES) == {"image/jpeg", "image/png", "image/webp"}
+
+    def test_svg_is_not_an_image_for_us(self):
+        """SVG — документ со скриптами; отдавать его со своего домена опасно."""
+        from core.services import media
+
+        assert "image/svg+xml" not in media.ALLOWED_TYPES
+
+    def test_wrong_type_is_rejected(self):
+        import pytest as pt
+
+        from core.services import media
+
+        with pt.raises(media.MediaError):
+            media.save_image(b"%PDF-1.4", "application/pdf", prefix="product-1")
+
+    def test_empty_file_is_rejected(self):
+        import pytest as pt
+
+        from core.services import media
+
+        with pt.raises(media.MediaError):
+            media.save_image(b"", "image/png", prefix="product-1")
+
+    def test_oversized_file_is_rejected(self):
+        import pytest as pt
+
+        from core.config import settings
+        from core.services import media
+
+        too_big = b"x" * (settings.app.media_max_bytes + 1)
+        with pt.raises(media.MediaError):
+            media.save_image(too_big, "image/png", prefix="product-1")
+
+    def test_delete_ignores_paths_outside_media(self):
+        """Имя приходит из базы, но лезть по нему вверх по дереву нельзя."""
+        from core.services import media
+
+        media.delete_image("/media/../../etc/passwd")
+        media.delete_image("https://example.com/pic.png")
+        media.delete_image(None)

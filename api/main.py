@@ -15,6 +15,7 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api import admin, site
@@ -28,6 +29,7 @@ from core.notifications import close_bot
 from core.payments import close_providers
 from core.redis_client import check_redis, close_redis
 from core.sentry import init_sentry
+from core.services import media
 from core.services.frp import close_dashboard
 from core.services.remnawave import close_client as close_remnawave
 
@@ -156,6 +158,17 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if settings.api.docs_enabled else None,
     )
     app.middleware("http")(observability_middleware)
+
+    # Картинки товаров лежат на диске, а не в Telegram: витрине нужен обычный URL.
+    # Каталог создаётся здесь же — StaticFiles на несуществующей папке падает при старте.
+    media_root = media.media_root()
+    try:
+        media_root.mkdir(parents=True, exist_ok=True)
+        app.mount(media.URL_PREFIX, StaticFiles(directory=str(media_root)), name="media")
+    except OSError as exc:
+        # Без картинок сайт работает, без запуска — нет.
+        log.error("api.media_mount_failed", error=str(exc), path=str(media_root))
+
     app.include_router(health.router)
     app.include_router(webhooks.router)
     app.include_router(admin.router)

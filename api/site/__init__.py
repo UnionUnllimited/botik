@@ -11,10 +11,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from api.site.auth import LoginRequired
-from api.site.routes import account, catalog
+from api.site.routes import account, catalog, order
 
 router = APIRouter()
 router.include_router(account.router)
+router.include_router(order.router)
+# Витрина последней: у неё самые общие пути.
 router.include_router(catalog.router)
 
 

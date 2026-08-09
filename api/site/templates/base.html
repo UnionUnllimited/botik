@@ -7,20 +7,20 @@
 <style>
 /* Ничего не тянется с CDN: сайт открывают в том числе там, где внешние домены недоступны. */
 :root {
-  --bg: #fbfbfd;
+  --bg: #f7f7f9;
   --card: #ffffff;
-  --line: #e6e8ee;
-  --line-soft: #f0f1f5;
-  --text: #101322;
-  --muted: #656d80;
-  --accent: #3355ff;
-  --accent-dark: #2340d9;
-  --ink: #0b0f1e;
+  --line: #e7e6ee;
+  --line-soft: #f1f0f5;
+  --text: #14121f;
+  --muted: #6b6880;
+  --accent: #5b46e0;
+  --accent-dark: #4733c4;
+  --ink: #0e0c18;
   --ok: #0b8a52;
   --warn: #9a6208;
   --bad: #c32626;
-  --shadow: 0 1px 2px rgba(16, 19, 34, 0.04), 0 8px 24px rgba(16, 19, 34, 0.06);
-  --shadow-lg: 0 2px 6px rgba(16, 19, 34, 0.06), 0 24px 48px rgba(16, 19, 34, 0.10);
+  --shadow: 0 1px 2px rgba(20, 18, 31, 0.04), 0 8px 24px rgba(20, 18, 31, 0.05);
+  --shadow-lg: 0 2px 6px rgba(20, 18, 31, 0.06), 0 24px 48px rgba(20, 18, 31, 0.09);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -47,7 +47,7 @@ header.top .wrap { display: flex; align-items: center; gap: 22px; height: 66px; 
 .logo:hover { color: var(--text); }
 .logo-mark {
   width: 28px; height: 28px; border-radius: 8px; flex: none;
-  background: linear-gradient(135deg, var(--accent), #7b5cff);
+  background: linear-gradient(135deg, var(--accent), #8b5cf6);
   display: flex; align-items: center; justify-content: center;
 }
 nav.top-nav { margin-left: auto; display: flex; gap: 20px; align-items: center; }
@@ -68,7 +68,7 @@ section { margin-bottom: 64px; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 24px;
   box-shadow: var(--shadow);
 }
@@ -94,7 +94,7 @@ section { margin-bottom: 64px; }
   display: inline-block; padding: 12px 22px; border-radius: 11px; border: 0;
   background: var(--accent); color: #fff; font: inherit; font-weight: 600;
   cursor: pointer; text-align: center; transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 4px 14px rgba(51, 85, 255, 0.24);
+  box-shadow: 0 4px 14px rgba(91, 70, 224, 0.22);
 }
 .btn:hover { background: var(--accent-dark); color: #fff; transform: translateY(-1px); }
 .btn.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); box-shadow: var(--shadow); }
@@ -112,7 +112,7 @@ form.stack input {
 }
 form.stack input:focus {
   outline: none; border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(51, 85, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(91, 70, 224, 0.14);
 }
 .narrow { max-width: 430px; margin: 0 auto; }
 
@@ -121,7 +121,7 @@ form.stack input:focus {
   padding: 12px 15px; border-radius: 11px; margin-bottom: 20px; font-size: 15px;
 }
 .notice {
-  background: #e9edff; border: 1px solid #cfd8ff; color: var(--accent-dark);
+  background: #edeaff; border: 1px solid #d9d2ff; color: var(--accent-dark);
   padding: 12px 15px; border-radius: 11px; margin-bottom: 20px; font-size: 15px;
 }
 

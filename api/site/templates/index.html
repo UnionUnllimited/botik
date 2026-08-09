@@ -4,8 +4,8 @@
 {% block extra_css %}
 .hero {
   background:
-    radial-gradient(900px 380px at 82% -8%, rgba(123, 92, 255, 0.16), transparent 62%),
-    radial-gradient(700px 340px at 8% 4%, rgba(51, 85, 255, 0.13), transparent 60%),
+    radial-gradient(900px 380px at 82% -8%, rgba(139, 92, 246, 0.16), transparent 62%),
+    radial-gradient(700px 340px at 8% 4%, rgba(91, 70, 224, 0.13), transparent 60%),
     linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
   border-bottom: 1px solid var(--line);
   padding: 68px 0 72px;
@@ -32,7 +32,7 @@
   counter-increment: step; content: counter(step);
   position: absolute; left: 0; top: 0;
   width: 34px; height: 34px; border-radius: 11px;
-  background: linear-gradient(135deg, var(--accent), #7b5cff); color: #fff;
+  background: linear-gradient(135deg, var(--accent), #8b5cf6); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 15px;
 }
@@ -49,7 +49,7 @@
 .product-foot { margin-top: auto; padding-top: 18px; display: flex; align-items: center; gap: 14px; }
 
 .plan-card { position: relative; }
-.plan-card.best { border-color: rgba(51, 85, 255, 0.42); box-shadow: 0 0 0 1px rgba(51,85,255,0.18), var(--shadow-lg); }
+.plan-card.best { border-color: rgba(91, 70, 224, 0.42); box-shadow: 0 0 0 1px rgba(91,70,224,0.18), var(--shadow-lg); }
 .plan-tag {
   position: absolute; top: -11px; right: 20px; background: var(--accent); color: #fff;
   font-size: 12px; font-weight: 650; padding: 3px 11px; border-radius: 20px;
@@ -91,7 +91,7 @@
               <stop offset="0" stop-color="#2c3a63"/><stop offset="1" stop-color="#161d33"/>
             </linearGradient>
             <linearGradient id="wave" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#3355ff"/><stop offset="1" stop-color="#7b5cff"/>
+              <stop offset="0" stop-color="#5b46e0"/><stop offset="1" stop-color="#8b5cf6"/>
             </linearGradient>
           </defs>
           <ellipse cx="180" cy="243" rx="118" ry="17" fill="#101322" opacity="0.07"/>
@@ -102,7 +102,7 @@
           </g>
           <rect x="86" y="158" width="188" height="62" rx="16" fill="url(#body)"/>
           <circle cx="112" cy="189" r="6" fill="#3ddc84"/>
-          <circle cx="132" cy="189" r="6" fill="#3355ff" opacity="0.85"/>
+          <circle cx="132" cy="189" r="6" fill="#5b46e0" opacity="0.85"/>
           <circle cx="152" cy="189" r="6" fill="#ffffff" opacity="0.22"/>
           <rect x="196" y="183" width="62" height="12" rx="6" fill="#ffffff" opacity="0.14"/>
           <path d="M180 158v-22" stroke="#2c3a63" stroke-width="5" stroke-linecap="round"/>
@@ -152,8 +152,8 @@
                 <svg width="120" height="80" viewBox="0 0 120 80" fill="none" aria-hidden="true">
                   <rect x="12" y="42" width="96" height="26" rx="8" fill="#2c3a63" opacity="0.85"/>
                   <circle cx="28" cy="55" r="4" fill="#3ddc84"/>
-                  <circle cx="42" cy="55" r="4" fill="#3355ff"/>
-                  <g stroke="#3355ff" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.45">
+                  <circle cx="42" cy="55" r="4" fill="#5b46e0"/>
+                  <g stroke="#5b46e0" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.45">
                     <path d="M40 24a28 28 0 0 1 40 0"/>
                     <path d="M52 34a14 14 0 0 1 16 0"/>
                   </g>
@@ -182,7 +182,7 @@
                 {{ product.price | money }}
                 {% if product.old_price %}<span class="old">{{ product.old_price | money }}</span>{% endif %}
               </div>
-              <a class="btn ghost small" href="/catalog/{{ product.slug }}" style="margin-left:auto">Подробнее</a>
+              <a class="btn small" href="/order/{{ product.slug }}" style="margin-left:auto">Заказать</a>
             </div>
           </div>
         {% endfor %}
@@ -223,8 +223,8 @@
     <div class="grid cols-3">
       <div class="feature">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M10 2l6 3v5c0 4-2.6 7-6 8-3.4-1-6-4-6-8V5l6-3z" fill="#e9edff" stroke="#3355ff" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M7.4 10l1.9 1.9L13 8.2" stroke="#3355ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 2l6 3v5c0 4-2.6 7-6 8-3.4-1-6-4-6-8V5l6-3z" fill="#edeaff" stroke="#5b46e0" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M7.4 10l1.9 1.9L13 8.2" stroke="#5b46e0" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <div>
           <h3>Работает для всей сети</h3>
@@ -233,8 +233,8 @@
       </div>
       <div class="feature">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <circle cx="10" cy="10" r="8" fill="#e9edff" stroke="#3355ff" stroke-width="1.5"/>
-          <path d="M10 5.6V10l2.8 2.1" stroke="#3355ff" stroke-width="1.7" stroke-linecap="round"/>
+          <circle cx="10" cy="10" r="8" fill="#edeaff" stroke="#5b46e0" stroke-width="1.5"/>
+          <path d="M10 5.6V10l2.8 2.1" stroke="#5b46e0" stroke-width="1.7" stroke-linecap="round"/>
         </svg>
         <div>
           <h3>Дни не сгорают</h3>
@@ -243,8 +243,8 @@
       </div>
       <div class="feature">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <rect x="2.6" y="4.6" width="14.8" height="10.8" rx="3" fill="#e9edff" stroke="#3355ff" stroke-width="1.5"/>
-          <path d="M2.6 8.4h14.8" stroke="#3355ff" stroke-width="1.5"/>
+          <rect x="2.6" y="4.6" width="14.8" height="10.8" rx="3" fill="#edeaff" stroke="#5b46e0" stroke-width="1.5"/>
+          <path d="M2.6 8.4h14.8" stroke="#5b46e0" stroke-width="1.5"/>
         </svg>
         <div>
           <h3>Оплата онлайн</h3>

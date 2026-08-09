@@ -3,6 +3,7 @@
 
 {% macro product_form(product, groups, vat_codes, csrf_field, csrf_token) %}
 <form method="post" action="/admin/catalog/products/{{ product.id if product else 0 }}"
+      enctype="multipart/form-data"
       style="background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px">
   <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
   <div class="grid2">
@@ -29,8 +30,19 @@
       <input name="stock" type="number" value="{{ product.stock if product else 0 }}">
       <label>Код модели</label>
       <input name="model_code" value="{{ product.model_code if product else '' }}" style="width:100%">
+      <label>Фото для витрины</label>
+      {% if product and product.photo_url %}
+        <img src="{{ product.photo_url }}" alt="" style="width:100%; max-height:150px; object-fit:cover;
+             border-radius:8px; border:1px solid var(--line); margin-bottom:6px">
+      {% endif %}
+      <input name="photo" type="file" accept="image/jpeg,image/png,image/webp" style="width:100%">
+      <p class="hint">JPEG, PNG или WebP до 3 МБ. Файл кладётся на диск, витрине нужен обычный URL.</p>
+      <label>…или ссылка на картинку</label>
+      <input name="photo_url" value="{{ product.photo_url or '' if product else '' }}" style="width:100%"
+             placeholder="/media/... или https://...">
       <label>file_id фото в Telegram</label>
       <input name="photo_file_id" value="{{ product.photo_file_id or '' if product else '' }}" style="width:100%">
+      <p class="hint">Осталось от бота — в браузере такая ссылка не открывается.</p>
       <label>Порядок в каталоге</label>
       <input name="sort_order" type="number" value="{{ product.sort_order if product else 100 }}">
       <label>Ставка НДС</label>

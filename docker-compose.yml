@@ -75,6 +75,9 @@ services:
     <<: *app
     command: ["python", "-m", "api"]
     expose: ["8000"]
+    # Картинки товаров: без тома они пропадают при каждой пересборке образа.
+    volumes:
+      - media_data:/app/media
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
@@ -165,3 +168,4 @@ volumes:
   postgres_data:
   redis_data:
   frpc_config:
+  media_data:

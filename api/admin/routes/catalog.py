@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote
 
 import structlog
 from fastapi import APIRouter, Depends, Request
@@ -17,6 +18,7 @@ from api.admin.templating import render
 from api.deps import get_session, get_transaction
 from core.enums import VatCode
 from core.models import NodeGroup, Plan, Product
+from core.services import media
 
 router = APIRouter(prefix="/catalog")
 log = structlog.get_logger("admin.catalog")
@@ -97,6 +99,27 @@ async def save_product(
     product.is_active = form_value(form, "is_active") == "on"
     product.allow_preorder = form_value(form, "allow_preorder") == "on"
     product.photo_file_id = form_value(form, "photo_file_id") or None
+
+    # Картинка для витрины. Загруженный файл главнее ссылки: если админ выбрал
+    # и то и другое, он явно только что выбрал файл.
+    upload = form.get("photo")
+    photo_url = form_value(form, "photo_url")
+    if upload is not None and getattr(upload, "filename", ""):
+        try:
+            saved = media.save_image(
+                await upload.read(),
+                getattr(upload, "content_type", "") or "",
+                prefix=f"product-{product.id or 'new'}",
+            )
+        except media.MediaError as exc:
+            return RedirectResponse(f"/admin/catalog?err={quote(str(exc))}", status_code=303)
+        media.delete_image(product.photo_url)
+        product.photo_url = saved
+    elif photo_url != (product.photo_url or ""):
+        if not photo_url:
+            media.delete_image(product.photo_url)
+        product.photo_url = photo_url or None
+
     vat = form_value(form, "vat_code")
     if vat:
         product.vat_code = VatCode(vat)

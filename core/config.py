@@ -102,6 +102,10 @@ class AppSettings(EnvSettings):
     timezone: str = "Europe/Moscow"
     """Пояс отображения. В БД всё хранится в UTC (timestamptz)."""
     currency: str = "RUB"
+    media_dir: str = "/app/media"
+    """Куда складываются картинки товаров. Том, иначе они пропадут при пересборке."""
+    media_max_bytes: int = 3 * 1024 * 1024
+    """Предел на файл: витрину открывают с телефона, мегабайтные фото ей не нужны."""
 
     @property
     def is_prod(self) -> bool:

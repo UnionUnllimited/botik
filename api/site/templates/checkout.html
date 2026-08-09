@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Оформление заказа{% endblock %}
+
+{% block extra_css %}
+.choice { display: grid; gap: 10px; margin-bottom: 22px; }
+.choice label {
+  display: flex; align-items: center; gap: 12px; margin: 0;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+  background: #fff; cursor: pointer; font-size: 15px; color: var(--text); font-weight: 500;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.choice label:hover { border-color: #c9d0e4; }
+.choice input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); flex: none; }
+.choice .side { margin-left: auto; text-align: right; white-space: nowrap; }
+.choice .side b { display: block; }
+.choice .side span { color: var(--muted); font-size: 13px; }
+
+.summary { position: sticky; top: 86px; }
+.sum-row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; }
+.sum-row.total { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 14px; font-size: 19px; font-weight: 750; }
+.checkout-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr); gap: 32px; align-items: start; }
+@media (max-width: 860px) { .checkout-grid { grid-template-columns: 1fr; } .summary { position: static; } }
+{% endblock %}
+
+{% block content %}
+<p class="crumbs" style="color:var(--muted); font-size:14px; margin:0 0 18px">
+  <a href="/">Роутеры</a> → <a href="/catalog/{{ product.slug }}">{{ product.title }}</a> → Оформление
+</p>
+
+<h1>Оформление заказа</h1>
+<p class="lead">Оплата подключается позже — сейчас заказ сохраняется, и с вами свяжется поддержка.</p>
+
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/order/{{ product.slug }}" class="stack">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+
+  <div class="checkout-grid">
+    <div>
+      <h2>Подписка</h2>
+      {% if plans %}
+        <div class="choice">
+          {% for plan in plans %}
+            <label>
+              <input type="radio" name="plan_id" value="{{ plan.id }}"
+                     {% if values.plan_id == plan.id | string %}checked{% endif %}>
+              <span>
+                {{ plan.title }}
+                {% if plan.extra_days %}<span style="color:var(--muted)"> · +{{ plan.extra_days }} дней</span>{% endif %}
+              </span>
+              <span class="side">
+                <b>{{ plan.price | money }}</b>
+                <span>{{ plan.price_per_month | money }} в месяц</span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="card empty" style="margin-bottom:22px">Тарифов пока нет — заказ будет только на роутер.</div>
+      {% endif %}
+
+      <h2>Доставка</h2>
+      {% if options %}
+        <div class="choice">
+          {% for option in options %}
+            <label>
+              <input type="radio" name="delivery" value="{{ option.method.value }}"
+                     {% if values.delivery == option.method.value %}checked{% endif %}>
+              <span>{{ option.title }}<span style="color:var(--muted)"> · {{ option.days }}</span></span>
+              <span class="side">
+                <b>{{ option.pvz_price | money }}</b>
+                <span>курьером {{ option.courier_price | money }}</span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="choice">
+          <label>
+            <input type="radio" name="target" value="pvz" {% if values.target != 'courier' %}checked{% endif %}>
+            <span>В пункт выдачи</span>
+          </label>
+          <label>
+            <input type="radio" name="target" value="courier" {% if values.target == 'courier' %}checked{% endif %}>
+            <span>Курьером до двери</span>
+          </label>
+        </div>
+
+        <label>
+          Пункт выдачи — адрес или его номер
+          <input type="text" name="pvz" value="{{ values.pvz }}" maxlength="500"
+                 placeholder="MSK123, ул. Ленина 10">
+        </label>
+        <label>
+          Адрес для курьера — обязательно с номером дома
+          <input type="text" name="address" value="{{ values.address }}" maxlength="500"
+                 placeholder="ул. Ленина, д. 10, кв. 5">
+        </label>
+      {% else %}
+        <div class="card empty" style="margin-bottom:22px">Способы доставки не настроены.</div>
+      {% endif %}
+
+      <h2>Получатель</h2>
+      <label>
+        Фамилия и имя
+        <input type="text" name="name" value="{{ values.name }}" required maxlength="200"
+               autocomplete="name" placeholder="Иванов Иван">
+      </label>
+      <label>
+        Телефон
+        <input type="tel" name="phone" value="{{ values.phone }}" required maxlength="20"
+               autocomplete="tel" placeholder="+7 900 123-45-67">
+      </label>
+      <label>
+        Город
+        <input type="text" name="city" value="{{ values.city }}" required maxlength="120"
+               autocomplete="address-level2" placeholder="Москва">
+      </label>
+      <label>
+        Промокод, если есть
+        <input type="text" name="promo" value="{{ values.promo }}" maxlength="32" autocomplete="off">
+      </label>
+    </div>
+
+    <div class="summary">
+      <div class="card">
+        <h3 style="margin-top:0">{{ product.title }}</h3>
+        {% if product.subtitle %}
+          <p style="color:var(--muted); margin:0 0 14px; font-size:14px">{{ product.subtitle }}</p>
+        {% endif %}
+        <div class="sum-row"><span>Роутер</span><b>{{ product.price | money }}</b></div>
+        <div class="sum-row"><span>Подписка</span><span style="color:var(--muted)">по выбору выше</span></div>
+        <div class="sum-row"><span>Доставка</span><span style="color:var(--muted)">по выбору выше</span></div>
+        <div class="sum-row total"><span>Итого</span><span>посчитаем при оформлении</span></div>
+
+        <button type="submit" class="btn wide" style="margin-top:18px">Оформить заказ</button>
+        <p style="color:var(--muted); font-size:13px; margin:12px 0 0">
+          Оплаты сейчас не будет: заказ сохранится, и мы свяжемся с вами.
+        </p>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

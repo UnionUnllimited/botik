@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from api.site.routes import account, catalog
+from api.site.routes import account, catalog, order
 
-__all__ = ["account", "catalog"]
+__all__ = ["account", "catalog", "order"]
