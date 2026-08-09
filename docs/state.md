@@ -260,10 +260,17 @@ Telegram не даёт приложить её к экрану с инлайн-�
 и продолжают отдавать JSON: их читают мониторинг и провайдер оплаты, которым
 страница с извинениями не нужна.
 
+**Прокси должен отдавать нам весь домен, а не отдельные пути.** Витрина живёт
+в корне, и если в Caddyfile перечислены только `/admin` и `/webhooks`, на месте
+сайта окажется 404 самого прокси. Снаружи это неотличимо от несобранного сайта,
+а `/healthz` при этом отвечает — поэтому корень проверяется отдельно, этим
+занимается `make smoke` (`deploy/smoke.sh`).
+
 ## Полезные команды
 
 ```bash
 cd /opt/router-shop && make deploy          # обновить и перезапустить
+make smoke                                  # сайт и админка отвечают снаружи?
 docker compose logs worker --no-log-prefix --tail=30 | grep -E "routers\.|frpc\."
 docker compose run --rm --entrypoint python api -m scripts.reset_admin
 docker compose --profile frp up -d frpc     # туннели к роутерам

@@ -156,11 +156,34 @@ docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
 а для вебхука Telegram — отдельный location `/tg/webhook` → `http://router-shop-bot:8081`.
 Сертификаты в этом случае выпускает прокси, скрипт `init-letsencrypt.sh` не запускается.
 
+### 5б. Сайт занимает корень домена
+
+Витрина, вход и кабинет живут по корневым путям (`/`, `/catalog/...`, `/login`,
+`/register`, `/cabinet`), админка — под `/admin`, вебхуки — под `/webhooks`.
+Всё это один контейнер `api`, поэтому прокси должен отдавать ему **весь домен**,
+а не отдельные пути. Для Caddy этого достаточно:
+
+```caddyfile
+vbotrouters.titanvps.click {
+    reverse_proxy router-shop-api:8000
+}
+```
+
+Если в конфиге прокси перечислены отдельные пути (`/admin`, `/webhooks`),
+корень туда не попадёт и на месте витрины будет 404 самого прокси — снаружи
+это неотличимо от несобранного сайта. Проверять отдельно от `/healthz`.
+
+Правку Caddyfile применяет `docker exec -w /etc/caddy caddy caddy reload`
+в контейнере прокси; перезапускать наш стек ради этого не нужно.
+
 ### 6. Проверка
 
 ```bash
-curl -fsS https://api.<домен>/healthz          # {"status":"ok"}
-curl -fsS https://api.<домен>/readyz           # database:true, redis:true
+curl -fsS https://<домен>/healthz              # {"status":"ok"}
+curl -fsS https://<домен>/readyz               # database:true, redis:true
+curl -fsS https://<домен>/ | head -5           # витрина: <!DOCTYPE html>
+curl -o /dev/null -w '%{http_code}\n' https://<домен>/login    # 200
+curl -o /dev/null -w '%{http_code}\n' https://<домен>/cabinet  # 303 → /login
 docker compose exec bot python -c "import asyncio;from bot.loader import create_bot;print(asyncio.run(create_bot().get_me()))"
 docker compose logs bot | grep webhook_set     # вебхук установлен
 ```
