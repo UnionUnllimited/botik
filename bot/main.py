@@ -1309,7 +1309,12 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
          # Показываем стандартный текст для пользователей без активной подписки
          text_to_send += "\n\n" + app_conf.get('text_subscription_expired_main')
     elif not is_trial_used and not has_active_sub:
-        text_to_send += "\n\n" + "🎁 Вы можете получить пробный период, если еще не использовали его, или приобрести подписку."
+        # Пробного периода нет — предлагать его нельзя: клиент нажмёт и ничего
+        # не получит. Условие читает ту же настройку, поэтому решение обратимо.
+        if int(app_conf.get('trial_days', 3) or 0) > 0:
+            text_to_send += "\n\n" + "🎁 Вы можете получить пробный период, если еще не использовали его, или приобрести подписку."
+        else:
+            text_to_send += "\n\n" + "Выберите раздел ниже или напишите в поддержку."
 
     target_message = message_or_query.message if isinstance(message_or_query, CallbackQuery) else message_or_query
     
