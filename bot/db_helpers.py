@@ -400,6 +400,21 @@ async def populate_default_settings():
             ('bot_protection_wrong_text', '❌ <b>Неправильно!</b>\n\nПопробуйте еще раз:\n\n<b>{question}</b>', 'Текст при неправильном ответе'),
         ]
         
+        # Тексты и имя проекта, без которых главное меню падает на пустой базе:
+        # app_conf.get() возвращает None, и .format() на нём разваливается.
+        # У поставщика они были в поставляемой базе, в код так и не попали.
+        base_texts = [
+            ('project_name', 'Titan Routers', 'Название проекта в текстах бота'),
+            ('text_welcome_message',
+             'Здравствуйте, {user_name}! Это {project_name} — роутеры с подпиской на сервис стабильного доступа к зарубежным ресурсам. Выберите раздел ниже.',
+             'Приветствие в главном меню. Доступны {user_name} и {project_name}'),
+        ]
+        for key, value, description in base_texts:
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
+                (key, value, description),
+            )
+
         # Добавляем настройки для пробного периода
         trial_settings = [
             ('trial_days', '3', 'Количество дней пробного периода'),
