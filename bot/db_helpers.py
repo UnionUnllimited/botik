@@ -315,6 +315,19 @@ async def init_db():
             await db.execute("ALTER TABLE tariffs ADD COLUMN traffic_gb INTEGER DEFAULT 0")
         except Exception:
             pass  # Поле уже существует
+
+        # Колонки, которые у поставщика добавлялись со временем и в CREATE TABLE
+        # выше так и не попали. Админка их читает: без limit_ip падал весь раздел
+        # тарифов с «no such column». Приём тот же, что строкой выше: на живой базе
+        # ALTER бросит исключение, и это ожидаемо.
+        for _ddl in (
+            "ALTER TABLE tariffs ADD COLUMN limit_ip INTEGER DEFAULT 0",
+            "ALTER TABLE tariffs ADD COLUMN payment_method TEXT",
+        ):
+            try:
+                await db.execute(_ddl)
+            except Exception:
+                pass  # Колонка уже существует
         await db.execute('''
             CREATE TABLE IF NOT EXISTS traffic_topup_tariffs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
