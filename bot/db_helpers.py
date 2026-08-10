@@ -245,6 +245,27 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, description TEXT)
         ''')
 
+        # Настройки резервного копирования. Единственная таблица, которую
+        # не создаёт вообще никто: ни бот, ни админка при старте. Раздел
+        # «Бэкапы» сам вставляет в неё строку по умолчанию, но только если
+        # таблица уже есть, — на свежей базе он падал.
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS backup_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_telegram_id TEXT DEFAULT '',
+                interval_hours INTEGER DEFAULT 3,
+                enabled INTEGER DEFAULT 0,
+                s3_enabled INTEGER DEFAULT 0,
+                s3_endpoint TEXT,
+                s3_region TEXT,
+                s3_bucket TEXT,
+                s3_access_key TEXT,
+                s3_secret_key TEXT,
+                s3_prefix TEXT,
+                last_backup TEXT
+            )
+        ''')
+
         # Шаблоны рассылок. В коде поставщика эту таблицу не создаёт никто —
         # есть только ALTER TABLE в web_admin/routes/news.py, то есть она
         # предполагалась уже существующей в поставляемой базе. На базе,
