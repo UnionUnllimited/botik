@@ -203,6 +203,10 @@ class ApiSettings(EnvSettings):
     trusted_proxy_hops: int = 1
     """Сколько прокси перед приложением (для корректного разбора X-Forwarded-For)."""
     docs_enabled: bool = False
+    fleet_token: SecretStr = SecretStr("")
+    """Токен для чтения парка роутеров снаружи — им ходит вкладка «Роутеры»
+    в админке бота. Пустой значит выключено: без токена ручка отвечает 404,
+    а не отдаёт список устройств всем желающим."""
 
 
 class SecuritySettings(EnvSettings):

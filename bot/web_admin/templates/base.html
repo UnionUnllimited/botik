@@ -501,6 +501,11 @@
                 <i data-lucide="users" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Клиенты</span>
             </a>
             {% endif %}
+            {% if moderator_can_see('users') %}
+            <a href="{{ url_for('admin.routers_fleet') }}" class="tw-nav-link {% if request.path == url_for('admin.routers_fleet') %}active{% endif %}">
+                <i data-lucide="router" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
+            </a>
+            {% endif %}
             {% if moderator_can_see('payments') %}
             <a href="{{ url_for('admin.payments') }}" class="tw-nav-link {% if request.path == url_for('admin.payments') %}active{% endif %}">
                 <i data-lucide="credit-card" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Платежи</span>

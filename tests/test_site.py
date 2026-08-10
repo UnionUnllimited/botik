@@ -341,3 +341,37 @@ class TestMediaUpload:
         media.delete_image("/media/../../etc/passwd")
         media.delete_image("https://example.com/pic.png")
         media.delete_image(None)
+
+
+class TestFleetApi:
+    """Ручка парка для вкладки «Роутеры» в админке бота: чужой процесс, общий секрет."""
+
+    def test_disabled_without_token(self, client):
+        """Пустой API_FLEET_TOKEN — ручки как будто нет. Иначе выключенная
+        возможность молча раздавала бы список устройств кому угодно."""
+        response = client.get("/api/v1/fleet/routers")
+        assert response.status_code == 404
+
+    def test_wrong_token_is_rejected(self, client, monkeypatch):
+        from pydantic import SecretStr
+
+        from core.config import settings
+
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr("right-token"), raising=False)
+        response = client.get(
+            "/api/v1/fleet/routers", headers={"Authorization": "Bearer wrong-token"}
+        )
+        assert response.status_code == 401
+
+    def test_missing_header_is_rejected(self, client, monkeypatch):
+        from pydantic import SecretStr
+
+        from core.config import settings
+
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr("right-token"), raising=False)
+        assert client.get("/api/v1/fleet/routers").status_code == 401
+
+    def test_answers_json_not_a_page(self, client):
+        """Служебный путь: на том конце процесс, а не человек в браузере."""
+        response = client.get("/api/v1/fleet/routers", headers={"accept": "text/html"})
+        assert "application/json" in response.headers["content-type"]

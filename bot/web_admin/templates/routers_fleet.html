@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Роутеры — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Роутеры</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Парк устройств из основного приложения. Здесь только показания —
+        опрос, консоль и панель роутера живут там же, где туннели.
+      </p>
+    </div>
+    {% if fleet.admin_url %}
+    <div class="flex items-center gap-2">
+      <a href="{{ fleet.admin_url }}" target="_blank" rel="noopener" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+        <span>Открыть управление</span>
+      </a>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if fleet_error %}
+    <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">
+      <div class="flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
+        <div>{{ fleet_error }}</div>
+      </div>
+    </div>
+  {% else %}
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="tw-card p-4">
+        <div class="text-[12px] tw-text-muted2">Всего роутеров</div>
+        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.total or 0 }}</div>
+      </div>
+      <div class="tw-card p-4">
+        <div class="text-[12px] tw-text-muted2">На связи</div>
+        <div class="text-[22px] font-semibold" style="color:#16a34a">{{ fleet.online or 0 }}</div>
+      </div>
+      <div class="tw-card p-4">
+        <div class="text-[12px] tw-text-muted2">Молчат</div>
+        <div class="text-[22px] font-semibold tw-text-base2">{{ (fleet.total or 0) - (fleet.online or 0) }}</div>
+      </div>
+      <div class="tw-card p-4">
+        <div class="text-[12px] tw-text-muted2">Без клиента</div>
+        <div class="text-[22px] font-semibold tw-text-base2">
+          {{ routers | rejectattr('client') | list | length }}
+        </div>
+      </div>
+    </div>
+
+    {% if routers %}
+    <div class="tw-card overflow-x-auto">
+      <table class="w-full text-[13px]">
+        <thead>
+          <tr class="tw-text-muted2 text-left">
+            <th class="px-3 py-2 font-medium">Роутер</th>
+            <th class="px-3 py-2 font-medium">Клиент</th>
+            <th class="px-3 py-2 font-medium">Связь</th>
+            <th class="px-3 py-2 font-medium">Подписка</th>
+            <th class="px-3 py-2 font-medium">Клиентов</th>
+            <th class="px-3 py-2 font-medium">CPU / ОЗУ</th>
+            <th class="px-3 py-2 font-medium">WAN IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in routers %}
+          <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+            <td class="px-3 py-2">
+              <div class="font-mono">{{ item.mac }}</div>
+              <div class="tw-text-muted2 text-[12px]">{{ item.model or '—' }}</div>
+            </td>
+            <td class="px-3 py-2">{{ item.client or '—' }}</td>
+            <td class="px-3 py-2">
+              {% if item.online %}
+                <span style="color:#16a34a">● на связи</span>
+              {% else %}
+                <span class="tw-text-muted2">○ молчит</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">
+              {% if item.subscription_status %}
+                {{ item.subscription_status }}
+                {% if not item.subscription_here %}
+                  <span class="tw-text-muted2 text-[12px]">(на другом роутере)</span>
+                {% endif %}
+              {% else %}
+                <span class="tw-text-muted2">нет</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2">{{ item.clients }}</td>
+            <td class="px-3 py-2">
+              {{ item.cpu_pct if item.cpu_pct is not none else '—' }}% /
+              {{ item.ram_pct if item.ram_pct is not none else '—' }}%
+            </td>
+            <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.wan_ip or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="tw-card p-4 text-[13px] tw-text-muted2">Роутеров пока нет.</div>
+    {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}
