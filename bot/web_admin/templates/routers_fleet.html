@@ -8,18 +8,11 @@
     <div>
       <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Роутеры</h1>
       <p class="text-[13px] tw-text-muted2 mt-1">
-        Парк устройств из основного приложения. Здесь только показания —
-        опрос, консоль и панель роутера живут там же, где туннели.
+        Парк устройств. Нажмите на MAC, чтобы открыть карточку: там показания,
+        клиент, ручная активация и журнал.
       </p>
     </div>
-    {% if fleet.admin_url %}
-    <div class="flex items-center gap-2">
-      <a href="{{ fleet.admin_url }}" target="_blank" rel="noopener" class="tw-btn tw-btn-primary tw-btn-sm">
-        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-        <span>Открыть управление</span>
-      </a>
-    </div>
-    {% endif %}
+
   </div>
 
   {% if fleet_error %}
@@ -70,7 +63,7 @@
           {% for item in routers %}
           <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
             <td class="px-3 py-2">
-              <div class="font-mono">{{ item.mac }}</div>
+              <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
               <div class="tw-text-muted2 text-[12px]">{{ item.model or '—' }}</div>
             </td>
             <td class="px-3 py-2">{{ item.client or '—' }}</td>

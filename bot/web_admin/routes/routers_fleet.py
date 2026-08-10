@@ -2,20 +2,21 @@
 
 Данные лежат в Postgres основного проекта, а эта админка — отдельный процесс
 со своим venv и без драйвера Postgres, да и база наружу не опубликована.
-Поэтому список берётся по HTTP с ручки /api/v1/fleet/routers, а не запросом
-в базу: это единственный способ, которым мы вообще можем её спросить.
+Поэтому всё идёт по HTTP на его ручки `/api/v1/fleet/*`.
 
-Только чтение. Всё, что трогает роутер — опрос, консоль, панель LuCI, —
-живёт в основной админке: туннели держит её контейнер, и отсюда их не достать.
-Поэтому на карточку роутера уходит ссылка туда.
+Действия — опрос, активация, продление, привязка клиента — исполняет он же,
+а не мы: туннель к роутеру держит его контейнер, и дотянуться до роутера может
+только процесс в его сети. Мы отсюда лишь нажимаем кнопку.
 """
 
 import os
 
 import httpx
-from quart import render_template
+from quart import flash, redirect, render_template, request, url_for
 
 FLEET_TIMEOUT_SEC = 8
+ACTION_TIMEOUT_SEC = 90
+"""Активация идёт до самого роутера по SSH и занимает до минуты."""
 
 
 def _fleet_config() -> tuple[str, str]:
@@ -25,8 +26,16 @@ def _fleet_config() -> tuple[str, str]:
     return base, token
 
 
-async def fetch_fleet() -> tuple[dict, str]:
-    """Возвращает данные парка и текст ошибки. Одно из двух всегда пустое."""
+def _explain(response: httpx.Response) -> str:
+    if response.status_code == 404:
+        return "Ручка парка выключена: в основном приложении пуст API_FLEET_TOKEN."
+    if response.status_code == 401:
+        return "Токен не подошёл: FLEET_API_TOKEN здесь и API_FLEET_TOKEN там должны совпадать."
+    return f"Основное приложение ответило {response.status_code}."
+
+
+async def _get(path: str) -> tuple[dict, str]:
+    """Читает ручку парка. Возвращает данные и текст ошибки — одно из двух пустое."""
     base, token = _fleet_config()
     if not base or not token:
         return {}, (
@@ -37,23 +46,51 @@ async def fetch_fleet() -> tuple[dict, str]:
     try:
         async with httpx.AsyncClient(timeout=FLEET_TIMEOUT_SEC) as client:
             response = await client.get(
-                f"{base}/api/v1/fleet/routers",
-                headers={"Authorization": f"Bearer {token}"},
+                f"{base}{path}", headers={"Authorization": f"Bearer {token}"}
             )
     except httpx.HTTPError as exc:
         return {}, f"Основное приложение не ответило: {exc}"
 
-    if response.status_code == 404:
-        return {}, "Ручка парка выключена: в основном приложении пуст API_FLEET_TOKEN."
-    if response.status_code == 401:
-        return {}, "Токен не подошёл: FLEET_API_TOKEN здесь и API_FLEET_TOKEN там должны совпадать."
     if response.status_code != 200:
-        return {}, f"Основное приложение ответило {response.status_code}."
-
+        return {}, _explain(response)
     try:
         return response.json(), ""
     except ValueError:
         return {}, "Основное приложение вернуло не JSON."
+
+
+async def _post(path: str, payload: dict) -> tuple[dict, str]:
+    base, token = _fleet_config()
+    if not base or not token:
+        return {}, "Не заданы FLEET_API_URL и FLEET_API_TOKEN в окружении админки."
+
+    try:
+        async with httpx.AsyncClient(timeout=ACTION_TIMEOUT_SEC) as client:
+            response = await client.post(
+                f"{base}{path}", json=payload, headers={"Authorization": f"Bearer {token}"}
+            )
+    except httpx.HTTPError as exc:
+        return {}, f"Основное приложение не ответило: {exc}"
+
+    if response.status_code != 200:
+        return {}, _explain(response)
+    try:
+        data = response.json()
+    except ValueError:
+        return {}, "Основное приложение вернуло не JSON."
+    # Отказ по делу — не ошибка связи: текст уже написан для человека.
+    return (data, "") if data.get("ok") else ({}, data.get("error") or "Не получилось.")
+
+
+async def fetch_fleet() -> tuple[dict, str]:
+    return await _get("/api/v1/fleet/routers")
+
+
+def _days_from(form) -> int:
+    try:
+        return max(min(int(form.get("days", 30)), 3650), 1)
+    except (TypeError, ValueError):
+        return 30
 
 
 def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_func):
@@ -66,3 +103,50 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             routers=data.get("routers", []),
             fleet_error=error,
         )
+
+    @admin_bp_instance.route("/routers/<int:device_id>")
+    async def router_card(device_id: int):
+        data, error = await _get(f"/api/v1/fleet/routers/{device_id}")
+        return await render_template(
+            "router_card.html",
+            device_id=device_id,
+            card=data,
+            router=data.get("router", {}),
+            client=data.get("client", {}),
+            subscription=data.get("subscription", {}),
+            panel=data.get("panel", {}),
+            events=data.get("events", []),
+            fleet_error=error,
+        )
+
+    async def _act(device_id: int, path: str, payload: dict, ok_message: str):
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}{path}", payload)
+        await flash(error or ok_message, "danger" if error else "success")
+        return redirect(url_for("admin.router_card", device_id=device_id))
+
+    @admin_bp_instance.route("/routers/<int:device_id>/poll", methods=["POST"])
+    async def router_poll(device_id: int):
+        return await _act(device_id, "/poll", {}, "Показания обновлены.")
+
+    @admin_bp_instance.route("/routers/<int:device_id>/activate", methods=["POST"])
+    async def router_activate(device_id: int):
+        form = await request.form
+        days = _days_from(form)
+        return await _act(device_id, "/activate", {"days": days}, f"Роутер активирован на {days} дн.")
+
+    @admin_bp_instance.route("/routers/<int:device_id>/extend", methods=["POST"])
+    async def router_extend(device_id: int):
+        form = await request.form
+        days = _days_from(form)
+        return await _act(device_id, "/extend", {"days": days}, f"Срок продлён на {days} дн.")
+
+    @admin_bp_instance.route("/routers/<int:device_id>/bind", methods=["POST"])
+    async def router_bind(device_id: int):
+        form = await request.form
+        return await _act(
+            device_id, "/bind", {"client": form.get("client", "")}, "Клиент привязан."
+        )
+
+    @admin_bp_instance.route("/routers/<int:device_id>/unbind", methods=["POST"])
+    async def router_unbind(device_id: int):
+        return await _act(device_id, "/unbind", {}, "Клиент отвязан.")
