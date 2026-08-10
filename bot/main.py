@@ -1597,6 +1597,12 @@ async def handle_start(message: Message, state: FSMContext):
                     
                     # Показываем последовательность прогресса
                     # Выдаем триал
+                    # Пробный период выключен настройкой trial_days=0. Роутер покупают,
+                    # и «активация на 0 дней» — это зависший экран вместо меню.
+                    if int(app_conf.get('trial_days', 3) or 0) <= 0:
+                        await show_main_menu(message)
+                        return
+
                     trial_days = app_conf.get('trial_days', 3)
                     trial_limit_ip = app_conf.get('trial_limit_ip', 1)
 
@@ -1742,6 +1748,12 @@ async def handle_start(message: Message, state: FSMContext):
                     return
                 
                 # Выдаем триал
+                # Пробный период выключен настройкой trial_days=0. Роутер покупают,
+                # и «активация на 0 дней» — это зависший экран вместо меню.
+                if int(app_conf.get('trial_days', 3) or 0) <= 0:
+                    await show_main_menu(message)
+                    return
+
                 trial_days = app_conf.get('trial_days', 3)
                 trial_limit_ip = app_conf.get('trial_limit_ip', 1)
 
@@ -1930,6 +1942,12 @@ async def handle_captcha_answer(query: CallbackQuery, state: FSMContext):
                 pass
             
             # Показываем прогресс ДО создания клиента
+            # Пробный период выключен настройкой trial_days=0. Роутер покупают,
+            # и «активация на 0 дней» — это зависший экран вместо меню.
+            if int(app_conf.get('trial_days', 3) or 0) <= 0:
+                await show_main_menu(query.message)
+                return
+
             trial_days = app_conf.get('trial_days', 3)
             await show_trial_progress_edit(query.message, trial_days)
             trial_limit_ip = app_conf.get('trial_limit_ip', 1)
@@ -2254,6 +2272,12 @@ async def check_subscription_callback(query: CallbackQuery, state: FSMContext):
             pass
         
         # Выдаем триал
+        # Пробный период выключен настройкой trial_days=0. Роутер покупают,
+        # и «активация на 0 дней» — это зависший экран вместо меню.
+        if int(app_conf.get('trial_days', 3) or 0) <= 0:
+            await show_main_menu(query.message)
+            return
+
         trial_days = app_conf.get('trial_days', 3)
         trial_limit_ip = app_conf.get('trial_limit_ip', 1)
         subscription_data = await grant_subscription(user_id, trial_days, is_trial=True, limit_ip=trial_limit_ip)
