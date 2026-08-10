@@ -1,7 +1,8 @@
-"""FastAPI-приложение: API устройств, вебхуки платежей, веб-админка.
+"""FastAPI-приложение: админка, вебхуки платежей, парк роутеров.
 
-На этапе 1 подняты только служебные маршруты (health/ready/metrics) —
-на них завязаны healthcheck докера и мониторинг.
+Публичного сайта здесь больше нет: клиентская часть ушла в сторонний продукт
+в `bot/` вместе с ботом. За нами осталось то, чего у него нет, — админка,
+управление парком роутеров и туннели к ним.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api import admin, site
+from api import admin
 from api.admin.routes import luci
 from api.routes import fleet_api, health, webhooks
 from core.config import settings
@@ -96,24 +97,9 @@ async def observability_middleware(
     return response
 
 
-def _wants_html(request: Request) -> bool:
-    return "text/html" in request.headers.get("accept", "")
-
-
 def _is_admin_page(request: Request) -> bool:
     """Страницам админки нужен HTML: голый JSON в браузере ничего не объясняет."""
-    return request.url.path.startswith("/admin") and _wants_html(request)
-
-
-# Служебные маршруты отвечают JSON даже браузеру: их читают мониторинг и провайдер оплаты.
-_MACHINE_PREFIXES = ("/webhooks", "/api/", "/healthz", "/readyz", "/metrics", "/docs", "/openapi.json")
-
-
-def _is_site_page(request: Request) -> bool:
-    path = request.url.path
-    if path.startswith("/admin") or path.startswith(_MACHINE_PREFIXES):
-        return False
-    return _wants_html(request)
+    return request.url.path.startswith("/admin") and "text/html" in request.headers.get("accept", "")
 
 
 def _admin_error_page(message: str, status_code: int) -> HTMLResponse:
@@ -126,23 +112,6 @@ background:#0f1115;color:#e6e8ee;font:15px/1.6 -apple-system,'Segoe UI',Roboto,s
 <h1 style="font-size:19px;margin:0 0 10px">Ошибка {status_code}</h1>
 <p style="color:#99a0ae;margin:0 0 18px">{message}</p>
 <a href="/admin/" style="color:#4c8dff">← в админку</a>
-</div></body></html>""",
-        status_code=status_code,
-    )
-
-
-def _site_error_page(message: str, status_code: int) -> HTMLResponse:
-    """Отдельная страница, а не шаблон сайта: обработчик ошибок не должен сам падать."""
-    return HTMLResponse(
-        f"""<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ошибка · {settings.app.brand}</title></head>
-<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-background:#f6f7f9;color:#16181d;font:16px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif">
-<div style="max-width:460px;padding:26px;background:#fff;border:1px solid #e3e6ec;border-radius:12px">
-<h1 style="font-size:20px;margin:0 0 10px">Ошибка {status_code}</h1>
-<p style="color:#6b7280;margin:0 0 18px">{message}</p>
-<a href="/" style="color:#2f6bff">← на главную</a>
 </div></body></html>""",
         status_code=status_code,
     )
@@ -175,19 +144,12 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
     app.include_router(luci.router)
-    # Витрина занимает корень домена, поэтому подключается последней:
-    # у неё самые общие пути, и перехватывать чужие она не должна.
-    app.include_router(site.router)
-
     app.add_exception_handler(admin.LoginRequired, admin.login_redirect_handler)  # type: ignore[arg-type]
-    app.add_exception_handler(site.LoginRequired, site.login_redirect_handler)  # type: ignore[arg-type]
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
         if _is_admin_page(request):
             return _admin_error_page(str(exc.detail), exc.status_code)
-        if _is_site_page(request):
-            return _site_error_page(str(exc.detail), exc.status_code)
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(RequestValidationError)
@@ -199,8 +161,6 @@ def create_app() -> FastAPI:
         log.exception("api.unhandled", error=str(exc), path=request.url.path)
         if _is_admin_page(request):
             return _admin_error_page("Внутренняя ошибка. Подробности в логах: docker compose logs api", 500)
-        if _is_site_page(request):
-            return _site_error_page("Что-то сломалось на нашей стороне. Мы уже видим проблему.", 500)
         return JSONResponse(status_code=500, content={"error": "internal_error"})
 
     return app
