@@ -189,16 +189,54 @@ vbotrouters.titanvps.click {
 `admin123`), поэтому с нашими `/admin`, `/webhooks` и `/api` не пересекается
 и живёт на том же домене.
 
+**Штатный `install_bot.sh` запускать нельзя.** Он ставит и перезапускает nginx
+и просит сертификат через `certbot --standalone`, а порты 80 и 443 держит Caddy:
+в лучшем случае скрипт сломается на середине, в худшем оставит сервер без TLS.
+Нужные его шаги делаем руками, их немного.
+
+Код ожидает себя в `/root/bot` — это зашито и в юнитах, и в установщике.
+Симлинк оставляет один источник правды:
+
+```bash
+apt install -y sqlite3 python3-venv
+ln -sfn /opt/router-shop/bot /root/bot
+```
+
+Окружения (создаются внутри дерева проекта, в `.gitignore` они закрыты):
+
+```bash
+cd /root/bot && python3 -m venv venv && ./venv/bin/pip install -q -r service/requirements.txt
+```
+
+```bash
+cd /root/bot && python3 -m venv web_admin/venv && ./web_admin/venv/bin/pip install -q -r service/requirements.txt
+```
+
+Юниты. В `service/vpn-webadmin.service` перед копированием поправить строку
+`ExecStart` (привязка на все интерфейсы — почему, ниже) и дописать в `[Service]`
+доступ к парку роутеров:
+
+```
+Environment="FLEET_API_URL=https://vbotrouters.titanvps.click"
+Environment="FLEET_API_TOKEN=то_же_что_API_FLEET_TOKEN_в_нашем_.env"
+```
+
+```bash
+cp /root/bot/service/vpn-bot.service /root/bot/service/vpn-webadmin.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now vpn-bot
+```
+
 **База создаётся сама, переносить её неоткуда и незачем.** `init_db()` в боте
 создаёт все таблицы и заполняет настройки значениями из кода
 (`populate_default_settings`). Веб-админка этого не делает — она только читает,
-поэтому первым запускается бот, а уже потом админка.
+поэтому бот запускается первым:
 
 ```bash
-apt install -y sqlite3
-ln -sfn /opt/router-shop/bot /root/bot
-systemctl start vpn-bot && sleep 5 && ls -la /root/bot/*.db
+sleep 5 && ls -la /root/bot/*.db && systemctl enable --now vpn-webadmin
 ```
+
+Токен бота в свежей базе — заглушка `123`. Настоящий задаётся в веб-админке
+после первого входа.
 
 Узнать секретный путь (по умолчанию `admin123`):
 
