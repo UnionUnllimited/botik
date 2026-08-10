@@ -189,7 +189,18 @@ vbotrouters.titanvps.click {
 `admin123`), поэтому с нашими `/admin`, `/webhooks` и `/api` не пересекается
 и живёт на том же домене.
 
-Узнать путь:
+**База создаётся сама, переносить её неоткуда и незачем.** `init_db()` в боте
+создаёт все таблицы и заполняет настройки значениями из кода
+(`populate_default_settings`). Веб-админка этого не делает — она только читает,
+поэтому первым запускается бот, а уже потом админка.
+
+```bash
+apt install -y sqlite3
+ln -sfn /opt/router-shop/bot /root/bot
+systemctl start vpn-bot && sleep 5 && ls -la /root/bot/*.db
+```
+
+Узнать секретный путь (по умолчанию `admin123`):
 
 ```bash
 sqlite3 /root/bot/*.db "SELECT value FROM settings WHERE key='admin_secret_path';"
