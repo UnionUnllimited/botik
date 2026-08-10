@@ -244,6 +244,26 @@ async def init_db():
         await db.execute('''
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, description TEXT)
         ''')
+
+        # Шаблоны рассылок. В коде поставщика эту таблицу не создаёт никто —
+        # есть только ALTER TABLE в web_admin/routes/news.py, то есть она
+        # предполагалась уже существующей в поставляемой базе. На базе,
+        # созданной с нуля, страница клиентов падала с «no such table».
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS news_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                body TEXT,
+                custom_btn_text TEXT,
+                custom_btn_url TEXT,
+                media_kind TEXT,
+                media_file_id TEXT,
+                media_local_path TEXT,
+                media_meta_json TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        ''')
         # Magic-link токены для веб-авторизации
         await db.execute('''
             CREATE TABLE IF NOT EXISTS web_auth_tokens (
