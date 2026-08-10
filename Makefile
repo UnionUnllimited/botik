@@ -37,14 +37,14 @@ down: ## Остановить стек
 
 .PHONY: restart
 restart: ## Перезапустить приложения (без БД)
-	$(COMPOSE) restart api bot worker
+	$(COMPOSE) restart api worker
 
 .PHONY: ps
 ps: ## Статус контейнеров
 	$(COMPOSE) ps
 
 .PHONY: logs
-logs: ## Логи всех сервисов (make logs s=bot — конкретного)
+logs: ## Логи всех сервисов (make logs s=api — конкретного)
 	$(COMPOSE) logs -f --tail=200 $(s)
 
 .PHONY: deploy
@@ -106,7 +106,7 @@ cov: ## Тесты с покрытием
 lint: ## Проверка стиля и типов
 	$(PY) -m ruff check .
 	$(PY) -m ruff format --check .
-	$(PY) -m mypy core api bot worker
+	$(PY) -m mypy core api worker
 
 .PHONY: fmt
 fmt: ## Форматирование

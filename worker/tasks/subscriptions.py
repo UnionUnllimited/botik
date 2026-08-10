@@ -8,8 +8,8 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from bot.keyboards import inline
-from bot.texts import ru
+from core import texts as ru
+from core import tg_buttons
 from core.config import settings
 from core.dates import days_left, days_phrase, utcnow
 from core.db import session_scope
@@ -92,7 +92,7 @@ async def send_reminders() -> int:
             delivered = await send_message(
                 user.tg_id,
                 text,
-                reply_markup=inline.subscription_actions(has_subscription=True),
+                reply_markup=tg_buttons.cabinet(),
                 session=session,
             )
             subscription.last_reminder_day = marker

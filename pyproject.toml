@@ -8,7 +8,10 @@ requires-python = ">=3.13,<3.14"
 line-length = 110
 target-version = "py313"
 src = ["."]
-extend-exclude = ["migrations/versions", ".venv"]
+# bot/ — сторонний код, принятый за основу: 63 тысячи строк чужого стиля.
+# Прогонять по нему наши правила бессмысленно, пока он не переписан под нас:
+# 7 тысяч замечаний прячут наши собственные, и линтер перестаёт быть проверкой.
+extend-exclude = ["migrations/versions", ".venv", "bot"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "T20", "S", "BLE", "PLW"]

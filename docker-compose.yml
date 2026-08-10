@@ -85,21 +85,6 @@ services:
       retries: 3
       start_period: 20s
 
-  bot:
-    <<: *app
-    command: ["python", "-m", "bot"]
-    expose: ["8081"]
-    # Активация роутера идёт из бота, и туннель к нему нужен сразу же:
-    # без этого тома конфиг visitor'ов писать некуда.
-    volumes:
-      - frpc_config:/frpc
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8081/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
   worker:
     <<: *app
     command: ["python", "-m", "worker"]
@@ -128,7 +113,7 @@ services:
   nginx:
     image: nginx:1.29-alpine
     restart: unless-stopped
-    depends_on: [api, bot]
+    depends_on: [api]
     ports:
       - "80:80"
       - "443:443"

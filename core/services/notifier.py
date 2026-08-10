@@ -1,8 +1,8 @@
 """Уведомления клиенту о событиях заказа и оплаты.
 
-Модуль намеренно берёт тексты из `bot.texts`: это единственный словарь
-формулировок в проекте, а зависимость односторонняя — тексты не знают
-ни о моделях, ни о сервисах.
+Тексты и кнопки берутся из `core`, а не из пакета бота: бот сменный, а оплату
+подтверждать надо в любом случае. Раньше зависимость шла в `bot.texts`,
+и удаление бота обрушило бы вебхук оплаты вместе с ним.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from bot.keyboards import inline
-from bot.texts import ru
+from core import texts as ru
+from core import tg_buttons
 from core.enums import OrderStatus
 from core.models import Order, Payment, User
 from core.notifications import notify_admins, send_message
@@ -80,7 +80,7 @@ async def notify_order_status(
         if track:
             text += "\n\n" + ru.TRACK_INFO.format(track=track)
             url = order.delivery.tracking_url or delivery_service.tracking_url(order.delivery.method, track)
-            markup = inline.tracking(url)
+            markup = tg_buttons.tracking(url)
 
     return await send_message(user.tg_id, text.strip(), reply_markup=markup, session=session)
 

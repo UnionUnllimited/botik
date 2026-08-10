@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from bot.utils import validators
+from core import validators
 from core.enums import OrderStatus, PromoDiscountType
 from core.models import Order, PromoCode
 from core.services import orders as order_service
