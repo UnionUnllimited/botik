@@ -168,15 +168,20 @@ docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
 
 ```caddyfile
 vbotrouters.titanvps.click {
-    handle /admin* { reverse_proxy router-shop-api:8000 }
-    handle /webhooks* { reverse_proxy router-shop-api:8000 }
-    handle /api* { reverse_proxy router-shop-api:8000 }
-    handle /cgi-bin* { reverse_proxy router-shop-api:8000 }
-    handle /luci-static* { reverse_proxy router-shop-api:8000 }
-    handle /ubus* { reverse_proxy router-shop-api:8000 }
-    handle { reverse_proxy 127.0.0.1:ПОРТ_ИХ_САЙТА }
+    @ours path /admin* /webhooks* /api* /cgi-bin* /luci-static* /ubus*
+    handle @ours {
+        reverse_proxy router-shop-api:8000
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:ПОРТ_ИХ_САЙТА
+    }
 }
 ```
+
+Тело блока — только на отдельных строках: `handle ... { reverse_proxy ... }`
+в одну строку Caddy не принимает и отвечает «Unexpected next token after '{'
+on same line».
 
 Правку применяет `docker exec -w /etc/caddy caddy caddy reload` в контейнере
 прокси; перезапускать наш стек ради этого не нужно.
@@ -269,13 +274,18 @@ docker inspect $(docker ps --filter name=caddy -q | head -1) --format '{{range .
 
 ```caddyfile
 vbotrouters.titanvps.click {
-    handle /admin123* { reverse_proxy ШЛЮЗ:8181 }
-    handle { reverse_proxy router-shop-api:8000 }
+    handle /admin123* {
+        reverse_proxy ШЛЮЗ:8181
+    }
+
+    handle {
+        reverse_proxy router-shop-api:8000
+    }
 }
 ```
 
 `handle` берёт первый совпавший блок, поэтому порядок важен: сначала путь бота,
-потом всё остальное нам. Применить: `docker exec -w /etc/caddy caddy caddy reload`.
+потом всё остальное нам. Директиву на одной строке после `{` Caddy не принимает. Применить: `docker exec -w /etc/caddy caddy caddy reload`.
 
 Проверка — 200 или редирект на форму входа, но не 502:
 
