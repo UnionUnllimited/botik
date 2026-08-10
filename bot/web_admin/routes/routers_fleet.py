@@ -104,8 +104,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             fleet_error=error,
         )
 
-    @admin_bp_instance.route("/routers/<int:device_id>")
-    async def router_card(device_id: int):
+    async def _render_card(device_id: int, *, console_output: str = "", console_command: str = ""):
         data, error = await _get(f"/api/v1/fleet/routers/{device_id}")
         return await render_template(
             "router_card.html",
@@ -117,6 +116,26 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             panel=data.get("panel", {}),
             events=data.get("events", []),
             fleet_error=error,
+            console_output=console_output,
+            console_command=console_command,
+        )
+
+    @admin_bp_instance.route("/routers/<int:device_id>")
+    async def router_card(device_id: int):
+        return await _render_card(device_id)
+
+    @admin_bp_instance.route("/routers/<int:device_id>/console", methods=["POST"])
+    async def router_console(device_id: int):
+        """Вывод показываем на той же странице, а не редиректом: он длинный,
+        и при перезагрузке терялся бы вместе с ответом роутера."""
+        form = await request.form
+        command = (form.get("command") or "").strip()
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/console", {"command": command})
+        if error:
+            await flash(error, "danger")
+            return await _render_card(device_id, console_command=command)
+        return await _render_card(
+            device_id, console_output=data.get("output") or "(пусто)", console_command=command
         )
 
     async def _act(device_id: int, path: str, payload: dict, ok_message: str):

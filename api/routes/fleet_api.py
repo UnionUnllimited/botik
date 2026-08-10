@@ -9,8 +9,9 @@
 у них: туннель к роутеру держит наш контейнер `frpc`, и дотянуться до него
 может только процесс в нашей сети. Их админка эти ручки вызывает.
 
-Консоль по SSH и проксирование панели LuCI сюда пока не переехали: там поток
-и переписывание ссылок, это отдельный слой.
+Консоль тоже здесь: у нас она разовыми командами, а не сессией, поэтому
+переносится обычной ручкой. Не переехало только проксирование панели LuCI —
+там переписывание ссылок и куки, это отдельный слой.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import Device
-from core.services import activation
+from core.services import activation, router_shell
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
 from core.services.frp import RouterApi
@@ -277,3 +278,42 @@ async def unbind_router(device_id: int, session: AsyncSession = Depends(get_tran
         session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
     )
     return {"ok": True}
+
+
+FORBIDDEN_COMMANDS = ("mkfs", "firstboot", "rm -rf /", "> /dev/mtd", "dd if=", "sysupgrade")
+"""Перепрошивка и форматирование из веб-консоли — верный способ получить кирпич
+у клиента на другом конце страны. Список тот же, что был в нашей админке."""
+
+
+@router.post("/routers/{device_id}/console", dependencies=[Depends(require_token)])
+async def console(
+    device_id: int, payload: dict, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Разовая команда на роутере по SSH через туннель.
+
+    Именно разовая, а не сессия: интерактивной консоли у нас никогда не было,
+    и делать её ради переезда незачем. Читать журналы можно тем же способом —
+    `logread`, `dmesg`.
+    """
+    device = await _device_or_404(session, device_id)
+    command = str(payload.get("command", "")).strip()
+    if not command:
+        return {"ok": False, "error": "Пустая команда."}
+    if any(bad in command.lower() for bad in FORBIDDEN_COMMANDS):
+        log.warning("fleet.console_forbidden", device_id=device_id, command=command[:120])
+        return {"ok": False, "error": "Эта команда запрещена из веб-консоли."}
+
+    try:
+        result = await router_shell.run(device, command)
+    except router_shell.ShellError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message="Консоль: " + command[:120],
+    )
+    await session.commit()
+    return {"ok": result.ok, "output": result.output[:20000], "command": command}

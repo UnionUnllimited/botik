@@ -130,6 +130,25 @@
       </div>
     </div>
 
+    {# ── Консоль ───────────────────────────────────────────────────────── #}
+    <div class="tw-card p-4 space-y-3">
+      <h2 class="text-[15px] font-semibold tw-text-base2">Консоль</h2>
+      <p class="text-[12px] tw-text-muted2">
+        Разовая команда по SSH через туннель. Перепрошивка и форматирование
+        запрещены: получить кирпич у клиента на другом конце страны легко,
+        а вернуть его — нет.
+      </p>
+      <form method="post" action="{{ url_for('admin.router_console', device_id=device_id) }}" class="space-y-2">
+        <input name="command" required class="tw-input w-full font-mono"
+               value="{{ console_command or '' }}" placeholder="logread | tail -n 50">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Выполнить</button>
+      </form>
+      {% if console_output %}
+      <pre class="text-[12px] font-mono overflow-x-auto p-3 rounded"
+           style="background:rgba(0,0,0,.25); max-height:340px">{{ console_output }}</pre>
+      {% endif %}
+    </div>
+
     {# ── Журнал ────────────────────────────────────────────────────────── #}
     <div class="tw-card p-4">
       <h2 class="text-[15px] font-semibold tw-text-base2 mb-3">Журнал устройства</h2>
