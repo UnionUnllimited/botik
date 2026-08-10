@@ -27,3 +27,10 @@ logs/
 # База чужого бота, принятого за основу: рабочие данные, в репозиторий им нельзя
 bot/*.db
 bot/*.db-journal
+
+# Окружения чужого бота: его установщик создаёт venv прямо в дереве проекта
+bot/venv/
+bot/web_admin/venv/
+bot/xuiweb/venv/
+bot/website/venv/
+bot/subpage/venv/
