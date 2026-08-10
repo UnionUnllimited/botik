@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Веб-кабинет · {{ super() }}{% endblock %}
+{% block content %}
+<div class="tw-anim space-y-4 min-w-0 max-w-full">
+  <div class="sp-card">
+    <div class="sp-card-head">
+      <div class="min-w-0">
+        <div class="text-base font-semibold text-[var(--admin-text-base)] flex items-center gap-2 mb-1">
+          <i data-lucide="globe" class="w-4 h-4 text-[rgb(var(--admin-accent))]"></i>
+          Настройки веб-кабинет
+        </div>
+        <div class="text-xs text-[var(--admin-text-muted)] leading-relaxed">
+          Ограничения входа и регистрации на публичном сайте (<code class="font-mono">website</code>).
+          Изменения применяются сразу, без перезапуска.
+        </div>
+      </div>
+      <button type="button" id="wcab-save-btn" class="tw-btn tw-btn-primary tw-btn-sm shrink-0">
+        <i data-lucide="save" class="w-4 h-4"></i> Сохранить
+      </button>
+    </div>
+  </div>
+
+  <div class="sp-card">
+    <div class="sp-card-body space-y-5">
+      <div class="sp-field">
+        <label class="flex items-center gap-3 cursor-pointer select-none">
+          <input type="checkbox" id="wcab-whitelist-enabled" class="tw-checkbox"
+                 {% if cfg.email_whitelist_enabled %}checked{% endif %}>
+          <span>
+            <span class="font-semibold text-[var(--admin-text-base)]">Белый список доменов email</span>
+            <span class="block text-xs text-[var(--admin-text-muted)] mt-0.5">
+              Разрешать вход и регистрацию только с указанных почтовых доменов.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div class="sp-field">
+        <label class="flex items-center gap-3 cursor-pointer select-none">
+          <input type="checkbox" id="wcab-allow-existing" class="tw-checkbox"
+                 {% if cfg.email_allow_existing_users %}checked{% endif %}>
+          <span>
+            <span class="font-semibold text-[var(--admin-text-base)]">Разрешить уже зарегистрированные email</span>
+            <span class="block text-xs text-[var(--admin-text-muted)] mt-0.5">
+              Если включено — пользователи, которые уже есть в базе с «неразрешённым» доменом,
+              по-прежнему получат код входа. Новые регистрации с таких доменов блокируются.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div class="sp-field">
+        <label>Разрешённые домены</label>
+        <div class="hint mb-2">По одному домену на строку, без <code class="font-mono">@</code>. Пример: <code class="font-mono">gmail.com</code></div>
+        <textarea id="wcab-domains-text" class="sp-input wcab-domains-input" placeholder="gmail.com&#10;yandex.ru&#10;mail.ru">{{ cfg.email_allowed_domains | join('\n') }}</textarea>
+      </div>
+
+      <div class="sp-field">
+        <label>Текущий список</label>
+        <div id="wcab-domain-chips" class="wcab-domain-chips"></div>
+      </div>
+
+      <div class="sp-field">
+        <label>Быстрое добавление</label>
+        <div class="hint mb-2">Добавляет домены провайдера в список (без дубликатов).</div>
+        <div class="wcab-preset-grid">
+          {% for name, domains in domain_presets %}
+          <button type="button" class="wcab-preset-btn" data-preset="{{ domains | join(',') }}">{{ name }}</button>
+          {% endfor %}
+          <button type="button" class="wcab-preset-btn" id="wcab-add-all-presets">Все популярные</button>
+        </div>
+      </div>
+
+      <div class="sp-banner">
+        <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+        <div class="text-xs leading-relaxed">
+          При отклонении пользователь увидит:
+          «Данная почта не подходит — возможно, она корпоративная или заблокирована.
+          Используйте популярные почтовые сервисы…»
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const SAVE_URL = {{ url_for('admin.settings_website_cabinet_save') | tojson }};
+
+  const elEnabled = document.getElementById('wcab-whitelist-enabled');
+  const elAllowExisting = document.getElementById('wcab-allow-existing');
+  const elDomainsText = document.getElementById('wcab-domains-text');
+  const elChips = document.getElementById('wcab-domain-chips');
+  const elSave = document.getElementById('wcab-save-btn');
+
+  if (!elEnabled || !elAllowExisting || !elDomainsText || !elChips || !elSave) return;
+
+  function normalizeDomain(raw) {
+    return String(raw || '').trim().toLowerCase().replace(/^@+/, '').replace(/\.+$/, '');
+  }
+
+  function parseDomains(text) {
+    const seen = new Set();
+    const out = [];
+    String(text || '').split(/[\s,;]+/).forEach(function(part) {
+      const d = normalizeDomain(part);
+      if (!d || seen.has(d)) return;
+      seen.add(d);
+      out.push(d);
+    });
+    return out;
+  }
+
+  function renderChips() {
+    const domains = parseDomains(elDomainsText.value);
+    elChips.innerHTML = '';
+    if (!domains.length) {
+      elChips.innerHTML = '<span class="text-xs text-[var(--admin-text-muted)]">Список пуст</span>';
+      return;
+    }
+    domains.forEach(function(dom) {
+      const chip = document.createElement('span');
+      chip.className = 'wcab-domain-chip';
+      chip.innerHTML = dom + '<button type="button" title="Удалить" aria-label="Удалить">&times;</button>';
+      chip.querySelector('button').addEventListener('click', function() {
+        const next = parseDomains(elDomainsText.value).filter(function(x) { return x !== dom; });
+        elDomainsText.value = next.join('\n');
+        renderChips();
+      });
+      elChips.appendChild(chip);
+    });
+  }
+
+  function addDomains(list) {
+    const merged = parseDomains(elDomainsText.value + '\n' + (list || []).join('\n'));
+    elDomainsText.value = merged.join('\n');
+    renderChips();
+  }
+
+  elDomainsText.addEventListener('input', renderChips);
+
+  document.querySelectorAll('.wcab-preset-btn[data-preset]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      addDomains(String(btn.getAttribute('data-preset') || '').split(',').filter(Boolean));
+    });
+  });
+
+  const addAllBtn = document.getElementById('wcab-add-all-presets');
+  if (addAllBtn) {
+    addAllBtn.addEventListener('click', function() {
+      const all = [];
+      document.querySelectorAll('.wcab-preset-btn[data-preset]').forEach(function(btn) {
+        String(btn.getAttribute('data-preset') || '').split(',').forEach(function(d) {
+          if (d) all.push(d);
+        });
+      });
+      addDomains(all);
+    });
+  }
+
+  async function saveConfig() {
+    elSave.disabled = true;
+    const prev = elSave.innerHTML;
+    elSave.innerHTML = '<span class="opacity-70">Сохраняем…</span>';
+    try {
+      const payload = {
+        email_whitelist_enabled: !!elEnabled.checked,
+        email_allow_existing_users: !!elAllowExisting.checked,
+        email_allowed_domains: parseDomains(elDomainsText.value),
+      };
+      const resp = await fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cfg: payload }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      if (data.cfg && Array.isArray(data.cfg.email_allowed_domains)) {
+        elDomainsText.value = data.cfg.email_allowed_domains.join('\n');
+        elEnabled.checked = !!data.cfg.email_whitelist_enabled;
+        elAllowExisting.checked = !!data.cfg.email_allow_existing_users;
+        renderChips();
+      }
+      if (window.showToast) window.showToast('Настройки веб-кабинета сохранены', 'success');
+    } catch (e) {
+      if (window.showToast) window.showToast('Ошибка: ' + e.message, 'error');
+      else alert('Ошибка: ' + e.message);
+    } finally {
+      elSave.disabled = false;
+      elSave.innerHTML = prev;
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }
+
+  elSave.addEventListener('click', saveConfig);
+  renderChips();
+})();
+</script>
+{% endblock %}

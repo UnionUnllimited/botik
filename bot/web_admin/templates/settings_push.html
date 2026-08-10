@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+{% block title %}Push-уведомления — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Push-уведомления</h1>
+      <p class="text-[13px] text-muted2 mt-1">PWA-уведомления о событиях в админке (через браузер).</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <span id="ppStatus" class="pp-status off"><i data-lucide="circle" class="w-3 h-3"></i><span>Проверка…</span></span>
+    </div>
+  </div>
+
+  {# ───── 1. Глобальные настройки ───── #}
+  <div class="tw-surface rounded-[var(--radius-card)] pp-card">
+    <h2><i data-lucide="bell" class="w-4 h-4" style="color:var(--color-brand-500)"></i>Включение функции</h2>
+
+    {% if not configured %}
+    <div class="pp-step warn">
+      <i data-lucide="alert-triangle" class="w-3.5 h-3.5 inline align-text-top mr-1"></i>
+      <strong>VAPID-ключи ещё не сгенерированы.</strong> При первом включении функции
+      сервер сгенерирует приватный/публичный ключ. Эти ключи хранятся постоянно и
+      определяют все будущие подписки — менять их без необходимости нельзя.
+    </div>
+    {% endif %}
+
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+      <div class="min-w-0 flex-1">
+        <div class="text-[13px] font-medium" style="color:var(--admin-text-base)">
+          Push-уведомления о новых платежах
+        </div>
+        <div class="text-[12px] text-muted2 mt-1">
+          Фоновая задача каждые 20 секунд проверяет новые успешные платежи и шлёт
+          уведомления на все подписанные устройства.
+        </div>
+      </div>
+      <label class="pp-tw-switch shrink-0">
+        <input type="checkbox" id="ppGlobalToggle" {% if push_enabled %}checked{% endif %}>
+        <span class="track"></span>
+        <span class="thumb"></span>
+      </label>
+    </div>
+
+    {# ── VAPID subject (для Apple Push Service) ─────────────────────────── #}
+    {% if configured %}
+    <div class="mt-4 pt-3 border-t" style="border-color: rgb(var(--admin-border));">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider font-semibold mb-2">
+        VAPID Subject
+      </div>
+      <div class="text-[12px] text-muted2 mb-2">
+        Адрес контакта для push-сервисов браузера. <strong>Apple строго требует</strong> валидный
+        <code>mailto:</code> или <code>https://</code>-URL — иначе iPhone/Safari возвращает
+        <code class="text-[11px]" style="color:#f43f5e;">403 BadJwtToken</code>. Не используйте
+        <code>.local</code>-домены.
+      </div>
+      <form id="ppSubjectForm" class="flex items-center gap-2 flex-wrap">
+        <input type="text" id="ppSubjectInput"
+               value="{{ vapid_subject or '' }}"
+               placeholder="mailto:admin@yourdomain.com"
+               class="tw-input flex-1" style="min-width:200px; font-family: monospace; font-size: 12.5px;"
+               autocomplete="off" spellcheck="false">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm shrink-0">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          <span>Сохранить</span>
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ───── 2. Устройства ───── #}
+  <div class="tw-surface rounded-[var(--radius-card)] pp-card">
+    {# Шапка секции: заголовок + кнопки.
+       На мобиле кнопки переносятся на отдельную строку (full-width),
+       Подписать растягивается, Тест компактный справа. #}
+    <div class="flex items-center gap-2 mb-3 flex-wrap">
+      <div class="flex items-center gap-2 min-w-0 flex-1">
+        <i data-lucide="monitor-smartphone" class="w-4 h-4 shrink-0" style="color:#10b981"></i>
+        <h2 class="truncate" style="margin:0; font-size:14px; font-weight:600; color:var(--admin-text-base);">Подписанные устройства</h2>
+        <span class="tw-chip shrink-0" style="background:var(--admin-bg-soft);color:var(--admin-text-muted);" id="ppDeviceCount">{{ devices|length }}</span>
+      </div>
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <button id="ppSubscribeBtn" type="button"
+                class="tw-btn tw-btn-primary tw-btn-sm flex-1 sm:flex-none min-w-0">
+          <i data-lucide="plus" class="w-3.5 h-3.5 shrink-0"></i>
+          <span class="truncate">Подписать устройство</span>
+        </button>
+        <button id="ppTestBtn" type="button"
+                class="tw-btn tw-btn-secondary tw-btn-sm shrink-0"
+                {% if not devices %}disabled{% endif %}>
+          <i data-lucide="send" class="w-3.5 h-3.5"></i>
+          <span>Тест</span>
+        </button>
+      </div>
+    </div>
+
+    {% if not devices %}
+      <div class="pp-empty" id="ppDevicesEmpty">
+        <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+        <div>Ни одно устройство ещё не подписалось.</div>
+        <div class="text-[11.5px] mt-1">Нажмите «Подписать это устройство» сверху, чтобы получать уведомления здесь.</div>
+      </div>
+    {% endif %}
+
+    <div id="ppDevices">
+      {% for d in devices %}
+      <div class="pp-device" data-id="{{ d.id }}">
+        <div class="ico"><i data-lucide="monitor" class="w-3.5 h-3.5"></i></div>
+        <div class="meta">
+          <div class="font-semibold" style="color:var(--admin-text-base)">
+            {% if 'iPhone' in (d.user_agent or '') or 'iPad' in (d.user_agent or '') %}iOS / Safari
+            {% elif 'Android' in (d.user_agent or '') %}Android
+            {% elif 'Windows' in (d.user_agent or '') %}Windows
+            {% elif 'Mac OS' in (d.user_agent or '') %}macOS
+            {% elif 'Linux' in (d.user_agent or '') %}Linux
+            {% else %}Устройство{% endif %}
+          </div>
+          <div class="ua" title="{{ d.user_agent or '' }}">{{ (d.user_agent or '—')[:120] }}</div>
+          <div class="when">
+            подписано: {{ d.created_at|msk_datetime if d.created_at else '—' }}
+            {% if d.last_seen_at %} · последнее обновление: {{ d.last_seen_at|msk_datetime }}{% endif %}
+            {% if d.failed_count and d.failed_count > 0 %}
+              <span style="color:#f43f5e"> · ошибок подряд: {{ d.failed_count }}</span>
+            {% endif %}
+          </div>
+          {% if d.last_error %}
+          <div class="text-[11px] mt-1 px-2 py-1 rounded"
+               style="background: rgb(244 63 94 / .08); border-left: 2px solid #f43f5e;
+                      color: #f43f5e; font-family: monospace; word-break: break-word;">
+            {{ d.last_error }}
+          </div>
+          {% endif %}
+        </div>
+        <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm pp-device-del"
+                data-id="{{ d.id }}" title="Отписать это устройство">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5" style="color:#f43f5e"></i>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ───── 3. Поведение / приватность ───── #}
+  <div class="tw-surface rounded-[var(--radius-card)] pp-card">
+    <h2><i data-lucide="shield" class="w-4 h-4" style="color:#a855f7"></i>Что приходит в уведомлениях</h2>
+    <div class="text-[13px] text-muted2 leading-relaxed">
+      Тело уведомления намеренно минимально — без имён клиентов и Telegram-ID:
+      <ul class="list-disc list-inside mt-2 space-y-1 text-[12.5px]">
+        <li><span class="tw-chip" style="background:rgb(99 102 241 / .12);color:var(--color-brand-500);">Заголовок</span> «Новый платёж»</li>
+        <li><span class="tw-chip" style="background:var(--admin-bg-soft);color:var(--admin-text-muted);">Текст</span> тип покупки + краткие параметры + сумма
+            <div class="mt-1 ml-6 text-[11.5px] text-muted2">
+              Примеры: «Продление подписки · 30 дн. · 350 ₽», «Докупка трафика · +100 GB · 100 ₽»,
+              «Увеличение лимита · 3 → 5 устр. · 200 ₽»
+            </div>
+        </li>
+        <li>При нажатии — открывается раздел «Платежи».</li>
+      </ul>
+      <div class="mt-3 text-[11.5px] text-muted2">
+        Технически: запрос идёт на push-сервис вашего браузера (Google FCM / Apple APNs / Mozilla autopush)
+        с подписью по VAPID-ключам. Содержимое зашифровано — push-сервис не видит сумму.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   Push-уведомления — клиент
+   ════════════════════════════════════════════════════════════════════════ */
+
+(function ppInit() {
+  const SECRET = (() => { const p = location.pathname.split('/').filter(Boolean); return p[0] || ''; })();
+  const API = (path) => `/${SECRET}${path}`;
+
+  const statusEl = document.getElementById('ppStatus');
+  const subscribeBtn = document.getElementById('ppSubscribeBtn');
+  const testBtn = document.getElementById('ppTestBtn');
+  const globalToggle = document.getElementById('ppGlobalToggle');
+  const devicesContainer = document.getElementById('ppDevices');
+  const devicesEmpty = document.getElementById('ppDevicesEmpty');
+  const deviceCountChip = document.getElementById('ppDeviceCount');
+
+  // ── Утилиты ────────────────────────────────────────────────────────────
+  function setStatus(state, text, icon) {
+    if (!statusEl) return;
+    statusEl.className = 'pp-status ' + state;
+    statusEl.innerHTML = `<i data-lucide="${icon}" class="w-3 h-3"></i><span>${text}</span>`;
+    if (window.lucide) try { lucide.createIcons(); } catch(_) {}
+  }
+
+  function urlBase64ToUint8Array(b64) {
+    const padding = '='.repeat((4 - b64.length % 4) % 4);
+    const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  function toast(msg, kind) {
+    if (window.adminToast) window.adminToast(msg, kind || 'info', { duration: 2800 });
+    else console.log('[PP]', kind || 'info', msg);
+  }
+
+  // ── Проверка поддержки ─────────────────────────────────────────────────
+  function browserSupportsPush() {
+    return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+  }
+
+  if (!browserSupportsPush()) {
+    setStatus('warn', 'Браузер не поддерживает push', 'alert-triangle');
+    if (subscribeBtn) subscribeBtn.disabled = true;
+    return;
+  }
+
+  // ── Сохранение VAPID subject ───────────────────────────────────────────
+  const subjectForm = document.getElementById('ppSubjectForm');
+  if (subjectForm) {
+    subjectForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('ppSubjectInput');
+      const subject = (input?.value || '').trim();
+      if (!subject) {
+        toast('Поле не может быть пустым', 'error');
+        return;
+      }
+      const btn = subjectForm.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
+      try {
+        const r = await fetch(API('/api/pwa/push/subject'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ subject })
+        });
+        const data = await r.json();
+        if (!data.ok) {
+          throw new Error(data.hint || data.error || 'fail');
+        }
+        toast('VAPID subject обновлён. Push сейчас попробует отправиться заново.', 'success');
+      } catch (err) {
+        toast('Ошибка: ' + err.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  }
+
+  // ── Тумблер «Включить функцию» ─────────────────────────────────────────
+  if (globalToggle) {
+    globalToggle.addEventListener('change', async (e) => {
+      const enabled = !!e.target.checked;
+      try {
+        const r = await fetch(API('/api/pwa/push/toggle'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ enabled })
+        });
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || 'fail');
+        toast(enabled ? 'Уведомления включены' : 'Уведомления выключены', 'success');
+        if (enabled) refreshStatus();
+      } catch (err) {
+        e.target.checked = !enabled;  // откат
+        toast('Ошибка: ' + err.message, 'error');
+      }
+    });
+  }
+
+
+  // ── Подписка устройства ────────────────────────────────────────────────
+  async function subscribeThisDevice() {
+    if (subscribeBtn) subscribeBtn.disabled = true;
+    try {
+      // 1. Запросим разрешение
+      let perm = Notification.permission;
+      if (perm === 'default') {
+        perm = await Notification.requestPermission();
+      }
+      if (perm !== 'granted') {
+        toast('Вы запретили уведомления в настройках браузера', 'error');
+        return;
+      }
+
+      // 2. SW (он уже зарегистрирован у нас в base.html — ждём готовности)
+      const reg = await navigator.serviceWorker.ready;
+
+      // 3. Конфиг от сервера
+      const cfgResp = await fetch(API('/api/pwa/push/config'), { credentials: 'same-origin' });
+      const cfg = await cfgResp.json();
+      if (!cfg.ok || !cfg.public_key) {
+        toast('Сервер не настроен или функция выключена', 'error');
+        return;
+      }
+
+      // 4. Отписаться от предыдущей подписки (если была) для чистоты
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        try { await existing.unsubscribe(); } catch (_) {}
+      }
+
+      // 5. Подписаться
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(cfg.public_key),
+      });
+
+      // 6. Отправить на сервер
+      const subJson = sub.toJSON();
+      const r = await fetch(API('/api/pwa/push/subscribe'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          keys:     subJson.keys,
+          events_mask: 1,
+        })
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'subscribe failed');
+
+      toast('Устройство подписано на уведомления', 'success');
+      // Обновим страницу, чтобы появилась карточка устройства
+      setTimeout(() => location.reload(), 500);
+    } catch (err) {
+      console.error('[PP] subscribe failed:', err);
+      toast('Ошибка подписки: ' + (err.message || err), 'error');
+    } finally {
+      if (subscribeBtn) subscribeBtn.disabled = false;
+    }
+  }
+
+  if (subscribeBtn) subscribeBtn.addEventListener('click', subscribeThisDevice);
+
+  // ── Тест ────────────────────────────────────────────────────────────────
+  if (testBtn) testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    try {
+      const r = await fetch(API('/api/pwa/push/test'), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'fail');
+      toast(`Отправлено: ${data.sent || 0}, очищено мёртвых: ${data.cleaned || 0}`, 'success');
+    } catch (err) {
+      toast('Ошибка теста: ' + err.message, 'error');
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+
+  // ── Удаление устройства ────────────────────────────────────────────────
+  if (devicesContainer) {
+    devicesContainer.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.pp-device-del');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (!confirm('Отписать это устройство от уведомлений?')) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch(API(`/api/pwa/push/devices/${id}/delete`), {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || 'fail');
+        const row = btn.closest('.pp-device');
+        if (row) row.remove();
+        // Обновляем счётчик
+        const remaining = devicesContainer.querySelectorAll('.pp-device').length;
+        if (deviceCountChip) deviceCountChip.textContent = String(remaining);
+        if (remaining === 0 && devicesEmpty) devicesEmpty.style.display = '';
+        if (remaining === 0 && testBtn) testBtn.disabled = true;
+        toast('Устройство отписано', 'success');
+      } catch (err) {
+        toast('Ошибка: ' + err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  }
+
+  // ── Обновление статуса/иконки ─────────────────────────────────────────
+  async function refreshStatus() {
+    try {
+      const r = await fetch(API('/api/pwa/push/config'), { credentials: 'same-origin' });
+      const cfg = await r.json();
+      if (!cfg.ok) {
+        setStatus('off', 'Не настроено', 'circle');
+        return;
+      }
+      if (!cfg.enabled) {
+        setStatus('off', 'Выключено', 'circle');
+        return;
+      }
+      // Проверим есть ли локальная подписка
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      const perm = Notification.permission;
+      if (perm === 'denied') {
+        setStatus('warn', 'Разрешение запрещено', 'alert-triangle');
+      } else if (sub) {
+        setStatus('ok', 'Это устройство подписано', 'check-circle-2');
+      } else {
+        setStatus('warn', 'Это устройство НЕ подписано', 'alert-triangle');
+      }
+    } catch (e) {
+      setStatus('off', 'Недоступно', 'circle');
+    }
+  }
+  refreshStatus();
+})();
+</script>
+{% endblock %}

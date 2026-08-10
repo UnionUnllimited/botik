@@ -1,0 +1,498 @@
+{% extends 'base.html' %}
+{% block title %}Заблокированные — {{ super() }}{% endblock %}
+
+{% block content %}
+{% set sid = request.args.get('search_id') or '' %}
+{% set qs_page = {'search_id': sid} if sid else {} %}
+
+<div id="blockedUsersRoot" class="tw-anim space-y-4 pt-1">
+
+  {# Header #}
+  <div class="flex items-end justify-between gap-3 flex-wrap">
+    <div class="min-w-0 flex items-center gap-2">
+      <div class="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+           style="background: rgb(244 63 94 / .14); color: #f43f5e;">
+        <i data-lucide="user-x" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Заблокированные</h1>
+        <p class="text-[13px] tw-text-muted2 mt-0.5">
+          Учётные записи с <code class="text-[11px]">is_blocked = 1</code>. Импорт из JSON, поиск по ID, удаление. Разблокировка только в модалке пользователя.
+        </p>
+      </div>
+    </div>
+    <a href="{{ url_for('admin.users_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+      <i data-lucide="users" class="w-3.5 h-3.5"></i>
+      <span>К активным клиентам</span>
+    </a>
+  </div>
+
+  {# KPI #}
+  <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="shield-off" class="w-3.5 h-3.5"></i> Всего заблокировано
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none text-rose-500">{{ total_users or 0 }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">в базе данных</div>
+    </div>
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="list" class="w-3.5 h-3.5"></i> На странице
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ users|length if users else 0 }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">стр. {{ page }} из {{ total_pages or 1 }}</div>
+    </div>
+    <div class="tw-card p-4 col-span-2 lg:col-span-1">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="info" class="w-3.5 h-3.5"></i> Подсказка
+      </div>
+      <div class="mt-1 text-[12px] tw-text-muted2 leading-snug">
+        На этой странице нельзя снять блокировку — откройте карточку пользователя (кнопка с иконкой глаза или клик по имени). Удаление здесь полностью убирает запись из БД и с панелей.
+      </div>
+    </div>
+  </div>
+
+  {# Поиск #}
+  <div class="tw-card p-3 sm:p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <i data-lucide="search" class="w-4 h-4 tw-text-muted2"></i>
+      <h2 class="text-[14px] font-semibold tw-text-base2">Поиск среди заблокированных</h2>
+    </div>
+    <form method="get" action="{{ url_for('admin.blocked_users_list') }}"
+          class="flex flex-col sm:flex-row gap-2 sm:items-center">
+      <input type="number" name="search_id" class="tw-input sm:max-w-xs" inputmode="numeric"
+             placeholder="Telegram ID" value="{{ sid }}">
+      <div class="flex items-center gap-2">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i>
+          <span>Найти</span>
+        </button>
+        {% if sid %}
+        <a href="{{ url_for('admin.blocked_users_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          <span>Сброс</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  {# Импорт JSON #}
+  <div class="tw-card p-3 sm:p-4">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="cloud-download" class="w-4 h-4 tw-text-muted2"></i>
+      <h2 class="text-[14px] font-semibold tw-text-base2">Импорт из JSON по URL</h2>
+    </div>
+    <p class="text-[12px] tw-text-muted2 mb-3">
+      Массив объектов с полями <code class="text-[11px]">telegram_id</code> и опционально <code class="text-[11px]">username</code>.
+      Ссылка сохраняется в настройках при изменении поля.
+    </p>
+    <form id="importBlockedForm" class="space-y-3 max-w-2xl">
+      <div>
+        <label for="json_url" class="tw-label">URL JSON</label>
+        <input type="url" class="tw-input" id="json_url" name="json_url"
+               placeholder="https://example.com/blocked_users.json"
+               value="{{ saved_json_url or '' }}" required autocomplete="off">
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" id="importSubmitBtn">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Импортировать</span>
+        </button>
+        <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="showJsonExample()">
+          <i data-lucide="file-code" class="w-3.5 h-3.5"></i>
+          <span>Пример JSON</span>
+        </button>
+      </div>
+    </form>
+    <div id="importResult" class="mt-3 hidden max-w-2xl text-[13px]"></div>
+  </div>
+
+  {# Таблица #}
+  {% if users %}
+  <div class="tw-card overflow-hidden">
+    <div class="p-3 sm:p-4 flex items-center justify-between gap-2 border-b flex-wrap"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="flex items-center gap-2">
+        <i data-lucide="table" class="w-4 h-4 tw-text-muted2"></i>
+        <h2 class="text-[14px] font-semibold tw-text-base2">Список</h2>
+        <span class="text-[11px] tw-text-subtle2">{{ users|length }} из {{ total_users }}</span>
+      </div>
+    </div>
+
+    <div class="hidden md:block overflow-x-auto tw-scroll">
+      <table class="tw-tbl">
+        <thead>
+          <tr>
+            <th>Пользователь</th>
+            <th>ID</th>
+            {% if show_blocked_email_col %}
+            <th>Email</th>
+            {% endif %}
+            <th>Подписка</th>
+            <th class="text-center">Устр.</th>
+            <th class="text-center">Реф.</th>
+            <th class="text-end">Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          {% set disp = (user.real_username or user.username or '') %}
+          {% set lim = user.get('limit_ip', 0) %}
+          <tr class="hover:opacity-95">
+            <td>
+              <button type="button" class="text-left min-w-0 hover:opacity-85 transition-opacity"
+                      onclick="window.openUserModal({{ user.telegram_id }}); return false;">
+                <div class="text-[13px] font-medium tw-text-base2 truncate max-w-[200px]">
+                  {{ disp if disp else 'Без имени' }}
+                </div>
+                {% if user.username and disp != user.username %}
+                <div class="text-[11px] tw-text-muted2 truncate max-w-[200px]">@{{ user.username }}</div>
+                {% endif %}
+              </button>
+            </td>
+            <td>
+              <code class="text-[11px] cursor-pointer" data-copy="{{ user.telegram_id }}" title="Копировать">{{ user.telegram_id }}</code>
+            </td>
+            {% if show_blocked_email_col %}
+            <td>
+              {% if user.get('email') %}
+              <span class="text-[12px] tw-text-base2 truncate inline-block max-w-[160px]" title="{{ user.email }}">{{ user.email }}</span>
+              {% else %}
+              <span class="tw-text-subtle2 text-[11px]">—</span>
+              {% endif %}
+            </td>
+            {% endif %}
+            <td>
+              {% if user.subscription_end_date %}
+                {% if user.subscription_end_date > now %}
+                <span class="tw-status-badge tw-status-succeeded">
+                  <i data-lucide="check" class="w-3 h-3"></i> до {{ user.subscription_end_date.strftime('%d.%m.%Y') }}
+                </span>
+                {% else %}
+                <span class="tw-status-badge tw-status-failed">
+                  <i data-lucide="clock-alert" class="w-3 h-3"></i> истекла
+                </span>
+                {% endif %}
+              {% else %}
+              <span class="tw-status-badge tw-status-canceled">нет</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if lim is none or lim == 0 %}
+              <span class="text-[12px] tw-text-muted2">∞</span>
+              {% else %}
+              <span class="text-[12px] font-medium">{{ lim }}</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="text-[12px] tw-text-muted2">{{ user.referrals_count if user.referrals_count is defined else '—' }}</span>
+            </td>
+            <td class="text-end">
+              <div class="flex items-center justify-end gap-1 flex-wrap">
+                <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Карточка"
+                        onclick="window.openUserModal({{ user.telegram_id }}); return false;">
+                  <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                </button>
+                <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Удалить из БД"
+                        onclick="deleteBlockedUser({{ user.telegram_id }}); return false;"
+                        style="color: #f43f5e;">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Mobile cards #}
+    <div class="md:hidden p-3 space-y-2">
+      {% for user in users %}
+      {% set disp = (user.real_username or user.username or '') %}
+      {% set lim = user.get('limit_ip', 0) %}
+      <div class="tw-card p-3 border" style="border-color: rgb(var(--admin-border));">
+        <div class="flex items-start justify-between gap-2">
+          <button type="button" class="text-left min-w-0 flex-1"
+                  onclick="window.openUserModal({{ user.telegram_id }}); return false;">
+            <div class="text-[13px] font-semibold tw-text-base2 truncate">{{ disp if disp else 'Без имени' }}</div>
+            <div class="text-[11px] tw-text-muted2 mt-0.5">
+              <code data-copy="{{ user.telegram_id }}">{{ user.telegram_id }}</code>
+              {% if user.get('email') %} · {{ user.email[:24] }}{% if user.email|length > 24 %}…{% endif %}{% endif %}
+            </div>
+          </button>
+          <div class="flex items-center gap-1 shrink-0">
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Карточка"
+                    onclick="window.openUserModal({{ user.telegram_id }}); return false;">
+              <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" style="color:#f43f5e;"
+                    onclick="deleteBlockedUser({{ user.telegram_id }}); return false;">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2 text-[11px] tw-text-muted2">
+          {% if user.subscription_end_date %}
+            {% if user.subscription_end_date > now %}
+            <span class="tw-chip" style="background: rgb(16 185 129 / .14); color: #10b981;">подписка активна</span>
+            {% else %}
+            <span class="tw-chip" style="background: rgb(244 63 94 / .14); color: #f43f5e;">подписка истекла</span>
+            {% endif %}
+          {% else %}
+          <span class="tw-chip">без подписки</span>
+          {% endif %}
+          <span>устр.: {% if lim is none or lim == 0 %}∞{% else %}{{ lim }}{% endif %}</span>
+          {% if user.referrals_count is defined %}<span>реф.: {{ user.referrals_count }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2 border-t"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="text-[12px] tw-text-muted2">
+        Страница <span class="font-semibold tw-text-base2">{{ page }}</span> из
+        <span class="font-semibold tw-text-base2">{{ total_pages }}</span>
+      </div>
+      <nav class="tw-pagination">
+        <a class="pg-item {% if page <= 1 %}disabled{% endif %}"
+           href="{{ url_for('admin.blocked_users_list', page=page-1, **qs_page) if page > 1 else '#' }}">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set ns = namespace(last=0) %}
+        {% for p in range(1, total_pages + 1) %}
+          {% set near = (p == 1 or p == total_pages or (p >= page - 1 and p <= page + 1)) %}
+          {% if near %}
+            {% if ns.last and p - ns.last > 1 %}
+              <span class="pg-item disabled">…</span>
+            {% endif %}
+            <a class="pg-item {% if p == page %}active{% endif %}"
+               href="{{ url_for('admin.blocked_users_list', page=p, **qs_page) }}">{{ p }}</a>
+            {% set ns.last = p %}
+          {% endif %}
+        {% endfor %}
+        <a class="pg-item {% if page >= total_pages %}disabled{% endif %}"
+           href="{{ url_for('admin.blocked_users_list', page=page+1, **qs_page) if page < total_pages else '#' }}">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+
+  {% else %}
+  <div class="tw-card p-10 text-center">
+    <i data-lucide="user-check" class="w-12 h-12 mx-auto mb-3" style="color: #10b981;"></i>
+    <h3 class="text-[16px] font-semibold tw-text-base2 mb-1">
+      {% if sid %}Никто не найден{% else %}Заблокированных нет{% endif %}
+    </h3>
+    <p class="text-[13px] tw-text-muted2 max-w-md mx-auto">
+      {% if sid %}
+      По ID <code>{{ sid }}</code> среди заблокированных записей ничего нет.
+      {% else %}
+      В базе нет пользователей с флагом блокировки.
+      {% endif %}
+    </p>
+    <div class="mt-4 flex flex-wrap justify-center gap-2">
+      {% if sid %}
+      <a href="{{ url_for('admin.blocked_users_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">Показать всех</a>
+      {% endif %}
+      <a href="{{ url_for('admin.users_list') }}" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="users" class="w-3.5 h-3.5"></i>
+        Активные клиенты
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# Modal пример JSON (TW, без Bootstrap Modal) #}
+<div id="jsonExampleModal" class="tw-modal" role="dialog" aria-modal="true" aria-labelledby="jsonExampleModalLabel" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop" data-json-example-close
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; width: min(720px, 100%); max-height: 86vh; overflow: hidden;
+              box-shadow: 0 24px 64px rgba(0,0,0,.32);">
+    <div class="flex items-center justify-between gap-3 px-4 py-3 border-b"
+         style="border-color: rgb(var(--admin-border));">
+      <h3 class="font-semibold text-[15px] tw-text-base2 min-w-0" id="jsonExampleModalLabel">Пример JSON</h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm shrink-0" data-json-example-close aria-label="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="p-4 pt-3 overflow-y-auto tw-scroll flex-1">
+      <p class="text-[13px] tw-text-muted2 mb-2">
+        Массив объектов с <code class="text-[11px]">telegram_id</code> и <code class="text-[11px]">username</code>:
+      </p>
+      <pre class="p-3 rounded-lg text-[11px] overflow-x-auto tw-text-base2"
+           style="background: rgb(var(--admin-bg-soft)); border: 1px solid rgb(var(--admin-border));"><code>[
+  { "telegram_id": 123456789, "username": "user_one" },
+  { "telegram_id": 987654321, "username": null }
+]</code></pre>
+      <p class="text-[12px] tw-text-muted2 mt-3">
+        Если запись с таким <code class="text-[11px]">telegram_id</code> уже есть, импорт её пропускает; новые записи создаются с <code class="text-[11px]">is_blocked = 1</code>.
+      </p>
+    </div>
+    <div class="flex justify-end gap-2 px-4 py-3 border-t"
+         style="border-color: rgb(var(--admin-border));">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-json-example-close>Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var __jsonExampleEscBound = false;
+  function closeJsonExampleModal() {
+    var el = document.getElementById('jsonExampleModal');
+    if (!el) return;
+    el.classList.remove('is-open');
+    el.setAttribute('aria-hidden', 'true');
+    el.style.setProperty('display', 'none', 'important');
+    var anyOpen = document.querySelector('.tw-modal.is-open');
+    if (!anyOpen) document.body.style.overflow = '';
+    if (__jsonExampleEscBound) {
+      document.removeEventListener('keydown', __jsonExampleOnEsc);
+      __jsonExampleEscBound = false;
+    }
+  }
+  function __jsonExampleOnEsc(e) {
+    if (e.key === 'Escape') closeJsonExampleModal();
+  }
+  function showJsonExample() {
+    var el = document.getElementById('jsonExampleModal');
+    if (!el) return;
+    el.classList.add('is-open');
+    el.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    el.style.setProperty('display', 'flex', 'important');
+    el.style.setProperty('align-items', 'center', 'important');
+    el.style.setProperty('justify-content', 'center', 'important');
+    try {
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    } catch (_) {}
+    if (!__jsonExampleEscBound) {
+      document.addEventListener('keydown', __jsonExampleOnEsc);
+      __jsonExampleEscBound = true;
+    }
+  }
+  window.showJsonExample = showJsonExample;
+  window.closeJsonExampleModal = closeJsonExampleModal;
+
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-json-example-close]')) closeJsonExampleModal();
+  });
+
+  const root = document.getElementById('blockedUsersRoot');
+  if (!root) return;
+
+  document.addEventListener('click', function(e) {
+    const t = e.target.closest('[data-copy]');
+    if (!t || !root.contains(t)) return;
+    const val = t.getAttribute('data-copy');
+    if (!val || !navigator.clipboard || !navigator.clipboard.writeText) return;
+    e.preventDefault();
+    navigator.clipboard.writeText(val).then(function() {
+      if (window.adminToast) window.adminToast('Скопировано', 'success');
+    }).catch(function() {});
+  });
+
+  async function deleteBlockedUser(telegramId) {
+    if (!confirm('Удалить пользователя ' + telegramId + ' из базы и с серверов? Отменить нельзя.')) return;
+    try {
+      const url = {{ url_for('admin.delete_user', telegram_id=0)|tojson }}.replace('/0', '/' + telegramId);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      const ct = response.headers.get('Content-Type') || '';
+      const data = ct.includes('application/json') ? await response.json() : {};
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Ошибка удаления');
+      if (window.adminToast) window.adminToast(data.message || 'Удалено', 'success');
+      setTimeout(function() { window.location.reload(); }, 600);
+    } catch (err) {
+      if (window.adminToast) window.adminToast(err.message || 'Ошибка', 'error');
+      else alert(err.message);
+    }
+  }
+  window.deleteBlockedUser = deleteBlockedUser;
+
+  const jsonInput = document.getElementById('json_url');
+  let saveUrlTimeout;
+  if (jsonInput) {
+    jsonInput.addEventListener('change', function() {
+      const url = (this.value || '').trim();
+      clearTimeout(saveUrlTimeout);
+      saveUrlTimeout = setTimeout(async function() {
+        if (!url) return;
+        try {
+          await fetch({{ url_for('admin.save_blocked_users_json_url')|tojson }}, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ json_url: url })
+          });
+        } catch (_) {}
+      }, 800);
+    });
+  }
+
+  const importForm = document.getElementById('importBlockedForm');
+  const resultDiv = document.getElementById('importResult');
+  if (importForm && resultDiv) {
+    importForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const jsonUrl = (document.getElementById('json_url').value || '').trim();
+      const submitBtn = document.getElementById('importSubmitBtn');
+      if (!jsonUrl) {
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = '<div class="tw-card p-3 border border-rose-500/30 text-rose-500 text-[13px]">Укажите URL JSON</div>';
+        return;
+      }
+      submitBtn.disabled = true;
+      resultDiv.classList.remove('hidden');
+      resultDiv.innerHTML = '<div class="tw-card p-3 tw-text-muted2 text-[13px]">Загрузка…</div>';
+      try {
+        const response = await fetch({{ url_for('admin.import_blocked_users')|tojson }}, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ json_url: jsonUrl })
+        });
+        const data = await response.json();
+        if (data.success) {
+          let html = '<div class="tw-card p-3 border text-[13px]" style="border-color: rgb(16 185 129 / .35); background: rgb(16 185 129 / .08);">';
+          html += '<div class="font-semibold tw-text-base2 mb-2">Импорт завершён</div>';
+          html += '<ul class="list-disc ms-4 space-y-0.5 tw-text-muted2">';
+          html += '<li>Обработано: ' + data.total + '</li>';
+          html += '<li>Создано: ' + data.created + '</li>';
+          html += '<li>Пропущено: ' + data.skipped + '</li>';
+          html += '<li>Ошибок: ' + data.errors + '</li></ul></div>';
+          if (data.error_details && data.error_details.length) {
+            html += '<div class="tw-card p-3 mt-2 text-[12px] tw-text-muted2"><strong class="tw-text-base2">Детали:</strong><ul class="list-disc ms-4 mt-1">';
+            data.error_details.forEach(function(err) { html += '<li>' + String(err) + '</li>'; });
+            html += '</ul></div>';
+          }
+          resultDiv.innerHTML = html;
+          setTimeout(function() { window.location.reload(); }, 1800);
+        } else {
+          resultDiv.innerHTML = '<div class="tw-card p-3 border border-rose-500/30 text-[13px] text-rose-500">' + (data.error || 'Ошибка') + '</div>';
+        }
+      } catch (err) {
+        resultDiv.innerHTML = '<div class="tw-card p-3 border border-rose-500/30 text-[13px] text-rose-500">' + err.message + '</div>';
+      } finally {
+        submitBtn.disabled = false;
+      }
+      if (window.lucide && lucide.createIcons) try { lucide.createIcons(); } catch (_) {}
+    });
+  }
+
+  if (window.lucide && lucide.createIcons) try { lucide.createIcons(); } catch (_) {}
+})();
+</script>
+{% endblock %}

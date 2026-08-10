@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Миграция в Remnawave - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-1">
+
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="refresh-ccw" class="w-6 h-6 text-[var(--color-brand-500)] shrink-0"></i>
+        Миграция в Remnawave
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">Создание пользователей в Remnawave по данным из вашей БД.</p>
+    </div>
+  </div>
+
+  <div class="tw-surface rounded-[var(--radius-card)] p-4">
+    <div class="flex gap-3 items-start">
+      <i data-lucide="info" class="w-5 h-5 shrink-0 text-[var(--color-brand-500)] mt-0.5"></i>
+      <div class="text-[13px] tw-text-muted2 space-y-2 leading-relaxed">
+        <p class="font-semibold tw-text-base2">Как это работает</p>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>Для каждого пользователя (любой статус подписки) создаётся аккаунт в Remnawave.</li>
+          <li>Username — из email (до <code class="text-[12px] px-1 rounded bg-[rgb(var(--admin-border)/.3)]">@</code>), иначе паттерн <code class="text-[12px] px-1 rounded bg-[rgb(var(--admin-border)/.3)]">tg{user_id}</code>.</li>
+          <li>Один UUID для <code class="text-[12px] px-1 rounded bg-[rgb(var(--admin-border)/.3)]">xui_client_uuid</code>, <code class="text-[12px] px-1 rounded bg-[rgb(var(--admin-border)/.3)]">remnawave_short_uuid</code>, <code class="text-[12px] px-1 rounded bg-[rgb(var(--admin-border)/.3)]">remnawave_user_uuid</code>.</li>
+          <li>Дни подписки из даты окончания (минимум 1 день для истёкших).</li>
+          <li>Уже существующие в Remnawave пропускаются; пустой UUID — пропуск.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: var(--admin-bg-soft);">
+        <i data-lucide="users" class="w-4 h-4 tw-text-muted2"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2 truncate">Всего</div>
+        <div id="total-users" class="text-[18px] font-semibold tabular-nums truncate">—</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="arrow-right-circle" class="w-4 h-4 text-[var(--color-brand-500)]"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2 truncate">Обработано</div>
+        <div id="processed-users" class="text-[18px] font-semibold tabular-nums truncate">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: rgb(16 185 129 / .12);">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2 truncate">Создано</div>
+        <div id="created-users" class="text-[18px] font-semibold tabular-nums truncate text-emerald-600">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: rgb(245 158 11 / .12);">
+        <i data-lucide="fast-forward" class="w-4 h-4 text-amber-600"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2 truncate">Пропущено</div>
+        <div id="skipped-users" class="text-[18px] font-semibold tabular-nums truncate">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3 col-span-2 sm:col-span-1 lg:col-span-1">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: rgb(244 63 94 / .12);">
+        <i data-lucide="x-circle" class="w-4 h-4 text-rose-500"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2 truncate">Ошибок</div>
+        <div id="failed-users" class="text-[18px] font-semibold tabular-nums truncate text-rose-500">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tw-surface rounded-[var(--radius-card)] p-4">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <span class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+        <i data-lucide="gauge" class="w-4 h-4 tw-text-muted2"></i>
+        Прогресс
+      </span>
+      <span id="progress-text" class="text-[13px] font-semibold text-[var(--color-brand-500)] tabular-nums">0%</span>
+    </div>
+    <div class="h-2 rounded-full overflow-hidden" style="background: rgb(var(--admin-border) / .45);">
+      <div id="progress-bar" class="h-full rounded-full transition-[width] duration-300 ease-out" style="width: 0%; background: var(--color-brand-500);"></div>
+    </div>
+  </div>
+
+  <div id="migration-status" class="mw-status mw-status-muted">
+    <i data-lucide="hourglass" class="w-5 h-5 shrink-0 opacity-70"></i>
+    <span>Готов к запуску. Нажмите «Начать миграцию».</span>
+  </div>
+
+  <div class="flex flex-wrap gap-2">
+    <button type="button" id="start-migration-btn" class="tw-btn tw-btn-primary" onclick="startMigration()">
+      <i data-lucide="play" class="w-4 h-4"></i>
+      Начать миграцию
+    </button>
+    <button type="button" id="stop-migration-btn" class="tw-btn tw-btn-secondary hidden" onclick="stopMigration()">
+      <i data-lucide="square" class="w-4 h-4"></i>
+      Остановить
+    </button>
+  </div>
+
+  <div id="results" class="hidden">
+    <h2 class="text-[15px] font-semibold tw-text-base2 mb-3 flex items-center gap-2">
+      <i data-lucide="clipboard-check" class="w-5 h-5 text-[var(--color-brand-500)]"></i>
+      Результаты
+    </h2>
+    <div id="results-content"></div>
+  </div>
+
+</div>
+
+<script>
+let migrationRunning = false;
+let migrationInterval = null;
+const MAX_ERRORS_DISPLAY = 50;
+let showAllErrors = false;
+let lastMigrationData = null;
+
+function _icons() {
+  if (window.adminRenderLucide) window.adminRenderLucide();
+}
+
+function setStatus(kind, htmlInner) {
+  const el = document.getElementById('migration-status');
+  const map = {
+    muted: 'mw-status mw-status-muted',
+    info: 'mw-status mw-status-info',
+    success: 'mw-status mw-status-success',
+    warning: 'mw-status mw-status-warning',
+    danger: 'mw-status mw-status-danger'
+  };
+  el.className = map[kind] || map.muted;
+  el.innerHTML = htmlInner;
+  _icons();
+}
+
+async function startMigration() {
+  if (migrationRunning) return;
+
+  migrationRunning = true;
+  showAllErrors = false;
+  document.getElementById('start-migration-btn').classList.add('hidden');
+  document.getElementById('stop-migration-btn').classList.remove('hidden');
+  setStatus('info', '<i data-lucide="loader-2" class="w-5 h-5 shrink-0 animate-spin"></i><span>Миграция запущена…</span>');
+
+  try {
+    const response = await fetch('{{ url_for("admin.migrate_to_remnawave_start") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) throw new Error('Ошибка запуска миграции');
+
+    migrationInterval = setInterval(checkMigrationStatus, 1000);
+    checkMigrationStatus();
+  } catch (error) {
+    console.error(error);
+    setStatus('danger', '<i data-lucide="alert-triangle" class="w-5 h-5 shrink-0"></i><span>Ошибка запуска: ' + String(error.message || error) + '</span>');
+    migrationRunning = false;
+    document.getElementById('start-migration-btn').classList.remove('hidden');
+    document.getElementById('stop-migration-btn').classList.add('hidden');
+  }
+}
+
+function stopMigration() {
+  if (!migrationRunning) return;
+
+  migrationRunning = false;
+  if (migrationInterval) {
+    clearInterval(migrationInterval);
+    migrationInterval = null;
+  }
+
+  fetch('{{ url_for("admin.migrate_to_remnawave_stop") }}', { method: 'POST' }).catch(err => console.error(err));
+
+  document.getElementById('start-migration-btn').classList.remove('hidden');
+  document.getElementById('stop-migration-btn').classList.add('hidden');
+  setStatus('warning', '<i data-lucide="pause-circle" class="w-5 h-5 shrink-0"></i><span>Миграция остановлена пользователем</span>');
+}
+
+function toggleErrors() {
+  showAllErrors = !showAllErrors;
+  if (lastMigrationData) renderResults(lastMigrationData);
+}
+
+function renderResults(data) {
+  if (!data.results || Object.keys(data.results).length === 0) return;
+
+  const resultsWrap = document.getElementById('results');
+  resultsWrap.classList.remove('hidden');
+
+  let html = '';
+
+  if (data.results.created && data.results.created.length > 0) {
+    html += `<div class="mw-results-section"><h6><i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i>Создано<span class="mw-chip mw-chip-ok">${data.results.created.length}</span></h6></div>`;
+  }
+
+  if (data.results.skipped && data.results.skipped.length > 0) {
+    html += `<div class="mw-results-section"><h6><i data-lucide="fast-forward" class="w-4 h-4 text-amber-500"></i>Пропущено<span class="mw-chip mw-chip-warn">${data.results.skipped.length}</span></h6></div>`;
+  }
+
+  if (data.results.failed && data.results.failed.length > 0) {
+    const totalErrors = data.results.failed.length;
+    const errorsToShow = showAllErrors ? totalErrors : Math.min(totalErrors, MAX_ERRORS_DISPLAY);
+    const hasMore = totalErrors > MAX_ERRORS_DISPLAY && !showAllErrors;
+    const showCollapse = totalErrors > MAX_ERRORS_DISPLAY && showAllErrors;
+
+    html += `<div class="mw-results-section"><h6><i data-lucide="x-circle" class="w-4 h-4 text-rose-500"></i>Ошибки<span class="mw-chip mw-chip-err">${totalErrors}</span></h6>`;
+
+    if (hasMore) {
+      html += `<div class="mw-help-muted">Показано ${MAX_ERRORS_DISPLAY} из ${totalErrors}. <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm align-middle" onclick="toggleErrors()">Показать все</button></div>`;
+    } else if (showCollapse) {
+      html += `<div class="mw-help-muted"><button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" onclick="toggleErrors()">Свернуть</button></div>`;
+    }
+
+    html += `<div>` +
+      data.results.failed.slice(0, errorsToShow).map(function(err) {
+        return '<div class="mw-error-item">' + String(err).replace(/</g, '&lt;') + '</div>';
+      }).join('') +
+      `</div></div>`;
+  }
+
+  document.getElementById('results-content').innerHTML = html;
+  _icons();
+}
+
+async function checkMigrationStatus() {
+  try {
+    const response = await fetch('{{ url_for("admin.migrate_to_remnawave_status") }}');
+    if (!response.ok) return;
+    const data = await response.json();
+
+    if (data.status === 'completed' || data.status === 'stopped') {
+      migrationRunning = false;
+      if (migrationInterval) {
+        clearInterval(migrationInterval);
+        migrationInterval = null;
+      }
+      document.getElementById('start-migration-btn').classList.remove('hidden');
+      document.getElementById('stop-migration-btn').classList.add('hidden');
+
+      if (data.status === 'completed') {
+        setStatus('success', '<i data-lucide="check-circle" class="w-5 h-5 shrink-0"></i><span>Миграция завершена успешно.</span>');
+      } else {
+        setStatus('warning', '<i data-lucide="pause-circle" class="w-5 h-5 shrink-0"></i><span>Миграция остановлена.</span>');
+      }
+    } else if (data.status === 'running') {
+      setStatus('info', '<i data-lucide="loader-2" class="w-5 h-5 shrink-0 animate-spin"></i><span>Миграция выполняется…</span>');
+    }
+
+    const totalUsers = data.total || 0;
+    document.getElementById('total-users').textContent = totalUsers === 0 ? '—' : totalUsers.toLocaleString();
+    document.getElementById('processed-users').textContent = (data.processed || 0).toLocaleString();
+    document.getElementById('created-users').textContent = (data.created || 0).toLocaleString();
+    document.getElementById('skipped-users').textContent = (data.skipped || 0).toLocaleString();
+    document.getElementById('failed-users').textContent = (data.failed || 0).toLocaleString();
+
+    const total = data.total || 1;
+    const processed = data.processed || 0;
+    const percent = Math.round((processed / total) * 100);
+    document.getElementById('progress-bar').style.width = percent + '%';
+    document.getElementById('progress-text').textContent = percent + '%';
+
+    lastMigrationData = data;
+
+    if (data.results && Object.keys(data.results).length > 0) {
+      renderResults(data);
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  checkMigrationStatus();
+  setInterval(function() {
+    if (!migrationRunning) checkMigrationStatus();
+  }, 5000);
+  _icons();
+});
+</script>
+{% endblock %}

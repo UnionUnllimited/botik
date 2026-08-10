@@ -1,0 +1,957 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - {{ super() }}{% endblock %}
+{% block content %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   server_form.html — добавление/редактирование сервера 3X-UI.
+   Полностью на TailwindCSS, никаких bootstrap-классов.
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+<div class="tw-anim">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">{{ title }}</h1>
+      <p class="text-[13px] text-muted2 mt-1">
+        {% if server.id %}
+          Редактирование сервера <span class="font-medium" style="color: var(--admin-text-base);">{{ server.name }}</span>
+        {% else %}
+          Заполните данные новой панели 3X-UI и параметры выдачи подписки.
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <a href="{{ url_for('admin.settings_servers') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Назад
+      </a>
+    </div>
+  </div>
+
+  {# ───── 1. Быстрое заполнение из 3X-UI ───── #}
+  <div class="tw-card mt-5 p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <div class="w-8 h-8 rounded-[8px] flex items-center justify-center" style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="wand" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      </div>
+      <div>
+        <h3 class="font-semibold text-[14px] leading-tight">Быстрое заполнение из 3X-UI</h3>
+        <p class="text-[12px] text-muted2 mt-0.5">Вставьте вывод команды <code class="tw-kbd">x-ui</code> панели — поля ниже заполнятся автоматически</p>
+      </div>
+    </div>
+    <textarea id="xui_raw" rows="4" class="tw-input font-mono"
+      style="height: auto; padding: 10px 12px; font-size: 12.5px;"
+      placeholder="[INF] current panel settings as follows:&#10;Panel is secure with SSL&#10;username: admin&#10;password: admin&#10;port: 54321&#10;webBasePath: /panel/&#10;Access URL: https://example.com:54321/panel/"></textarea>
+    <div class="mt-2.5 flex justify-end">
+      <button type="button" id="parse_xui_btn" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="wand" class="w-3.5 h-3.5"></i> Заполнить из 3X-UI
+      </button>
+    </div>
+  </div>
+
+  <form method="post" class="mt-5 space-y-5">
+
+    {# ───── 2. Основная информация ───── #}
+    <div class="tw-card p-4">
+      <div class="flex items-center gap-2 mb-4">
+        <div class="w-8 h-8 rounded-[8px] flex items-center justify-center" style="background: var(--admin-bg-soft);">
+          <i data-lucide="info" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+        </div>
+        <h3 class="font-semibold text-[14px]">Основная информация</h3>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {# Название сервера + dropdown с флагами #}
+        <div>
+          <label for="name" class="block text-[12px] text-subtle2 mb-1.5">Название сервера <span style="color:#f43f5e;">*</span></label>
+          <div class="flex gap-2 items-stretch">
+            <input type="text" id="name" name="name" value="{{ server.name or '' }}" required
+                   class="tw-input flex-1" placeholder="🇩🇪 Германия">
+            <div class="tw-dropdown relative shrink-0">
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-icon-sm" id="flagDropdownBtn"
+                      onclick="toggleFlagDropdown(event, this);" title="Добавить страну">
+                <i data-lucide="flag" class="w-4 h-4"></i>
+              </button>
+              <div class="tw-dropdown-menu absolute right-0 mt-1 rounded-[10px] py-1.5 hidden tw-scroll"
+                   style="min-width: 200px; max-height: 280px; overflow-y: auto;
+                          background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+                          box-shadow: 0 12px 36px rgba(0,0,0,.18); z-index: 9999;">
+                {% set flags = [
+                  ('🇩🇪', 'Германия'),
+                  ('🇫🇮', 'Финляндия'),
+                  ('🇷🇺', 'Россия'),
+                  ('🇺🇸', 'США'),
+                  (None, None),
+                  ('🇪🇺', 'ЕС'),
+                  ('🇳🇱', 'Нидерланды'),
+                  ('🇩🇰', 'Дания'),
+                  ('🇫🇷', 'Франция'),
+                  ('🇪🇸', 'Испания'),
+                  ('🇮🇹', 'Италия'),
+                  ('🇵🇱', 'Польша'),
+                  ('🇬🇧', 'Британия'),
+                  (None, None),
+                  ('🇹🇷', 'Турция'),
+                  ('🇦🇿', 'Азербайджан'),
+                  ('🇰🇿', 'Казахстан'),
+                  ('🇺🇦', 'Украина'),
+                  (None, None),
+                  ('🇯🇵', 'Япония'),
+                  ('🇸🇬', 'Сингапур'),
+                  ('🇦🇪', 'ОАЭ'),
+                  ('🇭🇰', 'Гонконг'),
+                  ('🇨🇳', 'Китай')
+                ] %}
+                {% for flag, country in flags %}
+                  {% if flag is none %}
+                    <div class="my-1" style="border-top: 1px solid rgb(var(--admin-border));"></div>
+                  {% else %}
+                    <button type="button" class="flag-item w-full text-left flex items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-[var(--admin-bg-soft)]"
+                            style="color: var(--admin-text-base);"
+                            data-flag="{{ flag }}" data-country="{{ country }}">
+                      <span class="text-[15px] leading-none">{{ flag }}</span> {{ country }}
+                    </button>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <p class="text-[11.5px] text-subtle2 mt-1">
+            Можно добавить эмодзи-флаг через кнопку справа.
+            <span class="block mt-1">
+              Для фильтра подписки по платформе (subpage): в начале имени узла укажите
+              <code class="tw-kbd">[PC]</code>, <code class="tw-kbd">[MOBILE]</code>,
+              <code class="tw-kbd">[ROUTER]</code>, <code class="tw-kbd">[TV]</code> — или те же метки в тексте ключа после
+              <code class="tw-kbd">#</code> при использовании <code class="tw-kbd">[Severname]</code>.
+            </span>
+          </p>
+        </div>
+
+        {# Inbound ID #}
+        <div>
+          <label for="inbound_id" class="block text-[12px] text-subtle2 mb-1.5">Inbound ID <span style="color:#f43f5e;">*</span></label>
+          <input type="number" id="inbound_id" name="inbound_id" value="{{ server.inbound_id or '' }}" required
+                 class="tw-input" placeholder="1">
+          <p class="text-[11.5px] text-subtle2 mt-1">ID inbound'а из панели 3X-UI</p>
+        </div>
+
+        {# Протокол #}
+        <div>
+          <label for="protocol" class="block text-[12px] text-subtle2 mb-1.5">Протокол <span style="color:#f43f5e;">*</span></label>
+          <select id="protocol" name="protocol" required class="tw-select">
+            <option value="vless"       {% if not server.protocol or server.protocol == 'vless' %}selected{% endif %}>VLESS</option>
+            <option value="trojan"      {% if server.protocol == 'trojan' %}selected{% endif %}>Trojan</option>
+            <option value="shadowsocks" {% if server.protocol == 'shadowsocks' %}selected{% endif %}>Shadowsocks</option>
+            <option value="hysteria2"   {% if server.protocol == 'hysteria2' %}selected{% endif %}>Hysteria2</option>
+          </select>
+          <p class="text-[11.5px] text-subtle2 mt-1">Для Trojan/Shadowsocks UUID = пароль. Для Hysteria2 — auth.</p>
+        </div>
+
+        {# Client Flow #}
+        <div>
+          <label for="client_flow" class="block text-[12px] text-subtle2 mb-1.5">Client Flow <span class="text-subtle2">(опционально)</span></label>
+          <select id="client_flow" name="client_flow" class="tw-select">
+            <option value=""                          {% if not server.client_flow %}selected{% endif %}>Оставить пустым</option>
+            <option value="xtls-rprx-vision"          {% if server.client_flow == 'xtls-rprx-vision' %}selected{% endif %}>xtls-rprx-vision</option>
+            <option value="xtls-rprx-vision-udp443"   {% if server.client_flow == 'xtls-rprx-vision-udp443' %}selected{% endif %}>xtls-rprx-vision-udp443</option>
+          </select>
+          <p class="text-[11.5px] text-subtle2 mt-1">Если пусто — flow не добавляется к клиентам</p>
+        </div>
+
+        {# Тег для табов на /settings/servers (≤15 символов, опционально) #}
+        <div class="md:col-span-2">
+          <label for="server_tag" class="block text-[12px] text-subtle2 mb-1.5">
+            Тег <span class="text-subtle2">(для группировки на /settings/servers)</span>
+          </label>
+          <input type="text" id="server_tag" name="tag"
+                 list="serverTagsList"
+                 maxlength="15"
+                 value="{{ server.tag or '' }}"
+                 class="tw-input"
+                 placeholder="Europe / Asia / Bridges …"
+                 autocomplete="off">
+          {% if available_tags %}
+          <datalist id="serverTagsList">
+            {% for t in available_tags %}<option value="{{ t }}">{% endfor %}
+          </datalist>
+          {% endif %}
+          <p class="text-[11.5px] text-subtle2 mt-1">
+            До 15 символов. Серверы с одинаковым тегом группируются в отдельную вкладку на странице серверов.
+            {% if available_tags %}
+            <span class="block mt-1">
+              <span class="text-subtle2">Уже используются:</span>
+              {% for t in available_tags %}
+                <button type="button"
+                        class="tw-kbd cursor-pointer hover:text-base"
+                        onclick="document.getElementById('server_tag').value=this.dataset.tag;"
+                        data-tag="{{ t }}">{{ t }}</button>{% if not loop.last %} {% endif %}
+              {% endfor %}
+            </span>
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# ───── 3. Подключение к 3X-UI панели ───── #}
+    <div class="tw-card p-4">
+      <div class="flex items-center gap-2 mb-4">
+        <div class="w-8 h-8 rounded-[8px] flex items-center justify-center" style="background: var(--admin-bg-soft);">
+          <i data-lucide="link" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+        </div>
+        <h3 class="font-semibold text-[14px]">Подключение к 3X-UI</h3>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label for="url" class="block text-[12px] text-subtle2 mb-1.5">URL <span style="color:#f43f5e;">*</span></label>
+          <input type="text" id="url" name="url" value="{{ server.url or '' }}" required
+                 class="tw-input font-mono" placeholder="example.com">
+          <p class="text-[11.5px] text-subtle2 mt-1">Без http(s):// и порта</p>
+        </div>
+
+        <div>
+          <label for="port" class="block text-[12px] text-subtle2 mb-1.5">Порт панели <span style="color:#f43f5e;">*</span></label>
+          <input type="number" id="port" name="port" value="{{ server.port or '' }}" required
+                 class="tw-input font-mono" placeholder="54321">
+        </div>
+
+        <div class="md:col-span-2">
+          <label for="secret_path" class="block text-[12px] text-subtle2 mb-1.5">Секретный путь</label>
+          <input type="text" id="secret_path" name="secret_path" value="{{ server.secret_path or '' }}"
+                 class="tw-input font-mono" placeholder="оставьте пустым, если нет">
+        </div>
+
+        <div>
+          <label for="username" class="block text-[12px] text-subtle2 mb-1.5">Логин <span style="color:#f43f5e;">*</span></label>
+          <input type="text" id="username" name="username" value="{{ server.username or '' }}" required
+                 class="tw-input" placeholder="admin" autocomplete="off">
+        </div>
+
+        <div>
+          <label for="password" class="block text-[12px] text-subtle2 mb-1.5">Пароль <span style="color:#f43f5e;">*</span></label>
+          <div class="relative">
+            <input type="password" id="password" name="password" value="{{ server.password or '' }}" required
+                   class="tw-input pr-10" placeholder="••••••••" autocomplete="new-password">
+            <button type="button" onclick="togglePasswordVisibility('password', this)"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 tw-btn tw-btn-ghost tw-btn-icon-sm" title="Показать/скрыть пароль">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ───── 4. Параметры подписки клиента ───── #}
+    <div class="tw-card p-4">
+      <div class="flex items-center gap-2 mb-4">
+        <div class="w-8 h-8 rounded-[8px] flex items-center justify-center" style="background: var(--admin-bg-soft);">
+          <i data-lucide="share-2" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+        </div>
+        <h3 class="font-semibold text-[14px]">Параметры подписки клиента</h3>
+      </div>
+
+      {# ── Legacy-предупреждение ────────────────────────────────────────
+         Параметры public_host / public_port / sub_path_prefix — это старый
+         способ запроса подписки напрямую у 3X-UI. В 3.6 он будет удалён,
+         все сервера должны переехать на «Конфигуратор ключа». #}
+      <div class="rounded-[10px] border-l-4 px-3 py-2.5 mb-4 flex items-start gap-2"
+           style="background: rgb(244 63 94 / .08); border-color: #f43f5e; color: var(--admin-text-base);">
+        <i data-lucide="alert-octagon" class="w-4 h-4 mt-0.5 shrink-0" style="color:#f43f5e"></i>
+        <div class="text-[12.5px]">
+          <strong style="color:#f43f5e;">Legacy:</strong>
+          поддержка этих полей будет <strong>завершена в&nbsp;3.6</strong> —
+          перейдите на <strong>Шаблоны ключей</strong> (конфигуратор ниже).
+          <span class="block text-[11.5px] mt-0.5" style="color: var(--admin-text-muted);">
+            До этого: если конфигуратор отключён, прямой запрос к панели идёт по
+            <code class="tw-kbd">public_host:public_port/sub_path_prefix+UUID</code>.
+            При пустых значениях по умолчанию подставляется
+            <code class="tw-kbd">0</code> и <code class="tw-kbd">1111</code>.
+          </span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label for="public_host" class="block text-[12px] text-subtle2 mb-1.5">Публичный хост <span style="color:#f43f5e;">*</span></label>
+          <input type="text" id="public_host" name="public_host" value="{{ server.public_host or '0' }}" required
+                 class="tw-input font-mono" placeholder="example.com">
+          <p class="text-[11.5px] text-subtle2 mt-1">Домен/IP, который увидит клиент</p>
+        </div>
+
+        <div>
+          <label for="public_port" class="block text-[12px] text-subtle2 mb-1.5">Публичный порт <span style="color:#f43f5e;">*</span></label>
+          <input type="number" id="public_port" name="public_port" value="{{ server.public_port or '1111' }}" required
+                 class="tw-input font-mono" placeholder="2096">
+        </div>
+
+        <div class="md:col-span-2">
+          <label for="sub_path_prefix" class="block text-[12px] text-subtle2 mb-1.5">Префикс пути для подписки <span class="font-mono text-subtle2">(sub_path_prefix)</span></label>
+          <input type="text" id="sub_path_prefix" name="sub_path_prefix" value="{{ server.sub_path_prefix or 'sub' }}" required
+                 class="tw-input font-mono" placeholder="sub">
+        </div>
+      </div>
+
+      {# Конфигуратор ключа #}
+      <div class="mt-5 p-4 rounded-[10px]" style="background: var(--admin-bg-soft);">
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" id="use_key_template" name="use_key_template" value="1"
+                 {% if server.use_key_template %}checked{% endif %}
+                 class="mt-1 w-4 h-4 rounded cursor-pointer" style="accent-color: var(--color-brand-500);">
+          <div class="flex-1">
+            <div class="font-semibold text-[13.5px]">Использовать конфигуратор ключа</div>
+            <div class="text-[12px] text-muted2 mt-1 leading-relaxed">
+              Запрос к панели 3X-UI по <code class="tw-kbd">public_host:port/sub_path_prefix+UUID</code>
+              <strong>не выполняется</strong>. Вместо этого используется шаблон ключа ниже.
+            </div>
+          </div>
+        </label>
+
+        <div id="is_balancer_container"
+             style="display: {% if server.use_key_template %}block{% else %}none{% endif %};"
+             class="mt-3 ml-7">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" id="is_balancer" name="is_balancer" value="1"
+                   {% if server.is_balancer %}checked{% endif %}
+                   class="mt-1 w-4 h-4 rounded cursor-pointer" style="accent-color: var(--color-brand-500);">
+            <div class="flex-1">
+              <div class="font-semibold text-[13.5px]">Случайный выбор ключа</div>
+              <div class="text-[12px] text-muted2 mt-1 leading-relaxed">
+                При каждом обновлении подписки случайно выбирается <strong>один ключ</strong> из шаблона
+                вместо выдачи всех. Используется для балансировки между несколькими серверами.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="mt-3 ml-7 rounded-[8px] border-l-4 px-3 py-2 flex items-start gap-2"
+             style="background: rgb(59 130 246 / .08); border-color: #3b82f6; color: var(--admin-text-base);">
+          <i data-lucide="info" class="w-4 h-4 mt-0.5 shrink-0" style="color:#3b82f6"></i>
+          <div class="text-[12px]">
+            <strong>Когда использовать:</strong> при неправильном формировании ссылки в подписке
+            или медленном ответе от панели 3X-UI.
+          </div>
+        </div>
+      </div>
+
+      {# ── Ключи подписки (key_template) ───────────────────────────────
+         Визуальный редактор: каждая строка key_template — карточка с
+         inline-edit (URL + Имя + чекбокс [Balancer] + плейсхолдеры).
+         При submit формы JS складывает state в скрытый textarea#key_template,
+         бэкенд (edit_server / add_server) читает его как обычно — никаких
+         изменений на сервере не нужно. #}
+      <div id="key_template_container"
+           style="display: {% if server.use_key_template %}block{% else %}none{% endif %};"
+           class="mt-4">
+        <div class="flex items-end justify-between gap-2 flex-wrap mb-2">
+          <div class="min-w-0">
+            <label class="block text-[12px] text-subtle2">
+              Ключи подписки
+              <span class="font-mono text-subtle2 ml-1">(key_template)</span>
+            </label>
+            <p class="text-[10.5px] text-subtle2 mt-0.5 m-0 leading-snug">
+              Подстановки: <code class="tw-kbd">[Severname]</code>, <code class="tw-kbd">[UUID]</code>,
+              <code class="tw-kbd">[Email]</code>, <code class="tw-kbd">[EndDate]</code> · платформа (фильтр subpage):
+              <code class="tw-kbd">[PC]</code>, <code class="tw-kbd">[MOBILE]</code>, <code class="tw-kbd">[ROUTER]</code>, <code class="tw-kbd">[TV]</code>.
+            </p>
+          </div>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button type="button" id="kfShowRawBtn" class="tw-btn tw-btn-ghost tw-btn-sm"
+                    title="Показать как текст (одна строка = один ключ). Переменные и метки платформы — в подсказке под полем">
+              <i data-lucide="code" class="w-3.5 h-3.5"></i> <span class="hidden sm:inline">Как текст</span>
+            </button>
+          </div>
+        </div>
+
+        {# Скрытый textarea — то, что реально отправится с формой. #}
+        <textarea id="key_template" name="key_template" hidden aria-hidden="true">{{ server.key_template or '' }}</textarea>
+
+        {# ── Карточный режим ─────────────────────────────────────────── #}
+        <div id="kfCards" class="hm-card" data-server-id="form" style="overflow: visible;">
+          <div class="hm-body" style="border-top: 0; padding: 0;">
+            <div id="kfKeysList" class="hm-keys"></div>
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm hm-add" data-add-key>
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Добавить ключ
+            </button>
+          </div>
+        </div>
+
+        {# ── Raw-режим (опционально, по кнопке) ──────────────────────── #}
+        <div id="kfRawWrap" hidden class="mt-3">
+          <textarea id="kfRaw" rows="6"
+            class="tw-input font-mono"
+            style="height: auto; padding: 10px 12px; font-size: 12.5px;"
+            placeholder="vless://[UUID]@nl.example:443?path... #[MOBILE] 🇩🇪 [Severname]&#10;[Balancer]vless://[UUID]@nl2.example/path..."></textarea>
+          <div class="rounded-[8px] border-l-4 px-3 py-2 mt-2 mb-2 text-[11px] leading-snug text-muted2"
+               style="background: rgb(99 102 241 / .08); border-color: var(--color-brand-500); color: var(--admin-text-base);">
+            После последнего <code class="tw-kbd">#</code> — имя узла во вьюере подписки; туда же подставляются плейсхолдеры.
+            Подстановка: <code class="tw-kbd">[UUID]</code>, <code class="tw-kbd">[Email]</code>,
+            <code class="tw-kbd">[Severname]</code> (имя узла здесь в боте), <code class="tw-kbd">[EndDate]</code>.
+            Фильтр subpage по платформе: <code class="tw-kbd">[PC]</code>, <code class="tw-kbd">[MOBILE]</code>,
+            <code class="tw-kbd">[ROUTER]</code>, <code class="tw-kbd">[TV]</code> — можно несколько подряд.
+          </div>
+          <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
+            <p class="text-[11px] text-subtle2 m-0">
+              Каждая строка — отдельный ключ.
+              <code class="tw-kbd">[Balancer]</code> в начале строки — ключ исключается из подписки.
+            </p>
+            <div class="flex gap-2">
+              <button type="button" id="kfRawApplyBtn" class="tw-btn tw-btn-primary tw-btn-sm">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i> Применить из текста
+              </button>
+              <button type="button" id="kfRawCancelBtn" class="tw-btn tw-btn-ghost tw-btn-sm">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i> Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ───── Кнопки ───── #}
+    <div class="flex items-center justify-between gap-3 flex-wrap pt-1">
+      <a href="{{ url_for('admin.settings_servers') }}" class="tw-btn tw-btn-ghost tw-btn-sm">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i> Отмена
+      </a>
+      <button type="submit" name="action" value="save" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+        {% if server.id %}Сохранить изменения{% else %}Создать сервер{% endif %}
+      </button>
+    </div>
+
+  </form>
+</div>
+
+{# SortableJS — для drag-and-drop ключей в редакторе key_template (тот же CDN, что использует /settings/servers). #}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Server form: парсер 3X-UI, флаги, переключение конфигуратора ключа,
+   редактор key_template, показ/скрытие пароля.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 3X-UI парсер ────────────────────────────────────────────────────────── */
+function parseXuiSettings(text) {
+  const result = {};
+  let m = text.match(/username:\s*(\S+)/i); if (m) result.username = m[1];
+  m = text.match(/password:\s*(\S+)/i);     if (m) result.password = m[1];
+  m = text.match(/port:\s*(\d+)/i);         if (m) result.port = m[1];
+  m = text.match(/webBasePath:\s*(\S+)/i);
+  if (m) result.secret_path = m[1].replace(/^\//, '').replace(/\/$/, '');
+  m = text.match(/Access URL:\s*(https?:\/\/)?([^:\/\s]+)(:(\d+))?(\/\S*)?/i);
+  if (m) {
+    result.url = m[2] || '';
+    if (!result.port && m[4]) result.port = m[4];
+    if (!result.secret_path && m[5]) result.secret_path = m[5].replace(/^\//, '').replace(/\/$/, '');
+  }
+  return result;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const parseBtn = document.getElementById('parse_xui_btn');
+  if (parseBtn) {
+    parseBtn.addEventListener('click', function() {
+      const raw = document.getElementById('xui_raw').value;
+      const data = parseXuiSettings(raw);
+      const fields = ['username','password','port','secret_path','url'];
+      let filledCount = 0;
+      fields.forEach(f => {
+        const el = document.getElementById(f);
+        if (el && data[f]) { el.value = data[f]; filledCount++; }
+      });
+      showFormToast(filledCount > 0
+        ? `Заполнено ${filledCount} ${pluralRu(filledCount, ['поле','поля','полей'])}`
+        : 'Не удалось распознать данные', filledCount > 0 ? 'success' : 'error');
+    });
+  }
+});
+
+function pluralRu(n, forms) {
+  const cases = [2, 0, 1, 1, 1, 2];
+  return forms[(n % 100 > 4 && n % 100 < 20) ? 2 : cases[Math.min(n % 10, 5)]];
+}
+
+/* ── Dropdown с флагами ──────────────────────────────────────────────────── */
+function toggleFlagDropdown(e, btn) {
+  e.preventDefault(); e.stopPropagation();
+  const wrap = btn.closest('.tw-dropdown');
+  if (!wrap) return;
+  const menu = wrap.querySelector('.tw-dropdown-menu');
+  const wasOpen = !menu.classList.contains('hidden');
+  document.querySelectorAll('.tw-dropdown-menu').forEach(m => m.classList.add('hidden'));
+  if (!wasOpen) menu.classList.remove('hidden');
+}
+document.addEventListener('click', function(e){
+  if (e.target.closest('.tw-dropdown')) return;
+  document.querySelectorAll('.tw-dropdown-menu').forEach(m => m.classList.add('hidden'));
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  const nameInput = document.getElementById('name');
+  document.querySelectorAll('.flag-item').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const flag = this.getAttribute('data-flag') || '';
+      const country = this.getAttribute('data-country') || '';
+      if (!nameInput) return;
+      nameInput.value = country ? `${flag} ${country}`.trim() : flag.trim();
+      /* закрываем dropdown */
+      document.querySelectorAll('.tw-dropdown-menu').forEach(m => m.classList.add('hidden'));
+      nameInput.focus();
+    });
+  });
+});
+
+/* ── Toggle конфигуратора ключа ──────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+  const checkbox = document.getElementById('use_key_template');
+  const keyTplCont = document.getElementById('key_template_container');
+  const isBalCont = document.getElementById('is_balancer_container');
+  const subPath = document.getElementById('sub_path_prefix');
+  if (!checkbox) return;
+
+  function apply() {
+    const on = checkbox.checked;
+    if (keyTplCont) keyTplCont.style.display = on ? 'block' : 'none';
+    if (isBalCont) isBalCont.style.display = on ? 'block' : 'none';
+    if (subPath) {
+      if (on) subPath.removeAttribute('required');
+      else subPath.setAttribute('required', 'required');
+    }
+  }
+  checkbox.addEventListener('change', apply);
+  apply();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Редактор key_template (визуальный) — карточки + inline-edit + raw-режим.
+
+   Состояние держим в массиве `keys`. Любые правки → перерисовка списка +
+   синхронизация в скрытый <textarea#key_template>, который и уйдёт с формой.
+   Парсинг/сборка строки повторяет логику модалки «Хосты» на /settings/servers
+   (см. settings_servers.html → блок «Хосты»).
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function () {
+  const hidden = document.getElementById('key_template');
+  if (!hidden) return; // на странице нет редактора (например, форма не отрендерена)
+
+  const PLACEHOLDER_RE =
+    /\[(?:Severname|Email|EndDate|UUID|Balancer|PC|MOBILE|ROUTER|TV)\]/i;
+  const PLACEHOLDERS = [
+    { token: '[Severname]', label: 'Имя узла сервера (как в боте)' },
+    { token: '[UUID]',      label: 'UUID клиента' },
+    { token: '[Email]',     label: 'Email клиента' },
+    { token: '[EndDate]',   label: 'Окончание подписки' },
+    { token: '[PC]',        label: 'Фильтр subpage — ПК (в тексте после # или в имени узла)' },
+    { token: '[MOBILE]',    label: 'Мобильные (iOS / Android)' },
+    { token: '[ROUTER]',    label: 'Роутер (OpenWrt, Keenetic, …)' },
+    { token: '[TV]',        label: 'TV (Android TV, tvOS)' },
+  ];
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function parseKeyLine(line) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return null;
+    let isBalancer = false;
+    let body = trimmed;
+    if (body.startsWith('[Balancer]')) {
+      isBalancer = true;
+      body = body.slice('[Balancer]'.length).trim();
+    }
+    const hashIdx = body.lastIndexOf('#');
+    let url = body, name = '';
+    if (hashIdx >= 0) {
+      url  = body.slice(0, hashIdx);
+      name = body.slice(hashIdx + 1);
+    }
+    let displayName = name;
+    if (name && !PLACEHOLDER_RE.test(name)) {
+      try { displayName = decodeURIComponent(name); } catch (_) {}
+    }
+    return { raw: trimmed, isBalancer, url, name, displayName };
+  }
+
+  function buildKeyLine({ isBalancer, url, name }) {
+    const u = (url || '').trim();
+    const n = (name || '').trim();
+    const head = isBalancer ? '[Balancer]' : '';
+    if (!u && !n) return '';
+    return head + u + (n ? ('#' + n) : '');
+  }
+
+  function shortenUrl(url, max) {
+    max = max || 90;
+    if (!url) return '';
+    if (url.length <= max) return url;
+    return url.slice(0, Math.max(0, max - 1)) + '…';
+  }
+
+  // ── State ─────────────────────────────────────────────────────────────
+  let keys = (hidden.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+
+  function syncHidden() {
+    hidden.value = keys.join('\n');
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────
+  const list = document.getElementById('kfKeysList');
+
+  function render() {
+    if (!list) return;
+    if (keys.length === 0) {
+      list.innerHTML = '<div class="hm-empty text-[12.5px] text-muted2">Ни одного ключа. Добавьте ниже.</div>';
+    } else {
+      list.innerHTML = keys.map((line, i) => renderKeyRow(i, line)).join('');
+    }
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+    bindSortable();
+  }
+
+  // Drag-and-drop через SortableJS. Хэндл — иконка-«гриппер» слева на каждой
+  // строке. Кнопки и edit-форма — в filter, по ним нельзя начать перетаскивание.
+  // На мобилке drag активируется после удержания ~250ms (не мешает скроллу).
+  function bindSortable() {
+    if (typeof Sortable === 'undefined') return;
+    if (!list) return;
+    try { if (list._sortable) { list._sortable.destroy(); list._sortable = null; } } catch (_) {}
+    list._sortable = new Sortable(list, {
+      handle: '.hm-key-grip',
+      filter: '.hm-key--editing, .hm-edit, button, input, [data-edit-cancel], [data-edit-save]',
+      preventOnFilter: false,
+      animation: 180,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      dragClass: 'sortable-drag',
+      delay: 250,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      onEnd: (evt) => {
+        if (evt.oldIndex === evt.newIndex) return;
+        const newKeys = [];
+        list.querySelectorAll('.hm-key').forEach(row => {
+          const idx = Number(row.dataset.idx);
+          if (!isNaN(idx) && keys[idx] !== undefined) newKeys.push(keys[idx]);
+        });
+        if (newKeys.length !== keys.length) { render(); return; }
+        keys = newKeys;
+        syncHidden();
+        render();
+        showFormToast('Порядок изменён', 'success');
+      }
+    });
+  }
+
+  function renderKeyRow(idx, line) {
+    const parsed = parseKeyLine(line) || { raw: line, isBalancer: false, url: line, name: '', displayName: '' };
+    const isPlaceholderName = parsed.name && PLACEHOLDER_RE.test(parsed.name);
+    const nameHtml = parsed.name
+      ? (isPlaceholderName
+          ? `<code class="hm-key-name hm-key-name--ph">${escapeHtml(parsed.name)}</code>`
+          : `<span class="hm-key-name" title="${escapeHtml(parsed.name)}">${escapeHtml(parsed.displayName || parsed.name)}</span>`)
+      : '<span class="hm-key-name hm-key-name--empty">(без имени)</span>';
+    const balChip = parsed.isBalancer
+      ? '<span class="hm-key-bal" title="balancer: ключ не отдаётся в подписку">⚖ balancer</span>'
+      : '';
+    return `
+      <div class="hm-key" data-idx="${idx}">
+        <div class="hm-key-row">
+          <span class="hm-key-grip" data-drag-handle title="Перетащить для смены порядка" aria-label="Перетащить">
+            <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
+          </span>
+          <i data-lucide="${parsed.isBalancer ? 'scale' : 'circle'}" class="w-3.5 h-3.5 hm-key-icon ${parsed.isBalancer ? 'hm-key-icon--bal' : ''}"></i>
+          <div class="hm-key-text">
+            <div class="hm-key-line1">${nameHtml}${balChip}</div>
+            <code class="hm-key-url" title="${escapeHtml(parsed.url || '')}">${escapeHtml(shortenUrl(parsed.url, 110))}</code>
+          </div>
+          <div class="hm-key-actions">
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-edit-key
+                    title="Редактировать"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-copy-key
+                    title="Скопировать строку"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-delete-key
+                    title="Удалить" style="color:#f43f5e;"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderEditForm(parsed, opts) {
+    const isAdd = !!(opts && opts.isAdd);
+    const ph = PLACEHOLDERS.map(p =>
+      `<button type="button" class="hm-edit-ph" data-ph="${escapeHtml(p.token)}" title="${escapeHtml(p.label)}">${escapeHtml(p.token)}</button>`
+    ).join('');
+    return `
+      <div class="hm-edit">
+        <label class="hm-edit-row">
+          <input type="checkbox" data-edit-balancer ${parsed.isBalancer ? 'checked' : ''}>
+          <span class="text-[12px]">[Balancer]</span>
+          <span class="text-[11px] text-muted2">— ключ исключается из подписки (только для балансировщика)</span>
+        </label>
+        <label class="hm-edit-row">
+          <span class="hm-edit-label">URL</span>
+          <input type="text" class="tw-input font-mono text-[12.5px]" data-edit-url
+                 value="${escapeHtml(parsed.url || '')}"
+                 placeholder="vless://[UUID]@host:port?...">
+        </label>
+        <label class="hm-edit-row">
+          <span class="hm-edit-label">Имя <span class="text-[11px] text-muted2">(после #)</span></span>
+          <input type="text" class="tw-input font-mono text-[12.5px]" data-edit-name
+                 value="${escapeHtml(parsed.name || '')}"
+                 placeholder="[MOBILE] 🇩🇪 [Severname] или своё имя фрагмента">
+        </label>
+        <div class="hm-edit-ph-row">
+          <span class="text-[10.5px] text-subtle2 mr-1">Вставить:</span>
+          ${ph}
+        </div>
+        <div class="text-[10px] text-subtle2 mt-1 leading-snug max-w-[46rem]">
+          Метки <code>[PC]</code>… совпадают с фильтром subpage — в начале фрагмента после # или в имени узла здесь при <code>[Severname]</code>.
+        </div>
+        <div class="hm-edit-actions">
+          <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" data-edit-save>
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+            ${isAdd ? 'Добавить' : 'Сохранить'}
+          </button>
+          <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" data-edit-cancel>
+            <i data-lucide="x" class="w-3.5 h-3.5"></i> Отмена
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // ── Делегированные клики (только в области редактора) ────────────────
+  const container = document.getElementById('key_template_container');
+  if (!container) return;
+
+  container.addEventListener('click', async function (e) {
+    // Toggle raw-режима
+    if (e.target.closest('#kfShowRawBtn')) {
+      e.preventDefault();
+      const wrap = document.getElementById('kfRawWrap');
+      const cards = document.getElementById('kfCards');
+      const raw  = document.getElementById('kfRaw');
+      if (!wrap || !cards || !raw) return;
+      const open = !wrap.hasAttribute('hidden');
+      if (open) {
+        wrap.setAttribute('hidden', '');
+        cards.style.display = '';
+      } else {
+        raw.value = keys.join('\n');
+        wrap.removeAttribute('hidden');
+        cards.style.display = 'none';
+      }
+      return;
+    }
+    if (e.target.closest('#kfRawApplyBtn')) {
+      e.preventDefault();
+      const raw  = document.getElementById('kfRaw');
+      const wrap = document.getElementById('kfRawWrap');
+      const cards = document.getElementById('kfCards');
+      if (!raw || !wrap || !cards) return;
+      const arr = (raw.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+      keys = arr;
+      syncHidden();
+      render();
+      wrap.setAttribute('hidden', '');
+      cards.style.display = '';
+      showFormToast(`Применено ${arr.length} ${pluralKeys(arr.length)}`, 'success');
+      return;
+    }
+    if (e.target.closest('#kfRawCancelBtn')) {
+      e.preventDefault();
+      document.getElementById('kfRawWrap')?.setAttribute('hidden', '');
+      const cards = document.getElementById('kfCards');
+      if (cards) cards.style.display = '';
+      return;
+    }
+
+    // Add new key
+    const addBtn = e.target.closest('[data-add-key]');
+    if (addBtn) {
+      e.preventDefault();
+      if (list.querySelector('.hm-key--editing[data-mode="add"]')) return;
+      const wrap = document.createElement('div');
+      wrap.innerHTML =
+        '<div class="hm-key hm-key--editing" data-mode="add">' +
+        renderEditForm({ isBalancer: false, url: '', name: '' }, { isAdd: true }) +
+        '</div>';
+      const node = wrap.firstElementChild;
+      list.appendChild(node);
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      node.querySelector('[data-edit-url]')?.focus();
+      return;
+    }
+
+    // Edit existing
+    const editBtn = e.target.closest('[data-edit-key]');
+    if (editBtn) {
+      e.preventDefault();
+      const row = editBtn.closest('.hm-key');
+      if (!row) return;
+      const idx = Number(row.dataset.idx);
+      const parsed = parseKeyLine(keys[idx]) || { isBalancer: false, url: '', name: '' };
+      row.classList.add('hm-key--editing');
+      row.dataset.mode = 'edit';
+      row.innerHTML = renderEditForm(parsed, { isAdd: false });
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      row.querySelector('[data-edit-url]')?.focus();
+      return;
+    }
+
+    // Cancel
+    if (e.target.closest('[data-edit-cancel]')) {
+      e.preventDefault();
+      render();
+      return;
+    }
+
+    // Save edit / add
+    const saveBtn = e.target.closest('[data-edit-save]');
+    if (saveBtn) {
+      e.preventDefault();
+      const row = saveBtn.closest('.hm-key');
+      if (!row) return;
+      const isBalancer = !!row.querySelector('[data-edit-balancer]')?.checked;
+      const url  = (row.querySelector('[data-edit-url]')?.value || '').trim();
+      const name = (row.querySelector('[data-edit-name]')?.value || '').trim();
+      if (!url) {
+        showFormToast('Поле URL не может быть пустым', 'error');
+        return;
+      }
+      const newLine = buildKeyLine({ isBalancer, url, name });
+      const mode = row.dataset.mode || 'edit';
+      if (mode === 'add') keys.push(newLine);
+      else {
+        const idx = Number(row.dataset.idx);
+        keys[idx] = newLine;
+      }
+      syncHidden();
+      render();
+      showFormToast(mode === 'add' ? 'Ключ добавлен' : 'Ключ обновлён', 'success');
+      return;
+    }
+
+    // Placeholder shortcut
+    const phBtn = e.target.closest('[data-ph]');
+    if (phBtn) {
+      e.preventDefault();
+      const row = phBtn.closest('.hm-key');
+      if (!row) return;
+      const nameInput = row.querySelector('[data-edit-name]');
+      if (!nameInput) return;
+      const tok = phBtn.dataset.ph;
+      const start = nameInput.selectionStart || 0;
+      const end = nameInput.selectionEnd || 0;
+      nameInput.value = nameInput.value.slice(0, start) + tok + nameInput.value.slice(end);
+      nameInput.focus();
+      nameInput.setSelectionRange(start + tok.length, start + tok.length);
+      return;
+    }
+
+    // Copy
+    const copyBtn = e.target.closest('[data-copy-key]');
+    if (copyBtn) {
+      e.preventDefault();
+      const row = copyBtn.closest('.hm-key');
+      if (!row) return;
+      const idx = Number(row.dataset.idx);
+      const text = keys[idx] || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        showFormToast('Скопировано', 'success');
+      } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); showFormToast('Скопировано', 'success'); }
+        catch (_) { showFormToast('Не удалось скопировать', 'error'); }
+        document.body.removeChild(ta);
+      }
+      return;
+    }
+
+    // Delete
+    const delBtn = e.target.closest('[data-delete-key]');
+    if (delBtn) {
+      e.preventDefault();
+      const row = delBtn.closest('.hm-key');
+      if (!row) return;
+      const idx = Number(row.dataset.idx);
+      const parsed = parseKeyLine(keys[idx]) || { displayName: '' };
+      const label = parsed.displayName || parsed.url || `строку #${idx + 1}`;
+      if (!confirm(`Удалить ключ «${label}»?`)) return;
+      keys.splice(idx, 1);
+      syncHidden();
+      render();
+      return;
+    }
+  });
+
+  // ── Множественное число ──────────────────────────────────────────────
+  function pluralKeys(n) {
+    const n10 = n % 10, n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return 'ключ';
+    if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return 'ключа';
+    return 'ключей';
+  }
+
+  // ── Initial paint ────────────────────────────────────────────────────
+  render();
+})();
+
+/* ── Показ/скрытие пароля ────────────────────────────────────────────────── */
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const icon = btn.querySelector('i[data-lucide]');
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (icon) { icon.setAttribute('data-lucide', 'eye-off'); }
+  } else {
+    input.type = 'password';
+    if (icon) { icon.setAttribute('data-lucide', 'eye'); }
+  }
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+/* ── Toast (мини-уведомления) ────────────────────────────────────────────── */
+function showFormToast(message, type) {
+  type = type || 'success';
+  const el = document.createElement('div');
+  el.className = 'tw-form-toast tw-form-toast-' + (type === 'error' ? 'error' : 'success');
+  el.style.cssText = `
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 999999; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+    display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.18); max-width: calc(100vw - 24px);
+    background: ${type === 'error' ? 'rgb(244 63 94 / .12)' : 'rgb(16 185 129 / .12)'};
+    color: ${type === 'error' ? '#f43f5e' : '#10b981'};
+    border: 1px solid ${type === 'error' ? 'rgb(244 63 94 / .25)' : 'rgb(16 185 129 / .25)'};
+    opacity: 0; transition: opacity .25s, transform .25s;
+  `;
+  const iconName = type === 'error' ? 'alert-triangle' : 'check-circle-2';
+  el.innerHTML = `<i data-lucide="${iconName}" style="width:16px;height:16px;"></i><span>${message}</span>`;
+  document.body.appendChild(el);
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+  requestAnimationFrame(() => {
+    el.style.opacity = '1';
+    el.style.transform = 'translateX(-50%) translateY(2px)';
+  });
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(-50%) translateY(-4px)';
+    setTimeout(() => el.remove(), 300);
+  }, 2200);
+}
+
+/* ── Lucide init ─────────────────────────────────────────────────────────── */
+if (window.lucide && lucide.createIcons) {
+  document.addEventListener('DOMContentLoaded', () => lucide.createIcons());
+}
+</script>
+
+{% endblock %}

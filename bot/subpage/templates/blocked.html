@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Доступ ограничен</title>
+    <script src="/static/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="/static/css/blocked.css">
+</head>
+<body class="page-blocked">
+    <div class="container">
+        <span class="icon">🚫</span>
+        <h1>Доступ ограничен</h1>
+        <p class="message">Вы были заблокированы за нарушение правил сервиса</p>
+        <p>Если вы считаете, что это ошибка, обратитесь в поддержку.</p>
+        {% if support_link %}
+        <div class="support-link">
+            <a href="{{ support_link }}" target="_blank">Связаться с поддержкой</a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        (function() {
+            try {
+                // Инициализация Telegram Web App
+                if (window.Telegram && window.Telegram.WebApp) {
+                    const tg = window.Telegram.WebApp;
+                    tg.ready();
+                    tg.expand();
+                    tg.setBackgroundColor('#f5f5f5');
+                    tg.setHeaderColor('#f5f5f5');
+                }
+            } catch(e) {
+                console.error('Telegram WebApp initialization error:', e);
+            }
+        })();
+    </script>
+</body>
+</html>
+

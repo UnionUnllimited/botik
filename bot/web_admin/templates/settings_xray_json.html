@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+{% block title %}Xray JSON — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-1 pb-6 min-w-0 max-w-full">
+
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between min-w-0">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="braces" class="w-6 h-6 text-[var(--color-brand-500)] shrink-0"></i>
+        Xray JSON
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1 max-w-[52rem] leading-relaxed">
+        Шаблон конфигурации Xray для клиентов по подписке (формат 3X-UI / SUBPAGE).
+        В режиме <strong class="tw-text-base2">«По серверам»</strong> шаблон — <strong class="tw-text-base2">массив</strong> конфигов;
+        у каждого элемента поле <code class="text-[11px] px-1 rounded bg-[rgb(var(--admin-border)/.35)]">remarks</code>
+        становится отдельным профилем в приложении (например <span class="whitespace-nowrap">🇳🇱 Нидерланды</span>).
+      </p>
+    </div>
+  </div>
+
+  {# ─── Поведение по провайдеру ─── #}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+      <i data-lucide="info" class="w-4 h-4 text-[var(--color-brand-500)] shrink-0"></i>
+      <h2 class="text-[15px] font-semibold tw-text-base2">Поведение по провайдеру</h2>
+    </div>
+    <div class="divide-y divide-[rgb(var(--admin-border))]">
+      <div class="flex gap-3 px-4 py-3.5">
+        <div class="w-1 shrink-0 rounded-full bg-emerald-500 self-stretch min-h-[3rem]"></div>
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 h-fit shrink-0">3X-UI</span>
+        <div class="text-[13px] min-w-0 leading-relaxed">
+          <div class="font-semibold tw-text-base2 mb-1">Шаблон из настроек ниже</div>
+          <p class="tw-text-muted2 mb-1">
+            JSON собирается из шаблона; плейсхолдеры <code class="text-[12px] text-[var(--color-brand-500)]">[UUID]</code>
+            и <code class="text-[12px] text-emerald-600 dark:text-emerald-400">[EndDate]</code> подставляются при выдаче через SUBPAGE.
+          </p>
+          <span class="text-[12px] tw-text-muted2">Нужны работающий <strong class="tw-text-base2">SUBPAGE</strong> и заполненный шаблон.</span>
+        </div>
+      </div>
+      <div class="flex gap-3 px-4 py-3.5">
+        <div class="w-1 shrink-0 rounded-full bg-[var(--color-brand-500)] self-stretch min-h-[3rem]"></div>
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-[rgb(99_102_241_/_0.14)] text-[var(--color-brand-600)] dark:text-[var(--color-brand-400)] border border-[rgb(99_102_241_/_0.28)] h-fit shrink-0">Remnawave</span>
+        <div class="text-[13px] min-w-0 leading-relaxed">
+          <div class="font-semibold tw-text-base2 mb-1">Готовый JSON от Remnawave</div>
+          <p class="tw-text-muted2 mb-1">
+            Конфиг запрашивается по <code class="text-[11px]">/api/sub/{short_uuid}/json</code>.
+            Шаблон ниже <strong class="tw-text-base2">не используется</strong>.
+          </p>
+          <span class="text-[12px] tw-text-muted2">Серверы 3X-UI в такой конфиг <strong class="tw-text-base2">не включаются</strong>.</span>
+        </div>
+      </div>
+      <div class="flex gap-3 px-4 py-3.5 bg-amber-500/[0.07] border-l-4 border-amber-500">
+        <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"></i>
+        <div class="text-[13px] tw-text-base2 leading-relaxed">
+          <span class="font-semibold">Связка 3X-UI + Remnawave:</span>
+          бот запрашивает JSON у Remnawave — шаблон на этой странице не применяется.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ─── Включение и плейсхолдеры ─── #}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+      <i data-lucide="toggle-left" class="w-4 h-4 tw-text-muted2 shrink-0"></i>
+      <h2 class="text-[15px] font-semibold tw-text-base2">Настройки формата</h2>
+    </div>
+    <div class="p-4 space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-[var(--radius-card)] border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.45)] px-4 py-3.5">
+        <div class="min-w-0">
+          <div class="text-[14px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="file-code-2" class="w-4 h-4 text-[var(--color-brand-500)] shrink-0"></i>
+            Включить Xray JSON формат
+          </div>
+          <p class="text-[12px] tw-text-muted2 mt-1 leading-relaxed">
+            Клиенты получают полный Xray JSON по ссылке подписки. В браузере по-прежнему может открываться HTML-страница.
+          </p>
+        </div>
+        <label class="xj-switch">
+          <input type="checkbox" id="xrayJsonEnabled" {% if xray_json_enabled %}checked{% endif %}>
+          <span class="track"></span>
+          <span class="thumb"></span>
+        </label>
+      </div>
+
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <span class="text-[12px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-[var(--color-brand-500)]"></i>
+            Плейсхолдеры
+          </span>
+          <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">только 3X-UI</span>
+        </div>
+        <p class="text-[12px] tw-text-muted2 mb-3">Подставляются при выдаче подписки:</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="inline-flex items-center gap-2 rounded-full border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.6)] px-3 py-1.5 text-[12px]">
+            <code class="text-[var(--color-brand-500)] font-mono text-[12px]">[UUID]</code>
+            <span class="tw-text-muted2">UUID ключа</span>
+          </span>
+          <span class="inline-flex items-center gap-2 rounded-full border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.6)] px-3 py-1.5 text-[12px]">
+            <code class="text-emerald-600 dark:text-emerald-400 font-mono text-[12px]">[EndDate]</code>
+            <span class="tw-text-muted2">срок подписки</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ─── Редактор ─── #}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-3 sm:px-4 py-3 border-b border-[rgb(var(--admin-border))] flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between min-w-0">
+      <div class="flex items-center gap-2 min-w-0 flex-wrap">
+        <i data-lucide="file-code" class="w-4 h-4 text-[var(--color-brand-500)] shrink-0"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">JSON шаблон</h2>
+        <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">только 3X-UI</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="inline-flex rounded-lg border border-[rgb(var(--admin-border))] p-0.5 bg-[rgb(var(--admin-bg-soft)/.55)]">
+          <label class="cursor-pointer">
+            <input type="radio" name="genMode" id="modeSingle" value="single" class="peer sr-only" checked>
+            <span class="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors
+                         text-[var(--admin-text-muted)] peer-checked:bg-[var(--admin-bg-elevated)] peer-checked:text-[var(--admin-text-base)] peer-checked:shadow-sm border border-transparent peer-checked:border-[rgb(var(--admin-border))]"
+                  title="Массив конфигов — каждый сервер отдельным профилем в приложении (поле remarks у каждого)">
+              <i data-lucide="layers" class="w-3.5 h-3.5 shrink-0"></i>
+              По серверам
+            </span>
+          </label>
+          <label class="cursor-pointer">
+            <input type="radio" name="genMode" id="modeBalancer" value="balancer" class="peer sr-only">
+            <span class="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors
+                         text-[var(--admin-text-muted)] peer-checked:bg-[var(--admin-bg-elevated)] peer-checked:text-[var(--admin-text-base)] peer-checked:shadow-sm border border-transparent peer-checked:border-[rgb(var(--admin-border))]"
+                  title="Один конфиг с balancer — JSON без многострочного форматирования">
+              <i data-lucide="shuffle" class="w-3.5 h-3.5 shrink-0"></i>
+              Балансировщик
+            </span>
+          </label>
+        </div>
+        <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm gap-1" onclick="generateFromServers()" id="btnGenerate">
+          <i data-lucide="wand-2" class="w-3.5 h-3.5"></i>
+          Из серверов 3X-UI
+        </button>
+        <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm gap-1" onclick="formatJson()" title="Для балансировщика остаётся компактная строка">
+          <i data-lucide="align-left" class="w-3.5 h-3.5"></i>
+          Форматировать
+        </button>
+        <button type="button" class="tw-btn tw-btn-danger tw-btn-sm gap-1" onclick="resetToDefault()" title="Сбросить к шаблону по умолчанию">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_min(100%,320px)] gap-4 min-w-0">
+      <div class="min-w-0 flex flex-col gap-2">
+        <div class="xj-editor-shell">
+          <textarea id="xrayJsonTemplate" class="xj-editor" spellcheck="false" autocomplete="off">{{ xray_json_template }}</textarea>
+        </div>
+        <div id="jsonAlert" class="hidden rounded-lg border px-3 py-2 text-[13px]" role="status"></div>
+      </div>
+
+      <aside class="min-w-0 flex flex-col gap-2 xl:border-l xl:border-[rgb(var(--admin-border))] xl:pl-4 xl:max-h-[min(72vh,560px)] xl:overflow-y-auto">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="text-[12px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="tag" class="w-3.5 h-3.5 text-[var(--color-brand-500)]"></i>
+            Подписи (remarks)
+          </div>
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="rebuildRemarksPanel()" title="Перечитать JSON из редактора">
+            Обновить из JSON
+          </button>
+        </div>
+        <div id="xrayRemarksPanel" class="text-[13px] min-h-[120px]"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <button type="button" class="tw-btn tw-btn-primary gap-1.5" onclick="saveSettings()">
+      <i data-lucide="check-circle" class="w-4 h-4"></i>
+      Сохранить
+    </button>
+    <span id="saveStatus" class="text-[13px] font-medium hidden"></span>
+  </div>
+</div>
+
+<script>
+const SAVE_URL     = "{{ url_for('admin.settings_xray_json_save') }}";
+const GENERATE_URL = "{{ url_for('admin.xray_json_generate_from_servers') }}";
+
+const DEFAULT_TEMPLATE = JSON.stringify({
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {
+      "port": 10808, "listen": "127.0.0.1", "protocol": "socks",
+      "sniffing": {"enabled": true, "destOverride": ["http","tls"]},
+      "settings": {"auth": "noauth", "udp": true}, "tag": "socks-in"
+    },
+    {"port": 10809, "listen": "127.0.0.1", "protocol": "http", "tag": "http-in"}
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy", "protocol": "vless",
+      "settings": {
+        "vnext": [{"address": "YOUR_SERVER_IP", "port": 443,
+          "users": [{"id": "[UUID]", "encryption": "none", "flow": "xtls-rprx-vision"}]}]
+      },
+      "streamSettings": {
+        "network": "tcp", "security": "reality",
+        "realitySettings": {
+          "show": false, "fingerprint": "firefox",
+          "serverName": "example.com",
+          "publicKey": "YOUR_PUBLIC_KEY",
+          "shortId": "YOUR_SHORT_ID", "spiderX": ""
+        }
+      }
+    },
+    {"tag": "direct", "protocol": "freedom", "settings": {}},
+    {"tag": "block", "protocol": "blackhole", "settings": {}}
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {"type": "field", "ip": ["geoip:private"], "outboundTag": "direct"},
+      {"type": "field", "network": "tcp,udp", "outboundTag": "proxy"}
+    ]
+  }
+}, null, 2);
+
+let remarksSyncLock = false;
+
+function isBalancerTemplate(parsed) {
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    && parsed.routing && Array.isArray(parsed.routing.balancers) && parsed.routing.balancers.length > 0;
+}
+
+function stringifyFromParsed(parsed) {
+  if (isBalancerTemplate(parsed)) {
+    return JSON.stringify(parsed);
+  }
+  return JSON.stringify(parsed, null, 2);
+}
+
+function showAlert(msg, type) {
+  const el = document.getElementById('jsonAlert');
+  if (!msg) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    return;
+  }
+  el.classList.remove('hidden');
+  el.textContent = msg;
+  el.className = 'rounded-lg border px-3 py-2 text-[13px]';
+  if (type === 'success') {
+    el.classList.add('border-emerald-500/35', 'bg-emerald-500/10', 'text-emerald-800', 'dark:text-emerald-200');
+    setTimeout(function() { showAlert('', ''); }, 5500);
+  } else if (type === 'danger') {
+    el.classList.add('border-rose-500/35', 'bg-rose-500/10', 'text-rose-800', 'dark:text-rose-200');
+  } else if (type === 'info') {
+    el.classList.add('border-sky-500/35', 'bg-sky-500/10', 'text-sky-900', 'dark:text-sky-100');
+    setTimeout(function() { showAlert('', ''); }, 6000);
+  } else {
+    el.classList.add('border-[rgb(var(--admin-border))]', 'tw-text-muted2');
+  }
+}
+
+function rebuildRemarksPanel() {
+  const panel = document.getElementById('xrayRemarksPanel');
+  const ta = document.getElementById('xrayJsonTemplate');
+  panel.textContent = '';
+
+  let parsed;
+  try {
+    parsed = JSON.parse(ta.value.trim() || 'null');
+  } catch (e) {
+    const d = document.createElement('div');
+    d.className = 'text-[12px] text-rose-600 dark:text-rose-400 leading-relaxed';
+    d.textContent = 'JSON с ошибкой разбора — исправьте текст в редакторе слева.';
+    panel.appendChild(d);
+    if (window.adminRenderLucide) window.adminRenderLucide();
+    return;
+  }
+
+  if (parsed === null || parsed === undefined) {
+    const d = document.createElement('div');
+    d.className = 'text-[12px] tw-text-muted2 italic';
+    d.textContent = 'Пустой шаблон.';
+    panel.appendChild(d);
+    if (window.adminRenderLucide) window.adminRenderLucide();
+    return;
+  }
+
+  const hint = document.createElement('p');
+  hint.className = 'text-[11px] tw-text-muted2 leading-relaxed mb-3';
+  hint.innerHTML = 'Поле <code class="font-mono text-[11px] px-1 rounded bg-[rgb(var(--admin-border)/.35)]">remarks</code> — подпись профиля в приложениях (страна, флаг и т.д.). Редактирование здесь синхронизирует JSON.';
+  panel.appendChild(hint);
+
+  function bindRootRemarkInput(inp, getRoot) {
+    inp.addEventListener('input', function() {
+      if (remarksSyncLock) return;
+      try {
+        const p = JSON.parse(ta.value);
+        const root = getRoot(p);
+        if (!root || Array.isArray(root)) return;
+        root.remarks = inp.value;
+        remarksSyncLock = true;
+        ta.value = stringifyFromParsed(p);
+        remarksSyncLock = false;
+      } catch (_) {}
+    });
+  }
+
+  if (Array.isArray(parsed)) {
+    const badge = document.createElement('div');
+    badge.className = 'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 mb-3';
+    badge.innerHTML = '<i data-lucide="layers" class="w-3 h-3 shrink-0"></i> Несколько профилей: ' + parsed.length;
+    panel.appendChild(badge);
+
+    parsed.forEach(function(item, i) {
+      const wrap = document.createElement('div');
+      wrap.className = 'mb-3 last:mb-0';
+      const lb = document.createElement('label');
+      lb.className = 'block text-[10px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-1';
+      lb.textContent = 'Профиль ' + (i + 1);
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'tw-input text-[13px]';
+      inp.placeholder = '🇳🇱 Нидерланды';
+      inp.value = (item && item.remarks != null) ? String(item.remarks) : '';
+      inp.addEventListener('input', function() {
+        if (remarksSyncLock) return;
+        try {
+          const p = JSON.parse(ta.value);
+          if (!Array.isArray(p) || !p[i]) return;
+          p[i].remarks = inp.value;
+          remarksSyncLock = true;
+          ta.value = stringifyFromParsed(p);
+          remarksSyncLock = false;
+        } catch (_) {}
+      });
+      wrap.appendChild(lb);
+      wrap.appendChild(inp);
+      panel.appendChild(wrap);
+    });
+    if (window.adminRenderLucide) window.adminRenderLucide();
+    return;
+  }
+
+  if (typeof parsed === 'object') {
+    if (isBalancerTemplate(parsed)) {
+      const row = document.createElement('div');
+      row.className = 'flex flex-wrap items-center gap-2 mb-2';
+      row.innerHTML = '<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/25"><i data-lucide="shuffle" class="w-3 h-3"></i> Балансировщик</span>';
+      panel.appendChild(row);
+      const note = document.createElement('p');
+      note.className = 'text-[11px] tw-text-muted2 mb-3 leading-relaxed';
+      note.textContent = 'Один общий конфиг. После генерации из 3X-UI JSON намеренно компактный (одна строка). Кнопка «Форматировать» не разворачивает отступы — только проверяет синтаксис.';
+      panel.appendChild(note);
+    }
+
+    const lb = document.createElement('label');
+    lb.className = 'block text-[10px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-1';
+    lb.textContent = 'Подпись (remarks)';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'tw-input text-[13px]';
+    inp.placeholder = 'VPN [Email]';
+    inp.value = parsed.remarks != null ? String(parsed.remarks) : '';
+    bindRootRemarkInput(inp, function(p) { return p; });
+    panel.appendChild(lb);
+    panel.appendChild(inp);
+  }
+
+  if (window.adminRenderLucide) window.adminRenderLucide();
+}
+
+async function generateFromServers() {
+  const btn = document.getElementById('btnGenerate');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1 align-middle"></span>Генерация…';
+  showAlert('', '');
+  const mode = document.querySelector('input[name="genMode"]:checked')?.value || 'single';
+  try {
+    const resp = await fetch(GENERATE_URL + '?mode=' + encodeURIComponent(mode));
+    const data = await resp.json();
+    if (data.success) {
+      document.getElementById('xrayJsonTemplate').value = data.template;
+      const n = data.servers_count;
+      showAlert('Сгенерировано: ' + (data.mode_label || (n + ' серверов')) + '. Проверьте подписи справа и сохраните.', 'success');
+      rebuildRemarksPanel();
+    } else {
+      showAlert(data.error || 'Ошибка генерации', 'danger');
+    }
+  } catch (e) {
+    showAlert('Ошибка сети: ' + e.message, 'danger');
+  }
+  btn.disabled = false;
+  btn.innerHTML = orig;
+  if (window.adminRenderLucide) window.adminRenderLucide();
+}
+
+function formatJson() {
+  const ta = document.getElementById('xrayJsonTemplate');
+  showAlert('', '');
+  try {
+    const parsed = JSON.parse(ta.value);
+    if (isBalancerTemplate(parsed)) {
+      ta.value = JSON.stringify(parsed);
+      showAlert('Режим балансировщика: JSON оставлен компактным (одна строка).', 'info');
+      rebuildRemarksPanel();
+      return;
+    }
+    ta.value = JSON.stringify(parsed, null, 2);
+    rebuildRemarksPanel();
+  } catch (e) {
+    showAlert('Ошибка JSON: ' + e.message, 'danger');
+  }
+}
+
+function resetToDefault() {
+  if (!confirm('Сбросить шаблон к значению по умолчанию?')) return;
+  document.getElementById('xrayJsonTemplate').value = DEFAULT_TEMPLATE;
+  showAlert('', '');
+  rebuildRemarksPanel();
+}
+
+async function saveSettings() {
+  const enabled  = document.getElementById('xrayJsonEnabled').checked;
+  const template = document.getElementById('xrayJsonTemplate').value.trim();
+  const statusEl = document.getElementById('saveStatus');
+  showAlert('', '');
+
+  try { JSON.parse(template); } catch (e) {
+    showAlert('Ошибка JSON: ' + e.message, 'danger');
+    return;
+  }
+
+  statusEl.textContent = 'Сохранение…';
+  statusEl.classList.remove('hidden', 'text-emerald-600', 'dark:text-emerald-400', 'text-rose-600', 'dark:text-rose-400');
+  statusEl.classList.add('text-[var(--admin-text-muted)]');
+
+  try {
+    const resp = await fetch(SAVE_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled, template})
+    });
+    const data = await resp.json();
+    if (data.success) {
+      statusEl.textContent = 'Сохранено';
+      statusEl.classList.remove('text-[var(--admin-text-muted)]');
+      statusEl.classList.add('text-emerald-600', 'dark:text-emerald-400');
+    } else {
+      statusEl.textContent = (data.error || 'Ошибка');
+      statusEl.classList.remove('text-[var(--admin-text-muted)]');
+      statusEl.classList.add('text-rose-600', 'dark:text-rose-400');
+    }
+  } catch (e) {
+    statusEl.textContent = 'Ошибка сети';
+    statusEl.classList.remove('text-[var(--admin-text-muted)]');
+    statusEl.classList.add('text-rose-600', 'dark:text-rose-400');
+  }
+  setTimeout(function() { statusEl.classList.add('hidden'); }, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const ta = document.getElementById('xrayJsonTemplate');
+  ta.addEventListener('blur', function() {
+    if (!remarksSyncLock) rebuildRemarksPanel();
+  });
+  rebuildRemarksPanel();
+  if (window.adminRenderLucide) window.adminRenderLucide();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,611 @@
+{% extends "base.html" %}
+{% block title %}Доп возможности · {{ super() }}{% endblock %}
+{% block content %}
+<div class="tw-anim space-y-4 pb-6 min-w-0 max-w-full">
+{# По историческим причинам в роуте /settings/subscription существуют две группы:
+   - Ссылки приложений Happ для кабинета на сайте (app_link_*)
+   - Доп возможности (sub_extra_links_active, sub_vless_bac)
+   Группу с HWID-лимитом мы оттуда убрали — она переехала в /settings/subpage. #}
+
+{% set group_links_raw = grouped_settings.get('🟦 Happ', []) %}
+{% set _hidden_link_keys = ['app_link_hiddify_ios', 'app_link_hiddify_android'] %}
+{% set group_links = group_links_raw | rejectattr('key', 'in', _hidden_link_keys) | list %}
+{% set group_extras = grouped_settings.get('Доп возможности', []) %}
+
+<form method="post" class="space-y-4" id="ss-form">
+
+  {# ── Заголовок раздела ─────────────────────────────────────── #}
+  <div class="ss-card">
+    <div class="ss-card-head">
+      <div class="min-w-0">
+        <div class="text-base font-semibold text-[var(--admin-text-base)] flex items-center gap-2 mb-1">
+          <i data-lucide="wrench" class="w-4 h-4 text-[rgb(var(--admin-accent))]"></i>
+          Доп возможности
+        </div>
+        <div class="text-xs text-[var(--admin-text-muted)] leading-relaxed">
+          Ссылки на приложения для веб-кабинета пользователя и дополнительные ссылки в тело подписки.
+          Лимит устройств по HWID настраивается в разделе
+          <a href="{{ url_for('admin.settings_subpage') }}"
+             class="text-[rgb(var(--admin-accent))] hover:underline">Subpage</a>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Группа: ссылки на приложения ──────────────────────────── #}
+  {% if group_links %}
+  <div class="ss-card">
+    <div class="ss-card-body">
+      <div class="ss-section-h">
+        <i data-lucide="package" class="w-4 h-4"></i>
+        Ссылки приложений в кабинете на сайте
+        <span class="ss-section-sub">{{ group_links|length }} платформ</span>
+      </div>
+      <div class="ss-grid-2">
+        {% for setting in group_links %}
+          <div class="ss-field">
+            <label for="{{ setting.key }}">
+              {% set k = setting.key %}
+              {% if   k == 'app_link_ios'             %}<i data-lucide="apple"      class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — iOS (RU)
+              {% elif k == 'app_link_ios_global'      %}<i data-lucide="apple"      class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — iOS (Global)
+              {% elif k == 'app_link_android'         %}<i data-lucide="smartphone" class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Android (Play)
+              {% elif k == 'app_link_android_apk'     %}<i data-lucide="package"    class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Android (APK)
+              {% elif k == 'app_link_windows'         %}<i data-lucide="monitor"    class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Windows
+              {% elif k == 'app_link_mac'             %}<i data-lucide="laptop"     class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — macOS
+              {% elif k == 'app_link_linux'           %}<i data-lucide="terminal"   class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Linux
+              {% else %}{{ setting.description }}
+              {% endif %}
+              <span class="lbl-key">{{ setting.key }}</span>
+            </label>
+            <input type="url" class="ss-input"
+                   id="{{ setting.key }}" name="{{ setting.key }}"
+                   value="{{ setting.value }}" placeholder="https://...">
+          </div>
+        {% endfor %}
+      </div>
+      <div class="hint mt-3 text-xs text-[var(--admin-text-muted)]">
+        Эти ссылки появляются в личном кабинете пользователя на сайте — кнопки «Скачать» для каждой платформы.
+        Если поле пустое — кнопка не показывается.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Группа: дополнительные ссылки в подписке ───────────────── #}
+  {% if group_extras %}
+  <div class="ss-card">
+    <div class="ss-card-body">
+      <div class="ss-section-h">
+        <i data-lucide="list-plus" class="w-4 h-4"></i>
+        Дополнительные ссылки в подписке
+      </div>
+
+      {% for setting in group_extras %}
+        {% if setting.key == 'sub_extra_links_active' %}
+          <div class="ss-field">
+            <label>
+              <i data-lucide="link" class="w-4 h-4 text-[var(--admin-text-muted)]"></i>
+              Доп. ссылки активным клиентам
+              <span class="lbl-key">{{ setting.key }}</span>
+            </label>
+            <div class="hint" style="margin-top:-2px;">
+              Список <code class="font-mono">vless://</code>, <code class="font-mono">vmess://</code>,
+              <code class="font-mono">trojan://</code>, <code class="font-mono">ss://</code> и др. подмешивается
+              в подписку всем активным клиентам. Поддерживается плейсхолдер
+              <code class="font-mono">[UUID]</code> — подставляется UUID клиента (как в шаблонах ключей 3X-UI).
+              Перетаскивайте за «≡», чтобы менять порядок. Пустые строки игнорируются.
+            </div>
+
+            <div id="ss-extra-links" class="mt-1">
+              {% for link in extra_links_list %}
+                <div class="ss-link-row" data-link-row>
+                  <span class="grip" title="Перетащите для изменения порядка">
+                    <i data-lucide="grip-vertical" class="w-4 h-4"></i>
+                  </span>
+                  <div class="body">
+                    <input type="text" class="ss-input ss-link-input"
+                           name="sub_extra_links_active[]"
+                           value="{{ link }}"
+                           placeholder="vless://, vmess://, trojan://, ss://...">
+                    <div class="name-display" data-name-display data-link="{{ link }}"></div>
+                  </div>
+                  <div class="actions">
+                    <button type="button" class="mv mv-up" title="Вверх">
+                      <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" class="mv mv-down" title="Вниз">
+                      <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" class="del" title="Удалить">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+
+            <div>
+              <button type="button" class="ss-add-btn" id="ss-add-link">
+                <i data-lucide="plus" class="w-4 h-4"></i> Добавить ссылку
+              </button>
+            </div>
+          </div>
+
+        {% elif setting.key == 'sub_vless_bac' %}
+          <div class="ss-field" style="margin-top: 12px;">
+            <label>
+              <i data-lucide="shield" class="w-4 h-4 text-[var(--admin-text-muted)]"></i>
+              Резервная VLESS-ссылка (xuiweb)
+              <span class="lbl-key">{{ setting.key }}</span>
+            </label>
+            <input type="text" class="ss-input"
+                   id="{{ setting.key }}" name="{{ setting.key }}"
+                   value="{{ setting.value }}"
+                   placeholder="vless://...">
+            <div class="hint">
+              Используется xuiweb когда основная подписка пустая (нет рабочих ключей у клиента).
+              Можно оставить пустым — тогда клиент получит обычную пустую подписку.
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Группа: Помощь клиенту ─────────────────────────────────── #}
+  <div class="ss-card">
+    <div class="ss-card-body">
+      <div class="ss-section-h">
+        <i data-lucide="life-buoy" class="w-4 h-4"></i>
+        Помощь клиенту
+        <span class="ss-section-sub">инструкция по подключению</span>
+      </div>
+      <div class="hint mt-1 text-xs text-[var(--admin-text-muted)]">
+        Сообщение, которое отправляется кнопкой <b>«Помощь клиенту»</b> из карточки пользователя:
+        фото-инструкция, текст и кнопки приложений. Ссылки на приложения берутся из блока
+        <a href="#" onclick="document.querySelector('.ss-card .ss-section-h')?.scrollIntoView({behavior:'smooth'});return false;"
+           class="text-[rgb(var(--admin-accent))] hover:underline">«Ссылки приложений в кабинете на сайте»</a> выше.
+      </div>
+
+      {# ── Фото-инструкция ── #}
+      <div class="hb-block">
+        <div class="hb-block-title"><i data-lucide="image" class="w-3.5 h-3.5"></i> Фото-инструкция</div>
+
+        <input type="hidden" id="help_photo_file_id" name="help_photo_file_id" value="{{ help_photo_file_id }}">
+
+        <label class="hb-drop {% if help_photo_preview_url or help_photo_file_id %}hb-hidden{% endif %}" id="hbDrop">
+          <input type="file" id="hbFile" accept="image/png,image/jpeg,image/webp">
+          <i data-lucide="upload-cloud" class="hb-drop-ico"></i>
+          <div class="hb-drop-title">Перетащите фото сюда или нажмите</div>
+          <div class="hb-drop-hint">JPG / PNG / WEBP · до 10 МБ. После загрузки фото уходит админу для получения file_id.</div>
+        </label>
+        <div class="hb-progress hb-hidden" id="hbProgress"><span></span></div>
+
+        <div class="hb-photo-card {% if not help_photo_preview_url and not help_photo_file_id %}hb-hidden{% endif %}" id="hbPhotoCard">
+          <div class="hb-photo-thumb" id="hbPhotoThumb">
+            {% if help_photo_preview_url %}
+              <img src="{{ help_photo_preview_url }}" alt="preview">
+            {% else %}
+              <div class="hb-photo-noprev"><i data-lucide="image-off" class="w-4 h-4"></i></div>
+            {% endif %}
+          </div>
+          <div class="hb-photo-meta">
+            <div class="min-w-0">
+              <div class="hb-photo-status">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5" style="color:#22c55e"></i>
+                Фото задано
+              </div>
+              <div class="hb-photo-fid" id="hbPhotoFid" title="file_id">
+                {{ (help_photo_file_id[:36] ~ '…') if help_photo_file_id else '—' }}
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="hbPhotoReplace" title="Заменить фото">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Обновить
+              </button>
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="hbPhotoRemove" title="Убрать фото">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="hint mt-2 text-xs text-[var(--admin-text-muted)]">
+          file_id привязан к текущему боту. При смене токена бота загрузите фото заново — иначе будет отправлен текст без фото.
+        </div>
+      </div>
+
+      {# ── Текст инструкции ── #}
+      <div class="hb-block">
+        <div class="hb-block-title">
+          <i data-lucide="type" class="w-3.5 h-3.5"></i> Текст инструкции
+          <span class="hb-counter" id="hbCounter">0 / 1024</span>
+        </div>
+        <div class="hb-toolbar">
+          {% raw %}
+          <button type="button" class="hb-tag" data-snippet="<b>{0}</b>" data-ph="жирный" title="Ctrl+B"><b>B</b></button>
+          <button type="button" class="hb-tag" data-snippet="<i>{0}</i>" data-ph="курсив" title="Ctrl+I"><i>I</i></button>
+          <button type="button" class="hb-tag" data-snippet="<u>{0}</u>" data-ph="подчёркнутый"><u>U</u></button>
+          <button type="button" class="hb-tag" data-snippet="<s>{0}</s>" data-ph="зачёркнутый"><s>S</s></button>
+          <span class="hb-sep"></span>
+          <button type="button" class="hb-tag" data-snippet="<code>{0}</code>" data-ph="код">Код</button>
+          <button type="button" class="hb-tag" data-snippet="<blockquote>{0}</blockquote>" data-ph="цитата">Цитата</button>
+          <button type="button" class="hb-tag" data-snippet='<span class="tg-spoiler">{0}</span>' data-ph="спойлер">Спойлер</button>
+          <span class="hb-sep"></span>
+          <button type="button" class="hb-tag" id="hbInsertLink">Ссылка</button>
+          {% endraw %}
+        </div>
+        <textarea class="ss-input hb-editor" id="help_text" name="help_text" rows="7"
+                  placeholder="Текст инструкции…">{{ help_text_value }}</textarea>
+        <div class="hint mt-1 text-xs text-[var(--admin-text-muted)]">
+          Telegram HTML: <code class="font-mono">&lt;b&gt;</code>, <code class="font-mono">&lt;i&gt;</code>,
+          <code class="font-mono">&lt;a href&gt;</code>, <code class="font-mono">&lt;code&gt;</code>, спойлеры.
+          Лимит подписи к фото — 1024 символа.
+        </div>
+      </div>
+
+      {# ── Кнопки ── #}
+      <div class="hb-block">
+        <div class="hb-block-title"><i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> Кнопки</div>
+        <div class="hb-buttons">
+          {% for b in help_buttons %}
+          <div class="btn-row" data-bid="{{ b.id }}">
+            <div class="btn-name">
+              <div class="lbl">{{ b.label }}</div>
+              <div class="key">
+                {% if b.kind == 'link_app' %}ссылка: {{ b.url_key }} (выше)
+                {% elif b.kind == 'happ' %}ссылка Happ — авто
+                {% else %}возврат в меню{% endif %}
+              </div>
+            </div>
+
+            <div class="btn-text-block">
+              <label for="help_btn_{{ b.id }}_text">Текст</label>
+              <input type="text" id="help_btn_{{ b.id }}_text" class="tw-input tw-input-sm"
+                     name="help_btn_{{ b.id }}_text" maxlength="64" value="{{ b.text }}">
+            </div>
+
+            <div class="stack">
+              <label>Стиль</label>
+              <div class="seg" data-style-seg>
+                <button type="button" data-style="">—</button>
+                <button type="button" data-style="primary">primary</button>
+                <button type="button" data-style="success">success</button>
+                <button type="button" data-style="danger">danger</button>
+              </div>
+              <input type="hidden" name="help_btn_{{ b.id }}_style" value="{{ b.style }}">
+            </div>
+
+            <div class="stack">
+              <label>icon_custom_emoji_id</label>
+              <input type="text" class="tw-input tw-input-sm" data-icon
+                     name="help_btn_{{ b.id }}_icon"
+                     inputmode="numeric" pattern="\d*" placeholder="только цифры" value="{{ b.icon }}">
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="hint mt-2 text-xs text-[var(--admin-text-muted)]">
+          Кнопки приложений показываются только если задана соответствующая ссылка в блоке выше.
+          Premium-эмодзи (<code class="font-mono">icon_custom_emoji_id</code>) работают только для ботов с подключёнными кастом-эмодзи.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Save bar ──────────────────────────────────────────────── #}
+  <div class="ss-savebar">
+    <div class="info">
+      <span id="ss-status">Готово к сохранению</span>
+    </div>
+    <button type="submit" class="tw-btn tw-btn-primary">
+      <i data-lucide="save" class="w-3.5 h-3.5"></i>
+      Сохранить
+    </button>
+  </div>
+</form>
+
+<!-- SortableJS для drag-and-drop -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+(() => {
+  const linksRoot = document.getElementById('ss-extra-links');
+  if (!linksRoot) {
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  // ── helpers ────────────────────────────────────────────────────
+  const decodeBase64 = (s) => {
+    try { return decodeURIComponent(escape(atob(s))); } catch { return s; }
+  };
+  const decodeUrl = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+
+  // Извлекаем «имя профиля» из vless://...#name (URL- или base64-кодировка).
+  const extractName = (link) => {
+    if (!link || !link.includes('#')) return '';
+    const part = link.split('#').slice(1).join('#');
+    if (!part) return '';
+    if (part.includes('%')) {
+      const dec = decodeUrl(part);
+      if (dec !== part) return dec;
+    }
+    if (/^[A-Za-z0-9+/=]+$/.test(part) && part.length % 4 === 0) {
+      const dec = decodeBase64(part);
+      if (dec && dec !== part && dec.length > 0) return dec;
+    }
+    return part;
+  };
+
+  const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+
+  // ── Имя под полем ─────────────────────────────────────────────
+  const refreshName = (row) => {
+    const inp = row.querySelector('.ss-link-input');
+    const out = row.querySelector('[data-name-display]');
+    if (!inp || !out) return;
+    const name = extractName(inp.value);
+    out.innerHTML = name ? `<span class="ss-badge-name">#${escHtml(name)}</span>` : '';
+  };
+  linksRoot.querySelectorAll('[data-link-row]').forEach(refreshName);
+
+  // ── Кнопки в строке: ↑ / ↓ / 🗑 + контролы disabled у крайних ─
+  const refreshArrows = () => {
+    const rows = Array.from(linksRoot.querySelectorAll('[data-link-row]'));
+    rows.forEach((row, i) => {
+      const up = row.querySelector('.mv-up');
+      const down = row.querySelector('.mv-down');
+      if (up)   { up.disabled = (i === 0); up.style.opacity = (i === 0) ? '.3' : ''; }
+      if (down) { down.disabled = (i === rows.length - 1); down.style.opacity = (i === rows.length - 1) ? '.3' : ''; }
+    });
+  };
+  refreshArrows();
+
+  linksRoot.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-link-row]');
+    if (!row) return;
+    if (e.target.closest('.del')) {
+      row.remove();
+      refreshArrows();
+      return;
+    }
+    if (e.target.closest('.mv-up')) {
+      const prev = row.previousElementSibling;
+      if (prev) row.parentNode.insertBefore(row, prev);
+      refreshArrows();
+      return;
+    }
+    if (e.target.closest('.mv-down')) {
+      const next = row.nextElementSibling;
+      if (next) row.parentNode.insertBefore(next, row);
+      refreshArrows();
+      return;
+    }
+  });
+
+  linksRoot.addEventListener('input', (e) => {
+    const inp = e.target.closest('.ss-link-input');
+    if (!inp) return;
+    refreshName(inp.closest('[data-link-row]'));
+  });
+
+  // ── Добавление новой строки ───────────────────────────────────
+  document.getElementById('ss-add-link').addEventListener('click', () => {
+    const tpl = document.createElement('div');
+    tpl.className = 'ss-link-row';
+    tpl.setAttribute('data-link-row', '');
+    tpl.innerHTML = `
+      <span class="grip" title="Перетащите для изменения порядка">
+        <i data-lucide="grip-vertical" class="w-4 h-4"></i>
+      </span>
+      <div class="body">
+        <input type="text" class="ss-input ss-link-input"
+               name="sub_extra_links_active[]"
+               placeholder="vless://, vmess://, trojan://, ss://...">
+        <div class="name-display" data-name-display></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="mv mv-up" title="Вверх">
+          <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+        </button>
+        <button type="button" class="mv mv-down" title="Вниз">
+          <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i>
+        </button>
+        <button type="button" class="del" title="Удалить">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    `;
+    linksRoot.appendChild(tpl);
+    if (window.lucide) lucide.createIcons();
+    refreshArrows();
+    tpl.querySelector('input').focus();
+  });
+
+  // ── Drag-and-drop ─────────────────────────────────────────────
+  if (typeof Sortable !== 'undefined') {
+    new Sortable(linksRoot, {
+      handle: '.grip',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      onEnd: refreshArrows,
+    });
+  }
+
+  if (window.lucide) lucide.createIcons();
+})();
+</script>
+
+<script>
+/* ── Помощь клиенту: фото-аплоад, редактор текста, кнопки ── */
+(() => {
+  const UPLOAD_URL = "{{ url_for('api.upload_help_photo') }}";
+
+  // ───── Стиль кнопок (segmented) ─────
+  document.querySelectorAll('.seg[data-style-seg]').forEach(seg => {
+    const hidden = seg.parentElement.querySelector('input[type=hidden]');
+    const cur = (hidden && hidden.value) || '';
+    seg.querySelectorAll('button').forEach(b => {
+      if ((b.dataset.style || '') === cur) b.classList.add('active');
+      b.addEventListener('click', () => {
+        seg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        if (hidden) hidden.value = b.dataset.style || '';
+      });
+    });
+  });
+
+  // ───── icon: только цифры ─────
+  document.querySelectorAll('input[name^="help_btn_"][name$="_icon"]').forEach(inp => {
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/[^0-9]/g, ''); });
+  });
+
+  // ───── Текст: тулбар + счётчик ─────
+  const body = document.getElementById('help_text');
+  const counter = document.getElementById('hbCounter');
+  const TG_LIMIT = 1024;
+
+  function refreshCounter() {
+    if (!body || !counter) return;
+    const len = (body.value || '').length;
+    counter.textContent = `${len} / ${TG_LIMIT}`;
+    counter.dataset.state = len > TG_LIMIT ? 'over' : (len > TG_LIMIT * 0.9 ? 'warn' : '');
+  }
+  function wrap(snippet, ph) {
+    if (!body) return;
+    const s = body.selectionStart, e = body.selectionEnd;
+    const sel = body.value.substring(s, e);
+    const inner = sel || (ph || '');
+    const ins = snippet.replace('{0}', inner);
+    body.value = body.value.substring(0, s) + ins + body.value.substring(e);
+    const innerStart = s + ins.indexOf(inner);
+    body.setSelectionRange(innerStart, innerStart + inner.length);
+    body.focus();
+    refreshCounter();
+  }
+  document.querySelectorAll('.hb-tag[data-snippet]').forEach(btn => {
+    btn.addEventListener('click', () => wrap(btn.dataset.snippet || '', btn.dataset.ph || ''));
+  });
+  const linkBtn = document.getElementById('hbInsertLink');
+  if (linkBtn) linkBtn.addEventListener('click', () => {
+    const s = body.selectionStart, e = body.selectionEnd;
+    const sel = body.value.substring(s, e);
+    const url = prompt('Ссылка (https://…):', 'https://');
+    if (!url) return;
+    const txt = sel || prompt('Текст ссылки:', 'ссылка') || 'ссылка';
+    const html = `<a href="${url}">${txt}</a>`;
+    body.value = body.value.substring(0, s) + html + body.value.substring(e);
+    body.focus();
+    refreshCounter();
+  });
+  if (body) {
+    body.addEventListener('input', refreshCounter);
+    body.addEventListener('keydown', (ev) => {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      const k = ev.key.toLowerCase();
+      if (k === 'b') { ev.preventDefault(); wrap('<b>{0}</b>', 'жирный'); }
+      else if (k === 'i') { ev.preventDefault(); wrap('<i>{0}</i>', 'курсив'); }
+      else if (k === 'u') { ev.preventDefault(); wrap('<u>{0}</u>', 'подчёркнутый'); }
+    });
+    refreshCounter();
+  }
+
+  // ───── Фото-аплоад ─────
+  const drop = document.getElementById('hbDrop');
+  const fileInput = document.getElementById('hbFile');
+  const card = document.getElementById('hbPhotoCard');
+  const thumb = document.getElementById('hbPhotoThumb');
+  const fidEl = document.getElementById('hbPhotoFid');
+  const hiddenFid = document.getElementById('help_photo_file_id');
+  const progress = document.getElementById('hbProgress');
+  const progressBar = progress ? progress.querySelector('span') : null;
+  const replaceBtn = document.getElementById('hbPhotoReplace');
+  const removeBtn = document.getElementById('hbPhotoRemove');
+
+  function showProgress(p) {
+    if (!progress || !progressBar) return;
+    if (p == null) { progress.classList.add('hb-hidden'); progressBar.style.width = '0'; return; }
+    progress.classList.remove('hb-hidden'); progressBar.style.width = Math.max(0, Math.min(100, p)) + '%';
+  }
+  function showCard(fileId, previewUrl) {
+    if (hiddenFid) hiddenFid.value = fileId || '';
+    if (!fileId) {
+      if (card) card.classList.add('hb-hidden');
+      if (drop) drop.classList.remove('hb-hidden');
+      if (thumb) thumb.innerHTML = '';
+      return;
+    }
+    if (thumb) {
+      thumb.innerHTML = '';
+      if (previewUrl) {
+        const img = document.createElement('img'); img.src = previewUrl; img.alt = 'preview';
+        thumb.appendChild(img);
+      } else {
+        thumb.innerHTML = '<div class="hb-photo-noprev"><i data-lucide="image-off" class="w-4 h-4"></i></div>';
+      }
+    }
+    if (fidEl) fidEl.textContent = fileId.length > 36 ? (fileId.slice(0, 36) + '…') : fileId;
+    if (card) card.classList.remove('hb-hidden');
+    if (drop) drop.classList.add('hb-hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  async function upload(file) {
+    if (!file) return;
+    showProgress(8);
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const j = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', UPLOAD_URL);
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) showProgress(8 + Math.round(e.loaded / e.total * 88));
+        });
+        xhr.onload = () => {
+          try {
+            const r = JSON.parse(xhr.responseText || '{}');
+            if (xhr.status >= 200 && xhr.status < 300 && r.ok) resolve(r);
+            else reject(new Error(r.error || ('HTTP ' + xhr.status)));
+          } catch (e) { reject(new Error('Bad JSON')); }
+        };
+        xhr.onerror = () => reject(new Error('Сеть недоступна'));
+        xhr.send(fd);
+      });
+      showProgress(100); setTimeout(() => showProgress(null), 400);
+      showCard(j.file_id, j.preview_url);
+    } catch (err) {
+      showProgress(null);
+      alert('Не удалось загрузить фото:\n' + (err && err.message ? err.message : err));
+    }
+  }
+
+  if (fileInput) fileInput.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files[0]) upload(fileInput.files[0]);
+  });
+  if (drop) {
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.add('drag-over');
+    }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.remove('drag-over');
+    }));
+    drop.addEventListener('drop', e => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) upload(f);
+    });
+  }
+  if (replaceBtn) replaceBtn.addEventListener('click', () => fileInput && fileInput.click());
+  if (removeBtn) removeBtn.addEventListener('click', () => {
+    if (!confirm('Убрать фото? Будет отправлен текст без фото (или дефолтное фото, если оно есть).')) return;
+    showCard('', '');
+  });
+
+  if (window.lucide) lucide.createIcons();
+})();
+</script>
+</div>
+{% endblock %}

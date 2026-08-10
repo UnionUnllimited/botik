@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Детали задачи - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-1 pb-2 min-w-0 max-w-full">
+
+  {# ─── Шапка ─── #}
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between min-w-0">
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2 min-w-0">
+        {% if task_type == 'news' %}
+          <i data-lucide="megaphone" class="w-6 h-6 text-[var(--color-brand-500)] shrink-0"></i>
+          <span class="leading-tight break-words">Детали отправки новости</span>
+        {% endif %}
+    </h1>
+    <a href="{{ url_for('admin.tasks_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm shrink-0 w-full sm:w-auto justify-center">
+      <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+      Назад к списку
+    </a>
+  </div>
+
+  {# ─── Основная информация ─── #}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+      <i data-lucide="info" class="w-4 h-4 text-[var(--color-brand-500)] shrink-0"></i>
+      <h2 class="text-[15px] font-semibold tw-text-base2">Основная информация</h2>
+    </div>
+    <div class="px-3 sm:px-4 py-3 sm:py-4 min-w-0">
+      <dl class="divide-y divide-[rgb(var(--admin-border))]">
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 first:pt-0 md:items-start">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug md:pt-0.5">ID задачи</dt>
+          <dd class="text-[13px] tw-text-base2 font-mono break-all min-w-0 leading-snug">{{ task.task_id }}</dd>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 md:items-center">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug">Статус</dt>
+          <dd class="min-w-0 leading-none">
+            {% if task.status == 'running' %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">Выполняется</span>
+            {% elif task.status == 'completed' %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">Завершена</span>
+            {% elif task.status == 'failed' %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25">Ошибка</span>
+            {% endif %}
+          </dd>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 md:items-baseline">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug">Создана</dt>
+          <dd class="text-[13px] tw-text-base2 break-words min-w-0 leading-snug">{{ task.created_at|msk_datetime }}</dd>
+        </div>
+        {% if task.completed_at %}
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 md:items-baseline">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug">Завершена</dt>
+          <dd class="text-[13px] tw-text-base2 break-words min-w-0 leading-snug">{{ task.completed_at|msk_datetime }}</dd>
+        </div>
+        {% endif %}
+
+        {% if task_type == 'news' %}
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 md:items-baseline">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug">Пользователей</dt>
+          <dd class="tabular-nums text-[13px] tw-text-base2 leading-snug">{{ task.user_count }}</dd>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 md:items-center">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug">Успешно отправлено</dt>
+          <dd class="leading-none"><span class="inline-flex rounded-md px-2 py-0.5 text-[12px] font-semibold bg-emerald-500/12 text-emerald-700 dark:text-emerald-400">{{ task.success_count or 0 }}</span></dd>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 md:items-center">
+          <dt class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 shrink-0 leading-snug">Ошибок</dt>
+          <dd class="leading-none"><span class="inline-flex rounded-md px-2 py-0.5 text-[12px] font-semibold bg-rose-500/12 text-rose-700 dark:text-rose-300">{{ task.failed_count or 0 }}</span></dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+  </div>
+
+  {% if task_type == 'news' %}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+      <i data-lucide="message-square" class="w-4 h-4 text-[var(--color-brand-500)] shrink-0"></i>
+      <h2 class="text-[15px] font-semibold tw-text-base2">Текст отправленной новости</h2>
+    </div>
+    <div class="px-3 sm:px-4 py-3 sm:py-4 min-w-0">
+      {% if task.news_text %}
+      <pre class="m-0 text-[13px] tw-text-base2 font-sans whitespace-pre-wrap break-words leading-relaxed max-h-[min(70vh,28rem)] overflow-y-auto rounded-lg border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.45)] p-3">{{ task.news_text }}</pre>
+      <p class="text-[11px] tw-text-muted2 mt-2">Отображается как сохранённый текст (HTML-теги Telegram показаны экранированными).</p>
+      {% else %}
+      <p class="text-[13px] tw-text-muted2 italic">Текст не сохранён — задача создана до обновления или запись без текста.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if error_details %}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[rgb(var(--admin-border))] flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-500 shrink-0"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Детали ошибок</h2>
+      </div>
+      {% if errors_total_pages > 1 %}
+      <span class="text-[11px] tw-text-muted2 tabular-nums shrink-0">Всего {{ errors_total }}</span>
+      {% endif %}
+    </div>
+
+    <div class="md:hidden divide-y divide-[rgb(var(--admin-border))]">
+      {% for error in error_details %}
+      <div class="px-3 py-2.5 min-w-0">
+        <span class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 tabular-nums">#{{ errors_row_offset + loop.index }}</span>
+        <pre class="mt-1 m-0 text-[12px] font-mono tw-text-base2 whitespace-pre-wrap break-words max-w-full leading-relaxed">{{ error }}</pre>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="hidden md:block overflow-x-auto">
+      <table class="w-full min-w-[520px] text-[13px] border-collapse table-fixed">
+        <colgroup>
+          <col class="w-14">
+          <col>
+        </colgroup>
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide tw-text-subtle2 border-b border-[rgb(var(--admin-border))]" style="background: var(--admin-bg-soft);">
+            <th scope="col" class="py-2 px-4 font-semibold whitespace-nowrap align-middle">#</th>
+            <th scope="col" class="py-2 px-4 font-semibold align-middle min-w-0">Ошибка</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-[rgb(var(--admin-border))]">
+          {% for error in error_details %}
+          <tr class="hover:bg-[rgb(var(--admin-border)/.08)]">
+            <td class="py-2 px-4 tw-text-muted2 tabular-nums align-top whitespace-nowrap">{{ errors_row_offset + loop.index }}</td>
+            <td class="py-2 px-4 align-top font-mono text-[12px] break-words min-w-0">{{ error }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if errors_total_pages > 1 %}
+    <div class="px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.25)]">
+      <div class="text-[12px] tw-text-muted2">
+        Страница <span class="font-semibold tw-text-base2">{{ errors_page }}</span> из
+        <span class="font-semibold tw-text-base2">{{ errors_total_pages }}</span>
+      </div>
+      <nav class="tw-pagination" aria-label="Страницы ошибок">
+        <a class="pg-item {% if errors_page <= 1 %}disabled{% endif %}"
+           href="{{ url_for('admin.task_details', task_id=task.task_id, err_page=errors_page-1, usr_page=users_page) if errors_page > 1 else '#' }}">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set ep_ns = namespace(last=0) %}
+        {% for p in range(1, errors_total_pages + 1) %}
+          {% set ep_near = (p == 1 or p == errors_total_pages or (p >= errors_page - 1 and p <= errors_page + 1)) %}
+          {% if ep_near %}
+            {% if ep_ns.last and p - ep_ns.last > 1 %}
+              <span class="pg-item disabled">…</span>
+            {% endif %}
+            <a class="pg-item {% if p == errors_page %}active{% endif %}"
+               href="{{ url_for('admin.task_details', task_id=task.task_id, err_page=p, usr_page=users_page) }}">{{ p }}</a>
+            {% set ep_ns.last = p %}
+          {% endif %}
+        {% endfor %}
+        <a class="pg-item {% if errors_page >= errors_total_pages %}disabled{% endif %}"
+           href="{{ url_for('admin.task_details', task_id=task.task_id, err_page=errors_page+1, usr_page=users_page) if errors_page < errors_total_pages else '#' }}">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if failed_users %}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden min-w-0">
+    <div class="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[rgb(var(--admin-border))] flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <i data-lucide="users" class="w-4 h-4 text-[var(--color-brand-500)] shrink-0"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Пользователи с ошибками</h2>
+      </div>
+      {% if users_total_pages > 1 %}
+      <span class="text-[11px] tw-text-muted2 tabular-nums shrink-0">Всего {{ users_total }}</span>
+      {% endif %}
+    </div>
+
+    <div class="md:hidden divide-y divide-[rgb(var(--admin-border))]">
+      {% for user in failed_users %}
+      <div class="px-3 py-2.5 min-w-0 space-y-2">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-0.5 tabular-nums">#{{ users_row_offset + loop.index }}</div>
+          <div class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-0.5">Telegram ID</div>
+          <code class="text-[13px] font-mono break-all tw-text-base2">{{ user.telegram_id }}</code>
+        </div>
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-0.5">Username</div>
+          <span class="text-[13px] tw-text-base2 break-words">{{ user.username or '—' }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="hidden md:block overflow-x-auto">
+      <table class="w-full min-w-[380px] text-[13px] border-collapse">
+        <thead>
+          <tr class="text-left text-[11px] uppercase tracking-wide tw-text-subtle2 border-b border-[rgb(var(--admin-border))]" style="background: var(--admin-bg-soft);">
+            <th scope="col" class="py-2 px-4 font-semibold whitespace-nowrap align-middle w-12">#</th>
+            <th scope="col" class="py-2 px-4 font-semibold whitespace-nowrap align-middle">Telegram ID</th>
+            <th scope="col" class="py-2 px-4 font-semibold align-middle min-w-0">Username</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-[rgb(var(--admin-border))]">
+          {% for user in failed_users %}
+          <tr class="hover:bg-[rgb(var(--admin-border)/.08)]">
+            <td class="py-2 px-4 tw-text-muted2 tabular-nums align-top text-[12px]">{{ users_row_offset + loop.index }}</td>
+            <td class="py-2 px-4 font-mono text-[12px] whitespace-nowrap align-top">{{ user.telegram_id }}</td>
+            <td class="py-2 px-4 align-top break-words min-w-0">{{ user.username or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if users_total_pages > 1 %}
+    <div class="px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.25)]">
+      <div class="text-[12px] tw-text-muted2">
+        Страница <span class="font-semibold tw-text-base2">{{ users_page }}</span> из
+        <span class="font-semibold tw-text-base2">{{ users_total_pages }}</span>
+      </div>
+      <nav class="tw-pagination" aria-label="Страницы пользователей">
+        <a class="pg-item {% if users_page <= 1 %}disabled{% endif %}"
+           href="{{ url_for('admin.task_details', task_id=task.task_id, err_page=errors_page, usr_page=users_page-1) if users_page > 1 else '#' }}">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set up_ns = namespace(last=0) %}
+        {% for p in range(1, users_total_pages + 1) %}
+          {% set up_near = (p == 1 or p == users_total_pages or (p >= users_page - 1 and p <= users_page + 1)) %}
+          {% if up_near %}
+            {% if up_ns.last and p - up_ns.last > 1 %}
+              <span class="pg-item disabled">…</span>
+            {% endif %}
+            <a class="pg-item {% if p == users_page %}active{% endif %}"
+               href="{{ url_for('admin.task_details', task_id=task.task_id, err_page=errors_page, usr_page=p) }}">{{ p }}</a>
+            {% set up_ns.last = p %}
+          {% endif %}
+        {% endfor %}
+        <a class="pg-item {% if users_page >= users_total_pages %}disabled{% endif %}"
+           href="{{ url_for('admin.task_details', task_id=task.task_id, err_page=errors_page, usr_page=users_page+1) if users_page < users_total_pages else '#' }}">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.adminRenderLucide) window.adminRenderLucide();
+});
+</script>
+{% endblock %}

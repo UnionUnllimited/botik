@@ -1,0 +1,1739 @@
+{% extends 'base.html' %}
+{% block title %}Клиенты — {{ super() }}{% endblock %}
+
+{% block extra_head %}
+{# Стили: styles/pages/users.css -> input.css -> tailwind-built.css #}
+{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4" id="usersRoot">
+
+  {# === Loading overlay (hidden after first paint) === #}
+  <div id="loadingOverlay" class="ld-overlay">
+    <div class="text-center">
+      <div class="inline-block w-10 h-10 rounded-full border-2 mb-3"
+           style="border-color: rgba(99,102,241,.25); border-top-color: var(--color-brand-500); animation: spin .9s linear infinite;"></div>
+      <div class="text-[14px] tw-text-base2 font-semibold">Загрузка…</div>
+      <div class="text-[12px] tw-text-muted2 mt-0.5">Подготавливаем список клиентов</div>
+    </div>
+  </div>
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+              style="background: rgba(99,102,241,.15); color:#6366f1;">
+          <i data-lucide="users" class="w-4 h-4"></i>
+        </span>
+        <span>Клиенты</span>
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Все пользователи бота и сайта. Кликните по&nbsp;@username, чтобы открыть профиль.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" id="openCreateUser">
+        <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+        <span>Создать</span>
+      </button>
+      <a href="{{ url_for('admin.blocked_users_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="user-x" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Заблокированные</span>
+      </a>
+    </div>
+  </div>
+
+  {# === Search + filters toggle === #}
+  <form method="get" action="{{ url_for('admin.users_list') }}" class="space-y-3" id="filtersForm">
+    <div class="tw-card p-3">
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="relative flex-1 min-w-0" style="min-width: 220px;">
+          <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 tw-text-subtle2 pointer-events-none"></i>
+          <input type="text" name="search_query"
+                 value="{{ request.args.get('search_query', request.args.get('search_id', '')) }}"
+                 placeholder="ID, @username, email или имя…"
+                 class="tw-input tw-input-with-icon" autocomplete="off">
+        </div>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i>
+          <span>Найти</span>
+        </button>
+        <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="toggleFilters">
+          <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+          <span>Фильтры</span>
+          {% set active_filters_count = (1 if expiring_3d else 0) + (1 if empty_uuid_only else 0) + (1 if paid_only else 0) + (1 if new_24h_only else 0) + (1 if top_traffic else 0) + (1 if online_only else 0) + (1 if top_daily_consumption else 0) + (1 if client_telegram else 0) + (1 if client_site else 0) + (1 if filter_tag else 0) + (1 if no_lk_email else 0) + (1 if filter_limit_ip is not none else 0) %}
+          {% if active_filters_count %}
+          <span class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold"
+                style="background: var(--color-brand-600); color:#fff;">{{ active_filters_count }}</span>
+          {% endif %}
+        </button>
+        {% if request.args.get('search_query') or request.args.get('search_id') or active_filters_count %}
+        <a href="{{ url_for('admin.users_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm" title="Сбросить всё">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Filters panel #}
+    <div class="tw-card p-4 space-y-4 {% if not active_filters_count %}hidden{% endif %}" id="filtersPanel">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <div class="text-[10px] font-bold tw-text-subtle2 uppercase tracking-wider">Расширенные фильтры</div>
+        <p class="text-[11px] tw-text-muted2 m-0">Не все фильтры совместимы между собой</p>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        {%
+          set chip_filters = [
+            ('expiring_3d',           expiring_3d,           'clock',           'Истекает ≤ 3 дн.'),
+            ('empty_uuid_only',       empty_uuid_only,       'minus-circle',    'Пустой UUID'),
+            ('paid_only',             paid_only,             'credit-card',     'Успешная оплата'),
+            ('new_24h_only',          new_24h_only,          'calendar-plus',   'Новые за 24ч'),
+            ('top_traffic',           top_traffic,           'trending-up',     'Топ по трафику'),
+            ('online_only',           online_only,           'wifi',            'Только онлайн'),
+            ('top_daily_consumption', top_daily_consumption, 'activity',        'Топ за сутки'),
+            ('client_telegram',       client_telegram,       'send',            'Из Telegram'),
+            ('client_site',           client_site,           'globe',           'С сайта'),
+          ]
+        %}
+        {% if has_email_col %}
+        {% set chip_filters = chip_filters + [('no_lk_email', no_lk_email, 'mail', 'Без Email ЛК')] %}
+        {% endif %}
+        {% for name, val, icon, label in chip_filters %}
+        <label class="fchip">
+          <input type="checkbox" name="{{ name }}" value="1" {% if val %}checked{% endif %}>
+          <i data-lucide="{{ icon }}"></i>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 pt-3 border-t" style="border-color: rgb(var(--admin-border));">
+        <label class="flex items-center gap-2 text-[12px] tw-text-muted2">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+          <span>Лимит устройств:</span>
+          <select name="filter_limit_ip" class="tw-select tw-select-sm" style="min-width: 120px;">
+            <option value="">Все</option>
+            {% for lim in existing_limit_ips %}
+            <option value="{{ lim }}" {% if filter_limit_ip is not none and filter_limit_ip == lim %}selected{% endif %}>
+              {% if lim == 0 %}∞{% else %}{{ lim }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="flex items-center gap-2 text-[12px] tw-text-muted2">
+          <i data-lucide="tag" class="w-3.5 h-3.5"></i>
+          <span>Тег:</span>
+          <select name="filter_tag" class="tw-select tw-select-sm" style="min-width: 160px;">
+            <option value="">Все теги</option>
+            <option value="__no_tag__" {% if filter_tag == '__no_tag__' %}selected{% endif %}>no tag</option>
+            {% for tag in existing_tags %}
+            <option value="{{ tag }}" {% if filter_tag == tag %}selected{% endif %}>{{ tag }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <input type="hidden" name="search_query"
+               value="{{ request.args.get('search_query', request.args.get('search_id', '')) }}">
+
+        <div class="flex-1"></div>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="filter" class="w-3.5 h-3.5"></i>
+          <span>Применить</span>
+        </button>
+        <a href="{{ url_for('admin.users_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          <span>Сброс</span>
+        </a>
+      </div>
+    </div>
+  </form>
+
+  {# === Users (table on desktop, cards on mobile) === #}
+  <form id="usersForm" method="post" action="{{ url_for('admin.send_news') }}" class="space-y-4">
+
+    <div class="tw-card overflow-hidden">
+
+      {# Toolbar with select-all + counter #}
+      <div class="px-3 py-2.5 border-b flex items-center justify-between gap-2 flex-wrap"
+           style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+        <label class="flex items-center gap-2 cursor-pointer select-none text-[12px] tw-text-muted2">
+          <input type="checkbox" id="select_all" class="uc-check">
+          <span>Выбрать на странице</span>
+        </label>
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-[12px] tw-text-muted2">
+            <span id="selectedCount" class="font-semibold tw-text-base2">0</span> выбрано
+          </span>
+          {% if not current_user.is_moderator %}
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="clearSelectionBtn"
+                  title="Очистить выбор">
+            <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Сброс</span>
+          </button>
+          {% endif %}
+        </div>
+      </div>
+
+      {# === DESKTOP TABLE === #}
+      <div class="hidden lg:block overflow-x-auto">
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th style="width: 36px;"></th>
+              <th style="min-width: 120px;">Telegram&nbsp;ID</th>
+              <th style="min-width: 130px;">@username</th>
+              <th style="min-width: 150px;">Тег</th>
+              <th style="min-width: 80px;">С нами</th>
+              <th style="min-width: 95px;">Подписка</th>
+              <th style="min-width: 70px;">Лимит</th>
+              {% set _tsrc = traffic_source|default('xui') %}
+              <th style="min-width: 90px;" title="Источник: таблица users (синхронизация Remnawave)">Трафик</th>
+              <th style="min-width: 90px;" title="Источник: таблица users (синхронизация Remnawave)">За сутки</th>
+              <th style="min-width: 140px;" title="Онлайн, если был в сети менее 10 минут назад">
+                <span class="inline-flex items-center gap-1">
+                  Онлайн
+                  <i data-lucide="info" class="w-3 h-3 opacity-60" aria-hidden="true"></i>
+                </span>
+              </th>
+              <th style="min-width: 50px; text-align: center;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+            {% set days_left = ((user['subscription_end_date'] - now).days) if (user['subscription_end_date'] and not (user['subscription_end_date'] is string)) else None %}
+
+            {# Online из users.online_at #}
+            {% set total_online = user.get('online_count', 0) %}
+            {% set online_label = user.get('online_label', '—') %}
+            {% set online_is_live = user.get('online_is_live') %}
+            {% set any_exceeds  = user.get('online_exceeds_limit') %}
+            {% set any_has_data = user.get('online_has_data') %}
+            {% set all_locations = user.get('online_servers', [])|map(attribute='server_name')|list %}
+
+            {% set lim = user.get('limit_ip', 0) or 0 %}
+            {% set traffic_mb = user.get('total_traffic_mb', 0) or 0 %}
+            {% set daily_mb = user.get('daily_consumption_mb', 0) or 0 %}
+            {% set uname = user['username'] or 'N/A' %}
+
+            <tr class="user-row" data-user-id="{{ user['telegram_id'] }}">
+              <td>
+                <input type="checkbox" name="user_ids" value="{{ user['telegram_id'] }}"
+                       class="uc-check user-checkbox" data-user-id="{{ user['telegram_id'] }}">
+              </td>
+              <td>
+                <div class="flex flex-col gap-0.5">
+                  <code class="text-[12px]">{{ user['telegram_id'] }}</code>
+                  {% if user.get('registration_type') == 'site' or user['telegram_id'] >= 10000000000 %}
+                  <span class="inline-flex items-center gap-1 text-[10px] font-semibold" style="color:#818cf8;">
+                    <i data-lucide="globe" class="w-2.5 h-2.5"></i> Сайт
+                  </span>
+                  {% else %}
+                  <span class="inline-flex items-center gap-1 text-[10px] tw-text-subtle2 font-medium">
+                    <i data-lucide="send" class="w-2.5 h-2.5"></i> Telegram
+                  </span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <span class="uname-link" data-user-id="{{ user['telegram_id'] }}"
+                      title="Открыть профиль">
+                  {{ uname if uname|length <= 20 else uname[:20] ~ '…' }}
+                  <i data-lucide="external-link" class="w-3 h-3 opacity-60"></i>
+                </span>
+              </td>
+              <td>
+                <select class="tag-select user-tag-select" data-user-id="{{ user['telegram_id'] }}">
+                  <option value="" {% if not user.get('user_tag') %}selected{% endif %}>no tag</option>
+                  {% for opt in ['🕵️‍♂️ Подозрительный','🎁 Доп пробный','🙋 Друг','☎️ Роутер','👤 Партнёр','🪪 Ручное добавление','🗑️ Мусор','📈 Таргет','🧩VLESS ссылки'] %}
+                  <option value="{{ opt }}" {% if user.get('user_tag') == opt %}selected{% endif %}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                {% if user.get('days_with_us') is not none %}
+                  <span>{{ user['days_with_us'] }}&nbsp;д</span>
+                {% else %}
+                  <span class="tw-text-subtle2">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if days_left is not none %}
+                  {% if days_left >= 0 %}
+                    <span class="font-medium {% if days_left <= 3 %}text-[#f59e0b]{% endif %}">
+                      {{ days_left }}&nbsp;дн.
+                    </span>
+                  {% else %}
+                    <span class="font-medium" style="color:#ef4444;">Истекла</span>
+                  {% endif %}
+                {% else %}
+                  <span class="tw-text-subtle2">Нет</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if lim == 0 %}
+                  <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded text-[11px] font-bold"
+                        style="background: rgb(var(--admin-border) / .35); color: var(--admin-text-muted);">∞</span>
+                {% else %}
+                  <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded text-[11px] font-bold"
+                        style="background: rgba(99,102,241,.15); color: var(--color-brand-500);">{{ lim }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if traffic_mb > 0 %}
+                  {% if traffic_mb >= 1024 * 1024 %}
+                    <span title="{{ traffic_mb|round(2) }} МБ">{{ (traffic_mb / (1024*1024))|round(2) }}&nbsp;ТБ</span>
+                  {% elif traffic_mb >= 1024 %}
+                    <span title="{{ traffic_mb|round(2) }} МБ">{{ (traffic_mb / 1024)|round(2) }}&nbsp;ГБ</span>
+                  {% else %}
+                    <span>{{ traffic_mb|round(2) }}&nbsp;МБ</span>
+                  {% endif %}
+                {% else %}
+                  <span class="tw-text-subtle2">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if daily_mb > 0 %}
+                  {% if daily_mb >= 1024 * 1024 %}
+                    <span title="{{ daily_mb|round(2) }} МБ">{{ (daily_mb / (1024*1024))|round(2) }}&nbsp;ТБ</span>
+                  {% elif daily_mb >= 1024 %}
+                    <span title="{{ daily_mb|round(2) }} МБ">{{ (daily_mb / 1024)|round(2) }}&nbsp;ГБ</span>
+                  {% else %}
+                    <span>{{ daily_mb|round(2) }}&nbsp;МБ</span>
+                  {% endif %}
+                {% else %}
+                  <span class="tw-text-subtle2">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if (traffic_source|default('xui')) == 'remnawave' %}
+                  {% if not any_has_data %}
+                  <span class="tw-text-subtle2" title="Нет данных о последнем подключении">—</span>
+                  {% elif online_is_live %}
+                  <span class="online-dot is-online" title="Онлайн">
+                    <span class="dot"></span><span>Онлайн</span>
+                  </span>
+                  {% else %}
+                  <span class="text-[11px] leading-tight tw-text-muted2" title="{{ online_label }}">{{ online_label }}</span>
+                  {% endif %}
+                {% elif total_online > 0 %}
+                  {% if any_exceeds %}
+                  <span class="online-dot is-exceed"
+                        title="⚠ Превышен лимит ({{ lim }}). Источники: {{ all_locations|join(', ') if all_locations else '—' }}">
+                    <span class="dot"></span>
+                    <span>{{ total_online }}</span>
+                  </span>
+                  {% else %}
+                  <span class="online-dot is-online"
+                        title="Онлайн: {{ all_locations|join(', ') if all_locations else 'на серверах' }}">
+                    <span class="dot"></span>
+                    <span>{{ total_online }}</span>
+                  </span>
+                  {% endif %}
+                {% else %}
+                  <span class="online-dot is-offline"
+                        title="{% if any_has_data %}Офлайн{% else %}Нет данных{% endif %}">
+                    <span class="dot"></span>
+                    <span>{% if any_has_data %}offline{% else %}—{% endif %}</span>
+                  </span>
+                {% endif %}
+              </td>
+              <td style="text-align: center;">
+                <button type="button"
+                        class="tw-btn tw-btn-secondary tw-btn-sm"
+                        style="padding: 4px 8px; color:#ef4444;"
+                        title="Удалить клиента"
+                        onclick="deleteUser('{{ user.telegram_id }}', '{{ uname|e }}')">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="11" class="text-center py-8 tw-text-muted2">Клиенты не найдены.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {# === MOBILE CARDS === #}
+      <div class="lg:hidden p-3 space-y-3">
+        {% for user in users %}
+        {% set days_left = ((user['subscription_end_date'] - now).days) if (user['subscription_end_date'] and not (user['subscription_end_date'] is string)) else None %}
+        {% set total_online = user.get('online_count', 0) %}
+        {% set online_label = user.get('online_label', '—') %}
+        {% set online_is_live = user.get('online_is_live') %}
+        {% set any_exceeds  = user.get('online_exceeds_limit') %}
+        {% set any_has_data = user.get('online_has_data') %}
+        {% set all_locations = user.get('online_servers', [])|map(attribute='server_name')|list %}
+        {% set lim = user.get('limit_ip', 0) or 0 %}
+        {% set traffic_mb = user.get('total_traffic_mb', 0) or 0 %}
+        {% set daily_mb = user.get('daily_consumption_mb', 0) or 0 %}
+        {% set uname = user['username'] or 'N/A' %}
+
+        <div class="ucard user-row" data-user-id="{{ user['telegram_id'] }}">
+          {# Header: чекбокс + ID/источник/имя + онлайн + удалить #}
+          <div class="flex items-center justify-between gap-2 mb-2.5">
+            <div class="flex items-center gap-2 min-w-0 flex-1">
+              <input type="checkbox" name="user_ids" value="{{ user['telegram_id'] }}"
+                     class="uc-check user-checkbox shrink-0" data-user-id="{{ user['telegram_id'] }}">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <code class="text-[12px] font-mono shrink-0" style="color:var(--admin-text-base);">{{ user['telegram_id'] }}</code>
+                  {% if user.get('registration_type') == 'site' or user['telegram_id'] >= 10000000000 %}
+                  <span class="inline-flex items-center gap-0.5 text-[10px] font-semibold shrink-0"
+                        style="color:#818cf8; padding: 1px 6px; border-radius: 6px; background: rgba(129,140,248,.12);">
+                    <i data-lucide="globe" class="w-2.5 h-2.5"></i>Сайт
+                  </span>
+                  {% else %}
+                  <span class="inline-flex items-center gap-0.5 text-[10px] font-medium shrink-0"
+                        style="color: var(--admin-text-subtle); padding: 1px 6px; border-radius: 6px; background: var(--admin-bg-soft);">
+                    <i data-lucide="send" class="w-2.5 h-2.5"></i>TG
+                  </span>
+                  {% endif %}
+                </div>
+                <div class="text-[12.5px] mt-0.5 truncate" style="color:var(--admin-text-muted);"
+                     title="{{ uname }}">
+                  {{ uname if uname|length <= 24 else uname[:24] ~ '…' }}
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              {% if (traffic_source|default('xui')) == 'remnawave' %}
+                {% if not any_has_data %}
+                <span class="text-[10px] tw-text-subtle2">—</span>
+                {% elif online_is_live %}
+                <span class="online-dot is-online" title="Онлайн">
+                  <span class="dot"></span><span>on</span>
+                </span>
+                {% else %}
+                <span class="text-[10px] leading-tight tw-text-muted2 max-w-[110px] truncate" title="{{ online_label }}">{{ online_label }}</span>
+                {% endif %}
+              {% elif total_online > 0 %}
+                {% if any_exceeds %}
+                <span class="online-dot is-exceed" title="⚠ Превышен лимит ({{ lim }}). Источники: {{ all_locations|join(', ') if all_locations else '—' }}">
+                  <span class="dot"></span><span>{{ total_online }}</span>
+                </span>
+                {% else %}
+                <span class="online-dot is-online" title="Онлайн: {{ all_locations|join(', ') if all_locations else 'на серверах' }}">
+                  <span class="dot"></span><span>{{ total_online }}</span>
+                </span>
+                {% endif %}
+              {% else %}
+              <span class="online-dot is-offline" title="{% if any_has_data %}Офлайн{% else %}Нет данных{% endif %}">
+                <span class="dot"></span><span>off</span>
+              </span>
+              {% endif %}
+              <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm"
+                      style="color:#ef4444;"
+                      onclick="deleteUser('{{ user.telegram_id }}', '{{ uname|e }}')"
+                      title="Удалить">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+
+          {# Stats — «stat-card» сетка 4 столбца + «За сутки» во всю ширину #}
+          <div class="ustats">
+            <div class="ustat">
+              <div class="ustat-label"><i data-lucide="calendar-clock"></i>Подписка</div>
+              <div class="ustat-value">
+                {% if days_left is not none %}
+                  {% if days_left >= 0 %}
+                    <span {% if days_left <= 3 %}style="color:#f59e0b;"{% endif %}>{{ days_left }}&nbsp;дн.</span>
+                  {% else %}
+                    <span style="color:#ef4444;">Истекла</span>
+                  {% endif %}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+            <div class="ustat">
+              <div class="ustat-label"><i data-lucide="user-check"></i>С нами</div>
+              <div class="ustat-value">{% if user.get('days_with_us') is not none %}{{ user['days_with_us'] }}&nbsp;д{% else %}—{% endif %}</div>
+            </div>
+            <div class="ustat">
+              <div class="ustat-label"><i data-lucide="smartphone"></i>Лимит</div>
+              <div class="ustat-value">{% if lim == 0 %}∞{% else %}{{ lim }}{% endif %}</div>
+            </div>
+            <div class="ustat">
+              <div class="ustat-label"><i data-lucide="database"></i>Трафик</div>
+              <div class="ustat-value">
+                {% if traffic_mb > 0 %}
+                  {%- if traffic_mb >= 1024*1024 -%}{{ (traffic_mb / (1024*1024))|round(2) }} ТБ
+                  {%- elif traffic_mb >= 1024 -%}{{ (traffic_mb / 1024)|round(2) }} ГБ
+                  {%- else -%}{{ traffic_mb|round(2) }} МБ{%- endif -%}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+            <div class="ustat is-wide">
+              <div class="ustat-label"><i data-lucide="trending-up"></i>За сутки</div>
+              <div class="ustat-value">
+                {% if daily_mb > 0 %}
+                  {%- if daily_mb >= 1024*1024 -%}{{ (daily_mb / (1024*1024))|round(2) }} ТБ
+                  {%- elif daily_mb >= 1024 -%}{{ (daily_mb / 1024)|round(2) }} ГБ
+                  {%- else -%}{{ daily_mb|round(2) }} МБ{%- endif -%}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+          </div>
+
+          {# Actions: «Профиль» + компактный тег. Стиль кнопки как в /promotion/<id>. #}
+          <div class="uactions">
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm"
+                    onclick="window.openUserModal({{ user.telegram_id }}); return false;"
+                    title="Открыть карточку клиента">
+              <i data-lucide="user" class="w-3.5 h-3.5"></i>
+              <span>Профиль</span>
+            </button>
+            <select class="tag-select user-tag-select" data-user-id="{{ user['telegram_id'] }}"
+                    aria-label="Тег клиента">
+              <option value="" {% if not user.get('user_tag') %}selected{% endif %}>без тега</option>
+              {% for opt in ['🕵️‍♂️ Подозрительный','🎁 Доп пробный','🙋 Друг','☎️ Роутер','👤 Партнёр','🪪 Ручное добавление','🗑️ Мусор','📈 Таргет','🧩VLESS ссылки'] %}
+              <option value="{{ opt }}" {% if user.get('user_tag') == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-center py-8 tw-text-muted2">Клиенты не найдены.</div>
+        {% endfor %}
+      </div>
+
+    </div>
+
+    {# === Pagination === #}
+    {% if total_pages > 1 %}
+    {% set filters_qs = [] %}
+    {% if request.args.get('search_query') %}{% set _ = filters_qs.append('search_query=' ~ request.args.get('search_query')|urlencode) %}{% endif %}
+    {% if request.args.get('search_id') %}{% set _ = filters_qs.append('search_id=' ~ request.args.get('search_id')|urlencode) %}{% endif %}
+    {% if expiring_3d %}{% set _ = filters_qs.append('expiring_3d=1') %}{% endif %}
+    {% if empty_uuid_only %}{% set _ = filters_qs.append('empty_uuid_only=1') %}{% endif %}
+    {% if paid_only %}{% set _ = filters_qs.append('paid_only=1') %}{% endif %}
+    {% if new_24h_only %}{% set _ = filters_qs.append('new_24h_only=1') %}{% endif %}
+    {% if filter_tag %}{% set _ = filters_qs.append('filter_tag=' ~ filter_tag|urlencode) %}{% endif %}
+    {% if top_traffic %}{% set _ = filters_qs.append('top_traffic=1') %}{% endif %}
+    {% if online_only %}{% set _ = filters_qs.append('online_only=1') %}{% endif %}
+    {% if top_daily_consumption %}{% set _ = filters_qs.append('top_daily_consumption=1') %}{% endif %}
+    {% if client_telegram %}{% set _ = filters_qs.append('client_telegram=1') %}{% endif %}
+    {% if client_site %}{% set _ = filters_qs.append('client_site=1') %}{% endif %}
+    {% if no_lk_email %}{% set _ = filters_qs.append('no_lk_email=1') %}{% endif %}
+    {% if filter_limit_ip is not none %}{% set _ = filters_qs.append('filter_limit_ip=' ~ filter_limit_ip) %}{% endif %}
+    {% set base_qs = '&'.join(filters_qs) %}
+
+    <nav class="flex justify-center pt-1">
+      <div class="flex items-center gap-1 flex-wrap">
+        <a href="{{ url_for('admin.users_list', page=page-1) }}{% if base_qs %}&{{ base_qs }}{% endif %}"
+           class="pg-link {% if page == 1 %}is-disabled{% endif %}" aria-label="Предыдущая">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set ns = namespace(last_printed=0) %}
+        {% for p in range(1, total_pages + 1) %}
+          {% set is_first = (p == 1) %}
+          {% set is_last = (p == total_pages) %}
+          {% set in_window = (p >= page - 1 and p <= page + 1) %}
+          {% if is_first or is_last or in_window %}
+            {% if p > ns.last_printed + 1 %}
+              <span class="pg-link is-disabled">…</span>
+            {% endif %}
+            <a href="{{ url_for('admin.users_list', page=p) }}{% if base_qs %}&{{ base_qs }}{% endif %}"
+               class="pg-link {% if p == page %}is-active{% endif %}">{{ p }}</a>
+            {% set ns.last_printed = p %}
+          {% endif %}
+        {% endfor %}
+        <a href="{{ url_for('admin.users_list', page=page+1) }}{% if base_qs %}&{{ base_qs }}{% endif %}"
+           class="pg-link {% if page == total_pages %}is-disabled{% endif %}" aria-label="Следующая">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+    </nav>
+    {% endif %}
+
+    {# === News form (only for admins) === #}
+    {% if not current_user.is_moderator %}
+    <div class="tw-card">
+      <div class="px-4 py-3 border-b flex items-center gap-2"
+           style="border-color: rgb(var(--admin-border));">
+        <i data-lucide="megaphone" class="w-4 h-4" style="color:#10b981;"></i>
+        <h3 class="text-[13px] font-semibold tw-text-base2">Рассылка выбранным клиентам</h3>
+      </div>
+
+      <div class="p-4 space-y-4">
+        {# Quick-select buttons #}
+        <div>
+          <div class="text-[10px] font-bold tw-text-subtle2 uppercase tracking-wider mb-1.5">Быстрый выбор всех страниц</div>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" class="qchip" id="selectAllUsersBtn">
+              <i data-lucide="users" class="w-3 h-3"></i>
+              Все
+            </button>
+            <button type="button" class="qchip" id="selectActiveUsersBtn" style="border-color: rgba(16,185,129,.35); color:#10b981;">
+              <i data-lucide="check-circle" class="w-3 h-3"></i>
+              Активные
+            </button>
+            <button type="button" class="qchip" id="selectExpiredUsersBtn" style="border-color: rgba(245,158,11,.35); color:#f59e0b;">
+              <i data-lucide="hourglass" class="w-3 h-3"></i>
+              Истекшие
+            </button>
+            <button type="button" class="qchip" id="selectExpiredNoTrialUsersBtn" style="border-color: rgba(245,158,11,.35); color:#f59e0b;">
+              <i data-lucide="alert-octagon" class="w-3 h-3"></i>
+              Истекшие без триала
+            </button>
+          </div>
+        </div>
+
+        {# Template select #}
+        {% if news_templates and news_templates|length > 0 %}
+        <div class="min-w-0">
+          <label for="newsTemplateSelect" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Шаблон</label>
+          <select id="newsTemplateSelect" class="tw-select w-full max-w-full" style="min-width:0;">
+            <option value="">— Выберите шаблон —</option>
+            {% for tpl in news_templates %}
+            <option value="{{ tpl.body|e }}"
+                    data-btn-text="{{ (tpl.custom_btn_text or '')|e }}"
+                    data-btn-url="{{ (tpl.custom_btn_url or '')|e }}"
+                    data-media-kind="{{ (tpl.media_kind if tpl.media_kind is defined else '')|e }}"
+                    data-media-file-id="{{ (tpl.media_file_id if tpl.media_file_id is defined else '')|e }}"
+                    data-media-preview="{% if tpl.media_kind is defined and tpl.media_kind and tpl.media_local_path %}/{{ admin_secret_path }}/news_media/{{ tpl.media_local_path }}{% endif %}">{{ tpl.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        {# Text area + expand #}
+        <div>
+          <label for="newsTextArea" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Текст</label>
+          <div class="flex items-start gap-2">
+            <textarea name="news_text" id="newsTextArea" rows="3" required
+                      placeholder="Введите текст новости (поддерживается HTML)…"
+                      class="tw-input flex-1" style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical;"></textarea>
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="openNewsExpand"
+                    title="Расширенный редактор">
+              <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        {# Custom button #}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="customBtnText" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+              Кастомная кнопка <span class="text-[10px] font-normal tw-text-subtle2">(текст)</span>
+            </label>
+            <input type="text" id="customBtnText" name="custom_btn_text"
+                   placeholder="Например: Открыть сайт" class="tw-input">
+          </div>
+          <div>
+            <label for="customBtnUrl" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+              Ссылка <span class="text-[10px] font-normal tw-text-subtle2">(https://…)</span>
+            </label>
+            <input type="url" id="customBtnUrl" name="custom_btn_url"
+                   placeholder="https://example.com" class="tw-input">
+          </div>
+        </div>
+
+        {# Telegram-style toggle buttons #}
+        <div>
+          <div class="text-[10px] font-bold tw-text-subtle2 uppercase tracking-wider mb-1.5">Готовые кнопки</div>
+          <div class="flex flex-wrap gap-1.5" id="news-buttons-container">
+            <button type="button" class="tg-btn" data-checkbox="add_renew_btn" data-storage-key="send_news_add_renew_btn">
+              <span>{{ btn_renew_sub }}</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            <button type="button" class="tg-btn" data-checkbox="add_free_renew_btn" data-storage-key="send_news_add_free_renew_btn">
+              <span>{{ btn_free_renew }}</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            <button type="button" class="tg-btn" data-checkbox="add_referral_btn" data-storage-key="send_news_add_referral_btn">
+              <span>{{ btn_referral }}</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            <button type="button" class="tg-btn" data-checkbox="send_ins_video" data-storage-key="send_news_send_ins_video">
+              <span>{{ btn_video_instruction }}</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            {% if show_website_button %}
+            <button type="button" class="tg-btn" data-checkbox="add_website_btn" data-storage-key="send_news_add_website_btn">
+              <span>🌐 Личный кабинет</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            {% endif %}
+            <button type="button" class="tg-btn" data-checkbox="add_devices_btn" data-storage-key="send_news_add_devices_btn">
+              <span>📱 Мои устройства</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            {% if show_device_upgrade_button %}
+            <button type="button" class="tg-btn" data-checkbox="add_device_upgrade_btn" data-storage-key="send_news_add_device_upgrade_btn">
+              <span>{{ btn_device_upgrade }}</span>
+              <i data-lucide="check" class="check"></i>
+            </button>
+            {% endif %}
+          </div>
+          {# hidden form-bound inputs #}
+          <input type="hidden" id="add_renew_btn" name="add_renew_btn" value="0">
+          <input type="hidden" id="add_free_renew_btn" name="add_free_renew_btn" value="0">
+          <input type="hidden" id="add_referral_btn" name="add_referral_btn" value="0">
+          <input type="hidden" id="send_ins_video" name="send_ins_video" value="0">
+          <input type="hidden" id="add_website_btn" name="add_website_btn" value="0">
+          <input type="hidden" id="add_devices_btn" name="add_devices_btn" value="0">
+          <input type="hidden" id="add_device_upgrade_btn" name="add_device_upgrade_btn" value="0">
+        </div>
+
+        {# Submit #}
+        <div class="flex items-center justify-between gap-3 flex-wrap pt-3 border-t"
+             style="border-color: rgb(var(--admin-border));">
+          <div class="text-[12px] tw-text-muted2">
+            Будет отправлено: <span class="font-bold tw-text-base2" id="newsCount">0</span> чел.
+          </div>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            <span>Отправить новость</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+  </form>
+</div>
+
+{# === Servers JSON for tooltips === #}
+<script type="application/json" id="servers-json">{{ servers|tojson|safe }}</script>
+
+{# ========================== MODALS ========================== #}
+
+{# Create user modal #}
+<div class="tw-modal" id="createUserModal" data-close-on-backdrop>
+  <div class="tw-modal-box">
+    <div class="px-5 py-4 border-b flex items-center justify-between gap-3"
+         style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[15px] font-semibold tw-text-base2 flex items-center gap-2">
+        <i data-lucide="user-plus" class="w-4 h-4"></i> Создать клиента
+      </h3>
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-close>
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+      </button>
+    </div>
+    <form method="post" action="{{ url_for('admin.users_list') }}" id="createUserForm">
+      <input type="hidden" name="action" value="create_user_manual">
+      <div class="p-5 space-y-4">
+
+        <div>
+          <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Telegram ID <span style="color:#ef4444;">*</span>
+          </label>
+          <div class="flex items-stretch gap-2">
+            <input type="number" name="telegram_id" id="createTelegramId" required
+                   placeholder="Введите или сгенерируйте"
+                   class="tw-input flex-1">
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="genTgIdBtn"
+                    title="Сгенерировать ручной ID">
+              <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <div class="text-[11px] tw-text-subtle2 mt-1">
+            Для ручных клиентов жмите <i data-lucide="shuffle" class="w-3 h-3 inline"></i> — получится 11-значный ID,
+            не пересекающийся с реальными Telegram&nbsp;ID.
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Username <span class="text-[10px] font-normal tw-text-subtle2">(опционально)</span>
+          </label>
+          <input type="text" name="username" maxlength="20"
+                 placeholder="username" class="tw-input">
+        </div>
+
+        {% if has_email_col %}
+        <div>
+          <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Email ЛК <span class="text-[10px] font-normal tw-text-subtle2">(опционально)</span>
+          </label>
+          <input type="email" name="email" maxlength="254"
+                 placeholder="user@example.com" class="tw-input" autocomplete="off">
+          <div class="text-[11px] tw-text-subtle2 mt-1">
+            Для входа на сайт. Должен быть уникальным в базе.
+          </div>
+        </div>
+        {% endif %}
+
+        <div>
+          <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Дней подписки <span style="color:#ef4444;">*</span>
+          </label>
+          <input type="number" name="days_to_add" id="createDaysInput" min="1" max="9999" value="30" required
+                 class="tw-input">
+          <div class="text-[11px] tw-text-subtle2 mt-1" id="createExpiryPreview"></div>
+        </div>
+
+        <div>
+          <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Лимит устройств
+          </label>
+          <input type="number" name="limit_ip" value="0" min="0" max="20" class="tw-input">
+          <div class="text-[11px] tw-text-subtle2 mt-1">0&nbsp;= без лимита.</div>
+        </div>
+
+        <p class="text-[11px] tw-text-muted2 m-0 flex items-center gap-1.5">
+          <i data-lucide="remnawave" class="w-3.5 h-3.5 shrink-0"></i>
+          Подписка всегда создаётся в Remnawave.
+        </p>
+      </div>
+      <div class="px-5 py-4 border-t flex items-center justify-end gap-2"
+           style="border-color: rgb(var(--admin-border));">
+        <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-close>Отмена</button>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          <span>Создать</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# News expand modal — editor + Telegram preview #}
+<div class="tw-modal" id="newsTextModal" data-close-on-backdrop>
+  <div class="tw-modal-box xl">
+    <div class="px-5 py-3.5 border-b flex items-center justify-between gap-3"
+         style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[14px] font-semibold tw-text-base2 flex items-center gap-2">
+        <i data-lucide="pen-square" class="w-4 h-4"></i>
+        <span>Текст новости</span>
+      </h3>
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-close>
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+      </button>
+    </div>
+
+    <div class="p-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+      {# ─── EDITOR ─── #}
+      <div class="lg:col-span-3 space-y-3 min-w-0">
+
+        {# Toolbar — HTML formatting #}
+        <div class="flex flex-wrap gap-1.5">
+          {% raw %}
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="b" data-snippet="<b>{0}</b>"
+                  data-placeholder="жирный" title="Ctrl+B">
+            <i data-lucide="bold" class="nt-tag-ico"></i> <span style="font-weight:700;">B</span>
+          </button>
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="i" data-snippet="<i>{0}</i>"
+                  data-placeholder="курсив" title="Ctrl+I">
+            <i data-lucide="italic" class="nt-tag-ico"></i> <span style="font-style:italic;">I</span>
+          </button>
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="u" data-snippet="<u>{0}</u>"
+                  data-placeholder="подчёркнутый" title="Ctrl+U">
+            <i data-lucide="underline" class="nt-tag-ico"></i> <span style="text-decoration:underline;">U</span>
+          </button>
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="s" data-snippet="<s>{0}</s>"
+                  data-placeholder="зачёркнутый">
+            <i data-lucide="strikethrough" class="nt-tag-ico"></i> <span style="text-decoration:line-through;">S</span>
+          </button>
+          <span class="inline-block w-px h-6 self-center mx-1" style="background: rgb(var(--admin-border));"></span>
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="code" data-snippet="<code>{0}</code>"
+                  data-placeholder="код">
+            <i data-lucide="code" class="nt-tag-ico"></i> Код
+          </button>
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="blockquote"
+                  data-snippet="<blockquote>{0}</blockquote>" data-placeholder="цитата">
+            <i data-lucide="quote" class="nt-tag-ico"></i> Цитата
+          </button>
+          <span class="inline-block w-px h-6 self-center mx-1" style="background: rgb(var(--admin-border));"></span>
+          <button type="button" class="nt-tag-btn" id="ntInsertLink" title="Ссылка (Ctrl+K)">
+            <i data-lucide="link" class="nt-tag-ico"></i> Ссылка
+          </button>
+          <button type="button" class="nt-tag-btn nt-tag" data-tag="spoiler"
+                  data-snippet='<span class="tg-spoiler">{0}</span>' data-placeholder="спойлер">
+            <i data-lucide="eye-off" class="nt-tag-ico"></i> Спойлер
+          </button>
+          {% endraw %}
+        </div>
+
+        {# Textarea #}
+        <textarea id="newsTextAreaModal" rows="14"
+                  placeholder="Введите текст новости…"
+                  class="tw-input tw-scroll" style="height:auto; padding:10px; resize:vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;"></textarea>
+
+        {# Media uploader #}
+        <input type="hidden" id="newsMediaKind" name="media_kind" value="">
+        <input type="hidden" id="newsMediaFileId" name="media_file_id" value="">
+        <input type="hidden" id="newsMediaPreviewUrl" value="">
+        <label class="nt-drop" id="newsMediaDrop">
+          <input type="file" id="newsMediaFile" accept="image/*,video/*,.gif">
+          <i data-lucide="upload-cloud" class="ico"></i>
+          <div class="ttl">Перетащите фото/гиф/видео или нажмите</div>
+          <div class="hint">JPG/PNG/WEBP/GIF/MP4/MOV · до 10 МБ для фото, до 50 МБ для GIF/видео</div>
+        </label>
+        <div class="nt-progress" id="newsMediaProgress" style="display:none;"><span></span></div>
+        <div class="nt-media-card" id="newsMediaCard" style="display:none;" data-preview-url="">
+          <div class="nt-media-thumb" id="newsMediaThumb"></div>
+          <div class="nt-media-meta">
+            <div class="min-w-0 flex items-center gap-2">
+              <span class="tw-chip" id="newsMediaKindBadge"
+                    style="background: rgb(99 102 241 / .12); color: var(--color-brand-500);">—</span>
+              <span class="name" id="newsMediaName"></span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="info" id="newsMediaInfo"></span>
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="newsMediaReplace" title="Заменить">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="newsMediaRemove" title="Удалить">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="nt-media-warn" id="newsMediaCaptionWarn" style="display:none;">
+          <i data-lucide="alert-triangle" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
+          <span>Текст превышает <b>1024 символа</b> — лимит подписи Telegram. Сообщение уйдёт в <b>двух частях</b>: сначала медиа, затем текст с кнопками.</span>
+        </div>
+
+        <div class="flex items-center justify-between gap-2 text-[11px] tw-text-subtle2">
+          <span class="flex items-center gap-1">
+            <i data-lucide="info" class="w-3 h-3"></i>
+            Выделите текст и нажмите тег — он обернёт выделение
+          </span>
+          <span class="font-mono">
+            <span class="nt-counter" id="ntModalCounter">0</span>&nbsp;/&nbsp;4096
+          </span>
+        </div>
+      </div>
+
+      {# ─── PREVIEW ─── #}
+      <div class="lg:col-span-2 min-w-0">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-1.5 text-[12px] font-semibold tw-text-base2">
+            <i data-lucide="eye" class="w-3.5 h-3.5" style="color: var(--color-brand-500);"></i>
+            <span>Превью в Telegram</span>
+          </div>
+          <span class="text-[10.5px] tw-text-subtle2">обновляется автоматически</span>
+        </div>
+        <div class="tg-bubble-stage">
+          <div class="tg-attach" id="ntModalPreviewAttach" style="display:none;"></div>
+          <div class="tg-bubble" id="ntModalPreviewBubble">
+            <span style="opacity:.6;">Текст появится здесь…</span>
+            <span class="tg-bubble-time" id="ntModalPreviewTime">12:34</span>
+          </div>
+          <div class="tg-inline-keyboard" id="ntModalPreviewKbd"></div>
+        </div>
+        <div class="mt-2 text-[11px] tw-text-subtle2 flex items-start gap-1">
+          <i data-lucide="info" class="w-3 h-3 mt-0.5 flex-shrink-0"></i>
+          <span>Так увидят сообщение клиенты в Telegram. Кастомная кнопка добавится по тексту/ссылке из формы.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-5 py-3.5 border-t flex items-center justify-end gap-2"
+         style="border-color: rgb(var(--admin-border));">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-close>Закрыть</button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" onclick="saveNewsTextFromModal()">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+        <span>Сохранить</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+{# News sending status modal #}
+<div class="tw-modal" id="newsSendingModal">
+  <div class="tw-modal-box">
+    <div class="p-6 text-center">
+      <div class="inline-block w-12 h-12 rounded-full border-2 mb-4"
+           style="border-color: rgba(99,102,241,.25); border-top-color: var(--color-brand-500); animation: spin .9s linear infinite;"></div>
+      <h3 class="text-[15px] font-semibold tw-text-base2 mb-2">Отправка новости…</h3>
+      <p class="text-[13px] tw-text-muted2 mb-3">
+        Это может занять несколько минут.
+      </p>
+      <div class="tw-card p-3 text-left" style="border-left: 3px solid #f59e0b;">
+        <div class="flex items-start gap-2">
+          <i data-lucide="alert-triangle" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style="color:#f59e0b;"></i>
+          <div class="text-[12px] tw-text-muted2">
+            Не закрывайте и не обновляйте страницу до завершения отправки — это может привести к дубликатам.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Delete success modal #}
+<div class="tw-modal" id="deleteSuccessModal" data-close-on-backdrop>
+  <div class="tw-modal-box" style="max-width: 420px;">
+    <div class="p-6 text-center">
+      <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-3"
+           style="background: rgba(16,185,129,.15); color:#10b981;">
+        <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+      </div>
+      <h3 class="text-[15px] font-semibold tw-text-base2 mb-1">Готово</h3>
+      <p class="text-[13px] tw-text-muted2" id="deleteSuccessMessage">Клиент удалён.</p>
+    </div>
+    <div class="px-5 py-3 border-t flex justify-center" style="border-color: rgb(var(--admin-border));">
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" data-close>OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========================== USER LIST LOGIC ==========================
+(function () {
+    'use strict';
+
+    var STORAGE_KEY = 'selected_users';
+
+    // ── helpers ──
+    function $(id) { return document.getElementById(id); }
+    function getAllSelectedUsers() {
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) { return []; }
+    }
+    function saveAllSelectedUsers(ids) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+        updateCounts();
+    }
+    function addUserToSelection(uid) {
+        var ids = getAllSelectedUsers();
+        if (ids.indexOf(uid) === -1) { ids.push(uid); saveAllSelectedUsers(ids); }
+    }
+    function removeUserFromSelection(uid) {
+        var ids = getAllSelectedUsers();
+        var i = ids.indexOf(uid);
+        if (i > -1) { ids.splice(i, 1); saveAllSelectedUsers(ids); }
+    }
+    function clearAllSelections() {
+        document.querySelectorAll('.user-checkbox').forEach(function (cb) { cb.checked = false; });
+        document.querySelectorAll('.user-row').forEach(function (r) { r.classList.remove('row-selected', 'is-selected'); });
+        var sa = $('select_all'); if (sa) { sa.checked = false; sa.indeterminate = false; }
+        localStorage.removeItem(STORAGE_KEY);
+        updateCounts();
+    }
+
+    // ── restore selection from localStorage ──
+    function restoreSelection() {
+        var ids = getAllSelectedUsers();
+        document.querySelectorAll('.user-checkbox').forEach(function (cb) {
+            var on = ids.indexOf(cb.value) > -1;
+            cb.checked = on;
+            var row = cb.closest('.user-row');
+            if (row) row.classList.toggle(row.classList.contains('ucard') ? 'is-selected' : 'row-selected', on);
+        });
+        updateSelectAllState();
+        updateCounts();
+    }
+
+    function updateSelectAllState() {
+        var sa = $('select_all'); if (!sa) return;
+        var all = document.querySelectorAll('.user-checkbox');
+        var checked = document.querySelectorAll('.user-checkbox:checked');
+        if (checked.length === 0) { sa.checked = false; sa.indeterminate = false; }
+        else if (checked.length === all.length) { sa.checked = true; sa.indeterminate = false; }
+        else { sa.checked = false; sa.indeterminate = true; }
+    }
+
+    function updateCounts() {
+        var n = getAllSelectedUsers().length;
+        var sc = $('selectedCount'); if (sc) sc.textContent = n;
+        var nc = $('newsCount'); if (nc) nc.textContent = n;
+    }
+
+    // ── Select all on current page ──
+    function toggleSelectAllOnPage(on) {
+        var ids = getAllSelectedUsers();
+        document.querySelectorAll('.user-checkbox').forEach(function (cb) {
+            cb.checked = on;
+            var row = cb.closest('.user-row');
+            if (row) row.classList.toggle(row.classList.contains('ucard') ? 'is-selected' : 'row-selected', on);
+            var i = ids.indexOf(cb.value);
+            if (on && i === -1) ids.push(cb.value);
+            if (!on && i > -1) ids.splice(i, 1);
+        });
+        saveAllSelectedUsers(ids);
+    }
+
+    // ── Tag updater ──
+    function bindTagSelects() {
+        document.querySelectorAll('.user-tag-select').forEach(function (sel) {
+            sel.dataset.originalValue = sel.value;
+            sel.addEventListener('change', async function () {
+                var uid = this.dataset.userId;
+                var tag = this.value;
+                var orig = this.dataset.originalValue || '';
+                try {
+                    var url = '{{ url_for("admin.update_user_tag", telegram_id=0) }}'.replace('/0', '/' + uid);
+                    var r = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ tag: tag })
+                    });
+                    var d = await r.json();
+                    if (!r.ok || !d.success) throw new Error(d.error || 'Ошибка обновления');
+                    this.dataset.originalValue = tag;
+                    var prev = this.style.background;
+                    this.style.background = 'rgba(16,185,129,.18)';
+                    setTimeout(() => { this.style.background = prev; }, 500);
+                } catch (e) {
+                    alert('Не удалось обновить тег: ' + e.message);
+                    this.value = orig;
+                }
+            });
+        });
+    }
+
+    // ── Telegram-style toggles ──
+    function bindTgButtons() {
+        document.querySelectorAll('.tg-btn').forEach(function (btn) {
+            var cbId = btn.dataset.checkbox;
+            var storageKey = btn.dataset.storageKey;
+            var cb = $(cbId);
+            if (!cb) return;
+            var saved = localStorage.getItem(storageKey);
+            if (saved === '1') { cb.value = '1'; btn.classList.add('is-on'); }
+            btn.addEventListener('click', function () {
+                var on = !btn.classList.contains('is-on');
+                btn.classList.toggle('is-on', on);
+                cb.value = on ? '1' : '0';
+                localStorage.setItem(storageKey, on ? '1' : '0');
+            });
+        });
+    }
+
+    // ── News template select ──
+    function bindNewsTemplate() {
+        var sel = $('newsTemplateSelect');
+        var ta = $('newsTextArea');
+        var taModal = $('newsTextAreaModal');
+        if (!sel || !ta) return;
+        sel.addEventListener('change', function () {
+            var opt = this.options[this.selectedIndex];
+            var body = this.value || '';
+            var btnText = opt ? (opt.getAttribute('data-btn-text') || '') : '';
+            var btnUrl = opt ? (opt.getAttribute('data-btn-url') || '') : '';
+            var mKind = opt ? (opt.getAttribute('data-media-kind') || '') : '';
+            var mFid  = opt ? (opt.getAttribute('data-media-file-id') || '') : '';
+            var mPrev = opt ? (opt.getAttribute('data-media-preview') || '') : '';
+            if (body) {
+                ta.value = body;
+                if (taModal) taModal.value = body;
+            }
+            if ($('customBtnText')) $('customBtnText').value = btnText;
+            if ($('customBtnUrl')) $('customBtnUrl').value = btnUrl;
+            // Подхватываем медиа из шаблона (если есть API из bindNewsExpand)
+            if (window.__newsMedia && typeof window.__newsMedia.set === 'function') {
+                if (mKind && mFid) {
+                    window.__newsMedia.set(mKind, mFid, mPrev, { original_name: '(из шаблона)' });
+                } else {
+                    window.__newsMedia.set('', '', '', null);
+                }
+            }
+            // Обновим счётчики/превью если модалка открыта
+            try {
+                if (typeof window.__newsExpandSync === 'function') window.__newsExpandSync();
+            } catch (_) {}
+        });
+    }
+
+    // ── Quick-select via API ──
+    function bindQuickSelect() {
+        var pairs = [
+            ['selectAllUsersBtn', '{{ url_for("api.api_all_user_ids") }}'],
+            ['selectExpiredUsersBtn', '{{ url_for("api.api_expired_user_ids") }}'],
+            ['selectExpiredNoTrialUsersBtn', '{{ url_for("api.api_expired_no_trial_user_ids") }}'],
+            ['selectActiveUsersBtn', '{{ url_for("api.api_active_user_ids") }}'],
+        ];
+        pairs.forEach(function (p) {
+            var btn = $(p[0]); if (!btn) return;
+            btn.addEventListener('click', function () {
+                btn.disabled = true;
+                fetch(p[1])
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d.user_ids) {
+                            saveAllSelectedUsers(d.user_ids.map(String));
+                            restoreSelection();
+                        }
+                    })
+                    .catch(function () {})
+                    .finally(function () { btn.disabled = false; });
+            });
+        });
+    }
+
+    // ── Modal helpers (use .is-open like base.html) ──
+    window.openModal = function (id) {
+        var m = $(id); if (!m) return;
+        m.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+    };
+    window.closeModal = function (id) {
+        var m = $(id); if (!m) return;
+        m.classList.remove('is-open');
+        if (!document.querySelector('.tw-modal.is-open')) document.body.style.overflow = '';
+    };
+    function bindModals() {
+        document.querySelectorAll('.tw-modal').forEach(function (m) {
+            m.querySelectorAll('[data-close]').forEach(function (b) {
+                b.addEventListener('click', function () { window.closeModal(m.id); });
+            });
+            if (m.dataset.closeOnBackdrop !== undefined) {
+                m.addEventListener('click', function (e) {
+                    if (e.target === m) window.closeModal(m.id);
+                });
+            }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.tw-modal.is-open').forEach(function (m) {
+                    if (m.id !== 'newsSendingModal') window.closeModal(m.id);
+                });
+            }
+        });
+    }
+
+    // ── Filters panel toggle ──
+    function bindFiltersToggle() {
+        var btn = $('toggleFilters');
+        var panel = $('filtersPanel');
+        if (!btn || !panel) return;
+        btn.addEventListener('click', function () {
+            panel.classList.toggle('hidden');
+        });
+    }
+
+    // ── Create-user modal ──
+    function bindCreateUser() {
+        var open = $('openCreateUser');
+        if (open) open.addEventListener('click', function () { window.openModal('createUserModal'); });
+
+        var gen = $('genTgIdBtn');
+        if (gen) gen.addEventListener('click', function () {
+            var min = 80000000000, max = 89999999999;
+            var id = Math.floor(Math.random() * (max - min + 1)) + min;
+            $('createTelegramId').value = id;
+        });
+
+        var d = $('createDaysInput'), p = $('createExpiryPreview');
+        if (d && p) {
+            var upd = function () {
+                var n = parseInt(d.value, 10);
+                if (!isNaN(n) && n > 0) {
+                    var dt = new Date(); dt.setDate(dt.getDate() + n);
+                    p.textContent = 'Истечёт: ' + dt.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+                } else p.textContent = '';
+            };
+            d.addEventListener('input', upd); upd();
+        }
+    }
+
+    // ── News expand modal: editor + Telegram preview ──
+    function bindNewsExpand() {
+        var open = $('openNewsExpand');
+        var tam = $('newsTextAreaModal');
+        var ta = $('newsTextArea');
+        var bubble = $('ntModalPreviewBubble');
+        var kbd = $('ntModalPreviewKbd');
+        var attach = $('ntModalPreviewAttach');
+        var counter = $('ntModalCounter');
+        var TG_LIMIT = 4096;
+        var TG_CAPTION_LIMIT = 1024;
+        var ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','S','STRIKE','DEL',
+                                    'CODE','PRE','BLOCKQUOTE','A','SPAN','BR','TG-SPOILER']);
+
+        // ─── Media uploader refs ───
+        var UPLOAD_URL = '{{ url_for("admin.news_upload_media") }}';
+        var mediaKindEl = $('newsMediaKind');
+        var mediaFileIdEl = $('newsMediaFileId');
+        var mediaPreviewUrlEl = $('newsMediaPreviewUrl');
+        var mediaDrop = $('newsMediaDrop');
+        var mediaInput = $('newsMediaFile');
+        var mediaCard = $('newsMediaCard');
+        var mediaThumb = $('newsMediaThumb');
+        var mediaKindBadge = $('newsMediaKindBadge');
+        var mediaName = $('newsMediaName');
+        var mediaInfo = $('newsMediaInfo');
+        var mediaReplace = $('newsMediaReplace');
+        var mediaRemove = $('newsMediaRemove');
+        var mediaWarn = $('newsMediaCaptionWarn');
+        var mediaProgress = $('newsMediaProgress');
+        var mediaProgressBar = mediaProgress ? mediaProgress.querySelector('span') : null;
+
+        function fmtBytes(n) {
+            if (!n && n !== 0) return '';
+            if (n >= 1024*1024) return (n/(1024*1024)).toFixed(2) + ' МБ';
+            if (n >= 1024) return (n/1024).toFixed(0) + ' КБ';
+            return n + ' Б';
+        }
+        function showProgress(p) {
+            if (!mediaProgress || !mediaProgressBar) return;
+            if (p == null) { mediaProgress.style.display = 'none'; mediaProgressBar.style.width = '0'; return; }
+            mediaProgress.style.display = '';
+            mediaProgressBar.style.width = Math.max(0, Math.min(100, p)) + '%';
+        }
+        function setMedia(kind, fileId, previewUrl, info) {
+            if (mediaKindEl) mediaKindEl.value = kind || '';
+            if (mediaFileIdEl) mediaFileIdEl.value = fileId || '';
+            if (mediaPreviewUrlEl) mediaPreviewUrlEl.value = previewUrl || '';
+            if (mediaCard) mediaCard.dataset.previewUrl = previewUrl || '';
+            if (!kind || !fileId) {
+                if (mediaCard) mediaCard.style.display = 'none';
+                if (mediaDrop) mediaDrop.style.display = '';
+                if (mediaThumb) mediaThumb.innerHTML = '';
+                renderPreview();
+                return;
+            }
+            if (mediaThumb) {
+                mediaThumb.innerHTML = '';
+                if (previewUrl) {
+                    if (kind === 'video') {
+                        var v = document.createElement('video');
+                        v.src = previewUrl; v.controls = true; v.preload = 'metadata';
+                        mediaThumb.appendChild(v);
+                    } else {
+                        var img = document.createElement('img');
+                        img.src = previewUrl; img.alt = 'preview';
+                        mediaThumb.appendChild(img);
+                    }
+                }
+            }
+            var labels = { photo: 'Фото', animation: 'GIF', video: 'Видео' };
+            if (mediaKindBadge) mediaKindBadge.textContent = labels[kind] || kind;
+            if (mediaName) mediaName.textContent = (info && info.original_name) ? info.original_name : '';
+            if (mediaInfo) {
+                var parts = [];
+                if (info && info.size) parts.push(fmtBytes(info.size));
+                if (info && info.width && info.height) parts.push(info.width + '×' + info.height);
+                if (info && info.duration) parts.push(Math.round(info.duration) + ' сек');
+                mediaInfo.textContent = parts.join(' · ');
+            }
+            if (mediaCard) mediaCard.style.display = '';
+            if (mediaDrop) mediaDrop.style.display = 'none';
+            if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+            renderPreview();
+        }
+        async function uploadFile(file) {
+            if (!file) return;
+            showProgress(5);
+            var fd = new FormData();
+            fd.append('file', file);
+            try {
+                var result = await new Promise(function (resolve, reject) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('POST', UPLOAD_URL);
+                    xhr.upload.addEventListener('progress', function (e) {
+                        if (e.lengthComputable) showProgress(5 + Math.round(e.loaded / e.total * 90));
+                    });
+                    xhr.onload = function () {
+                        showProgress(99);
+                        try {
+                            var j = JSON.parse(xhr.responseText || '{}');
+                            if (xhr.status >= 200 && xhr.status < 300 && j.success) resolve(j);
+                            else reject(j.error || ('HTTP ' + xhr.status));
+                        } catch (e) { reject('Bad JSON: ' + e); }
+                    };
+                    xhr.onerror = function () { reject('Сеть недоступна'); };
+                    xhr.send(fd);
+                });
+                showProgress(100);
+                setTimeout(function () { showProgress(null); }, 400);
+                var info = {
+                    original_name: result.original_name || file.name,
+                    size: result.size, width: result.width,
+                    height: result.height, duration: result.duration
+                };
+                setMedia(result.kind, result.file_id, result.preview_url, info);
+            } catch (err) {
+                showProgress(null);
+                alert('Не удалось загрузить файл:\n' + (err && err.message ? err.message : err));
+            }
+        }
+        if (mediaDrop && mediaInput) {
+            mediaInput.addEventListener('change', function () {
+                if (mediaInput.files && mediaInput.files[0]) uploadFile(mediaInput.files[0]);
+            });
+            ['dragenter', 'dragover'].forEach(function (ev) {
+                mediaDrop.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); mediaDrop.classList.add('drag-over'); });
+            });
+            ['dragleave', 'drop'].forEach(function (ev) {
+                mediaDrop.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); mediaDrop.classList.remove('drag-over'); });
+            });
+            mediaDrop.addEventListener('drop', function (e) {
+                var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (f) uploadFile(f);
+            });
+        }
+        if (mediaReplace) mediaReplace.addEventListener('click', function () { if (mediaInput) mediaInput.click(); });
+        if (mediaRemove)  mediaRemove.addEventListener('click', function () { setMedia('', '', '', null); });
+
+        // Экспорт API: позволяет другим частям (например, выбору шаблона) подставить media
+        window.__newsMedia = {
+            set: setMedia,
+            get: function () {
+                return {
+                    kind: mediaKindEl ? mediaKindEl.value : '',
+                    file_id: mediaFileIdEl ? mediaFileIdEl.value : '',
+                    preview_url: mediaPreviewUrlEl ? mediaPreviewUrlEl.value : ''
+                };
+            }
+        };
+
+        if (!open || !tam || !ta) return;
+
+        // ─── Sanitize HTML for preview ───
+        function sanitizeForPreview(html) {
+            var tpl = document.createElement('template');
+            tpl.innerHTML = String(html || '');
+            var walk = function (node) {
+                var kids = Array.from(node.children);
+                for (var i = 0; i < kids.length; i++) {
+                    var el = kids[i];
+                    if (!ALLOWED_TAGS.has(el.tagName)) {
+                        el.replaceWith(document.createTextNode(el.textContent || ''));
+                        continue;
+                    }
+                    Array.from(el.attributes).forEach(function (attr) {
+                        var allowed =
+                            (el.tagName === 'A' && (attr.name === 'href' || attr.name === 'target' || attr.name === 'rel')) ||
+                            (el.tagName === 'SPAN' && attr.name === 'class' && /\btg-spoiler\b/.test(attr.value));
+                        if (!allowed) el.removeAttribute(attr.name);
+                    });
+                    if (el.tagName === 'A') {
+                        el.setAttribute('target', '_blank');
+                        el.setAttribute('rel', 'noopener noreferrer');
+                        var href = el.getAttribute('href') || '';
+                        if (!/^https?:\/\//i.test(href)) el.removeAttribute('href');
+                    }
+                    walk(el);
+                }
+            };
+            walk(tpl.content);
+            return tpl.innerHTML;
+        }
+
+        // ─── Render preview ───
+        function renderPreview() {
+            if (!bubble) return;
+            var text = tam.value || '';
+            // ── Media preview над bubble ──
+            if (attach) {
+                var mKind = mediaKindEl ? mediaKindEl.value : '';
+                var mFid  = mediaFileIdEl ? mediaFileIdEl.value : '';
+                var mUrl  = (mediaCard && mediaCard.dataset.previewUrl) ? mediaCard.dataset.previewUrl : '';
+                attach.innerHTML = '';
+                if (mKind && mFid) {
+                    if (mKind === 'video') {
+                        var w = document.createElement('div');
+                        w.className = 'tg-attach-video-wrap';
+                        var v = document.createElement('video');
+                        v.src = mUrl; v.muted = true; v.preload = 'metadata';
+                        w.appendChild(v);
+                        attach.appendChild(w);
+                    } else if (mUrl) {
+                        var im = document.createElement('img');
+                        im.src = mUrl; im.alt = '';
+                        attach.appendChild(im);
+                    } else {
+                        var ph = document.createElement('div');
+                        ph.style.cssText = 'padding:20px;color:#9ca3af;font-size:12px;text-align:center;';
+                        ph.textContent = (mKind === 'video' ? '🎞 Видео' : (mKind === 'animation' ? '🎬 GIF' : '🖼 Фото'));
+                        attach.appendChild(ph);
+                    }
+                    attach.style.display = '';
+                } else {
+                    attach.style.display = 'none';
+                }
+            }
+            // ── Caption-warning под медиа ──
+            if (mediaWarn) {
+                var hasMedia = !!((mediaKindEl && mediaKindEl.value) && (mediaFileIdEl && mediaFileIdEl.value));
+                mediaWarn.style.display = (hasMedia && text.length > TG_CAPTION_LIMIT) ? '' : 'none';
+            }
+            if (!text.trim()) {
+                bubble.innerHTML = '<span style="opacity:.6;">Текст появится здесь…</span>';
+            } else {
+                bubble.innerHTML = sanitizeForPreview(text);
+            }
+            // time in bottom-right corner
+            var d = new Date();
+            var t = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'tg-bubble-time';
+            timeSpan.textContent = t;
+            bubble.appendChild(timeSpan);
+            // Custom button preview
+            if (kbd) {
+                kbd.innerHTML = '';
+                var btnTxt = ($('customBtnText') ? $('customBtnText').value : '').trim();
+                var btnUrl = ($('customBtnUrl') ? $('customBtnUrl').value : '').trim();
+                if (btnTxt && btnUrl && /^https?:\/\//i.test(btnUrl)) {
+                    var a = document.createElement('a');
+                    a.href = btnUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+                    a.textContent = btnTxt;
+                    kbd.appendChild(a);
+                } else if (btnTxt || btnUrl) {
+                    var fake = document.createElement('div');
+                    fake.className = 'tg-fake-btn';
+                    fake.style.opacity = '.6';
+                    fake.textContent = btnTxt || '⚠ заполните URL';
+                    kbd.appendChild(fake);
+                }
+                // Pre-built telegram-like buttons (renew/devices/etc.)
+                document.querySelectorAll('.tg-btn.is-on').forEach(function (b) {
+                    var label = b.querySelector('span') ? b.querySelector('span').textContent.trim() : '';
+                    if (!label) return;
+                    var fb = document.createElement('div');
+                    fb.className = 'tg-fake-btn';
+                    fb.textContent = label;
+                    kbd.appendChild(fb);
+                });
+            }
+            if (counter) {
+                var len = text.length;
+                counter.textContent = len;
+                counter.dataset.state = len > TG_LIMIT ? 'over' : (len > TG_LIMIT * 0.9 ? 'warn' : '');
+            }
+        }
+
+        // ─── Wrap selection in tag ───
+        function wrap(snippet, placeholder) {
+            var start = tam.selectionStart;
+            var end = tam.selectionEnd;
+            var sel = tam.value.substring(start, end);
+            var inner = sel || (placeholder || '');
+            var inserted = snippet.replace('{0}', inner);
+            tam.value = tam.value.substring(0, start) + inserted + tam.value.substring(end);
+            var innerStart = start + inserted.indexOf(inner);
+            tam.setSelectionRange(innerStart, innerStart + inner.length);
+            tam.focus();
+            // sync to main + preview
+            ta.value = tam.value;
+            renderPreview();
+        }
+
+        // ─── Open modal ───
+        open.addEventListener('click', function () {
+            tam.value = ta.value;
+            window.openModal('newsTextModal');
+            if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+            setTimeout(function () { tam.focus(); renderPreview(); }, 50);
+        });
+
+        // ─── Sync editor → main + preview ───
+        tam.addEventListener('input', function () {
+            ta.value = tam.value;
+            renderPreview();
+        });
+        // Внешний триггер пересинхронизации (например, после выбора шаблона)
+        window.__newsExpandSync = function () {
+            try { tam.value = ta.value; } catch (_) {}
+            renderPreview();
+        };
+
+        // ─── Custom button & telegram-style toggles → preview ───
+        ['customBtnText', 'customBtnUrl'].forEach(function (id) {
+            var el = $(id);
+            if (el) el.addEventListener('input', renderPreview);
+        });
+        document.querySelectorAll('.tg-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () { setTimeout(renderPreview, 5); });
+        });
+
+        // ─── Toolbar bindings ───
+        document.querySelectorAll('#newsTextModal .nt-tag').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var snippet = btn.dataset.snippet || '';
+                var placeholder = btn.dataset.placeholder || '';
+                wrap(snippet, placeholder);
+            });
+        });
+
+        var insertLinkBtn = $('ntInsertLink');
+        if (insertLinkBtn) insertLinkBtn.addEventListener('click', function () {
+            var start = tam.selectionStart, end = tam.selectionEnd;
+            var sel = tam.value.substring(start, end);
+            var url = prompt('Введите ссылку (https://…):', 'https://');
+            if (!url) return;
+            var text = sel || prompt('Текст ссылки:', 'ссылка') || 'ссылка';
+            var html = '<a href="' + url + '">' + text + '</a>';
+            tam.value = tam.value.substring(0, start) + html + tam.value.substring(end);
+            var innerStart = start + html.indexOf(text);
+            tam.setSelectionRange(innerStart, innerStart + text.length);
+            tam.focus();
+            ta.value = tam.value;
+            renderPreview();
+        });
+
+        // ─── Hotkeys ───
+        tam.addEventListener('keydown', function (e) {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            var k = e.key.toLowerCase();
+            if (k === 'b') { e.preventDefault(); wrap('<b>{0}</b>', 'жирный'); }
+            else if (k === 'i') { e.preventDefault(); wrap('<i>{0}</i>', 'курсив'); }
+            else if (k === 'u') { e.preventDefault(); wrap('<u>{0}</u>', 'подчёркнутый'); }
+            else if (k === 'k' && insertLinkBtn) { e.preventDefault(); insertLinkBtn.click(); }
+        });
+
+        // ─── Save and close ───
+        window.saveNewsTextFromModal = function () {
+            ta.value = tam.value;
+            window.closeModal('newsTextModal');
+        };
+    }
+
+    // ── Send news AJAX ──
+    function bindNewsSubmit() {
+        var form = $('usersForm'); if (!form) return;
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var ids = getAllSelectedUsers();
+            if (ids.length === 0) { alert('Выберите хотя бы одного клиента!'); return; }
+            if (!confirm('Отправить новость ' + ids.length + ' выбранным клиентам?')) return;
+
+            window.openModal('newsSendingModal');
+            var submitBtn = form.querySelector('button[type="submit"]');
+            var origText = submitBtn ? submitBtn.innerHTML : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i data-lucide="hourglass" class="w-3.5 h-3.5"></i><span>Отправка…</span>';
+                if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+            }
+
+            var fd = new FormData(form);
+            var payload = {
+                user_ids: ids,
+                news_text: fd.get('news_text') || '',
+                add_renew_btn: fd.get('add_renew_btn') === '1',
+                add_free_renew_btn: fd.get('add_free_renew_btn') === '1',
+                add_referral_btn: fd.get('add_referral_btn') === '1',
+                send_ins_video: fd.get('send_ins_video') === '1',
+                add_website_btn: fd.get('add_website_btn') === '1',
+                add_devices_btn: fd.get('add_devices_btn') === '1',
+                add_device_upgrade_btn: fd.get('add_device_upgrade_btn') === '1',
+                custom_btn_text: fd.get('custom_btn_text') || '',
+                custom_btn_url: fd.get('custom_btn_url') || ''
+            };
+            // Media-аттач (если выбран)
+            var _mKindEl = $('newsMediaKind');
+            var _mFidEl  = $('newsMediaFileId');
+            var _mKind = _mKindEl ? _mKindEl.value : '';
+            var _mFid  = _mFidEl ? _mFidEl.value : '';
+            if (_mKind && _mFid) {
+                payload.media = { kind: _mKind, file_id: _mFid };
+            }
+
+            try {
+                var r = await fetch('{{ url_for("admin.send_news") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify(payload)
+                });
+                var ct = (r.headers.get('Content-Type') || '');
+                if (!ct.includes('application/json')) throw new Error('Сервер вернул не-JSON ответ');
+                var d = await r.json();
+                if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+                if (d.success) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    window.location.href = '{{ url_for("admin.users_list") }}';
+                } else {
+                    throw new Error(d.error || 'Ошибка');
+                }
+            } catch (err) {
+                alert('Ошибка при отправке новости: ' + err.message);
+                window.closeModal('newsSendingModal');
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = origText; }
+            }
+        });
+    }
+
+    // ── Init ──
+    document.addEventListener('DOMContentLoaded', function () {
+        // hide loading overlay
+        var lo = $('loadingOverlay');
+        if (lo) {
+            setTimeout(function () {
+                lo.classList.add('hide');
+                setTimeout(function () { lo.remove(); }, 280);
+            }, 50);
+        }
+
+        // checkbox events
+        document.querySelectorAll('.user-checkbox').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                var uid = this.value;
+                if (this.checked) addUserToSelection(uid);
+                else removeUserFromSelection(uid);
+                var row = this.closest('.user-row');
+                if (row) row.classList.toggle(row.classList.contains('ucard') ? 'is-selected' : 'row-selected', this.checked);
+                updateSelectAllState();
+            });
+        });
+
+        var sa = $('select_all');
+        if (sa) sa.addEventListener('change', function () { toggleSelectAllOnPage(this.checked); });
+
+        var clr = $('clearSelectionBtn');
+        if (clr) clr.addEventListener('click', clearAllSelections);
+
+        bindTagSelects();
+        bindTgButtons();
+        bindNewsTemplate();
+        bindQuickSelect();
+        bindModals();
+        bindFiltersToggle();
+        bindCreateUser();
+        bindNewsExpand();
+        bindNewsSubmit();
+        restoreSelection();
+
+        // Click on @username opens user modal (defined in base.html)
+        document.addEventListener('click', function (e) {
+            var link = e.target.closest('.uname-link');
+            if (!link) return;
+            e.preventDefault();
+            var uid = link.getAttribute('data-user-id');
+            if (uid && typeof window.openUserModal === 'function') {
+                window.openUserModal(parseInt(uid));
+                document.querySelectorAll('.user-row').forEach(function (r) {
+                    r.classList.remove('row-selected', 'is-selected');
+                });
+                var row = link.closest('.user-row');
+                if (row) row.classList.add(row.classList.contains('ucard') ? 'is-selected' : 'row-selected');
+            }
+        });
+    });
+
+    // Re-render lucide icons after dynamic inserts
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+})();
+
+// ========================== INDIVIDUAL DELETE ==========================
+async function deleteUser(telegramId, username) {
+    var info = (username && username !== 'N/A') ? (telegramId + ' (@' + username + ')') : telegramId;
+    if (!confirm('Удалить клиента ' + info + '?\n\nДействие необратимо.')) return;
+    try {
+        var url = '{{ url_for("admin.delete_user", telegram_id=0) }}'.replace('/0', '/' + telegramId);
+        var r = await fetch(url, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        });
+        var ct = (r.headers.get('Content-Type') || '');
+        var d = ct.includes('application/json') ? await r.json() : {};
+        if (!r.ok || !d.ok) {
+            alert('Ошибка удаления' + (d.error ? ': ' + d.error : ''));
+            return;
+        }
+        // remove row(s) from DOM
+        document.querySelectorAll('.user-row[data-user-id="' + telegramId + '"]').forEach(function (el) { el.remove(); });
+
+        var msg = (d && d.message) || ('Клиент ' + info + ' удалён.');
+        var msgEl = document.getElementById('deleteSuccessMessage');
+        if (msgEl) msgEl.textContent = msg;
+        window.openModal('deleteSuccessModal');
+    } catch (e) {
+        alert('Ошибка сети при удалении.');
+    }
+}
+</script>
+{% endblock %}

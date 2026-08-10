@@ -1,0 +1,103 @@
+{# ============================================================
+   Макросы рендера платёжного метода (бренд-иконка + текст).
+   Используется на:
+     • payments.html       — десктоп-таблица и мобильные карточки
+     • user_details / users-modal — карточки платежей в модалке клиента
+     • tariffs_list / tariffs_methods — большие карточки тарифов
+     • analytics.html      — разбивка по методам
+   ------------------------------------------------------------
+   Источники иконок:
+     • Брендовые SVG из static/play/  (yookassa.svg, stars.svg, …)
+     • Lucide-fallback для прочих/неизвестных методов
+   ------------------------------------------------------------
+   Использование:
+     {% from "_partials/payment_method.html" import method_chip, method_icon_box, method_meta %}
+
+     {{ method_chip(p.payment_method_normalized, p.payment_method) }}
+     {{ method_icon_box('cryptobot', size='lg') }}
+
+   Параметры method_chip:
+     slug   — нормализованный ключ (yookassa, tgstar, cryptobot, yoomoney, platega, wata, …)
+     label  — отображаемое имя (если не задано — автоопределение)
+     size   — 'sm' | 'md' (по умолчанию 'md')
+   ============================================================ #}
+
+{# ----- ① Соответствие slug → (label, lucide_icon, hex_color, brand_svg) ----- #}
+{% set _METHOD_META = {
+  'yookassa':  ('YooKassa',       'credit-card', '#3b82f6', 'yookassa'),
+  'tgstar':    ('Telegram Stars', 'star',        '#a855f7', 'stars'),
+  'tg-star':   ('Telegram Stars', 'star',        '#a855f7', 'stars'),
+  'stars':     ('Telegram Stars', 'star',        '#a855f7', 'stars'),
+  'cryptobot': ('CryptoBot',      'bitcoin',     '#f59e0b', 'cryptobot'),
+  'crypto-bot':('CryptoBot',      'bitcoin',     '#f59e0b', 'cryptobot'),
+  'yoomoney':  ('YooMoney',       'wallet',      '#eab308', 'yoomoney'),
+  'platega':   ('Platega',        'qr-code',     '#10b981', 'platega'),
+  'wata':      ('Wata',           'credit-card', '#6366f1', 'wata'),
+} %}
+
+{# ----- ② Резолвер метаданных по slug ----- #}
+{% macro method_meta(slug) %}
+  {%- set s = (slug or '')|lower|replace('_','-')|replace(' ','-') -%}
+  {%- set meta = _METHOD_META.get(s) -%}
+  {%- if meta -%}
+    {{ {'label': meta[0], 'icon': meta[1], 'color': meta[2], 'brand': meta[3], 'slug': s}|tojson|safe }}
+  {%- else -%}
+    {{ {'label': '', 'icon': 'tag', 'color': '#64748b', 'brand': none, 'slug': s}|tojson|safe }}
+  {%- endif -%}
+{% endmacro %}
+
+{# ----- ③ Большой бокс-иконка (для заголовков тарифов) ----- #}
+{# Использование: {% call method_icon_box(slug, label) %}…{% endcall %} #}
+{% macro method_icon_box(slug, label='', size='md') -%}
+  {%- set s = (slug or '')|lower|replace('_','-')|replace(' ','-') -%}
+  {%- set meta = _METHOD_META.get(s) -%}
+  {%- set _label = label or (meta[0] if meta else (s|title)) -%}
+  {%- set _icon  = (meta[1] if meta else 'tag') -%}
+  {%- set _color = (meta[2] if meta else '#64748b') -%}
+  {%- set _brand = (meta[3] if meta else none) -%}
+  {%- set _wrap  = ('w-7 h-7' if size == 'sm' else 'w-9 h-9') -%}
+  {%- set _icw   = ('w-3.5 h-3.5' if size == 'sm' else 'w-4 h-4') -%}
+  {%- if _brand -%}
+    <span class="inline-flex items-center justify-center {{ _wrap }} rounded-lg flex-shrink-0 overflow-hidden p-1"
+          style="background: var(--admin-bg-soft); border: 1px solid rgb(var(--admin-border));"
+          title="{{ _label }}">
+      <img src="{{ url_for('admin.admin_static', filename='play/' ~ _brand ~ '.svg') }}"
+           alt="{{ _label }}" class="w-full h-full object-contain" loading="lazy">
+    </span>
+  {%- else -%}
+    <span class="inline-flex items-center justify-center {{ _wrap }} rounded-lg flex-shrink-0"
+          style="background: {{ _color }}1a; color: {{ _color }};"
+          title="{{ _label }}">
+      <i data-lucide="{{ _icon }}" class="{{ _icw }}"></i>
+    </span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# ----- ④ Компактный chip с иконкой+названием (таблицы/карточки/модалка) ----- #}
+{# slug — нормализованный ключ, label — фолбэк-имя из БД (когда метод неизвестен) #}
+{% macro method_chip(slug, label='', size='md') -%}
+  {%- set s = (slug or '')|lower|replace('_','-')|replace(' ','-') -%}
+  {%- if not s or s == '—' or s == 'unknown' or s == 'неизвестно' -%}
+    <span class="text-[11px] tw-text-subtle2">{{ label or '—' }}</span>
+  {%- else -%}
+    {%- set meta = _METHOD_META.get(s) -%}
+    {%- set _label = (meta[0] if meta else (label or s|title)) -%}
+    {%- set _icon  = (meta[1] if meta else 'tag') -%}
+    {%- set _color = (meta[2] if meta else '#64748b') -%}
+    {%- set _brand = (meta[3] if meta else none) -%}
+    {%- set _pad   = ('px-1.5 py-0.5' if size == 'sm' else 'px-2 py-0.5') -%}
+    {%- set _gap   = ('gap-1' if size == 'sm' else 'gap-1.5') -%}
+    {%- set _txt   = ('text-[10.5px]' if size == 'sm' else 'text-[11px]') -%}
+    <span class="inline-flex items-center {{ _gap }} {{ _pad }} rounded-md {{ _txt }} font-semibold"
+          style="background: var(--admin-bg-soft); color: var(--admin-text-base); border: 1px solid rgb(var(--admin-border));"
+          title="{{ _label }}">
+      {%- if _brand -%}
+        <img src="{{ url_for('admin.admin_static', filename='play/' ~ _brand ~ '.svg') }}"
+             alt="" class="w-3.5 h-3.5 flex-shrink-0 object-contain" loading="lazy" aria-hidden="true">
+      {%- else -%}
+        <i data-lucide="{{ _icon }}" class="w-3 h-3" style="color: {{ _color }};"></i>
+      {%- endif -%}
+      <span class="truncate">{{ _label }}</span>
+    </span>
+  {%- endif -%}
+{%- endmacro %}

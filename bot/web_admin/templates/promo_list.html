@@ -1,0 +1,517 @@
+{% extends 'base.html' %}
+{% block title %}Промокоды · {{ super() }}{% endblock %}
+{% block content %}
+
+<div class="tw-anim space-y-4 min-w-0 max-w-full">
+
+  {# ── Header card ─────────────────────────────────────────────── #}
+  <div class="pr-card">
+    <div class="pr-card-head">
+      <div class="min-w-0">
+        <div class="text-base font-semibold text-[var(--admin-text-base)] flex items-center gap-2 mb-1">
+          <i data-lucide="ticket" class="w-4 h-4 text-[rgb(var(--admin-accent))]"></i>
+          Промокоды
+        </div>
+        <div class="text-xs text-[var(--admin-text-muted)] leading-relaxed">
+          Создавайте, выдавайте и контролируйте использование промокодов.
+          Активные коды доступны пользователям в боте.
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="{{ url_for('admin.promo_export') }}" class="tw-btn tw-btn-secondary tw-btn-sm" title="Экспорт TSV">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Экспорт</span>
+        </a>
+        {% if stats.total > 0 %}
+        <button type="button" class="tw-btn tw-btn-danger tw-btn-sm" id="pr-delete-all" title="Удалить все промокоды">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Удалить все</span>
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Stats strip ── #}
+    <div class="pr-card-body">
+      <div class="pr-stats">
+        <div class="pr-stat">
+          <div class="pr-stat-label"><i data-lucide="ticket" class="w-3 h-3"></i>Всего</div>
+          <div class="pr-stat-value">{{ stats.total }}</div>
+        </div>
+        <div class="pr-stat">
+          <div class="pr-stat-label"><i data-lucide="check-circle-2" class="w-3 h-3"></i>Активны</div>
+          <div class="pr-stat-value is-success">{{ stats.active }}</div>
+        </div>
+        <div class="pr-stat">
+          <div class="pr-stat-label"><i data-lucide="alert-circle" class="w-3 h-3"></i>Лимит исчерпан</div>
+          <div class="pr-stat-value is-warn">{{ stats.exhausted }}</div>
+        </div>
+        <div class="pr-stat">
+          <div class="pr-stat-label"><i data-lucide="users" class="w-3 h-3"></i>Активаций</div>
+          <div class="pr-stat-value is-info">{{ stats.redemptions }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Создание промокода ──────────────────────────────────────── #}
+  <div class="pr-card">
+    <div class="pr-card-body">
+      <div class="text-sm font-semibold text-[var(--admin-text-base)] flex items-center gap-2 mb-3">
+        <i data-lucide="plus-circle" class="w-4 h-4 text-[rgb(var(--admin-accent))]"></i>
+        Создать новый промокод
+      </div>
+
+      <form method="post" action="{{ url_for('admin.promo_create') }}" id="pr-create-form">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div class="pr-field md:col-span-6">
+            <label for="pr-manual-code">
+              <i data-lucide="hash" class="w-3.5 h-3.5 text-[var(--admin-text-muted)]"></i>
+              Код промокода
+            </label>
+            <input type="text" class="pr-input is-mono"
+                   id="pr-manual-code" name="manual_code"
+                   maxlength="64" placeholder="MY-SUPER-CODE">
+            <div class="hint">A-Z, 0-9, «-», «_». Длина 3–64 символа. Если оставить пустым — используйте «Сгенерировать».</div>
+          </div>
+          <div class="pr-field md:col-span-3">
+            <label for="pr-days">
+              <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[var(--admin-text-muted)]"></i>
+              Срок (дней)
+            </label>
+            <input type="number" class="pr-input"
+                   id="pr-days" name="days"
+                   min="1" value="30">
+          </div>
+          <div class="pr-field md:col-span-3">
+            <label for="pr-max-uses">
+              <i data-lucide="users" class="w-3.5 h-3.5 text-[var(--admin-text-muted)]"></i>
+              Лимит активаций
+            </label>
+            <input type="number" class="pr-input"
+                   id="pr-max-uses" name="max_uses"
+                   min="0" value="1">
+            <div class="hint">0 — без ограничений</div>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <button type="submit" class="tw-btn tw-btn-primary">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            Создать
+          </button>
+          <button type="submit" class="tw-btn tw-btn-secondary" name="random" value="1"
+                  title="Сгенерировать случайный код вместо ручного">
+            <i data-lucide="dices" class="w-3.5 h-3.5"></i>
+            Сгенерировать случайный
+          </button>
+          <span class="text-xs text-[var(--admin-text-muted)] ml-1">
+            После создания код сразу доступен пользователям.
+          </span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Поиск + фильтры ─────────────────────────────────────────── #}
+  <div class="pr-card">
+    <div class="pr-card-body space-y-3">
+      <form method="get" action="{{ url_for('admin.promo_list') }}" class="flex items-center gap-2" id="pr-filters">
+        <input type="hidden" name="status" value="{{ status }}">
+        <div class="pr-search">
+          <i data-lucide="search" aria-hidden="true"></i>
+          <input type="search" class="pr-input"
+                 name="q" value="{{ q }}" placeholder="Код промокода…"
+                 autocomplete="off" aria-label="Поиск по коду промокода">
+        </div>
+        <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Найти</span>
+        </button>
+        {% if q or status != 'all' %}
+        <a href="{{ url_for('admin.promo_list') }}" class="tw-btn tw-btn-ghost tw-btn-sm" title="Сбросить">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+      </form>
+
+      <div class="pr-pills">
+        {% set _qs = ('q=' ~ q) if q else '' %}
+        <a class="pr-pill {% if status == 'all' %}is-active{% endif %}"
+           href="{{ url_for('admin.promo_list') }}{% if _qs %}?{{ _qs }}{% endif %}">
+          Все <span class="count">{{ stats.total }}</span>
+        </a>
+        <a class="pr-pill {% if status == 'active' %}is-active{% endif %}"
+           href="{{ url_for('admin.promo_list') }}?status=active{% if _qs %}&{{ _qs }}{% endif %}">
+          <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+          Активные <span class="count">{{ stats.active }}</span>
+        </a>
+        <a class="pr-pill {% if status == 'inactive' %}is-active{% endif %}"
+           href="{{ url_for('admin.promo_list') }}?status=inactive{% if _qs %}&{{ _qs }}{% endif %}">
+          <i data-lucide="pause-circle" class="w-3 h-3"></i>
+          Отключённые
+        </a>
+        <a class="pr-pill {% if status == 'exhausted' %}is-active{% endif %}"
+           href="{{ url_for('admin.promo_list') }}?status=exhausted{% if _qs %}&{{ _qs }}{% endif %}">
+          <i data-lucide="alert-circle" class="w-3 h-3"></i>
+          Лимит исчерпан <span class="count">{{ stats.exhausted }}</span>
+        </a>
+        <a class="pr-pill {% if status == 'used' %}is-active{% endif %}"
+           href="{{ url_for('admin.promo_list') }}?status=used{% if _qs %}&{{ _qs }}{% endif %}">
+          <i data-lucide="users" class="w-3 h-3"></i>
+          С активациями
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {# ── Список промокодов ─────────────────────────────────────── #}
+  <div class="pr-card">
+    <div class="pr-card-body">
+      {% if promo_codes %}
+        <div class="pr-grid">
+          {% for p in promo_codes %}
+            {% set reds = redemptions_by_code.get(p.code) if redemptions_by_code else None %}
+            {% set used = p.used_count or 0 %}
+            {% set lim  = p.max_uses or 0 %}
+            {% set is_exhausted = (lim > 0 and used >= lim) %}
+            {% set pct = 100 if lim == 0 and used > 0 else ((used * 100 // lim) if lim > 0 else 0) %}
+
+            <div class="pr-code {% if not p.is_active %}is-disabled{% endif %}" data-code="{{ p.code }}">
+              <div class="pr-code-head">
+                <span class="pr-code-name" title="Скопировать код">{{ p.code }}</span>
+                {% if not p.is_active %}
+                  <span class="pr-badge is-muted"><i data-lucide="pause" class="w-3 h-3"></i>Откл.</span>
+                {% elif is_exhausted %}
+                  <span class="pr-badge is-warn"><i data-lucide="alert-circle" class="w-3 h-3"></i>Исчерпан</span>
+                {% else %}
+                  <span class="pr-badge is-success"><i data-lucide="check" class="w-3 h-3"></i>Активен</span>
+                {% endif %}
+              </div>
+
+              <div class="pr-meta">
+                <span title="Срок подписки"><i data-lucide="calendar-days" aria-hidden="true"></i>{{ p.days or 30 }} дн.</span>
+                <span title="Использования">
+                  <i data-lucide="users" aria-hidden="true"></i>
+                  {{ used }} / {% if lim == 0 %}∞{% else %}{{ lim }}{% endif %}
+                </span>
+                {% if p.created_at %}
+                  <span title="Создан"><i data-lucide="clock" aria-hidden="true"></i>{{ p.created_at[:10] }}</span>
+                {% endif %}
+              </div>
+
+              {% if lim > 0 %}
+              <div class="pr-progress {% if is_exhausted %}is-full{% endif %}">
+                <span style="width: {{ pct }}%;"></span>
+              </div>
+              {% elif used > 0 %}
+              <div class="pr-progress"><span style="width: 100%;"></span></div>
+              {% endif %}
+
+              <div class="pr-actions">
+                <div class="grow">
+                  {% if reds %}
+                  <button type="button" class="pr-icon-btn"
+                          style="width:auto;padding:0 9px;font-size:11.5px;font-weight:500;gap:5px;"
+                          data-pr-redeem="{{ p.code }}">
+                    <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                    {{ reds|length }}
+                    <span class="hidden sm:inline" style="margin-left:2px;">активаций</span>
+                  </button>
+                  {% else %}
+                  <span class="text-[11px] text-[var(--admin-text-muted)] inline-flex items-center gap-1">
+                    <i data-lucide="user-x" class="w-3 h-3"></i>Нет активаций
+                  </span>
+                  {% endif %}
+                </div>
+                <button type="button"
+                        class="pr-icon-btn {% if p.is_active %}is-on{% endif %}"
+                        title="{{ 'Отключить' if p.is_active else 'Включить' }}"
+                        data-pr-toggle="{{ p.code }}">
+                  <i data-lucide="{{ 'toggle-right' if p.is_active else 'toggle-left' }}" class="w-4 h-4"></i>
+                </button>
+                <button type="button" class="pr-icon-btn danger"
+                        title="Удалить"
+                        data-pr-delete="{{ p.code }}">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+                <form method="post" action="{{ url_for('admin.promo_delete_code', code=p.code) }}"
+                      id="pr-del-form-{{ loop.index }}" class="hidden"></form>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="pr-empty">
+          <i data-lucide="ticket-x" class="ic"></i>
+          <div class="text-sm">
+            {% if q or status != 'all' %}
+              Ничего не найдено по фильтру.
+            {% else %}
+              Промокодов пока нет — создайте первый выше.
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Pager ───────────────────────────────────────────────── #}
+  {% if total_pages > 1 %}
+  <div class="pr-pager">
+    {% set _base = url_for('admin.promo_list') %}
+    {% set _params = [] %}
+    {% if q %}{% set _ = _params.append('q=' ~ q) %}{% endif %}
+    {% if status != 'all' %}{% set _ = _params.append('status=' ~ status) %}{% endif %}
+    {% set _qprefix = '&' ~ _params|join('&') if _params else '' %}
+
+    {% if page > 1 %}
+      <a href="{{ _base }}?page={{ page - 1 }}{{ _qprefix }}">‹</a>
+    {% else %}
+      <span class="is-disabled">‹</span>
+    {% endif %}
+
+    {% set ns = namespace(last_printed=0) %}
+    {% for p in range(1, total_pages + 1) %}
+      {% set is_first = (p == 1) %}
+      {% set is_last  = (p == total_pages) %}
+      {% set in_window = (p >= page - 1 and p <= page + 1) %}
+      {% if is_first or is_last or in_window %}
+        {% if p > ns.last_printed + 1 %}
+          <span class="is-disabled">…</span>
+        {% endif %}
+        {% if p == page %}
+          <span class="is-active">{{ p }}</span>
+        {% else %}
+          <a href="{{ _base }}?page={{ p }}{{ _qprefix }}">{{ p }}</a>
+        {% endif %}
+        {% set ns.last_printed = p %}
+      {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+      <a href="{{ _base }}?page={{ page + 1 }}{{ _qprefix }}">›</a>
+    {% else %}
+      <span class="is-disabled">›</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+
+{# ── Модалка списка активаций ─────────────────────────────── #}
+<div class="pr-modal-backdrop" id="pr-modal-bd"></div>
+<div class="pr-modal" id="pr-modal" role="dialog" aria-modal="true">
+  <div class="pr-modal-head">
+    <div class="pr-modal-title">
+      <i data-lucide="users" class="w-4 h-4 text-[rgb(var(--admin-accent))]"></i>
+      Активации <code id="pr-modal-code"></code>
+    </div>
+    <button type="button" class="pr-modal-close" id="pr-modal-close" aria-label="Закрыть">
+      <i data-lucide="x" class="w-4 h-4"></i>
+    </button>
+  </div>
+  <div class="pr-modal-body" id="pr-modal-body"></div>
+</div>
+
+{# Скрытая форма «Удалить все» — вынесена отдельно, чтобы избежать вложенных <form> #}
+<form method="post" action="{{ url_for('admin.promo_delete_all') }}" id="pr-delete-all-form" class="hidden"></form>
+
+{# Данные для модалки #}
+<script id="pr-redemptions-data" type="application/json">
+{
+  {% for code, reds in (redemptions_by_code or {}).items() %}
+    "{{ code }}": [
+      {% for r in reds %}
+        {
+          "telegram_id": {{ r.telegram_id }},
+          "username": {{ (r.username or '')|tojson }},
+          "used_at": {{ (r.used_at or '')|tojson }}
+        }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]{% if not loop.last %},{% endif %}
+  {% endfor %}
+}
+</script>
+
+<script>
+(function () {
+  // Шаблон URL для toggle: /{secret}/promo/toggle/__CODE__
+  // (генерим через Jinja, чтобы не собирать путь вручную и точно попасть в admin_bp с url_prefix=/{secret}).
+  const TOGGLE_URL_TPL = "{{ url_for('admin.promo_toggle', code='__CODE__') }}";
+
+  const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+
+  // ── Toast helper (минимальный, на случай если в base.html нет toast()) ──
+  const notify = (msg, kind) => {
+    if (typeof window.toast === 'function') return window.toast(msg, kind || 'info');
+    try { console.log('[PROMO]', kind || 'info', msg); } catch (_) {}
+  };
+
+  // ── Данные активаций ──
+  let redemptionsMap = {};
+  try {
+    redemptionsMap = JSON.parse(document.getElementById('pr-redemptions-data').textContent.trim() || '{}');
+  } catch (_) { redemptionsMap = {}; }
+
+  // ── Копировать код ──
+  document.querySelectorAll('.pr-code-name').forEach(el => {
+    el.addEventListener('click', async () => {
+      const code = el.textContent.trim();
+      try {
+        await navigator.clipboard.writeText(code);
+        el.classList.add('copied');
+        const orig = el.textContent;
+        el.textContent = 'Скопировано';
+        setTimeout(() => {
+          el.textContent = orig;
+          el.classList.remove('copied');
+        }, 1100);
+      } catch (_) {
+        notify('Не удалось скопировать', 'error');
+      }
+    });
+  });
+
+  // ── Toggle активности (AJAX) ──
+  document.querySelectorAll('[data-pr-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code = btn.getAttribute('data-pr-toggle');
+      btn.disabled = true;
+      try {
+        const url = TOGGLE_URL_TPL.replace('__CODE__', encodeURIComponent(code));
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'same-origin',
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        // Перерисуем без полной перезагрузки: сменим иконку, бейдж и opacity
+        const card = btn.closest('.pr-code');
+        const isOn = !!data.is_active;
+        btn.classList.toggle('is-on', isOn);
+        btn.title = isOn ? 'Отключить' : 'Включить';
+        btn.innerHTML = `<i data-lucide="${isOn ? 'toggle-right' : 'toggle-left'}" class="w-4 h-4"></i>`;
+        if (card) {
+          card.classList.toggle('is-disabled', !isOn);
+          const head = card.querySelector('.pr-code-head');
+          const oldBadge = head ? head.querySelector('.pr-badge') : null;
+          if (head) {
+            // если статус — «Лимит исчерпан», его не перетираем; только active/disabled
+            const showsExhausted = oldBadge && oldBadge.classList.contains('is-warn');
+            if (!showsExhausted) {
+              if (oldBadge) oldBadge.remove();
+              const badge = document.createElement('span');
+              badge.className = 'pr-badge ' + (isOn ? 'is-success' : 'is-muted');
+              badge.innerHTML = isOn
+                ? '<i data-lucide="check" class="w-3 h-3"></i>Активен'
+                : '<i data-lucide="pause" class="w-3 h-3"></i>Откл.';
+              head.appendChild(badge);
+            }
+          }
+        }
+        if (window.lucide) try { lucide.createIcons(); } catch (_) {}
+        notify(isOn ? 'Включён' : 'Отключён', 'success');
+      } catch (e) {
+        notify('Ошибка: ' + (e.message || 'не удалось переключить'), 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // ── Удаление одного кода ──
+  document.querySelectorAll('[data-pr-delete]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.getAttribute('data-pr-delete');
+      if (!confirm(`Удалить промокод ${code}?`)) return;
+      const card = btn.closest('.pr-code');
+      const form = card ? card.querySelector('form[id^="pr-del-form-"]') : null;
+      if (form) form.submit();
+    });
+  });
+
+  // ── Удалить ВСЕ ──
+  const delAllBtn = document.getElementById('pr-delete-all');
+  if (delAllBtn) {
+    delAllBtn.addEventListener('click', () => {
+      if (!confirm('Удалить ВСЕ промокоды? Действие необратимо.')) return;
+      const f = document.getElementById('pr-delete-all-form');
+      if (f) f.submit();
+    });
+  }
+
+  // ── Модалка активаций ──
+  const modal = document.getElementById('pr-modal');
+  const backdrop = document.getElementById('pr-modal-bd');
+  const modalBody = document.getElementById('pr-modal-body');
+  const modalCode = document.getElementById('pr-modal-code');
+  const closeBtn = document.getElementById('pr-modal-close');
+
+  const openModal = (code) => {
+    const reds = redemptionsMap[code] || [];
+    modalCode.textContent = code;
+    if (!reds.length) {
+      modalBody.innerHTML = `<div class="pr-empty"><i data-lucide="user-x" class="ic"></i><div>Нет активаций</div></div>`;
+    } else {
+      modalBody.innerHTML = reds.map(r => {
+        const when = (r.used_at || '').replace('T', ' ').slice(0, 16) || '—';
+        const uname = r.username ? '@' + r.username : 'Без username';
+        return `
+          <div class="pr-redeem-row">
+            <div class="name">
+              <span class="uname">${escHtml(uname)}</span>
+              <span class="uid" data-open-user="${r.telegram_id}">
+                <i data-lucide="user" class="w-3 h-3"></i>ID ${r.telegram_id}
+              </span>
+            </div>
+            <div class="when"><i data-lucide="clock" class="w-3 h-3 inline-block align-text-bottom mr-0.5"></i>${escHtml(when)}</div>
+          </div>`;
+      }).join('');
+    }
+    if (window.lucide) try { lucide.createIcons(); } catch (_) {}
+    backdrop.classList.add('is-open');
+    modal.classList.add('is-open');
+
+    // Открыть модалку пользователя по клику на ID
+    modalBody.querySelectorAll('[data-open-user]').forEach(el => {
+      el.addEventListener('click', () => {
+        const uid = parseInt(el.getAttribute('data-open-user'), 10);
+        if (!uid) return;
+        closeModal();
+        if (typeof window.openUserModal === 'function') {
+          setTimeout(() => window.openUserModal(uid), 200);
+        }
+      });
+    });
+  };
+  const closeModal = () => {
+    backdrop.classList.remove('is-open');
+    modal.classList.remove('is-open');
+  };
+
+  document.querySelectorAll('[data-pr-redeem]').forEach(btn => {
+    btn.addEventListener('click', () => openModal(btn.getAttribute('data-pr-redeem')));
+  });
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (backdrop) backdrop.addEventListener('click', closeModal);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal(); });
+
+  // ── Авто-uppercase для кода ──
+  const codeInput = document.getElementById('pr-manual-code');
+  if (codeInput) {
+    codeInput.addEventListener('input', () => {
+      const pos = codeInput.selectionStart;
+      codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
+      try { codeInput.setSelectionRange(pos, pos); } catch (_) {}
+    });
+  }
+
+  if (window.lucide) try { lucide.createIcons(); } catch (_) {}
+})();
+</script>
+
+{% endblock %}

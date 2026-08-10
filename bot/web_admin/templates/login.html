@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Вход — {{ super() }}{% endblock %}
+
+{% set hide_sidebar = true %}
+
+{# Стили страницы входа: styles/pages/login.css -> input.css -> tailwind-built.css #}
+{% block extra_head %}{% endblock %}
+
+{% block content %}
+<div class="login-stage tw-anim">
+  <div class="login-shell">
+
+    {# Брендинг #}
+    <div class="login-brand">
+      <svg class="login-logo" viewBox="0 0 64 64" aria-label="{{ project_name|default('3XUIStore') }}" role="img">
+        <defs>
+          <linearGradient id="loginBrandLight" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#E5E7EB"/>
+            <stop offset="100%" stop-color="#9CA3AF"/>
+          </linearGradient>
+          <linearGradient id="loginBrandDark" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#F3F4F6"/>
+            <stop offset="100%" stop-color="#9CA3AF"/>
+          </linearGradient>
+        </defs>
+        <rect class="lg-bg" x="2" y="2" width="60" height="60" rx="14"/>
+        <text class="lg-x lg-x--light" x="50%" y="56%" dominant-baseline="middle" text-anchor="middle"
+              font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-weight="900" font-size="44">X</text>
+        <text class="lg-x lg-x--dark" x="50%" y="56%" dominant-baseline="middle" text-anchor="middle"
+              font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-weight="900" font-size="44">X</text>
+      </svg>
+      <h1 class="login-title">{{ project_name|default('3XUIStore') }}</h1>
+      <p class="login-subtitle">Войдите в панель администратора</p>
+    </div>
+
+    {# Flash-уведомления #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flex flex-col gap-2">
+          {% for category, message in messages %}
+            {% set is_err = category in ('danger','error','warning') %}
+            <div class="login-flash {{ 'login-flash-error' if is_err else 'login-flash-ok' }}">
+              <i data-lucide="{{ 'alert-triangle' if is_err else 'check-circle-2' }}" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+              <div class="flex-1">{{ message|safe }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {# Карточка с формой #}
+    <div class="login-card">
+      <form method="post" id="loginForm" class="flex flex-col gap-4">
+        <div>
+          <label for="password" class="login-label">Пароль администратора</label>
+          <div class="login-input-wrap">
+            <i data-lucide="lock" class="login-icon-left w-4 h-4"></i>
+            <input type="password"
+                   name="password"
+                   id="password"
+                   class="login-input"
+                   placeholder="••••••••"
+                   required
+                   autofocus
+                   autocomplete="current-password">
+            <button type="button"
+                    id="togglePass"
+                    class="login-eye-btn"
+                    aria-label="Показать пароль">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="login-submit" id="loginSubmit">
+          <i data-lucide="log-in" class="w-4 h-4"></i>
+          <span>Войти</span>
+        </button>
+      </form>
+    </div>
+
+    {# Подвал #}
+    <div class="login-foot">
+      <span>Защищено · {{ project_name|default('3XUIStore') }}</span>
+      <span>v{{ app_version }}</span>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // Toggle password visibility
+  const btn = document.getElementById('togglePass');
+  const input = document.getElementById('password');
+  if (btn && input) {
+    btn.addEventListener('click', function(){
+      const isText = input.getAttribute('type') === 'text';
+      input.setAttribute('type', isText ? 'password' : 'text');
+      const icon = btn.querySelector('i, svg');
+      if (icon) {
+        const newName = isText ? 'eye' : 'eye-off';
+        const replacement = document.createElement('i');
+        replacement.setAttribute('data-lucide', newName);
+        replacement.setAttribute('class', 'w-4 h-4');
+        icon.replaceWith(replacement);
+        if (window.lucide && window.lucide.createIcons) lucide.createIcons();
+      }
+      btn.setAttribute('aria-label', isText ? 'Показать пароль' : 'Скрыть пароль');
+      input.focus();
+    });
+  }
+
+  // Дизейбл кнопки и спиннер на сабмите чтобы не было двойного клика
+  const form = document.getElementById('loginForm');
+  const submitBtn = document.getElementById('loginSubmit');
+  if (form && submitBtn) {
+    form.addEventListener('submit', function(){
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span><span>Вход…</span>';
+    });
+  }
+});
+</script>
+{% endblock %}

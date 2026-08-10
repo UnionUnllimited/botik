@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Профили Remnawave — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4" id="rwProfListRoot"
+     data-secret-path="{{ ('/' + admin_secret_path) if admin_secret_path else '' }}">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Config-профили</h1>
+      <p class="text-[13px] text-muted2 mt-1">Xray-конфигурации для нод: инбаунды, аутбаунды, маршрутизация, DNS.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="{{ url_for('admin.remnawave_profile_new') }}" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        <span>Новый профиль</span>
+      </a>
+    </div>
+  </div>
+
+  {% with active='profiles' %}
+  {% include 'remnawave_subnav.html' %}
+  {% endwith %}
+
+  {% if error %}
+  <div class="tw-surface rounded-[var(--radius-card)] p-4 border-l-4"
+       style="border-left-color: #ef4444; background: rgb(239 68 68 / .06);">
+    <div class="flex items-start gap-2">
+      <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#ef4444;"></i>
+      <div class="text-[13px]">
+        <div class="font-semibold mb-1" style="color:#ef4444;">Ошибка</div>
+        <div class="text-muted2 break-words">{{ error }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if profiles %}
+  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    {% for p in profiles %}
+    {% set inb_count = (p.config.inbounds|length) if p.config and p.config.inbounds else 0 %}
+    {% set out_count = (p.config.outbounds|length) if p.config and p.config.outbounds else 0 %}
+    {% set rules_count = (p.config.routing.rules|length) if p.config and p.config.routing and p.config.routing.rules else 0 %}
+    <div class="rw-prof-card tw-surface rounded-[var(--radius-card)] p-4 flex flex-col gap-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <h3 class="text-[15px] font-semibold truncate">{{ p.name }}</h3>
+          <code class="text-[10.5px] text-muted2 break-all">{{ p.uuid }}</code>
+        </div>
+        <span class="rw-prof-badge shrink-0">{{ inb_count }} in</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="rw-prof-stat">
+          <div class="rw-prof-stat-val">{{ inb_count }}</div>
+          <div class="rw-prof-stat-lbl">Инбаунды</div>
+        </div>
+        <div class="rw-prof-stat">
+          <div class="rw-prof-stat-val">{{ out_count }}</div>
+          <div class="rw-prof-stat-lbl">Аутбаунды</div>
+        </div>
+        <div class="rw-prof-stat">
+          <div class="rw-prof-stat-val">{{ rules_count }}</div>
+          <div class="rw-prof-stat-lbl">Правила</div>
+        </div>
+      </div>
+
+      {% if p.inbounds_meta %}
+      <div class="flex flex-wrap gap-1.5">
+        {% for ib in p.inbounds_meta[:4] %}
+        <span class="rw-prof-tag">{{ ib.tag or ib.type }}</span>
+        {% endfor %}
+        {% if p.inbounds_meta|length > 4 %}
+        <span class="rw-prof-tag is-muted">+{{ p.inbounds_meta|length - 4 }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if p.nodes %}
+      <div class="text-[11.5px] text-muted2 flex items-center gap-1.5">
+        <i data-lucide="server" class="w-3 h-3"></i>
+        {{ p.nodes|length }} нод(а)
+      </div>
+      {% endif %}
+
+      <div class="flex items-center gap-2 mt-auto pt-1">
+        <a href="{{ url_for('admin.remnawave_profile_edit', profile_uuid=p.uuid) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm flex-1 gap-1.5">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+          Редактировать
+        </a>
+        <button type="button" class="tw-btn tw-btn-sm rw-prof-del-btn"
+                data-uuid="{{ p.uuid }}" data-name="{{ p.name|e }}"
+                title="Удалить профиль">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif not error %}
+  <div class="tw-surface rounded-[var(--radius-card)] p-8 text-center">
+    <i data-lucide="layers" class="w-10 h-10 mx-auto mb-3 text-muted2"></i>
+    <p class="text-[14px] font-medium mb-1">Профилей пока нет</p>
+    <p class="text-[13px] text-muted2 mb-4">Создайте config profile с инбаундами и маршрутизацией для установки нод.</p>
+    <a href="{{ url_for('admin.remnawave_profile_new') }}" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
+      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+      Создать первый профиль
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const _r = document.getElementById('rwProfListRoot');
+  let secretPath = _r ? _r.dataset.secretPath : undefined;
+  if (secretPath === undefined) secretPath = (typeof SECRET_PATH !== 'undefined' && SECRET_PATH) ? SECRET_PATH : '';
+  const cleanPath = secretPath ? (secretPath.startsWith('/') ? secretPath : '/' + secretPath) : '';
+
+  document.querySelectorAll('.rw-prof-del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const uuid = btn.dataset.uuid;
+      const name = btn.dataset.name || uuid;
+      if (!confirm(`Удалить профиль «${name}»? Это действие необратимо.`)) return;
+      btn.disabled = true;
+      try {
+        const resp = await fetch(`${cleanPath}/api/remnawave/profiles/${uuid}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'Ошибка удаления');
+        btn.closest('.rw-prof-card')?.remove();
+        if (!document.querySelector('.rw-prof-card')) location.reload();
+      } catch (e) {
+        alert(e.message || String(e));
+        btn.disabled = false;
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

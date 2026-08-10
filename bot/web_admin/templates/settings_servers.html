@@ -1,0 +1,2281 @@
+{% extends "base.html" %}
+{% block title %}3X-UI - {{ super() }}{% endblock %}
+{% block content %}
+
+{# ───── Макрос карточки сервера (определён до использования) ───── #}
+{% macro server_card(server) %}
+<div class="tw-card p-3.5 server-card flex flex-col"
+     id="server-card-{{ server.id }}"
+     data-server-id="{{ server.id }}"
+     data-server-protocol="{{ server.protocol|default('') }}"
+     data-server-inbound-id="{{ server.inbound_id|default('') }}"
+     data-server-tag="{{ (server.tag or '')|e }}"
+     data-server-status="loading"
+     data-sortable-item
+     style="transition: border-color .15s, box-shadow .15s;">
+
+  {# header: цветная иконка-индикатор статуса, имя, мини-метаданные, перемещение #}
+  <div class="flex items-start gap-2 min-w-0">
+    {# Статусная иконка: data-status управляет цветом и пульсацией #}
+    <div class="server-status-icon shrink-0 w-9 h-9 rounded-[8px] flex items-center justify-center"
+         id="status-icon-{{ server.id }}"
+         data-status="loading"
+         title="Загружаю…">
+      <i data-lucide="{{ 'route' if server.type == 'balancer' else 'server' }}" class="w-4 h-4 server-status-icon-svg"></i>
+    </div>
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        <h3 class="font-semibold tracking-tight truncate text-[14px] flex-1 min-w-0"
+            style="color: var(--admin-text-base);"
+            title="{{ server.name|e }}">{{ server.name }}</h3>
+        {% if server.type == 'balancer' %}
+        <span class="tw-chip shrink-0" style="background: rgb(99 102 241 / .12); color: var(--color-brand-500);">Balancer</span>
+        {% endif %}
+      </div>
+      <div class="text-[11px] text-subtle2 mt-0.5 flex items-center gap-1.5 flex-wrap">
+        <span>ID: {{ server.id }}</span>
+        <span class="text-subtle2">·</span>
+        <span class="server-status-text" id="status-text-{{ server.id }}" style="color: var(--admin-text-muted);">Загружаю…</span>
+        <span class="server-ping" id="ping-{{ server.id }}"></span>
+      </div>
+    </div>
+    <div class="flex items-center gap-1 shrink-0">
+      <form action="{{ url_for('admin.move_server_up', server_id=server.id) }}" method="post" class="inline">
+        <button type="submit" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Вверх">
+          <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i>
+        </button>
+      </form>
+      <form action="{{ url_for('admin.move_server_down', server_id=server.id) }}" method="post" class="inline">
+        <button type="submit" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Вниз">
+          <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# алерты ошибок (рендерятся при первичной загрузке; JS обновит позже) #}
+  <div class="server-alerts">
+    {% if server.timeout %}
+    <div class="alert-timeout mt-2 rounded-[8px] px-2.5 py-1.5 text-[12px] flex items-center gap-1.5"
+         style="background: rgb(245 158 11 / .1); color: #f59e0b;">
+      <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+      Превышен таймаут подключения (10с)
+    </div>
+    {% endif %}
+    {% if server.error %}
+    <div class="alert-error mt-2 rounded-[8px] px-2.5 py-1.5 text-[12px] flex items-center gap-1.5"
+         style="background: rgb(239 68 68 / .1); color: #ef4444;">
+      <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+      Ошибка: {{ server.error }}
+    </div>
+    {% endif %}
+  </div>
+
+  {# блок статистики — заполняется JS из /api/server_status/<id> #}
+  <div class="server-stats-block mt-3">
+    {% if not server.stats %}
+    <div class="text-[12px] text-muted2 flex items-center gap-2">
+      <span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background: var(--admin-text-subtle);"></span>
+      Загружаю данные сервера…
+    </div>
+    {% endif %}
+  </div>
+
+  {# подвал — как в превью: перейти в панель + иконки синх/подробнее + троеточие (ред/удал) #}
+  <div class="mt-auto pt-3 border-t flex items-center gap-2"
+       style="border-color: rgb(var(--admin-border));">
+    {% if server.type == 'balancer' %}
+      <a href="{{ url_for('admin.edit_server', server_id=server.id) }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm flex-1">
+        <i data-lucide="pencil" class="w-3.5 h-3.5"></i> Изменить
+      </a>
+      <form action="{{ url_for('admin.delete_server', server_id=server.id) }}" method="post" class="inline"
+            onsubmit="return confirm('Удалить балансировщик {{ server.name }}?');">
+        <button type="submit" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Удалить балансировщик" style="color:#f43f5e;">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </form>
+    {% else %}
+      <a href="https://{{ server.url }}:{{ server.port }}{% if server.secret_path %}/{{ server.secret_path }}{% endif %}"
+         target="_blank" rel="noopener noreferrer"
+         class="tw-btn tw-btn-secondary tw-btn-sm flex-1 min-w-0">
+        <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Панель
+      </a>
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-icon-sm sync-server-btn shrink-0"
+              title="Синхронизация"
+              data-server-id="{{ server.id }}" data-server-name="{{ server.name|e }}">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+      </button>
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-icon-sm server-details-btn shrink-0"
+              title="Подробнее" data-server-id="{{ server.id }}">
+        <i data-lucide="info" class="w-3.5 h-3.5"></i>
+      </button>
+      <a href="{{ url_for('admin.edit_server', server_id=server.id) }}"
+         class="tw-btn tw-btn-secondary tw-btn-icon-sm shrink-0" title="Редактировать">
+        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+      </a>
+      <form action="{{ url_for('admin.delete_server', server_id=server.id) }}" method="post" class="inline shrink-0"
+            onsubmit="return confirm('Вы уверены, что хотите удалить сервер {{ server.name }}?');">
+        <button type="submit" class="tw-btn tw-btn-icon-sm tw-btn-danger-ghost shrink-0" title="Удалить">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+<div class="tw-anim">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">3X-UI · Серверы</h1>
+      <p class="text-[13px] text-muted2 mt-1 flex items-center gap-1.5">
+        Мониторинг и управление панелями 3X-UI.
+        <span class="hidden sm:inline-flex items-center gap-1 ml-2 text-subtle2">
+          <i data-lucide="move" class="w-3.5 h-3.5"></i>
+          перетаскивайте карточки для изменения порядка
+        </span>
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      {% if current_user.is_admin %}
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="openModal('hostsManagerModal');">
+        <i data-lucide="globe" class="w-3.5 h-3.5"></i> Хосты
+      </button>
+      {% endif %}
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="openModal('sshInstallModal');">
+        <i data-lucide="terminal" class="w-3.5 h-3.5"></i> Установить через SSH
+      </button>
+      <a href="{{ url_for('admin.add_server') }}" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Добавить сервер
+      </a>
+    </div>
+  </div>
+
+  {# Рекомендуемая версия 3X-UI (совпадает с SSH-установщиком и install.sh-тегом) #}
+  <div class="mt-3 rounded-[10px] border-l-4 px-3 py-2.5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-2"
+       style="background: rgb(59 130 246 / .08); border-color: #3b82f6;">
+    <div class="flex items-start gap-2 min-w-0 w-full sm:flex-1">
+      <i data-lucide="info" class="w-4 h-4 mt-0.5 shrink-0 text-blue-500"></i>
+      <div class="text-[13px] leading-snug min-w-0" style="color: var(--admin-text-base);">
+        <strong>Рекомендация по версии.</strong>
+        Для совместимости с ботом рекомендуется устанавливать панель
+        <strong>3X-UI {{ xui_recommended_version }}</strong>.
+        Команда ниже — как в автоматической установке через SSH (вставить в терминал на сервере под root).
+      </div>
+    </div>
+    <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm w-full sm:w-auto shrink-0 self-stretch sm:self-auto justify-center" id="btnCopyXuiInstallCmd"
+            title='Однострочник установки 3X-UI {{ xui_recommended_version }} (bash, curl + install.sh официального репозитория).'>
+      <i data-lucide="copy" class="w-3.5 h-3.5"></i> Копировать команду {{ xui_recommended_version }}
+    </button>
+  </div>
+
+  {# ───── Предупреждения ───── #}
+  {% if needs_location_warning %}
+  <div class="mt-3 rounded-[10px] border-l-4 px-3 py-2 flex items-start gap-2"
+       style="background: rgb(245 158 11 / .08); border-color: #f59e0b; color: var(--admin-text-base);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#f59e0b"></i>
+    <div class="text-[13px]">Предупреждение о конфигурации.</div>
+  </div>
+  {% endif %}
+
+  {% if show_remnawave_warning %}
+  <div class="mt-3 rounded-[10px] border-l-4 px-3 py-2 flex flex-wrap items-center gap-3 justify-between"
+       style="background: rgb(245 158 11 / .08); border-color: #f59e0b;">
+    <div class="flex items-start gap-2 min-w-0">
+      <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" style="color:#f59e0b"></i>
+      <div class="text-[13px]" style="color: var(--admin-text-base);">
+        <strong>Рекомендация:</strong>
+        У вас более <strong>5000 активных подписок</strong> на 3X-UI.
+        Для более стабильной работы рекомендуем перейти на <strong>Remnawave</strong>.
+      </div>
+    </div>
+    <a href="https://docs.rw/" target="_blank" class="tw-btn tw-btn-sm" style="background:#f59e0b; color:#fff; white-space:nowrap;">
+      <i data-lucide="book-open" class="w-3.5 h-3.5"></i> Документация
+    </a>
+  </div>
+  {% endif %}
+
+  {# ───── Табы фильтрации серверов: «Все / Офлайн / {tag1} / {tag2} …» ─────
+     • «Все» — активна по умолчанию (если нет сохранённой в localStorage).
+     • «Офлайн» — появляется только когда есть упавшие (JS toggleHidden).
+     • {tag} — динамически из server.tag в БД (max 15 символов).
+     Активный таб запоминается в localStorage('settingsServersActiveTab').
+     #}
+  <div class="srv-tabs-wrap mt-4">
+    <div class="srv-tabs" id="serversTabs" role="tablist" aria-label="Фильтр серверов">
+      <button type="button" class="srv-tab" data-tab="__all" role="tab">
+        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        <span>Все сервера</span>
+        <span class="srv-tab-count" data-count="all">0</span>
+      </button>
+      <button type="button" class="srv-tab hidden" data-tab="__offline" role="tab">
+        <i data-lucide="circle-x" class="w-3.5 h-3.5"></i>
+        <span>Офлайн</span>
+        <span class="srv-tab-count srv-tab-count--danger" data-count="offline">0</span>
+      </button>
+      {% for tag in available_tags %}
+      <button type="button" class="srv-tab" data-tab="tag:{{ tag|e }}" role="tab" title="Тег: {{ tag|e }}">
+        <i data-lucide="tag" class="w-3.5 h-3.5"></i>
+        <span>{{ tag }}</span>
+        <span class="srv-tab-count" data-count-tag="{{ tag|e }}">0</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ───── Сводка (компактные плашки, без разделителей) ───── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: var(--admin-bg-soft);">
+        <i data-lucide="server" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Серверы</div>
+        <div class="text-[20px] font-semibold leading-tight" id="agg-total-servers">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(16 185 129 / .12);">
+        <i data-lucide="check-circle-2" class="w-4 h-4" style="color: #10b981;"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Активны</div>
+        <div class="text-[20px] font-semibold leading-tight text-emerald-500" id="agg-active-servers">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="users-round" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Онлайн</div>
+        <div class="text-[20px] font-semibold leading-tight" id="agg-total-online">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3" title="Суммарная скорость по всем серверам (RX + TX)">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(245 158 11 / .12);">
+        <i data-lucide="activity" class="w-4 h-4" style="color: #f59e0b;"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider truncate">Потребление</div>
+        <div class="text-[20px] font-semibold leading-tight truncate" id="agg-total-traffic">—</div>
+        <div class="hidden sm:flex items-center gap-2 text-[10px] text-subtle2 normal-case tracking-normal mt-0.5 truncate min-w-0" id="agg-traffic-breakdown"></div>
+      </div>
+    </div>
+  </div>
+
+  {# ───── Секция «Серверы» ───── #}
+  <div class="mt-6 mb-3 flex items-center gap-2">
+    <h2 class="text-[14px] font-semibold tracking-tight" style="color: var(--admin-text-base);">Серверы</h2>
+    <span class="tw-chip" style="background: var(--admin-bg-soft); color: var(--admin-text-muted);" id="serversCountNormal">{{ grouped.servers|length }}</span>
+  </div>
+  <div id="serversGridServers"
+       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
+       data-sortable-container>
+    {% for server in grouped.servers %}
+    {{ server_card(server) }}
+    {% else %}
+    <div class="col-span-full">
+      <div class="tw-surface rounded-[var(--radius-card)] p-6 text-center text-[13px] text-muted2">
+        Нет сконфигурированных серверов.
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ───── Секция «Балансировка» ───── #}
+  <div class="mt-6 mb-3 flex items-center gap-2">
+    <h2 class="text-[14px] font-semibold tracking-tight" style="color: var(--admin-text-base);">Балансировка</h2>
+    <span class="tw-chip" style="background: rgb(99 102 241 / .12); color: var(--color-brand-500);">virtual</span>
+    <span class="tw-chip" style="background: var(--admin-bg-soft); color: var(--admin-text-muted);" id="serversCountBalancer">{{ grouped.balancer|length }}</span>
+  </div>
+  <div id="serversGridBalancer"
+       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
+       data-sortable-container>
+    {% for server in grouped.balancer %}
+    {{ server_card(server) }}
+    {% else %}
+    <div class="col-span-full">
+      <div class="tw-surface rounded-[var(--radius-card)] p-6 text-center text-[13px] text-muted2">
+        Нет серверов балансировки.
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   МОДАЛКИ (TW). На загрузке JS перенесёт каждую в <body>, чтобы избежать
+   проблем с containing-block (transform на родителях).
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+{# ── Modal: детали сервера ─────────────────────────────────────────────── #}
+<div id="serverDetailsModal" class="tw-modal" role="dialog" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop" onclick="closeModal('serverDetailsModal')"
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; max-width: 720px; width: 100%; max-height: 90vh; overflow: hidden;
+              box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index: 1;">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[15px] font-semibold tracking-tight flex items-center gap-2" id="serverDetailsTitle">
+        <i data-lucide="info" class="w-4 h-4 text-brand-500"></i> Детали сервера
+      </h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" onclick="closeModal('serverDetailsModal')" aria-label="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="px-4 py-4 overflow-y-auto tw-scroll" id="serverDetailsBody">
+      <div class="text-center text-[13px] text-muted2 py-3 flex items-center justify-center gap-2">
+        <span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background: var(--admin-text-subtle);"></span>
+        Загружаю…
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t flex flex-col sm:flex-row gap-2"
+         style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <form id="serverDetailsDeleteDisabledForm" method="post" action="#" class="m-0 flex-1">
+        <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm w-full" style="color:#f59e0b;">
+          <i data-lucide="user-x" class="w-3.5 h-3.5"></i> Очистить неактивных
+        </button>
+      </form>
+      <form id="serverDetailsRestartPanelForm" method="post" action="#" class="m-0 flex-1">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm w-full">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Перезагрузить Xray
+        </button>
+      </form>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" onclick="closeModal('serverDetailsModal')">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: SSH установка ───────────────────────────────────────────────── #}
+<div id="sshInstallModal" class="tw-modal" role="dialog" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop" onclick="closeModal('sshInstallModal')"
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; max-width: 720px; width: 100%; max-height: 90vh; overflow: hidden;
+              box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index: 1;">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[15px] font-semibold tracking-tight flex items-center gap-2">
+        <i data-lucide="terminal" class="w-4 h-4 text-brand-500"></i> Установка 3X-UI через SSH
+      </h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" onclick="closeModal('sshInstallModal')"
+              id="sshInstallModalCloseBtn" aria-label="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="px-4 py-4 overflow-y-auto tw-scroll">
+      <div class="rounded-[10px] border-l-4 px-3 py-2 mb-3 flex items-start gap-2 text-[13px]"
+           style="background: rgb(245 158 11 / .08); border-color: #f59e0b; color: var(--admin-text-base);">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" style="color:#f59e0b"></i>
+        <div>
+          <strong>Внимание:</strong> корректность установки зависит от изменений скрипта установки 3X-UI и может работать некорректно.
+          <div class="text-subtle2 text-[12px] mt-0.5">Функционал предназначен для тестирования и отладки.</div>
+        </div>
+      </div>
+      <form id="sshInstallForm" class="space-y-3">
+        <div>
+          <label class="block text-[12px] text-subtle2 mb-1">IP адрес сервера <span style="color:#f43f5e;">*</span></label>
+          <input type="text" class="tw-input" id="ssh_host" placeholder="1.2.3.4" required>
+          <div class="text-[11px] text-subtle2 mt-1">IP или доменное имя сервера</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">SSH порт</label>
+            <input type="number" class="tw-input" id="ssh_port" value="22" min="1" max="65535" required>
+          </div>
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">SSH пользователь</label>
+            <input type="text" class="tw-input" id="ssh_username" value="root" required>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[12px] text-subtle2 mb-1">SSH пароль <span style="color:#f43f5e;">*</span></label>
+          <input type="password" class="tw-input" id="ssh_password" placeholder="Введите пароль" required>
+          <div class="text-[11px] text-subtle2 mt-1">Пароль не сохраняется, используется только для установки</div>
+        </div>
+        <div>
+          <label class="block text-[12px] text-subtle2 mb-1">Тип инбаунда</label>
+          <select class="tw-select w-full" id="inbound_type" required>
+            <option value="vless_reality_tcp" selected>VLESS + Reality (TCP)</option>
+            <option value="vless_reality_xhttp">VLESS + Reality (XHTTP)</option>
+          </select>
+          <div class="text-[11px] text-subtle2 mt-1">Будет создан базовый инбаунд выбранного типа</div>
+        </div>
+        {# Flow — только для TCP+Reality. XHTTP не поддерживает xtls-rprx-vision. #}
+        <div id="flow_field_wrap">
+          <label class="block text-[12px] text-subtle2 mb-1">Flow (XTLS)</label>
+          <select class="tw-select w-full" id="client_flow">
+            <option value="xtls-rprx-vision" selected>xtls-rprx-vision (рекомендуется)</option>
+            <option value="">Без flow</option>
+          </select>
+          <div class="text-[11px] text-subtle2 mt-1">
+            Применяется к создаваемому клиенту инбаунда и сохраняется в карточку сервера.
+            Для XHTTP — flow не используется.
+          </div>
+        </div>
+        <div>
+          <label class="block text-[12px] text-subtle2 mb-1">Тип SSL сертификата</label>
+          <label class="flex items-center gap-2 text-[13px] py-1 cursor-pointer" style="color:var(--admin-text-base);">
+            <input type="radio" name="certificate_type" id="cert_type_ip" value="ip" checked
+                   style="accent-color: var(--color-brand-500);">
+            IP сертификат (6 дней, автообновление)
+          </label>
+        </div>
+        <div>
+          <label class="block text-[12px] text-subtle2 mb-1">Название сервера</label>
+          <input type="text" class="tw-input" id="server_name" placeholder="Автоматически (по IP)">
+          <div class="text-[11px] text-subtle2 mt-1">Если не указано, будет использован IP адрес</div>
+        </div>
+
+        {# Прогресс установки #}
+        <div id="install_progress" style="display: none;" class="space-y-2">
+          <div>
+            <div class="flex justify-between mb-1 text-[12px] text-subtle2">
+              <span>Прогресс установки</span>
+              <span id="install_progress_text">0%</span>
+            </div>
+            <div class="w-full h-2 rounded-full overflow-hidden" style="background: var(--admin-bg-soft);">
+              <div id="install_progress_bar" class="h-full transition-all duration-300"
+                   style="width: 0%; background: var(--color-brand-500);"></div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">Логи установки</label>
+            <div id="install_logs"
+                 class="rounded-[8px] tw-scroll"
+                 style="max-height: 240px; overflow-y: auto; background: #0f1117; color: #4ade80;
+                        padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                        font-size: 12px; white-space: pre-wrap; border: 1px solid rgb(var(--admin-border));"></div>
+          </div>
+          <div id="install_result" style="display: none;"></div>
+        </div>
+      </form>
+    </div>
+    <div class="px-4 py-3 border-t flex justify-end gap-2"
+         style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" id="sshInstallCancelBtn"
+              onclick="closeModal('sshInstallModal')">Отмена</button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" id="btn_start_install">
+        <i data-lucide="play" class="w-3.5 h-3.5"></i> Начать установку
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: прогресс добавления клиентов на локацию ─────────────────────── #}
+<div id="locationAddProgressModal" class="tw-modal" role="dialog" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop"
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; max-width: 640px; width: 100%; max-height: 90vh; overflow: hidden;
+              box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index: 1;">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[15px] font-semibold tracking-tight flex items-center gap-2">
+        <i data-lucide="users" class="w-4 h-4 text-brand-500"></i> Добавление клиентов на локацию
+      </h3>
+    </div>
+    <div class="px-4 py-4 overflow-y-auto tw-scroll">
+      <div class="text-center mb-3">
+        <span class="w-4 h-4 rounded-full inline-block animate-pulse" style="background: var(--color-brand-500);"></span>
+      </div>
+      <div class="mb-3">
+        <div class="flex justify-between mb-1.5 text-[13px]" style="color:var(--admin-text-base);">
+          <span id="locationAddProgressMessage">Инициализация…</span>
+          <span id="locationAddProgressPercent" class="font-semibold">0%</span>
+        </div>
+        <div class="w-full h-2.5 rounded-full overflow-hidden" style="background: var(--admin-bg-soft);">
+          <div id="locationAddProgressBar" class="h-full transition-all duration-300"
+               style="width: 0%; background: var(--color-brand-500);"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div class="rounded-[10px] p-3 text-center" style="background: var(--admin-bg-soft);">
+          <div class="text-[18px] font-semibold" id="locationAddProgressTotal" style="color: var(--admin-text-base);">0</div>
+          <div class="text-[11px] text-subtle2 uppercase tracking-wider mt-0.5">Всего</div>
+        </div>
+        <div class="rounded-[10px] p-3 text-center" style="background: rgb(16 185 129 / .12);">
+          <div class="text-[18px] font-semibold" id="locationAddProgressAdded" style="color:#10b981;">0</div>
+          <div class="text-[11px] uppercase tracking-wider mt-0.5" style="color:#10b981;">Добавлено</div>
+        </div>
+        <div class="rounded-[10px] p-3 text-center" style="background: rgb(245 158 11 / .12);">
+          <div class="text-[18px] font-semibold" id="locationAddProgressSkipped" style="color:#f59e0b;">0</div>
+          <div class="text-[11px] uppercase tracking-wider mt-0.5" style="color:#f59e0b;">Пропущено</div>
+        </div>
+        <div class="rounded-[10px] p-3 text-center" style="background: rgb(239 68 68 / .12);">
+          <div class="text-[18px] font-semibold" id="locationAddProgressFailed" style="color:#ef4444;">0</div>
+          <div class="text-[11px] uppercase tracking-wider mt-0.5" style="color:#ef4444;">Ошибок</div>
+        </div>
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t flex justify-end" style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="locationAddProgressCloseBtn"
+              onclick="closeModal('locationAddProgressModal')" style="display:none;">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: «Хосты» — управление key_template для каждого сервера ─────── #}
+{% if current_user.is_admin %}
+<div id="hostsManagerModal" class="tw-modal" role="dialog" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop" onclick="closeModal('hostsManagerModal')"
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; max-width: 880px; width: 100%; max-height: 92vh; overflow: hidden;
+              box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index: 1;">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="hm-head-icon"><i data-lucide="globe" class="w-4 h-4"></i></span>
+        <div class="min-w-0">
+          <h3 class="text-[15px] font-semibold tracking-tight">Хосты · key_template</h3>
+          <p class="text-[11.5px] text-muted2 mt-0.5 leading-snug">
+            Список URL-ключей по каждому серверу. Имя ключа — после <code class="text-[10.5px]">#</code>.
+            Для фильтра подписок по платформе (если включён на subpage) используйте в начале имени узла в боте или в тексте после
+            <code class="text-[10.5px]">#</code>:
+            <code class="text-[10.5px]">[PC]</code>, <code class="text-[10.5px]">[MOBILE]</code>,
+            <code class="text-[10.5px]">[ROUTER]</code>, <code class="text-[10.5px]">[TV]</code> — можно несколько.
+          </p>
+        </div>
+      </div>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" onclick="closeModal('hostsManagerModal')" aria-label="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <div class="px-4 py-3 border-b flex flex-wrap items-center gap-2"
+         style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <div class="relative flex-1 min-w-[200px]">
+        <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle2 pointer-events-none"></i>
+        <input type="text" id="hmSearch" class="tw-input tw-input-with-icon" placeholder="Поиск по имени или URL…" autocomplete="off">
+      </div>
+      <label class="inline-flex items-center gap-1.5 text-[12.5px] cursor-pointer select-none" title="Скрыть серверы без ключей">
+        <input type="checkbox" id="hmOnlyWithKeys" class="tw-checkbox">
+        <span>Только с ключами</span>
+      </label>
+    </div>
+
+    <div id="hmList" class="flex-1 overflow-y-auto tw-scroll px-4 py-4 space-y-3">
+      <div class="text-center text-[13px] text-muted2 py-3 flex items-center justify-center gap-2">
+        <span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background: var(--admin-text-subtle);"></span>
+        Загружаю…
+      </div>
+    </div>
+
+    <div class="px-4 py-2.5 border-t flex items-center justify-between gap-2 text-[12px] text-muted2"
+         style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <span><span id="hmStats">—</span></span>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" onclick="closeModal('hostsManagerModal')">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+{# JSON-снапшот данных серверов для модалки. Обновляется JS-ом после save. #}
+<script id="hostsManagerData" type="application/json">{{ servers | tojson }}</script>
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   Внешние библиотеки: SortableJS (drag-and-drop карточек серверов).
+   ═══════════════════════════════════════════════════════════════════════════ #}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Модалки: единые open/close + перенос в <body> на загрузке
+   (избегаем containing-block из-за transform на родительских элементах).
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function moveModalsToBody(){
+  const ids = ['serverDetailsModal','sshInstallModal','locationAddProgressModal','hostsManagerModal'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== document.body) document.body.appendChild(el);
+  });
+})();
+
+(function initCopyXuiInstallCmd(){
+  const btn = document.getElementById('btnCopyXuiInstallCmd');
+  if (!btn) return;
+  const cmd = {{ xui_manual_install_bash | tojson }};
+  btn.addEventListener('click', function() {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      alert('Копирование в буфер недоступно в этом браузере.');
+      return;
+    }
+    navigator.clipboard.writeText(cmd).then(function() {
+      const old = btn.innerHTML;
+      btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i> Скопировано';
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      setTimeout(function() {
+        btn.innerHTML = old;
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      }, 2000);
+    }).catch(function() {
+      alert('Не удалось скопировать команду.');
+    });
+  });
+})();
+
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.add('is-open');
+  m.setAttribute('aria-hidden','false');
+  document.body.style.overflow = 'hidden';
+  // принудительные стили на случай конфликтов
+  m.style.setProperty('display','flex','important');
+  m.style.setProperty('opacity','1','important');
+  m.style.setProperty('visibility','visible','important');
+  m.style.setProperty('pointer-events','auto','important');
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.classList.remove('is-open');
+  m.setAttribute('aria-hidden','true');
+  m.style.setProperty('display','none','important');
+  // если других открытых модалок нет — снимаем lock со scroll
+  const anyOpen = document.querySelector('.tw-modal.is-open');
+  if (!anyOpen) document.body.style.overflow = '';
+}
+
+// ESC закрывает модалку
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Escape') return;
+  document.querySelectorAll('.tw-modal.is-open').forEach(m => closeModal(m.id));
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Vanilla dropdown — для меню действий на карточке сервера.
+   Один открытый dropdown за раз; клик вне — закрывает.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function _closeAllDropdowns() {
+  document.querySelectorAll('.tw-dropdown-menu').forEach(m => {
+    m.classList.add('hidden');
+    /* возвращаем в исходный DOM-узел если был вынесен */
+    const back = m._origParent;
+    if (back && m.parentElement !== back) {
+      back.appendChild(m);
+      m.style.position = '';
+      m.style.top = '';
+      m.style.left = '';
+      m.style.right = '';
+      m.style.minWidth = '';
+    }
+  });
+}
+
+function toggleDropdown(e, btn) {
+  e.preventDefault();
+  e.stopPropagation();
+  const wrap = btn.closest('.tw-dropdown');
+  if (!wrap) return;
+  const menu = wrap.querySelector('.tw-dropdown-menu') || wrap._detachedMenu;
+  if (!menu) return;
+  const wasOpen = !menu.classList.contains('hidden');
+  _closeAllDropdowns();
+  if (wasOpen) return;
+
+  /* переносим меню в <body> и позиционируем fixed относительно кнопки */
+  if (!menu._origParent) menu._origParent = wrap;
+  wrap._detachedMenu = menu;
+  document.body.appendChild(menu);
+  menu.classList.remove('hidden');
+  const rect = btn.getBoundingClientRect();
+  const menuWidth = Math.max(menu.offsetWidth || 0, 180);
+  menu.style.position = 'fixed';
+  menu.style.minWidth = menuWidth + 'px';
+  /* сначала пытаемся показать ПОД кнопкой, если не влезает — НАД кнопкой */
+  const menuHeight = menu.offsetHeight || 0;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  let top = rect.bottom + 4;
+  if (spaceBelow < menuHeight + 8 && rect.top > menuHeight + 8) {
+    top = rect.top - menuHeight - 4;
+  }
+  let left = rect.right - menuWidth;
+  if (left < 8) left = 8;
+  if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+  menu.style.right = 'auto';
+}
+
+document.addEventListener('click', function(e){
+  if (e.target.closest('.tw-dropdown') || e.target.closest('.tw-dropdown-menu')) return;
+  _closeAllDropdowns();
+});
+window.addEventListener('scroll', _closeAllDropdowns, true);
+window.addEventListener('resize', _closeAllDropdowns);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Toast (мини-уведомления)
+   ═══════════════════════════════════════════════════════════════════════════ */
+function toast(message, type) {
+  type = type || 'success';
+  const el = document.createElement('div');
+  el.className = 'tw-toast tw-toast-' + (type === 'error' ? 'error' : 'success');
+  const icon = type === 'error' ? 'alert-triangle' : 'check-circle-2';
+  el.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i><span></span>`;
+  el.querySelector('span').textContent = message;
+  document.body.appendChild(el);
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, 2700);
+  setTimeout(() => { el.remove(); }, 3100);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Состояние и обновление статусов серверов (без изменений API)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const refreshDelay = 30000;
+let refreshTimer = null;
+const onlineCache = new Map();
+const netTrafficTotals = new Map();
+const _onlineByServer = new Map();
+const _activeByServer = new Map();
+const _serverDataById = new Map();
+/* Текущая мгновенная скорость (bytes/sec) по каждому серверу: { up, down } */
+const _netIOByServer = new Map();
+
+function getSecretFromUrl() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  return parts.length > 0 ? parts[0] : '';
+}
+
+/* Форматирует bits-per-second в человеко-читаемое значение.
+   Возвращает { value: '12.3', unit: 'Mbps' }.   */
+function fmtBitsPerSec(bps) {
+  bps = Number(bps) || 0;
+  if (bps < 1000)            return { value: Math.round(bps).toString(),       unit: 'bps' };
+  if (bps < 1_000_000)       return { value: Math.round(bps / 1e3).toString(), unit: 'Kbps' };
+  if (bps < 1_000_000_000)   return { value: Math.round(bps / 1e6).toString(), unit: 'Mbps' };
+  return                            { value: (bps / 1e9).toFixed(2),           unit: 'Gbps' };
+}
+
+function updateAggregateSummary() {
+  try {
+    const allCards = document.querySelectorAll('[id^="server-card-"]');
+    const uniq = new Set();
+    allCards.forEach(card => {
+      const idStr = card.id.replace('server-card-', '');
+      const sid = parseInt(idStr, 10);
+      if (!isNaN(sid)) uniq.add(sid);
+    });
+    let active = 0; let totalOnline = 0;
+    _activeByServer.forEach(v => { if (v) active++; });
+    _onlineByServer.forEach(n => { totalOnline += (Number(n) || 0); });
+
+    /* Суммарная скорость (bytes/sec) по всем активным серверам */
+    let totalUpBytes = 0, totalDownBytes = 0;
+    _netIOByServer.forEach((io, sid) => {
+      /* учитываем только сейчас активные серверы */
+      if (_activeByServer.get(sid)) {
+        totalUpBytes   += Number(io.up   || 0);
+        totalDownBytes += Number(io.down || 0);
+      }
+    });
+    const totalBitsPerSec = (totalUpBytes + totalDownBytes) * 8;
+    const upBitsPerSec    = totalUpBytes   * 8;
+    const downBitsPerSec  = totalDownBytes * 8;
+
+    const $ = id => document.getElementById(id);
+    if ($('agg-total-servers'))  $('agg-total-servers').textContent  = String(uniq.size);
+    if ($('agg-active-servers')) $('agg-active-servers').textContent = String(active);
+    if ($('agg-total-online'))   $('agg-total-online').textContent   = String(totalOnline);
+
+    const trafEl = $('agg-total-traffic');
+    const breakdownEl = $('agg-traffic-breakdown');
+    if (trafEl) {
+      if (_netIOByServer.size === 0) {
+        trafEl.innerHTML = '<span class="text-muted2">—</span>';
+        if (breakdownEl) breakdownEl.innerHTML = '';
+      } else {
+        const total = fmtBitsPerSec(totalBitsPerSec);
+        trafEl.innerHTML = `${total.value}<span class="text-[12px] text-muted2 font-normal ml-1">${total.unit}</span>`;
+        if (breakdownEl) {
+          const up = fmtBitsPerSec(upBitsPerSec);
+          const dn = fmtBitsPerSec(downBitsPerSec);
+          breakdownEl.innerHTML = `
+            <span class="inline-flex items-center gap-0.5 min-w-0 truncate" title="Входящий трафик">
+              <i data-lucide="arrow-down" class="w-2.5 h-2.5 shrink-0" style="color:#10b981;"></i><span class="truncate">${dn.value}${dn.unit}</span>
+            </span>
+            <span class="inline-flex items-center gap-0.5 min-w-0 truncate" title="Исходящий трафик">
+              <i data-lucide="arrow-up" class="w-2.5 h-2.5 shrink-0" style="color: var(--color-brand-500);"></i><span class="truncate">${up.value}${up.unit}</span>
+            </span>
+          `;
+          if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+      }
+    }
+  } catch(e){}
+}
+
+function statusInfo(server) {
+  if (server.status)  return { key: 'online',  label: 'Онлайн',   color: '#10b981' };
+  if (server.timeout) return { key: 'timeout', label: 'Таймаут',  color: '#f59e0b' };
+  if (server.error)   return { key: 'error',   label: 'Ошибка',   color: '#ef4444' };
+  return                     { key: 'offline', label: 'Офлайн',   color: '#f43f5e' };
+}
+
+function loadColor(p) {
+  if (p >= 80) return '#f43f5e';
+  if (p >= 65) return '#f59e0b';
+  return 'var(--color-brand-500)';
+}
+
+function metricCell(label, val, icon) {
+  const has = (val !== undefined && val !== null && !isNaN(Number(val)));
+  const num = has ? Number(val) : 0;
+  const display = has ? `${num}<span class="text-[11px] text-muted2 font-normal">%</span>` : '<span class="text-muted2 text-[12px]">—</span>';
+  return `
+    <div class="rounded-[10px] p-2" style="background: var(--admin-bg-soft);">
+      <div class="flex items-center gap-1 text-[10.5px] text-subtle2 uppercase tracking-wider">
+        <i data-lucide="${icon}" class="w-3 h-3"></i>${label}
+      </div>
+      <div class="mt-0.5 text-[14px] font-semibold leading-none" style="color:var(--admin-text-base);">${display}</div>
+      <div class="mt-1 h-1 rounded-full overflow-hidden" style="background: rgba(0,0,0,.05);">
+        <div class="h-full" style="width:${has ? num : 0}%; background:${loadColor(num)};"></div>
+      </div>
+    </div>`;
+}
+
+function fmtMbps(v) {
+  v = Number(v) || 0;
+  return v >= 1000 ? (v/1000).toFixed(2) + ' Gbps' : v.toFixed(1) + ' Mbps';
+}
+
+function renderServerStatus(server) {
+  const card = document.getElementById(`server-card-${server.id}`);
+  if (!card) return;
+
+  // статусная иконка-индикатор (цвет + пульсация) + текст статуса
+  const info = statusInfo(server);
+  const iconWrap = card.querySelector('.server-status-icon');
+  if (iconWrap) {
+    iconWrap.setAttribute('data-status', info.key);
+    iconWrap.setAttribute('title', info.label);
+  }
+  const statusTextEl = card.querySelector(`#status-text-${server.id}`);
+  if (statusTextEl) {
+    statusTextEl.textContent = info.label;
+    statusTextEl.style.color = info.color;
+    statusTextEl.style.fontWeight = '600';
+  }
+  card.classList.remove('shadow-ok','shadow-bad');
+
+  // ping (показываем только если онлайн)
+  const pingEl = card.querySelector(`#ping-${server.id}`);
+  if (pingEl) {
+    if (server.ping_ms !== null && server.ping_ms !== undefined && server.status) {
+      let cls = 'text-emerald-500';
+      if (server.ping_ms >= 1500) cls = 'text-rose-500';
+      else if (server.ping_ms >= 750) cls = 'text-amber-500';
+      pingEl.innerHTML = `<span class="text-subtle2">·</span> <span class="${cls}" style="font-size: 11px; font-weight: 600;" title="Время запроса статистики к серверу">${server.ping_ms}ms</span>`;
+    } else {
+      pingEl.innerHTML = '';
+    }
+  }
+
+  // алерты
+  const alertsWrap = card.querySelector('.server-alerts');
+  if (alertsWrap) {
+    let html = '';
+    if (server.timeout) {
+      html += `<div class="alert-timeout mt-2 rounded-[8px] px-2.5 py-1.5 text-[12px] flex items-center gap-1.5" style="background: rgb(245 158 11 / .1); color:#f59e0b;"><i data-lucide="clock" class="w-3.5 h-3.5"></i>Превышен таймаут подключения (10с)</div>`;
+    }
+    if (server.error) {
+      html += `<div class="alert-error mt-2 rounded-[8px] px-2.5 py-1.5 text-[12px] flex items-center gap-1.5" style="background: rgb(239 68 68 / .1); color:#ef4444;"><i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>Ошибка: ${server.error}</div>`;
+    }
+    alertsWrap.innerHTML = html;
+  }
+
+  // подготовка stats fallback
+  try {
+    if (server.stats) {
+      const s = server.stats;
+      if (s.cpu_usage === undefined && typeof s.cpu === 'number') s.cpu_usage = Number(s.cpu.toFixed(1));
+      if (s.memory_usage === undefined && s.mem && typeof s.mem.current === 'number' && typeof s.mem.total === 'number' && s.mem.total > 0) {
+        s.memory_usage = Number(((s.mem.current/s.mem.total)*100).toFixed(1));
+      }
+      if (s.disk_usage === undefined && s.disk && typeof s.disk.current === 'number' && typeof s.disk.total === 'number' && s.disk.total > 0) {
+        s.disk_usage = Number(((s.disk.current/s.disk.total)*100).toFixed(1));
+      }
+    }
+  } catch(e){}
+
+  // блок stats
+  const statsBlock = card.querySelector('.server-stats-block');
+  if (statsBlock) {
+    const s = server.stats || {};
+    const hasAny = !!(s && (
+      s.cpu_usage !== undefined || s.memory_usage !== undefined || s.disk_usage !== undefined ||
+      s.online_users !== undefined || (s.xray && s.xray.state) || s.uptime !== undefined ||
+      (s.publicIP && (s.publicIP.ipv4 || s.publicIP.ipv6)) || s.netIO !== undefined ||
+      s.netTraffic !== undefined || s.tcpCount !== undefined || s.udpCount !== undefined
+    ));
+
+    if (hasAny) {
+      let html = '';
+
+      // онлайн-блок
+      if (s.online_users !== undefined) {
+        html += `
+        <div class="rounded-[10px] p-2.5 mb-2 flex items-center gap-2.5 min-w-0" style="background: var(--admin-bg-soft);">
+          <div class="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background: rgb(16 185 129 / .12);">
+            <i data-lucide="users-round" class="w-4 h-4" style="color:#10b981;"></i>
+            ${server.status ? `<span class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style="background:#10b981; box-shadow:0 0 0 2px var(--admin-bg-elevated);"></span>` : ''}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[10.5px] text-subtle2 uppercase tracking-wider truncate">Онлайн на сервере</div>
+            <div class="flex items-baseline gap-1 min-w-0">
+              <span class="text-[18px] font-semibold leading-none truncate" style="color:var(--admin-text-base);">${s.online_users}</span>
+              <span class="text-[11px] text-muted2 truncate">клиентов</span>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      // CPU/RAM/Disk
+      const showHardware = (s.cpu_usage !== undefined || s.memory_usage !== undefined || s.disk_usage !== undefined);
+      if (showHardware) {
+        html += '<div class="grid grid-cols-3 gap-2 mb-2">';
+        html += metricCell('CPU',  s.cpu_usage,    'cpu');
+        html += metricCell('RAM',  s.memory_usage, 'memory-stick');
+        html += metricCell('Disk', s.disk_usage,   'hard-drive');
+        html += '</div>';
+      }
+
+      // Net IO + протокол/inbound_id (берём из data-атрибутов карточки, т.к. в API этих полей нет)
+      const hasNet = (s.netIO && (typeof s.netIO.up === 'number' || typeof s.netIO.down === 'number'));
+      const proto = (server.protocol || s.protocol || card.dataset.serverProtocol || '').toString();
+      let inboundId = '';
+      if (server.inbound_id !== undefined && server.inbound_id !== null) inboundId = server.inbound_id;
+      else if (s.inbound_id !== undefined && s.inbound_id !== null) inboundId = s.inbound_id;
+      else if (card.dataset.serverInboundId) inboundId = card.dataset.serverInboundId;
+      if (hasNet || proto || inboundId !== '') {
+        html += '<div class="grid grid-cols-2 gap-2 text-[12px] mb-1">';
+        if (hasNet) {
+          // Значения форматируем компактно: «622<sub>Mbps</sub>», «1.20<sub>Gbps</sub>»
+          // — так не вылезаем за пределы узкой колонки даже на мобильных и при большом числе.
+          // Вместо текста «RX/TX» используем только иконки-стрелки (общепонятная нотация).
+          const upBps = Number(s.netIO.up || 0) * 8;
+          const downBps = Number(s.netIO.down || 0) * 8;
+          const up = fmtBitsPerSec(upBps);
+          const dn = fmtBitsPerSec(downBps);
+          html += `
+            <div class="flex items-center gap-1 text-muted2 min-w-0" title="Входящий трафик">
+              <i data-lucide="arrow-down" class="w-3.5 h-3.5 shrink-0 text-emerald-500"></i>
+              <span class="ml-auto font-medium truncate min-w-0" style="color:var(--admin-text-base);">${dn.value}<span class="text-[10px] text-muted2 font-normal ml-0.5">${dn.unit}</span></span>
+            </div>
+            <div class="flex items-center gap-1 text-muted2 min-w-0" title="Исходящий трафик">
+              <i data-lucide="arrow-up" class="w-3.5 h-3.5 shrink-0" style="color: var(--color-brand-500);"></i>
+              <span class="ml-auto font-medium truncate min-w-0" style="color:var(--admin-text-base);">${up.value}<span class="text-[10px] text-muted2 font-normal ml-0.5">${up.unit}</span></span>
+            </div>`;
+        }
+        if (inboundId !== '' || proto) {
+          html += `
+            <div class="flex items-center gap-1.5 text-muted2 col-span-2 min-w-0">
+              <i data-lucide="hash" class="w-3.5 h-3.5 shrink-0"></i>
+              <span class="shrink-0">inbound_id</span>
+              <span class="font-medium font-mono truncate min-w-0" style="color:var(--admin-text-base);">${inboundId !== '' ? inboundId : '—'}</span>
+              ${proto ? `<span class="ml-auto tw-chip shrink-0" style="background: rgb(249 115 22 / .18); color: #f97316; border: 1px solid rgb(249 115 22 / .35); font-weight: 600;">${proto}</span>` : ''}
+            </div>`;
+        }
+        html += '</div>';
+      }
+
+      statsBlock.innerHTML = html;
+    } else {
+      statsBlock.innerHTML = '';
+    }
+  }
+
+  // агрегаты
+  try {
+    _activeByServer.set(server.id, !!server.status);
+    // обновляем data-server-status на карточке (для табов «Офлайн» и счётчиков)
+    if (card) {
+      const newStatus = server.status ? 'online' : (server.timeout ? 'timeout' : (server.error ? 'error' : 'offline'));
+      card.dataset.serverStatus = newStatus;
+    }
+    const existing = _serverDataById.get(server.id);
+    if (existing) {
+      Object.assign(existing, {
+        name: server.name || existing.name,
+        status: server.status, stats: server.stats,
+        timeout: server.timeout, error: server.error
+      });
+    } else {
+      _serverDataById.set(server.id, {
+        id: server.id, name: server.name, status: server.status,
+        stats: server.stats, timeout: server.timeout, error: server.error
+      });
+    }
+    let onlineCnt = 0;
+    if (server && server.stats && server.stats.online_users !== undefined) {
+      onlineCnt = Number(server.stats.online_users) || 0;
+    }
+    _onlineByServer.set(server.id, onlineCnt);
+
+    /* Обновляем мгновенную скорость по серверу.
+       Если сервер активен и есть netIO — сохраняем; иначе обнуляем. */
+    if (server && server.status && server.stats && server.stats.netIO &&
+        (typeof server.stats.netIO.up === 'number' || typeof server.stats.netIO.down === 'number')) {
+      _netIOByServer.set(server.id, {
+        up:   Number(server.stats.netIO.up)   || 0,
+        down: Number(server.stats.netIO.down) || 0
+      });
+    } else if (!server.status) {
+      _netIOByServer.delete(server.id);
+    }
+    updateAggregateSummary();
+  } catch(e){}
+
+  // netTraffic → mbps fallback
+  try {
+    const nowTs = Date.now();
+    if (server && server.stats) {
+      if (!server.stats.netIO && server.stats.netTraffic) {
+        const currSent = Number(server.stats.netTraffic.sent || 0);
+        const currRecv = Number(server.stats.netTraffic.recv || 0);
+        const prev = netTrafficTotals.get(server.id);
+        if (prev) {
+          const dt = Math.max((nowTs - prev.ts) / 1000, .001);
+          const dS = currSent - prev.sent;
+          const dR = currRecv - prev.recv;
+          server.stats.netIO = {
+            up: dS > 0 ? dS / dt : 0,
+            down: dR > 0 ? dR / dt : 0
+          };
+          /* Учтём восстановленный netIO в общей сводке потребления */
+          if (server.status) {
+            _netIOByServer.set(server.id, {
+              up:   Number(server.stats.netIO.up)   || 0,
+              down: Number(server.stats.netIO.down) || 0
+            });
+            updateAggregateSummary();
+          }
+        }
+        netTrafficTotals.set(server.id, { sent: currSent, recv: currRecv, ts: nowTs });
+      }
+    }
+  } catch(e){}
+
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+/* Детали сервера для модалки */
+function buildServerDetailsHtml(server) {
+  try {
+    const st = server && server.stats ? server.stats : {};
+    const rows = [];
+    const cell = (icon, label, val, valClass) =>
+      `<div class="flex items-center gap-1.5 text-[12.5px]" style="color:var(--admin-text-muted);">
+         <i data-lucide="${icon}" class="w-3.5 h-3.5"></i>${label}:
+         <span class="font-semibold ${valClass||''}" style="color:var(--admin-text-base);">${val}</span>
+       </div>`;
+    if (st.cpu_usage !== undefined) rows.push(cell('cpu','CPU', `${st.cpu_usage}%`));
+    if (st.memory_usage !== undefined) rows.push(cell('memory-stick','RAM', `${st.memory_usage}%`));
+    if (st.disk_usage !== undefined) rows.push(cell('hard-drive','Диск', `${st.disk_usage}%`));
+    if (st.online_users !== undefined) rows.push(cell('wifi','Онлайн', st.online_users));
+    if (st.netIO && (typeof st.netIO.up === 'number' || typeof st.netIO.down === 'number')) {
+      const upM = ((Number(st.netIO.up||0)*8)/1e6).toFixed(1);
+      const dnM = ((Number(st.netIO.down||0)*8)/1e6).toFixed(1);
+      rows.push(cell('arrow-up','TX', `${upM} Mbps`));
+      rows.push(cell('arrow-down','RX', `${dnM} Mbps`));
+    }
+    if (st.xray && typeof st.xray.state === 'string') {
+      const isRun = st.xray.state === 'running';
+      rows.push(cell('zap', 'X-RAY', st.xray.state, isRun ? 'text-emerald-500' : 'text-rose-500'));
+    }
+    if (typeof st.uptime === 'number') rows.push(cell('clock','Аптайм', `${(st.uptime/3600).toFixed(1)}ч`));
+    if (st.publicIP && st.publicIP.ipv4) rows.push(cell('globe','IP', st.publicIP.ipv4));
+    if (st.netTraffic && typeof st.netTraffic.sent === 'number') rows.push(cell('arrow-up','Отправлено', `${(st.netTraffic.sent/(1024**3)).toFixed(1)} GB`));
+    if (st.netTraffic && typeof st.netTraffic.recv === 'number') rows.push(cell('arrow-down','Получено', `${(st.netTraffic.recv/(1024**3)).toFixed(1)} GB`));
+    if (typeof st.tcpCount === 'number') rows.push(cell('hash','TCP', st.tcpCount));
+    if (typeof st.udpCount === 'number') rows.push(cell('hash','UDP', st.udpCount));
+
+    if (!rows.length) {
+      return '<div class="text-[13px] text-muted2 py-3">Нет подробных данных. Подождите обновления статуса…</div>';
+    }
+    return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">${rows.join('')}</div>`;
+  } catch(e) {
+    return '<div class="text-[13px] text-muted2">Ошибка формирования деталей.</div>';
+  }
+}
+
+document.addEventListener('click', function(ev) {
+  const btn = ev.target.closest('.server-details-btn');
+  if (!btn) return;
+  const sid = parseInt(btn.getAttribute('data-server-id'), 10);
+  const data = _serverDataById.get(sid);
+  const titleEl = document.getElementById('serverDetailsTitle');
+  const bodyEl  = document.getElementById('serverDetailsBody');
+  if (titleEl) {
+    titleEl.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-brand-500"></i> ${data && data.name ? `${data.name} (ID: ${sid})` : `Сервер ID ${sid}`}`;
+  }
+  if (bodyEl) bodyEl.innerHTML = data ? buildServerDetailsHtml(data)
+                                      : '<div class="text-center text-[13px] text-muted2 py-3">Загружаю…</div>';
+  // экшены модалки
+  const baseServersPath = "{{ url_for('admin.settings_servers') }}";
+  const delForm    = document.getElementById('serverDetailsDeleteDisabledForm');
+  const panelForm  = document.getElementById('serverDetailsRestartPanelForm');
+  if (delForm)    delForm.action    = `${baseServersPath}/${sid}/delete_disabled`;
+  if (panelForm)  panelForm.action  = `${baseServersPath}/${sid}/xray_restart_panel`;
+  openModal('serverDetailsModal');
+});
+
+/* Запросы статусов: /<secret>/api/server_status/<id>?timeout=8 */
+function fetchStatuses() {
+  const cards = Array.from(document.querySelectorAll('[id^="server-card-"]'));
+  const secret = getSecretFromUrl();
+  cards.forEach(card => {
+    const sid = parseInt(card.id.replace('server-card-',''), 10);
+    if (isNaN(sid)) return;
+    fetch(`/${secret}/api/server_status/${sid}?timeout=8`)
+      .then(r => r.json())
+      .then(data => renderServerStatus(data))
+      .catch(() => {});
+  });
+}
+function stopRefresh() { if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; } }
+function restartRefresh() {
+  stopRefresh();
+  try { netTrafficTotals.clear(); } catch(e){}
+  fetchStatuses();
+  refreshTimer = setInterval(fetchStatuses, refreshDelay);
+}
+
+/* SortableJS для drag-and-drop (только desktop) */
+function isMobile() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || window.innerWidth <= 991
+    || ('ontouchstart' in window && window.innerWidth <= 991);
+}
+let _sortableServers = null, _sortableBalancer = null;
+
+function initSortable() {
+  if (typeof Sortable === 'undefined') return;
+  if (isMobile()) return; // на мобиле — без d-n-d, чтобы не мешать скроллу
+
+  const containerServers   = document.getElementById('serversGridServers');
+  const containerBalancer  = document.getElementById('serversGridBalancer');
+
+  function buildPayload() {
+    const allIds = [];
+    const collect = (node) => {
+      if (!node) return;
+      Array.from(node.children).forEach(c => {
+        const id = c.getAttribute('data-server-id');
+        const num = parseInt(id, 10);
+        if (!isNaN(num)) allIds.push(num);
+      });
+    };
+    collect(containerServers);
+    collect(containerBalancer);
+    return [...new Set(allIds)];
+  }
+
+  async function postReorder(uniqueIds) {
+    if (!uniqueIds.length) return;
+    try {
+      const secret = getSecretFromUrl();
+      const r = await fetch(`/${secret}/api/servers/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_ids: uniqueIds })
+      });
+      let data;
+      try { data = await r.json(); } catch(_) { throw new Error(`HTTP ${r.status}`); }
+      if (r.ok && data.success) {
+        toast('Порядок серверов обновлён', 'success');
+      } else {
+        throw new Error(data.error || data.message || `HTTP ${r.status}`);
+      }
+    } catch(e) {
+      toast(`Ошибка: ${e.message}`, 'error');
+      setTimeout(() => location.reload(), 1500);
+    }
+  }
+
+  const sortableOpts = {
+    animation: 200,
+    ghostClass: 'sortable-ghost',
+    dragClass: 'sortable-drag',
+    handle: '.server-card',
+    filter: '.tw-dropdown, .tw-dropdown-menu, .tw-btn, button, a, form',
+    preventOnFilter: false,
+    touchStartThreshold: 10,
+    forceFallback: false,
+  };
+
+  if (containerServers) {
+    if (_sortableServers) { _sortableServers.destroy(); _sortableServers = null; }
+    _sortableServers = new Sortable(containerServers, {
+      ...sortableOpts,
+      onEnd: async (evt) => {
+        if (evt.oldIndex === evt.newIndex) return;
+        await postReorder(buildPayload());
+      }
+    });
+  }
+  if (containerBalancer) {
+    if (_sortableBalancer) { _sortableBalancer.destroy(); _sortableBalancer = null; }
+    _sortableBalancer = new Sortable(containerBalancer, {
+      ...sortableOpts,
+      onEnd: async (evt) => {
+        if (evt.oldIndex === evt.newIndex) return;
+        await postReorder(buildPayload());
+      }
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Табы фильтрации серверов («Все / Офлайн / {tag}»).
+
+   Логика проста и без виртуализации:
+     • applyServerTabFilter(tab) — пробегаемся по всем .server-card,
+       прячем не подходящие (style.display = 'none' / '').
+     • updateServerTabCounts() — пересчёт чисел на табах + автоматически
+       показывает/скрывает таб «Офлайн» в зависимости от наличия упавших.
+     • Сохраняем активный таб в localStorage.
+     • Внутри таба сохраняется группировка «Серверы / Балансировка»;
+       пустые секции автоматически скрываются (см. эмпти-плейсхолдеры в
+       gridе — они в col-span-full и срабатывают только когда нет children).
+   ═══════════════════════════════════════════════════════════════════════════ */
+const _SRV_TAB_STORAGE = 'settingsServersActiveTab';
+
+function _getActiveServerTab() {
+  try { return localStorage.getItem(_SRV_TAB_STORAGE) || '__all'; }
+  catch (_) { return '__all'; }
+}
+function _setActiveServerTab(tab) {
+  try { localStorage.setItem(_SRV_TAB_STORAGE, tab); } catch (_) {}
+}
+
+function applyServerTabFilter(tab) {
+  const cards = document.querySelectorAll('.server-card');
+  cards.forEach(card => {
+    let show = true;
+    if (tab === '__all') {
+      show = true;
+    } else if (tab === '__offline') {
+      const st = card.dataset.serverStatus || 'loading';
+      show = (st !== 'online');   // показываем все, кроме онлайн
+    } else if (tab.startsWith('tag:')) {
+      const want = tab.slice(4);
+      show = ((card.dataset.serverTag || '').trim() === want);
+    }
+    card.style.display = show ? '' : 'none';
+  });
+
+  // Эмпти-плейсхолдеры в каждой секции (col-span-full):
+  // показываем «нет серверов» только если все карточки в gride скрыты.
+  ['serversGridServers', 'serversGridBalancer'].forEach(gridId => {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    const visible = Array.from(grid.querySelectorAll('.server-card'))
+      .some(c => c.style.display !== 'none');
+    // Если в gride есть видимые карточки — прячем placeholder, иначе показываем.
+    // Серверный Jinja-плейсхолдер (отрисованный через else в for-цикле) не трогаем —
+    // пусть сам решает, когда показываться при пустом списке.
+    // Здесь добавляем СВОЙ плейсхолдер — только когда фильтр скрыл все карточки.
+    let phEl = grid.querySelector('.srv-tab-empty');
+    if (!visible && !phEl) {
+      phEl = document.createElement('div');
+      phEl.className = 'col-span-full srv-tab-empty';
+      phEl.innerHTML = '<div class="tw-surface rounded-[var(--radius-card)] p-6 text-center text-[13px] text-muted2">'
+                    + 'В этом фильтре нет серверов.</div>';
+      grid.appendChild(phEl);
+    } else if (visible && phEl) {
+      phEl.remove();
+    }
+  });
+}
+
+function updateServerTabCounts() {
+  const cards = Array.from(document.querySelectorAll('.server-card'));
+  const all = cards.length;
+  let offline = 0;
+  const byTag = new Map();
+  cards.forEach(c => {
+    if ((c.dataset.serverStatus || 'loading') !== 'online') offline++;
+    const tag = (c.dataset.serverTag || '').trim();
+    if (tag) byTag.set(tag, (byTag.get(tag) || 0) + 1);
+  });
+
+  const allEl = document.querySelector('[data-count="all"]');
+  if (allEl) allEl.textContent = String(all);
+
+  const offBtn = document.querySelector('#serversTabs [data-tab="__offline"]');
+  const offEl  = document.querySelector('[data-count="offline"]');
+  if (offEl) offEl.textContent = String(offline);
+  if (offBtn) offBtn.classList.toggle('hidden', offline === 0);
+
+  byTag.forEach((n, tag) => {
+    // CSS.escape не нужен — datalist значения не содержат кавычек,
+    // но чтобы не наступить на спецсимвол — используем Array.find.
+    const els = document.querySelectorAll('#serversTabs [data-count-tag]');
+    els.forEach(el => {
+      if (el.getAttribute('data-count-tag') === tag) el.textContent = String(n);
+    });
+  });
+
+  // Если активный таб «Офлайн» внезапно стал пустым — переключаемся на «Все».
+  if (offline === 0 && _getActiveServerTab() === '__offline') {
+    _setActiveServerTab('__all');
+    _activateServerTab('__all');
+  }
+}
+
+function _activateServerTab(tab) {
+  document.querySelectorAll('#serversTabs .srv-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  applyServerTabFilter(tab);
+}
+
+function initServerTabs() {
+  const wrap = document.getElementById('serversTabs');
+  if (!wrap) return;
+  wrap.addEventListener('click', e => {
+    const btn = e.target.closest('.srv-tab');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    _setActiveServerTab(tab);
+    _activateServerTab(tab);
+  });
+  // Восстанавливаем сохранённый таб (но если он был tag:X и тег пропал — fallback на __all)
+  const saved = _getActiveServerTab();
+  const exists = !!wrap.querySelector(`.srv-tab[data-tab="${CSS.escape(saved)}"]`);
+  _activateServerTab(exists ? saved : '__all');
+}
+
+/* Хук в renderServerStatus: после обновления каждой карточки пересчитываем
+   счётчики и (если активный таб — Офлайн) пересчитываем фильтр. */
+const _origRenderServerStatus = window.renderServerStatus;
+if (typeof renderServerStatus === 'function') {
+  const _wrappedRenderServerStatus = renderServerStatus;
+  window.renderServerStatus = function (server) {
+    const r = _wrappedRenderServerStatus.apply(this, arguments);
+    try {
+      updateServerTabCounts();
+      const tab = _getActiveServerTab();
+      if (tab === '__offline') applyServerTabFilter(tab);
+    } catch (_) {}
+    return r;
+  };
+}
+
+/* Старт */
+document.addEventListener('DOMContentLoaded', function(){
+  // запоминаем серверы из исходной разметки
+  document.querySelectorAll('[id^="server-card-"]').forEach(card => {
+    const sid = parseInt(card.id.replace('server-card-',''), 10);
+    if (isNaN(sid)) return;
+    if (!_serverDataById.has(sid)) _serverDataById.set(sid, { id: sid });
+  });
+
+  updateAggregateSummary();
+  initServerTabs();
+  updateServerTabCounts();
+  restartRefresh();
+  initSortable();
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(initSortable, 250);
+  });
+});
+
+window.addEventListener('beforeunload', stopRefresh);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopRefresh();
+  else restartRefresh();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Синхронизация клиентов сервера: POST /<secret>/api/servers/<id>/sync
+   ═══════════════════════════════════════════════════════════════════════════ */
+let _currentSyncId = null, _currentSyncName = null;
+
+document.addEventListener('click', async function(e){
+  const btn = e.target.closest('.sync-server-btn');
+  if (!btn) return;
+  e.preventDefault(); e.stopPropagation();
+  const serverId = parseInt(btn.dataset.serverId, 10);
+  const serverName = btn.dataset.serverName;
+  // закрываем dropdown
+  if (typeof _closeAllDropdowns === 'function') _closeAllDropdowns();
+  else document.querySelectorAll('.tw-dropdown-menu').forEach(m => m.classList.add('hidden'));
+
+  const msg = `Выполнить полную синхронизацию клиентов для сервера "${serverName}"?\n\n` +
+              `Будет выполнена проверка:\n` +
+              `• Соответствие дат окончания подписки\n` +
+              `• Соответствие лимитов устройств (limit_ip)\n` +
+              `• Наличие flow настроек\n` +
+              `• Статус включения для активных подписок\n` +
+              `• Добавление отсутствующих клиентов из БД\n\n` +
+              `Все найденные несоответствия будут автоматически исправлены.`;
+  if (!confirm(msg)) return;
+  _currentSyncId = serverId;
+  _currentSyncName = serverName;
+  await startSync();
+});
+
+async function startSync() {
+  if (!_currentSyncId || !_currentSyncName) return;
+  const secret = getSecretFromUrl();
+  const fd = new FormData();
+  fd.append('fix_issues', 'true');
+  fd.append('check_expiry', 'true');
+  fd.append('check_limit_ip', 'true');
+  fd.append('check_flow', 'true');
+  fd.append('check_enable', 'true');
+  try {
+    const r = await fetch(`/${secret}/api/servers/${_currentSyncId}/sync`, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd
+    });
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      const text = await r.text();
+      if (r.status === 401 || r.status === 403) alert('Сессия истекла. Перезагрузите страницу и войдите заново.');
+      else if (text.includes('<!doctype') || text.includes('<html')) alert('Сервер вернул HTML вместо JSON. Возможно, сессия истекла.');
+      else alert('Ошибка: сервер вернул неожиданный формат. Статус: ' + r.status);
+      _currentSyncId = null; _currentSyncName = null; return;
+    }
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({error:'Неизвестная ошибка'}));
+      const errMsg = errData.error || `HTTP ${r.status}`;
+      if (r.status === 409) alert('⚠️ ' + errMsg);
+      else alert('Ошибка запуска синхронизации: ' + errMsg);
+      _currentSyncId = null; _currentSyncName = null; return;
+    }
+    const data = await r.json();
+    if (data.success) {
+      alert(`Синхронизация для сервера "${_currentSyncName}" запущена в фоновом режиме.\n\nРезультаты будут видны в логах сервера.`);
+    } else {
+      alert('Ошибка запуска синхронизации: ' + (data.error || 'Неизвестная ошибка'));
+    }
+    _currentSyncId = null; _currentSyncName = null;
+  } catch(err) {
+    alert('Ошибка запуска синхронизации: ' + err.message);
+    _currentSyncId = null; _currentSyncName = null;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Прогресс добавления клиентов на локацию
+   ═══════════════════════════════════════════════════════════════════════════ */
+let locationAddProgressInterval = null;
+
+function startLocationAddProgress(serverId) {
+  openModal('locationAddProgressModal');
+  const update = async () => {
+    try {
+      const r = await fetch(`/admin/api/servers/location-add-status/${serverId}`);
+      const data = await r.json();
+      if (data.status === 'not_found') {
+        clearInterval(locationAddProgressInterval);
+        document.getElementById('locationAddProgressMessage').textContent = 'Задача не найдена';
+        document.getElementById('locationAddProgressCloseBtn').style.display = 'inline-flex';
+        return;
+      }
+      const progress = data.progress || 0;
+      const bar = document.getElementById('locationAddProgressBar');
+      bar.style.width = progress + '%';
+      document.getElementById('locationAddProgressPercent').textContent = progress + '%';
+      document.getElementById('locationAddProgressMessage').textContent = data.message || 'Обработка…';
+      document.getElementById('locationAddProgressTotal').textContent   = data.total || 0;
+      document.getElementById('locationAddProgressAdded').textContent   = data.added || 0;
+      document.getElementById('locationAddProgressSkipped').textContent = (data.skipped_existing || 0) + (data.skipped_no_uuid || 0);
+      document.getElementById('locationAddProgressFailed').textContent  = data.failed || 0;
+      if (data.status === 'completed' || data.status === 'error') {
+        clearInterval(locationAddProgressInterval);
+        locationAddProgressInterval = null;
+        bar.style.background = data.status === 'completed' ? '#10b981' : '#ef4444';
+        document.getElementById('locationAddProgressCloseBtn').style.display = 'inline-flex';
+      }
+    } catch(e) { console.error('Ошибка получения статуса:', e); }
+  };
+  update();
+  locationAddProgressInterval = setInterval(update, 2000);
+}
+
+{% if show_progress %}
+document.addEventListener('DOMContentLoaded', function(){
+  startLocationAddProgress({{ show_progress }});
+});
+{% endif %}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SSH установка 3X-UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+let installTaskId = null;
+let installStatusInterval = null;
+let installLastLogIndex = 0;
+let serverAlreadyAdded = false;
+
+function resetInstallForm() {
+  installTaskId = null; installLastLogIndex = 0; serverAlreadyAdded = false;
+  if (installStatusInterval) { clearInterval(installStatusInterval); installStatusInterval = null; }
+  const $ = id => document.getElementById(id);
+  ['ssh_host','ssh_password','server_name'].forEach(k => { if ($(k)) $(k).value = ''; });
+  if ($('install_progress')) $('install_progress').style.display = 'none';
+  if ($('install_logs')) $('install_logs').innerHTML = '';
+  if ($('install_progress_bar')) { $('install_progress_bar').style.width = '0%'; $('install_progress_bar').style.background = 'var(--color-brand-500)'; }
+  if ($('install_progress_text')) $('install_progress_text').textContent = '0%';
+  if ($('install_result')) $('install_result').style.display = 'none';
+  const btn = $('btn_start_install');
+  const cancel = $('sshInstallCancelBtn');
+  if (btn)    { btn.disabled = false; btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i> Начать установку'; }
+  if (cancel) cancel.disabled = false;
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  const btnStart = document.getElementById('btn_start_install');
+  if (!btnStart) return;
+
+  const sshInstallForm = document.getElementById('sshInstallForm');
+  const installProgress = document.getElementById('install_progress');
+  const installLogs = document.getElementById('install_logs');
+  const installProgressBar = document.getElementById('install_progress_bar');
+  const installProgressText = document.getElementById('install_progress_text');
+  const installResult = document.getElementById('install_result');
+  const sshInstallCancelBtn = document.getElementById('sshInstallCancelBtn');
+
+  // Прячем/показываем поле «Flow» в зависимости от выбранного типа инбаунда:
+  // xtls-rprx-vision поддерживается только для TCP, для XHTTP его нельзя.
+  const inboundTypeEl = document.getElementById('inbound_type');
+  const flowFieldWrap = document.getElementById('flow_field_wrap');
+  const clientFlowEl  = document.getElementById('client_flow');
+  function syncFlowVisibility() {
+    const isTcp = (inboundTypeEl.value === 'vless_reality_tcp');
+    if (flowFieldWrap) flowFieldWrap.style.display = isTcp ? '' : 'none';
+  }
+  if (inboundTypeEl) {
+    inboundTypeEl.addEventListener('change', syncFlowVisibility);
+    syncFlowVisibility();
+  }
+
+  btnStart.addEventListener('click', async function(){
+    if (!sshInstallForm.checkValidity()) { sshInstallForm.reportValidity(); return; }
+    const host = document.getElementById('ssh_host').value.trim();
+    const sshPort = parseInt(document.getElementById('ssh_port').value) || 22;
+    const sshUsername = document.getElementById('ssh_username').value.trim();
+    const sshPassword = document.getElementById('ssh_password').value.trim();
+    const inboundType = document.getElementById('inbound_type').value;
+    const serverName  = document.getElementById('server_name').value.trim();
+    const certificateType = document.querySelector('input[name="certificate_type"]:checked')?.value || 'ip';
+    // Для XHTTP flow всегда пустой, для TCP — берём что выбрал пользователь.
+    const clientFlow = (inboundType === 'vless_reality_tcp')
+      ? (clientFlowEl ? clientFlowEl.value : 'xtls-rprx-vision')
+      : '';
+    if (!host || !sshPassword) { alert('Заполните все обязательные поля'); return; }
+    btnStart.disabled = true;
+    btnStart.innerHTML = '<span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background:#fff;"></span> Запуск…';
+    sshInstallCancelBtn.disabled = true;
+    installProgress.style.display = 'block';
+    installLogs.innerHTML = '';
+    installResult.style.display = 'none';
+
+    try {
+      const secret = getSecretFromUrl();
+      const r = await fetch(`/${secret}/api/servers/install-via-ssh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host, ssh_port: sshPort, ssh_username: sshUsername, ssh_password: sshPassword,
+          inbound_type: inboundType, server_name: serverName || `Server ${host}`,
+          certificate_type: certificateType,
+          client_flow: clientFlow,
+          ssl_domain: null, cert_port: null
+        })
+      });
+      const data = await r.json();
+      if (data.success && data.task_id) {
+        installTaskId = data.task_id;
+        installLastLogIndex = 0;
+        installStatusInterval = setInterval(checkInstallStatus, 2000);
+      } else {
+        alert('Ошибка запуска установки: ' + (data.error || 'Неизвестная ошибка'));
+        btnStart.disabled = false;
+        btnStart.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i> Начать установку';
+        sshInstallCancelBtn.disabled = false;
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      }
+    } catch(e) {
+      alert('Ошибка запуска установки: ' + e.message);
+      btnStart.disabled = false;
+      btnStart.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i> Начать установку';
+      sshInstallCancelBtn.disabled = false;
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+  });
+});
+
+async function checkInstallStatus() {
+  if (!installTaskId) return;
+  try {
+    const secret = getSecretFromUrl();
+    const r = await fetch(`/${secret}/api/servers/install-status/${installTaskId}`);
+    const data = await r.json();
+    if (!data) return;
+
+    // прогресс
+    const bar = document.getElementById('install_progress_bar');
+    const txt = document.getElementById('install_progress_text');
+    const progress = Number(data.progress || 0);
+    if (bar) bar.style.width = progress + '%';
+    if (txt) txt.textContent = progress + '%';
+
+    // логи. Бэкенд (ssh_installer.py) пушит объекты вида
+    //   { time: '2026-…T08:15:42.123', message: '…' }
+    // — поддерживаем и эту форму, и обычные строки (если когда-нибудь появятся).
+    if (Array.isArray(data.logs)) {
+      const logs = document.getElementById('install_logs');
+      const newLogs = data.logs.slice(installLastLogIndex);
+      newLogs.forEach(l => {
+        let timeStr = '';
+        let msgStr = '';
+        if (l && typeof l === 'object') {
+          msgStr = String(l.message ?? l.msg ?? l.text ?? JSON.stringify(l));
+          if (l.time) {
+            // ISO → HH:MM:SS (кратко). Если парс не удался — оставим как есть.
+            const d = new Date(l.time);
+            timeStr = isNaN(d) ? String(l.time) : d.toTimeString().slice(0, 8);
+          }
+        } else {
+          msgStr = String(l ?? '');
+        }
+        const line = document.createElement('div');
+        line.style.lineHeight = '1.5';
+        line.innerHTML = (timeStr
+          ? `<span style="color:var(--admin-text-subtle);">[${timeStr}]</span> `
+          : ''
+        ) + msgStr.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
+        logs.appendChild(line);
+      });
+      installLastLogIndex = data.logs.length;
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    if (data.status === 'completed' || data.status === 'error') {
+      clearInterval(installStatusInterval);
+      installStatusInterval = null;
+      const btn = document.getElementById('btn_start_install');
+      const cancel = document.getElementById('sshInstallCancelBtn');
+      if (btn)   { btn.disabled = false; btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i> Начать установку'; }
+      if (cancel) cancel.disabled = false;
+      if (bar) bar.style.background = data.status === 'completed' ? '#10b981' : '#ef4444';
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+      // Бэкенд возвращает поле под ключом `result` (раньше фронт по ошибке
+      // ждал `server_data` — это никогда не срабатывало). Поддерживаем оба
+      // имени на всякий случай.
+      const installResult = data.result || data.server_data;
+      if (data.status === 'completed' && installResult && !serverAlreadyAdded) {
+        serverAlreadyAdded = true;
+        await addInstalledServerToList(installResult);
+      } else if (data.status === 'error') {
+        // Дублируем ошибку в окно логов красным цветом — на случай если
+        // бэкенд не успел добавить её в data.logs[]. Заодно показываем toast.
+        const logs = document.getElementById('install_logs');
+        const errText = data.error || 'Неизвестная ошибка';
+        const alreadyShown = logs && logs.textContent.includes(errText);
+        if (logs && !alreadyShown) {
+          const errLine = document.createElement('div');
+          errLine.style.cssText = 'color:#ef4444; font-weight:600; line-height:1.5; padding-top:6px;';
+          errLine.textContent = '❌ ' + errText;
+          logs.appendChild(errLine);
+          logs.scrollTop = logs.scrollHeight;
+        }
+        toast('Ошибка установки: ' + errText, 'error');
+      }
+    }
+  } catch(e) {
+    console.error('Ошибка проверки статуса установки:', e);
+  }
+}
+
+/**
+ * После успешной установки добавляем сервер в список xui_servers через API.
+ * Бэкенд (ssh_installer.result) НЕ содержит server_name — он живёт только
+ * в форме фронта, поэтому подмешиваем его сюда.
+ */
+async function addInstalledServerToList(result) {
+  const serverNameInput = document.getElementById('server_name');
+  const serverName = (serverNameInput && serverNameInput.value.trim())
+    || `Server ${result.server_ip || ''}`.trim();
+
+  try {
+    const secret = getSecretFromUrl();
+    const r = await fetch(`/${secret}/api/servers/install-complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        // всё, что вернул ssh_installer (server_ip, port, webBasePath,
+        // username, password, inbound_id, ssh_host, client_flow, …)
+        ...result,
+        // плюс название от пользователя
+        server_name: serverName,
+      }),
+    });
+    const data = await r.json();
+    if (r.ok && data.success) {
+      toast(data.message || 'Сервер успешно добавлен', 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      // Установка успешна, но добавить в список не удалось — показываем явно,
+      // чтобы админ мог добавить вручную (данные есть в логе).
+      toast('Установка ок, но добавить сервер в список не удалось: '
+            + (data.error || `HTTP ${r.status}`), 'error');
+      console.error('install-complete failed:', data);
+    }
+  } catch (e) {
+    toast('Ошибка добавления сервера в список: ' + e.message, 'error');
+    console.error('install-complete network error:', e);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   «Хосты» — управление key_template для каждого сервера.
+
+   Источник данных: тег #hostsManagerData (type=application/json) в HTML —
+   полный servers[] из settings.xui_servers, отрендерен Jinja через tojson.
+   ВАЖНО: не пишите здесь литерально закрывающий тег <\/script> в комментарии —
+   HTML-парсер закроет <script> прямо в этом месте, и весь JS ниже вывалится
+   как plain text на страницу (привет, баг от 15.05).
+
+   Парсинг строки key_template:
+     • префикс [Balancer]   → isBalancer=true, остальная часть строки;
+     • lastIndexOf('#')     → name = всё после, url = всё до;
+     • в name — плейсхолдеры [Severname]/[Email]/[EndDate]/[UUID] и метки [PC]/[MOBILE]/[ROUTER]/[TV];
+       их не декодируем для превью, показываем «как есть»;
+     • иначе пробуем decodeURIComponent для красивого '🇩🇪 Frankfurt'.
+
+   Сохранение: POST /api/servers/<id>/key_template { keys: [...] } — атомарно.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function () {
+  const dataEl = document.getElementById('hostsManagerData');
+  if (!dataEl) return;  // на странице нет модалки (модератор) — выход
+  let serversData = [];
+  try { serversData = JSON.parse(dataEl.textContent || '[]') || []; } catch (_) { serversData = []; }
+  if (!Array.isArray(serversData)) serversData = [];
+
+  const PLACEHOLDER_RE =
+    /\[(?:Severname|Email|EndDate|UUID|Balancer|PC|MOBILE|ROUTER|TV)\]/i;
+  const PLACEHOLDERS = [
+    { token: '[Severname]', label: 'Имя узла сервера (как в боте)' },
+    { token: '[UUID]',      label: 'UUID клиента' },
+    { token: '[Email]',     label: 'Email клиента' },
+    { token: '[EndDate]',   label: 'Окончание подписки' },
+    { token: '[PC]',        label: 'Только для ПК — фильтр subpage (в имени после # или в имени узла)' },
+    { token: '[MOBILE]',    label: 'Мобильные (iOS / Android)' },
+    { token: '[ROUTER]',    label: 'Роутер (OpenWrt, Keenetic, …)' },
+    { token: '[TV]',        label: 'TV (Android TV, tvOS)' },
+  ];
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function parseKeyLine(line) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return null;
+    let isBalancer = false;
+    let body = trimmed;
+    if (body.startsWith('[Balancer]')) {
+      isBalancer = true;
+      body = body.slice('[Balancer]'.length).trim();
+    }
+    const hashIdx = body.lastIndexOf('#');
+    let url = body;
+    let name = '';
+    if (hashIdx >= 0) {
+      url  = body.slice(0, hashIdx);
+      name = body.slice(hashIdx + 1);
+    }
+    let displayName = name;
+    if (name && !PLACEHOLDER_RE.test(name)) {
+      try { displayName = decodeURIComponent(name); } catch (_) {}
+    }
+    return { raw: trimmed, isBalancer, url, name, displayName };
+  }
+
+  function buildKeyLine({ isBalancer, url, name }) {
+    const u = (url || '').trim();
+    const n = (name || '').trim();
+    const head = isBalancer ? '[Balancer]' : '';
+    if (!u && !n) return '';
+    return head + u + (n ? ('#' + n) : '');
+  }
+
+  function getServerKeys(srv) {
+    const tpl = (srv && srv.key_template) || '';
+    return tpl.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+
+  function shortenUrl(url, max) {
+    max = max || 60;
+    if (!url) return '';
+    if (url.length <= max) return url;
+    return url.slice(0, Math.max(0, max - 1)) + '…';
+  }
+
+  // ── Рендер списка ──────────────────────────────────────────────────────
+  const expandedSet = (() => {
+    try {
+      const raw = localStorage.getItem('hostsManagerExpanded');
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr.map(Number) : []);
+    } catch (_) { return new Set(); }
+  })();
+  function persistExpanded() {
+    try { localStorage.setItem('hostsManagerExpanded', JSON.stringify(Array.from(expandedSet))); } catch (_) {}
+  }
+
+  function renderList() {
+    const list = document.getElementById('hmList');
+    if (!list) return;
+    const search = (document.getElementById('hmSearch')?.value || '').trim().toLowerCase();
+    const onlyWithKeys = !!document.getElementById('hmOnlyWithKeys')?.checked;
+
+    const items = serversData
+      .map(s => ({ srv: s, keys: getServerKeys(s) }))
+      .filter(({ srv, keys }) => {
+        if (onlyWithKeys && !keys.length) return false;
+        if (!search) return true;
+        if ((srv.name || '').toLowerCase().includes(search)) return true;
+        return keys.some(k => k.toLowerCase().includes(search));
+      });
+
+    if (!items.length) {
+      list.innerHTML = `
+        <div class="text-center text-[13px] text-muted2 py-6 flex flex-col items-center gap-2">
+          <i data-lucide="server-off" class="w-6 h-6 opacity-50"></i>
+          <span>Ничего не найдено</span>
+        </div>`;
+      if (window.lucide) lucide.createIcons();
+      updateStats(0, 0);
+      return;
+    }
+
+    let totalKeys = 0;
+    list.innerHTML = items.map(({ srv, keys }) => {
+      totalKeys += keys.length;
+      const isOpen = expandedSet.has(Number(srv.id));
+      const keyCountLabel = keys.length === 0
+        ? '0 ключей' : (keys.length + ' ' + pluralKeys(keys.length));
+      const useKeyTpl = !!srv.use_key_template;
+      const safeName = escapeHtml(srv.name || '');
+      return `
+        <div class="hm-card${useKeyTpl ? ' is-active' : ''}" data-server-id="${srv.id}">
+          <div class="hm-head" data-toggle>
+            <i data-lucide="${isOpen ? 'chevron-down' : 'chevron-right'}" class="w-4 h-4 hm-chevron"></i>
+            <div class="hm-name" title="${safeName}">${safeName || '<span class="text-muted2">(без имени)</span>'}</div>
+            <span class="hm-id">#${srv.id}</span>
+            <span class="hm-chip ${useKeyTpl ? 'hm-chip--on' : 'hm-chip--off'}">
+              <i data-lucide="${useKeyTpl ? 'check' : 'minus'}" class="w-3 h-3"></i>
+              ${useKeyTpl ? 'конфигуратор вкл' : 'конфигуратор выкл'}
+            </span>
+            <span class="hm-count">${keyCountLabel}</span>
+          </div>
+          <div class="hm-body" style="${isOpen ? '' : 'display:none;'}">
+            ${keys.length === 0 ? '<div class="hm-empty text-[12.5px] text-muted2">Ни одного ключа. Добавьте ниже.</div>' : ''}
+            <div class="hm-keys">
+              ${keys.map((line, i) => renderKeyRow(srv.id, i, line)).join('')}
+            </div>
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm hm-add" data-add-key="${srv.id}">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Добавить ключ
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+    updateStats(serversData.length, totalKeys);
+    bindSortableLists();
+  }
+
+  // ── SortableJS на .hm-keys внутри развернутых карточек серверов ───────
+  // Drag-handle: иконка grip-vertical в начале строки. Кнопки/edit-форма
+  // фильтруются — на них нельзя начать перетаскивание.
+  function bindSortableLists() {
+    if (typeof Sortable === 'undefined') return;
+    const modal = document.getElementById('hostsManagerModal');
+    if (!modal) return;
+    modal.querySelectorAll('.hm-keys').forEach(el => {
+      // Уничтожаем старый instance, иначе Sortable дублирует события на rerender.
+      try { if (el._sortable) { el._sortable.destroy(); el._sortable = null; } } catch (_) {}
+      el._sortable = new Sortable(el, {
+        handle: '.hm-key-grip',
+        filter: '.hm-key--editing, .hm-edit, button, input, [data-edit-cancel], [data-edit-save]',
+        preventOnFilter: false,
+        animation: 180,
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        dragClass: 'sortable-drag',
+        delay: 250,
+        delayOnTouchOnly: true,
+        touchStartThreshold: 5,
+        onEnd: async (evt) => {
+          if (evt.oldIndex === evt.newIndex) return;
+          const card = el.closest('.hm-card');
+          if (!card) return;
+          const sid = Number(card.dataset.serverId);
+          const srv = serversData.find(s => Number(s.id) === sid);
+          if (!srv) { renderList(); return; }
+          const oldKeys = getServerKeys(srv);
+          const newKeys = [];
+          el.querySelectorAll('.hm-key').forEach(row => {
+            const idx = Number(row.dataset.idx);
+            if (!isNaN(idx) && oldKeys[idx] !== undefined) newKeys.push(oldKeys[idx]);
+          });
+          if (newKeys.length !== oldKeys.length) { renderList(); return; }
+          try {
+            await saveKeys(sid, newKeys);
+            renderList();
+            toast('Порядок ключей обновлён', 'success');
+          } catch (err) {
+            toast('Не удалось сохранить порядок: ' + err.message, 'error');
+            renderList();   // откатываем визуально из снапшота
+          }
+        }
+      });
+    });
+  }
+
+  function renderKeyRow(serverId, idx, line) {
+    const parsed = parseKeyLine(line) || { raw: line, isBalancer: false, url: line, name: '', displayName: '' };
+    const isPlaceholderName = parsed.name && PLACEHOLDER_RE.test(parsed.name);
+    const nameHtml = parsed.name
+      ? (isPlaceholderName
+          ? `<code class="hm-key-name hm-key-name--ph">${escapeHtml(parsed.name)}</code>`
+          : `<span class="hm-key-name" title="${escapeHtml(parsed.name)}">${escapeHtml(parsed.displayName || parsed.name)}</span>`)
+      : '<span class="hm-key-name hm-key-name--empty">(без имени)</span>';
+    const balChip = parsed.isBalancer
+      ? '<span class="hm-key-bal" title="balancer: ключ не отдаётся в подписку">⚖ balancer</span>'
+      : '';
+    return `
+      <div class="hm-key" data-server-id="${serverId}" data-idx="${idx}">
+        <div class="hm-key-row">
+          <span class="hm-key-grip" data-drag-handle title="Перетащить для смены порядка" aria-label="Перетащить">
+            <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
+          </span>
+          <i data-lucide="${parsed.isBalancer ? 'scale' : 'circle'}" class="w-3.5 h-3.5 hm-key-icon ${parsed.isBalancer ? 'hm-key-icon--bal' : ''}"></i>
+          <div class="hm-key-text">
+            <div class="hm-key-line1">
+              ${nameHtml}
+              ${balChip}
+            </div>
+            <code class="hm-key-url" title="${escapeHtml(parsed.url || '')}">${escapeHtml(shortenUrl(parsed.url, 110))}</code>
+          </div>
+          <div class="hm-key-actions">
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-edit-key
+                    title="Редактировать"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-copy-key
+                    title="Скопировать строку"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-delete-key
+                    title="Удалить" style="color:#f43f5e;"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderEditForm(parsed, opts) {
+    const isAdd = !!(opts && opts.isAdd);
+    const ph = PLACEHOLDERS.map(p =>
+      `<button type="button" class="hm-edit-ph" data-ph="${escapeHtml(p.token)}" title="${escapeHtml(p.label)}">${escapeHtml(p.token)}</button>`
+    ).join('');
+    return `
+      <div class="hm-edit">
+        <label class="hm-edit-row">
+          <input type="checkbox" data-edit-balancer ${parsed.isBalancer ? 'checked' : ''}>
+          <span class="text-[12px]">[Balancer]</span>
+          <span class="text-[11px] text-muted2">— ключ исключается из подписки (только для балансировщика)</span>
+        </label>
+        <label class="hm-edit-row">
+          <span class="hm-edit-label">URL</span>
+          <input type="text" class="tw-input font-mono text-[12.5px]" data-edit-url
+                 value="${escapeHtml(parsed.url || '')}"
+                 placeholder="vless://[UUID]@host:port?...">
+        </label>
+        <label class="hm-edit-row">
+          <span class="hm-edit-label">Имя <span class="text-[11px] text-muted2">(после #)</span></span>
+          <input type="text" class="tw-input font-mono text-[12.5px]" data-edit-name
+                 value="${escapeHtml(parsed.name || '')}"
+                 placeholder="[MOBILE] 🇩🇪 [Severname] или своё имя фрагмента">
+        </label>
+        <div class="hm-edit-ph-row">
+          <span class="text-[10.5px] text-subtle2 mr-1">Вставить:</span>
+          ${ph}
+        </div>
+        <div class="text-[10px] text-subtle2 mt-1 leading-snug max-w-[46rem]">
+          Метки <code>[PC]</code>… совпадают с фильтром subpage — обычно в начале фрагмента после #;
+          если в ключе указан только <code>[Severname]</code>, подставится имя узла из бота (метки можно задать и там).
+        </div>
+        <div class="hm-edit-actions">
+          <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" data-edit-save>
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+            ${isAdd ? 'Добавить' : 'Сохранить'}
+          </button>
+          <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" data-edit-cancel>
+            <i data-lucide="x" class="w-3.5 h-3.5"></i> Отмена
+          </button>
+        </div>
+      </div>`;
+  }
+
+  function pluralKeys(n) {
+    const n10 = n % 10, n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return 'ключ';
+    if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return 'ключа';
+    return 'ключей';
+  }
+
+  function updateStats(servers, keys) {
+    const el = document.getElementById('hmStats');
+    if (!el) return;
+    el.textContent = `${servers} ${plural(servers, ['сервер','сервера','серверов'])} · ${keys} ${pluralKeys(keys)}`;
+  }
+  function plural(n, forms) {
+    const n10 = n % 10, n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return forms[0];
+    if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return forms[1];
+    return forms[2];
+  }
+
+  // ── Сохранение в БД ────────────────────────────────────────────────────
+  async function saveKeys(serverId, keys, useKeyTemplate) {
+    const secret = (window.location.pathname.split('/').filter(Boolean)[0] || '');
+    const body = { keys };
+    if (useKeyTemplate !== undefined) body.use_key_template = !!useKeyTemplate;
+    const r = await fetch(`/${secret}/api/servers/${serverId}/key_template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify(body),
+    });
+    let data;
+    try { data = await r.json(); } catch (_) { data = null; }
+    if (!r.ok || !data || !data.success) {
+      const err = (data && data.error) || `HTTP ${r.status}`;
+      throw new Error(err);
+    }
+    // Подмешиваем обновлённые поля в локальный snapshot
+    const idx = serversData.findIndex(s => Number(s.id) === Number(serverId));
+    if (idx >= 0) {
+      Object.assign(serversData[idx], data.server || {});
+    }
+    return data.server;
+  }
+
+  // ── Делегированные клики ───────────────────────────────────────────────
+  document.addEventListener('click', async function (e) {
+    const modal = document.getElementById('hostsManagerModal');
+    if (!modal || !modal.classList.contains('is-open')) return;
+
+    // Toggle expand/collapse
+    const head = e.target.closest('.hm-head[data-toggle]');
+    if (head) {
+      const card = head.closest('.hm-card');
+      if (!card) return;
+      const sid = Number(card.dataset.serverId);
+      const isOpen = expandedSet.has(sid);
+      if (isOpen) expandedSet.delete(sid); else expandedSet.add(sid);
+      persistExpanded();
+      renderList();
+      return;
+    }
+
+    // Add new key
+    const addBtn = e.target.closest('[data-add-key]');
+    if (addBtn) {
+      const sid = Number(addBtn.dataset.addKey);
+      const card = modal.querySelector(`.hm-card[data-server-id="${sid}"]`);
+      if (!card) return;
+      const keysWrap = card.querySelector('.hm-keys');
+      // Если уже есть открытый add-form — ничего не делаем
+      if (card.querySelector('.hm-edit[data-mode="add"]')) return;
+      const formHtml = `<div class="hm-key hm-key--editing" data-mode="add">${renderEditForm({ isBalancer: false, url: '', name: '' }, { isAdd: true })}</div>`;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = formHtml;
+      const node = wrap.firstElementChild;
+      // Прячем вложенный hm-edit-mode
+      node.querySelector('.hm-edit')?.setAttribute('data-mode', 'add');
+      keysWrap.appendChild(node);
+      if (window.lucide) lucide.createIcons();
+      node.querySelector('[data-edit-url]')?.focus();
+      return;
+    }
+
+    // Edit existing
+    const editBtn = e.target.closest('[data-edit-key]');
+    if (editBtn) {
+      const row = editBtn.closest('.hm-key');
+      if (!row) return;
+      const sid = Number(row.dataset.serverId);
+      const idx = Number(row.dataset.idx);
+      const srv = serversData.find(s => Number(s.id) === sid);
+      if (!srv) return;
+      const keys = getServerKeys(srv);
+      const parsed = parseKeyLine(keys[idx]) || { isBalancer: false, url: '', name: '' };
+      // Заменяем содержимое строки на форму
+      row.classList.add('hm-key--editing');
+      row.innerHTML = renderEditForm(parsed, { isAdd: false });
+      row.dataset.mode = 'edit';
+      if (window.lucide) lucide.createIcons();
+      row.querySelector('[data-edit-url]')?.focus();
+      return;
+    }
+
+    // Cancel
+    const cancelBtn = e.target.closest('[data-edit-cancel]');
+    if (cancelBtn) {
+      // Просто перерисовываем — снапшот не менялся
+      renderList();
+      return;
+    }
+
+    // Save (edit / add)
+    const saveBtn = e.target.closest('[data-edit-save]');
+    if (saveBtn) {
+      const row = saveBtn.closest('.hm-key');
+      const card = saveBtn.closest('.hm-card');
+      if (!card) return;
+      const sid = Number(card.dataset.serverId);
+      const srv = serversData.find(s => Number(s.id) === sid);
+      if (!srv) return;
+      const isBalancer = !!row.querySelector('[data-edit-balancer]')?.checked;
+      const url = (row.querySelector('[data-edit-url]')?.value || '').trim();
+      const name = (row.querySelector('[data-edit-name]')?.value || '').trim();
+      if (!url) {
+        toast('Поле URL не может быть пустым', 'error');
+        return;
+      }
+      const newLine = buildKeyLine({ isBalancer, url, name });
+      const keys = getServerKeys(srv);
+      const mode = row.dataset.mode || 'edit';
+      if (mode === 'add') keys.push(newLine);
+      else {
+        const idx = Number(row.dataset.idx);
+        keys[idx] = newLine;
+      }
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background:#fff;"></span> Сохраняю…';
+      try {
+        await saveKeys(sid, keys);
+        toast(mode === 'add' ? 'Ключ добавлен' : 'Ключ обновлён', 'success');
+        renderList();
+      } catch (err) {
+        toast('Не удалось сохранить: ' + err.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i> ' + (mode === 'add' ? 'Добавить' : 'Сохранить');
+        if (window.lucide) lucide.createIcons();
+      }
+      return;
+    }
+
+    // Placeholder shortcut
+    const phBtn = e.target.closest('[data-ph]');
+    if (phBtn) {
+      const row = phBtn.closest('.hm-key');
+      if (!row) return;
+      const nameInput = row.querySelector('[data-edit-name]');
+      if (!nameInput) return;
+      // Вставляем в позицию каретки
+      const tok = phBtn.dataset.ph;
+      const start = nameInput.selectionStart || 0;
+      const end = nameInput.selectionEnd || 0;
+      nameInput.value = nameInput.value.slice(0, start) + tok + nameInput.value.slice(end);
+      nameInput.focus();
+      nameInput.setSelectionRange(start + tok.length, start + tok.length);
+      return;
+    }
+
+    // Copy
+    const copyBtn = e.target.closest('[data-copy-key]');
+    if (copyBtn) {
+      const row = copyBtn.closest('.hm-key');
+      if (!row) return;
+      const sid = Number(row.dataset.serverId);
+      const idx = Number(row.dataset.idx);
+      const srv = serversData.find(s => Number(s.id) === sid);
+      if (!srv) return;
+      const text = getServerKeys(srv)[idx] || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('Скопировано', 'success');
+      } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); toast('Скопировано', 'success'); }
+        catch (_) { toast('Не удалось скопировать', 'error'); }
+        document.body.removeChild(ta);
+      }
+      return;
+    }
+
+    // Delete
+    const delBtn = e.target.closest('[data-delete-key]');
+    if (delBtn) {
+      const row = delBtn.closest('.hm-key');
+      if (!row) return;
+      const sid = Number(row.dataset.serverId);
+      const idx = Number(row.dataset.idx);
+      const srv = serversData.find(s => Number(s.id) === sid);
+      if (!srv) return;
+      const keys = getServerKeys(srv);
+      const parsed = parseKeyLine(keys[idx]) || { displayName: '' };
+      const label = parsed.displayName || parsed.url || `строку #${idx + 1}`;
+      if (!confirm(`Удалить ключ «${label}» из сервера ${srv.name}?`)) return;
+      keys.splice(idx, 1);
+      try {
+        await saveKeys(sid, keys);
+        toast('Ключ удалён', 'success');
+        renderList();
+      } catch (err) {
+        toast('Не удалось удалить: ' + err.message, 'error');
+      }
+      return;
+    }
+  });
+
+  // ── Поиск / фильтр ─────────────────────────────────────────────────────
+  document.addEventListener('input', function (e) {
+    if (e.target && (e.target.id === 'hmSearch')) renderList();
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target && (e.target.id === 'hmOnlyWithKeys')) renderList();
+  });
+
+  // ── Открытие модалки → начальный рендер ────────────────────────────────
+  const _origOpenModal = window.openModal;
+  window.openModal = function (id) {
+    if (typeof _origOpenModal === 'function') _origOpenModal(id);
+    if (id === 'hostsManagerModal') {
+      renderList();
+      setTimeout(() => document.getElementById('hmSearch')?.focus(), 60);
+    }
+  };
+})();
+</script>
+
+{% endblock %}

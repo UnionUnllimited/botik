@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+{% block title %}Бэкап БД - {{ super() }}{% endblock %}
+{% block content %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   Settings · Бэкап
+   - Параметры авто-бэкапа в Telegram
+   - Содержимое архива (БД + .env, если есть)
+   - Ручной бэкап «прямо сейчас»
+   - Расчёт «следующий бэкап» по интервалу
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+{% set has_id = (backup.admin_telegram_id or '')|trim != '' %}
+
+<div class="tw-anim">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <div class="text-[12px] mb-1">
+        <a href="{{ url_for('admin.settings_general') }}"
+           class="inline-flex items-center gap-1" style="color: var(--admin-text-muted);">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i> К основным настройкам
+        </a>
+      </div>
+      <h1 class="text-[22px] font-semibold tracking-tight">Бэкап БД</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        ZIP в Telegram. Если S3 включён — только в S3 (+ <code class="tw-kbd">devices.db</code>).
+      </p>
+    </div>
+    <form method="post" action="{{ url_for('admin.manual_backup') }}" id="bkManualForm">
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" id="bkManualBtn"
+              {% if not has_id and not backup.s3_enabled %}disabled title="Укажите Telegram ID или включите S3"{% endif %}>
+        <i data-lucide="cloud-download" class="w-3.5 h-3.5"></i>
+        Сделать бэкап сейчас
+      </button>
+    </form>
+  </div>
+
+  {# ───── Сводка: статус / интервал / последний / следующий ───── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0"
+           style="background: {% if backup.enabled %}rgb(16 185 129 / .12){% else %}rgb(244 63 94 / .12){% endif %};">
+        <i data-lucide="{{ 'check-circle-2' if backup.enabled else 'circle-x' }}" class="w-4 h-4"
+           style="color: {% if backup.enabled %}#10b981{% else %}#f43f5e{% endif %};"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Авто-бэкап</div>
+        <div class="text-[18px] font-semibold leading-tight"
+             style="color: {% if backup.enabled %}#10b981{% else %}#f43f5e{% endif %};" id="bkStatusBadge">
+          {{ 'Включён' if backup.enabled else 'Выключен' }}
+        </div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: var(--admin-bg-soft);">
+        <i data-lucide="clock" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Интервал</div>
+        <div class="text-[18px] font-semibold leading-tight">
+          каждые <span id="bkIntervalDisplay">{{ backup.interval_hours or 3 }}</span> ч.
+        </div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="history" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Последний</div>
+        <div class="text-[14px] font-semibold leading-tight font-mono" title="{{ backup.last_backup or '' }}">
+          {{ backup.last_backup or '—' }}
+        </div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(245 158 11 / .12);">
+        <i data-lucide="calendar-clock" class="w-4 h-4" style="color: #f59e0b;"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Следующий</div>
+        <div class="text-[14px] font-semibold leading-tight font-mono"
+             id="bkNextBackup"
+             data-last="{{ backup.last_backup or '' }}"
+             data-interval="{{ backup.interval_hours or 3 }}"
+             data-enabled="{{ '1' if backup.enabled else '0' }}">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+
+    {# ═════════ Параметры ═════════ #}
+    <form method="post" id="bkSettingsForm" class="lg:col-span-2 space-y-3">
+      <div class="tw-card p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="settings-2" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+          <h3 class="text-[14px] font-semibold m-0">Параметры авто-бэкапа</h3>
+        </div>
+
+        {# Telegram ID #}
+        <div class="mb-3">
+          <label for="admin_telegram_id" class="block text-[12px] font-medium mb-1.5"
+                 style="color: var(--admin-text-muted);">
+            Telegram ID администратора
+          </label>
+          <div class="relative">
+            <i data-lucide="user" class="w-3.5 h-3.5 absolute"
+               style="left: 10px; top: 50%; transform: translateY(-50%); color: var(--admin-text-muted);"></i>
+            <input type="text" inputmode="numeric" pattern="[0-9]*"
+                   class="tw-input" id="admin_telegram_id" name="admin_telegram_id"
+                   value="{{ backup.admin_telegram_id or '' }}"
+                   autocomplete="off"
+                   style="padding-left: 32px;"
+                   placeholder="например: 123456789">
+          </div>
+          <div class="text-[11px] tw-text-subtle2 mt-1.5">
+            При включённом S3 — не используется. ID:
+            <a href="https://t.me/userinfobot" target="_blank" rel="noopener"
+              style="color: var(--color-brand-500);" class="hover:underline">@userinfobot</a>.
+          </div>
+        </div>
+
+        {# Интервал #}
+        <div class="mb-3">
+          <label for="interval_hours" class="block text-[12px] font-medium mb-1.5"
+                 style="color: var(--admin-text-muted);">
+            Интервал
+          </label>
+          <div class="flex items-center gap-2">
+            <input type="number" class="tw-input" id="interval_hours" name="interval_hours"
+                   value="{{ backup.interval_hours or 3 }}" min="1" max="168" required
+                   autocomplete="off" style="width: 110px;">
+            <span class="text-[13px] tw-text-muted2">часов</span>
+            {# быстрые пресеты #}
+            <div class="flex items-center gap-1 ml-2 flex-wrap">
+              {% for h, lbl in [(1,'1ч'), (3,'3ч'), (6,'6ч'), (12,'12ч'), (24,'1д'), (168,'7д')] %}
+              <button type="button" class="bk-preset tw-btn tw-btn-ghost tw-btn-sm"
+                      data-h="{{ h }}" style="padding: 0 8px; height: 26px; font-size: 11.5px;">
+                {{ lbl }}
+              </button>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="text-[11px] tw-text-subtle2 mt-1.5">1–168 ч.</div>
+        </div>
+
+        {# Toggle #}
+        <div class="rounded-[10px] p-3 flex items-center justify-between gap-3"
+             style="background: var(--admin-bg-soft);">
+          <div class="min-w-0">
+            <div class="text-[13px] font-semibold leading-tight">Авто-бэкап</div>
+            <div class="text-[11.5px] tw-text-subtle2 mt-0.5">По расписанию.</div>
+          </div>
+          <input type="checkbox" class="bk-toggle" id="enabled" name="enabled"
+                 {% if backup.enabled %}checked{% endif %}>
+        </div>
+      </div>
+
+      {# ───────── S3 хранилище ───────── #}
+      <div class="tw-card p-4">
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <i data-lucide="cloud" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+            <h3 class="text-[14px] font-semibold m-0">Отправка в S3</h3>
+          </div>
+          <input type="checkbox" class="bk-toggle" id="s3_enabled" name="s3_enabled"
+                 {% if backup.s3_enabled %}checked{% endif %}>
+        </div>
+
+        <div class="text-[11.5px] tw-text-subtle2 mb-3">
+          AWS, Yandex, Selectel, Backblaze, Timeweb.
+        </div>
+
+        <div id="s3-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3"
+             style="{% if not backup.s3_enabled %}opacity: .55;{% endif %}">
+
+          <div class="sm:col-span-2">
+            <label for="s3_endpoint" class="block text-[12px] font-medium mb-1.5" style="color: var(--admin-text-muted);">Endpoint</label>
+            <input type="text" class="tw-input" id="s3_endpoint" name="s3_endpoint"
+                   value="{{ backup.s3_endpoint or '' }}" autocomplete="off"
+                   placeholder="https://storage.yandexcloud.net">
+            <div class="text-[11px] tw-text-subtle2 mt-1">Пусто = AWS.</div>
+          </div>
+
+          <div>
+            <label for="s3_region" class="block text-[12px] font-medium mb-1.5" style="color: var(--admin-text-muted);">Region</label>
+            <input type="text" class="tw-input" id="s3_region" name="s3_region"
+                   value="{{ backup.s3_region or '' }}" autocomplete="off"
+                   placeholder="ru-central1">
+          </div>
+
+          <div>
+            <label for="s3_bucket" class="block text-[12px] font-medium mb-1.5" style="color: var(--admin-text-muted);">Bucket</label>
+            <input type="text" class="tw-input" id="s3_bucket" name="s3_bucket"
+                   value="{{ backup.s3_bucket or '' }}" autocomplete="off"
+                   placeholder="my-backups">
+          </div>
+
+          <div>
+            <label for="s3_access_key" class="block text-[12px] font-medium mb-1.5" style="color: var(--admin-text-muted);">Access Key</label>
+            <input type="text" class="tw-input" id="s3_access_key" name="s3_access_key"
+                   value="{{ backup.s3_access_key or '' }}" autocomplete="off"
+                   spellcheck="false">
+          </div>
+
+          <div>
+            <label for="s3_secret_key" class="block text-[12px] font-medium mb-1.5" style="color: var(--admin-text-muted);">Secret Key</label>
+            <input type="password" class="tw-input" id="s3_secret_key" name="s3_secret_key"
+                   value="" autocomplete="new-password"
+                   placeholder="{% if backup.s3_secret_key %}•••• (пусто = не менять){% else %}не указан{% endif %}">
+          </div>
+
+          <div class="sm:col-span-2">
+            <label for="s3_prefix" class="block text-[12px] font-medium mb-1.5" style="color: var(--admin-text-muted);">Префикс</label>
+            <input type="text" class="tw-input" id="s3_prefix" name="s3_prefix"
+                   value="{{ backup.s3_prefix or '' }}" autocomplete="off"
+                   placeholder="project/backups">
+            <div class="text-[11px] tw-text-subtle2 mt-1">
+              <code class="tw-kbd">{{ backup.s3_prefix or 'prefix' }}/backup_YYYY-MM-DD_HH-MM-SS.zip</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tw-card p-3 flex items-center justify-between gap-2 flex-wrap"
+           style="position: sticky; bottom: 8px; z-index: 5;">
+        <a href="{{ url_for('admin.settings_general') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i> Отмена
+        </a>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i> Сохранить
+        </button>
+      </div>
+    </form>
+
+    {# ═════════ Содержимое архива ═════════ #}
+    <div class="space-y-3">
+      <div class="tw-card p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="file-archive" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+          <h3 class="text-[14px] font-semibold m-0">Содержимое архива</h3>
+        </div>
+
+        {# БД #}
+        <div class="rounded-[10px] px-3 py-2.5 flex items-center gap-3 mb-2"
+             style="background: var(--admin-bg-soft);">
+          <div class="w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0"
+               style="background: rgb(99 102 241 / .12);">
+            <i data-lucide="database" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-semibold truncate" title="{{ db_path or '' }}">
+              {% if db_path %}{{ db_path.split('/')[-1].split('\\')[-1] }}{% else %}—{% endif %}
+            </div>
+            <div class="text-[11px] tw-text-subtle2 truncate" title="{{ db_path or '' }}">
+              {{ db_path or 'путь не настроен' }}
+            </div>
+          </div>
+          <span class="text-[11px] font-mono tw-text-subtle2 shrink-0">
+            {% if db_size is not none %}
+              {%- if db_size < 1024 -%}{{ db_size }} B
+              {%- elif db_size < 1024*1024 -%}{{ (db_size / 1024)|round(1) }} KB
+              {%- else -%}{{ (db_size / 1024 / 1024)|round(1) }} MB
+              {%- endif -%}
+            {% else %}—{% endif %}
+          </span>
+        </div>
+
+        {# .env #}
+        <div class="rounded-[10px] px-3 py-2.5 flex items-center gap-3 mb-2"
+             style="background: {% if env_present %}rgb(16 185 129 / .08){% else %}var(--admin-bg-soft){% endif %};">
+          <div class="w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0"
+               style="background: {% if env_present %}rgb(16 185 129 / .15){% else %}rgb(245 158 11 / .15){% endif %};">
+            <i data-lucide="{{ 'shield-check' if env_present else 'shield-alert' }}" class="w-4 h-4"
+               style="color: {% if env_present %}#10b981{% else %}#f59e0b{% endif %};"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-semibold">.env</div>
+            <div class="text-[11px] tw-text-subtle2">
+              {% if env_present %}найден{% else %}нет — пропустим{% endif %}
+            </div>
+          </div>
+          <span class="text-[11px] font-mono tw-text-subtle2 shrink-0">
+            {% if env_size is not none %}
+              {%- if env_size < 1024 -%}{{ env_size }} B
+              {%- else -%}{{ (env_size / 1024)|round(1) }} KB
+              {%- endif -%}
+            {% else %}—{% endif %}
+          </span>
+        </div>
+
+        {# devices.db — только при включённом S3 #}
+        <div class="rounded-[10px] px-3 py-2.5 flex items-center gap-3"
+             style="background: {% if backup.s3_enabled and devices_db_present %}rgb(16 185 129 / .08){% else %}var(--admin-bg-soft){% endif %};
+                    {% if not backup.s3_enabled %}opacity: .55;{% endif %}">
+          <div class="w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0"
+               style="background: rgb(168 85 247 / .15);">
+            <i data-lucide="smartphone" class="w-4 h-4" style="color: #a855f7;"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-semibold">devices.db</div>
+            <div class="text-[11px] tw-text-subtle2">
+              {% if not backup.s3_enabled %}только при S3
+              {% elif devices_db_present %}найден
+              {% else %}нет — пропустим{% endif %}
+            </div>
+          </div>
+          <span class="text-[11px] font-mono tw-text-subtle2 shrink-0">
+            {% if devices_db_size is not none %}
+              {%- if devices_db_size < 1024 -%}{{ devices_db_size }} B
+              {%- elif devices_db_size < 1024*1024 -%}{{ (devices_db_size / 1024)|round(1) }} KB
+              {%- else -%}{{ (devices_db_size / 1024 / 1024)|round(1) }} MB
+              {%- endif -%}
+            {% else %}—{% endif %}
+          </span>
+        </div>
+
+        <div class="text-[11px] tw-text-subtle2 mt-3 flex items-start gap-1.5">
+          <i data-lucide="info" class="w-3 h-3 mt-0.5 shrink-0"></i>
+          <code class="tw-kbd">backup_YYYY-MM-DD_HH-MM-SS.zip</code>
+        </div>
+      </div>
+
+      {# Безопасность #}
+      <div class="rounded-[10px] px-3 py-2.5 flex items-start gap-2 text-[12.5px]"
+           style="background: rgb(244 63 94 / .08); color: var(--admin-text-base);
+                  border: 1px solid rgb(244 63 94 / .25);">
+        <i data-lucide="lock" class="w-4 h-4 shrink-0 mt-0.5" style="color: #f43f5e;"></i>
+        <div>В архиве токены и ключи — не передавайте посторонним.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+
+  // ─── Toggle статус ───
+  const toggle = $('#enabled');
+  const statusBadge = $('#bkStatusBadge');
+  if (toggle && statusBadge) {
+    toggle.addEventListener('change', function() {
+      const on = this.checked;
+      statusBadge.textContent = on ? 'Включён' : 'Выключен';
+      statusBadge.style.color = on ? '#10b981' : '#f43f5e';
+      // обновим следующий бэкап
+      nextEl.dataset.enabled = on ? '1' : '0';
+      renderNext();
+    });
+  }
+
+  // ─── Пресеты интервала ───
+  const intervalInput = $('#interval_hours');
+  const intervalDisplay = $('#bkIntervalDisplay');
+  document.querySelectorAll('.bk-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      intervalInput.value = btn.dataset.h;
+      intervalDisplay.textContent = btn.dataset.h;
+      nextEl.dataset.interval = btn.dataset.h;
+      renderNext();
+    });
+  });
+  if (intervalInput) {
+    intervalInput.addEventListener('input', () => {
+      const v = Math.max(1, Math.min(168, parseInt(intervalInput.value || '3', 10) || 3));
+      intervalDisplay.textContent = v;
+      nextEl.dataset.interval = String(v);
+      renderNext();
+    });
+  }
+
+  // ─── Расчёт «следующий бэкап» ───
+  const nextEl = $('#bkNextBackup');
+  function parseLast(s) {
+    if (!s) return null;
+    // формат: '2026-04-23 18:42:11'
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return null;
+    return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+  }
+  function fmt(d) {
+    const pad = (n) => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  function renderNext() {
+    if (!nextEl) return;
+    if (nextEl.dataset.enabled !== '1') {
+      nextEl.textContent = 'выключен';
+      nextEl.style.opacity = '.6';
+      return;
+    }
+    const last = parseLast(nextEl.dataset.last);
+    const interval = parseInt(nextEl.dataset.interval || '3', 10);
+    if (!last) {
+      nextEl.textContent = 'после первого';
+      nextEl.style.opacity = '.85';
+      return;
+    }
+    const next = new Date(last.getTime() + interval * 3600 * 1000);
+    const now = new Date();
+    nextEl.style.opacity = '1';
+    if (next <= now) {
+      nextEl.textContent = 'сейчас';
+    } else {
+      const diffH = Math.round((next - now) / 3600000 * 10) / 10;
+      nextEl.textContent = fmt(next) + (diffH < 24 ? ` (через ${diffH} ч.)` : '');
+    }
+  }
+  renderNext();
+
+  // ─── S3: фейдим поля, если выключено ───
+  const s3Toggle = $('#s3_enabled');
+  const s3Fields = $('#s3-fields');
+  if (s3Toggle && s3Fields) {
+    s3Toggle.addEventListener('change', function() {
+      s3Fields.style.opacity = this.checked ? '1' : '.55';
+    });
+  }
+
+  // ─── Подтверждение ручного бэкапа ───
+  const manualForm = $('#bkManualForm');
+  const manualBtn = $('#bkManualBtn');
+  if (manualForm && manualBtn) {
+    manualForm.addEventListener('submit', (e) => {
+      if (manualBtn.disabled) { e.preventDefault(); return; }
+      manualBtn.disabled = true;
+      manualBtn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Отправляем…';
+      if (window.lucide) lucide.createIcons();
+    });
+  }
+})();
+</script>
+
+{% endblock %}

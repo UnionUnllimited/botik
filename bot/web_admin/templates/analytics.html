@@ -1,0 +1,696 @@
+{% extends "base.html" %}
+{% block title %}Аналитика — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Аналитика</h1>
+      <p class="text-[13px] text-muted2 mt-1">Подробная статистика по клиентам и платежам.</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <span id="anLastUpdate" class="text-[11.5px] text-muted2 mr-1"></span>
+      <div class="an-seg" id="anPeriodSeg" role="tablist">
+        <button data-period="7d">7 дней</button>
+        <button data-period="30d" class="active">30 дней</button>
+        <button data-period="90d">90 дней</button>
+        <button data-period="365d">Год</button>
+        <button data-period="all">Всё время</button>
+      </div>
+      <button id="anRefreshBtn" type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="anLoad()">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> <span>Обновить</span>
+      </button>
+    </div>
+  </div>
+
+  {% if forbidden %}
+  <div class="tw-surface rounded-[var(--radius-card)] p-6 border-l-4"
+       style="border-left-color: #f59e0b; background: rgb(245 158 11 / .06);">
+    <div class="flex items-start gap-3">
+      <i data-lucide="lock" class="w-5 h-5 mt-0.5" style="color:#f59e0b;"></i>
+      <div>
+        <div class="font-semibold text-[14px] mb-1" style="color:#f59e0b;">Раздел доступен только админу</div>
+        <div class="text-[13px] text-muted2">Финансовая аналитика скрыта для модераторов.</div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+
+  {# ───── Сводные KPI плашки ───── #}
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3" id="anKpiGrid">
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="users-round" class="w-3 h-3"></i>Юзеры</div>
+      <div class="value" id="kpiUsers">—</div>
+      <div class="sub" id="kpiUsersSub">—</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="user-plus" class="w-3 h-3"></i>Новые за период</div>
+      <div class="value" id="kpiNewUsers">—</div>
+      <div class="sub" id="kpiNewUsersSub">—</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="check-circle-2" class="w-3 h-3" style="color:#10b981"></i>Активные</div>
+      <div class="value" id="kpiActiveSubs">—</div>
+      <div class="sub" id="kpiActiveSubsSub">—</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="alarm-clock" class="w-3 h-3" style="color:#f59e0b"></i>Истекают &lt; 7д</div>
+      <div class="value" id="kpiExpiring">—</div>
+      <div class="sub" id="kpiExpiringSub">требуют продления</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="banknote" class="w-3 h-3" style="color:var(--color-brand-500)"></i>Выручка</div>
+      <div class="value" id="kpiRevenue">—</div>
+      <div class="sub" id="kpiRevenueSub">—</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="receipt" class="w-3 h-3" style="color:var(--color-brand-500)"></i>Средний чек</div>
+      <div class="value" id="kpiAvgCheck">—</div>
+      <div class="sub" id="kpiAvgCheckSub">за период</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="trending-up" class="w-3 h-3" style="color:#10b981"></i>ARPU</div>
+      <div class="value" id="kpiArpu">—</div>
+      <div class="sub" id="kpiArpuSub">на платящего</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="percent" class="w-3 h-3" style="color:#a855f7"></i>Конверсия</div>
+      <div class="value" id="kpiConversion">—</div>
+      <div class="sub" id="kpiConversionSub">из новых юзеров</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="users" class="w-3 h-3"></i>Платящие</div>
+      <div class="value" id="kpiPayers">—</div>
+      <div class="sub" id="kpiPayersSub">всего</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="x-circle" class="w-3 h-3" style="color:#f43f5e"></i>Истёкших</div>
+      <div class="value" id="kpiExpired">—</div>
+      <div class="sub" id="kpiExpiredSub">—</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="user-x" class="w-3 h-3" style="color:#94a3b8"></i>Без подписки</div>
+      <div class="value" id="kpiNoSubs">—</div>
+      <div class="sub" id="kpiNoSubsSub">—</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-kpi">
+      <div class="label flex items-center gap-1.5"><i data-lucide="ban" class="w-3 h-3" style="color:#94a3b8"></i>Заблокированные</div>
+      <div class="value" id="kpiBlocked">—</div>
+      <div class="sub" id="kpiBlockedSub">—</div>
+    </div>
+  </div>
+
+  {# ───── Графики: регистрации + выручка ───── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="user-plus" class="w-4 h-4" style="color:var(--color-brand-500)"></i>Регистрации
+          <span class="tw-chip" style="background:var(--admin-bg-soft);color:var(--admin-text-muted);" id="regChartChip">0</span></h2>
+      <div class="an-chart-wrap">
+        <canvas id="regChart"></canvas>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="line-chart" class="w-4 h-4" style="color:#10b981"></i>Выручка
+          <span class="tw-chip" style="background:rgb(16 185 129 / .12);color:#10b981;" id="revChartChip">0 ₽</span></h2>
+      <div class="an-chart-wrap">
+        <canvas id="revChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# ───── Распределения: типы покупок, методы, статусы ───── #}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="layers" class="w-4 h-4" style="color:var(--color-brand-500)"></i>Типы покупок</h2>
+      <div id="typesList"><div class="an-empty">Нет данных</div></div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="credit-card" class="w-4 h-4" style="color:#10b981"></i>Методы оплаты</h2>
+      <div id="methodsList"><div class="an-empty">Нет данных</div></div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="pie-chart" class="w-4 h-4" style="color:#a855f7"></i>Статусы подписок</h2>
+      <div id="subStatusList"><div class="an-empty">Нет данных</div></div>
+    </div>
+  </div>
+
+  {# ───── Источники регистрации + Воронка ───── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="globe" class="w-4 h-4" style="color:var(--color-brand-500)"></i>Источник регистрации</h2>
+      <div id="sourcesList"><div class="an-empty">Нет данных</div></div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="filter" class="w-4 h-4" style="color:#f59e0b"></i>Воронка</h2>
+      <div id="funnelList">
+        <div class="an-funnel-row"><span class="num">1</span><div><div class="text-[12.5px]">Зарегистрировались</div><div class="an-funnel-bar"><span style="width:100%"></span></div></div><div class="text-[13px] font-semibold" id="funReg">—</div></div>
+        <div class="an-funnel-row"><span class="num">2</span><div><div class="text-[12.5px]">Создали платёж</div><div class="an-funnel-bar"><span id="funAttBar" style="width:0%"></span></div></div><div class="text-[13px] font-semibold" id="funAtt">—</div></div>
+        <div class="an-funnel-row"><span class="num">3</span><div><div class="text-[12.5px]">Оплатили хоть раз</div><div class="an-funnel-bar"><span id="funPaidBar" style="width:0%"></span></div></div><div class="text-[13px] font-semibold" id="funPaid">—</div></div>
+        <div class="an-funnel-row"><span class="num">4</span><div><div class="text-[12.5px]">Повторно оплатили</div><div class="an-funnel-bar"><span id="funRepBar" style="width:0%"></span></div></div><div class="text-[13px] font-semibold" id="funRep">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  {# ───── Распределение по лимиту устройств + Топ клиентов ───── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="smartphone" class="w-4 h-4" style="color:#3b82f6"></i>Лимит устройств
+          <span class="text-[11.5px] text-muted2 font-normal ml-2">только клиенты с подпиской</span></h2>
+      <div id="limitsList"><div class="an-empty">Нет данных</div></div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] an-section">
+      <h2><i data-lucide="award" class="w-4 h-4" style="color:var(--color-brand-500)"></i>Топ клиентов
+          <span class="text-[11.5px] text-muted2 font-normal ml-2" id="topCustomersSub">по сумме успешных платежей</span></h2>
+      <div class="an-rank-list" id="topCustomers"><div class="an-empty">Нет данных</div></div>
+    </div>
+  </div>
+
+  {# ───── Триал и бонусы ───── #}
+  <div class="tw-surface rounded-[var(--radius-card)] an-section">
+    <h2><i data-lucide="sparkles" class="w-4 h-4" style="color:#f59e0b"></i>Триал и бонусы
+        <span class="text-[11.5px] text-muted2 font-normal ml-2">за всё время</span></h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="rounded-[10px] p-3" style="background:rgb(245 158 11 / .08); border:1px solid rgb(245 158 11 / .25);">
+        <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+          <i data-lucide="zap" class="w-3 h-3"></i>Использовали триал
+        </div>
+        <div class="text-[20px] font-semibold mt-1" style="color:#f59e0b" id="trialUsedVal">—</div>
+        <div class="text-[11px] text-muted2 mt-0.5" id="trialUsedSub">—</div>
+      </div>
+      <div class="rounded-[10px] p-3" style="background:rgb(16 185 129 / .08); border:1px solid rgb(16 185 129 / .25);">
+        <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+          <i data-lucide="check-circle-2" class="w-3 h-3"></i>Купили после триала
+        </div>
+        <div class="text-[20px] font-semibold mt-1" style="color:#10b981" id="trialPaidVal">—</div>
+        <div class="text-[11px] text-muted2 mt-0.5" id="trialPaidSub">конверсия триала</div>
+      </div>
+      <div class="rounded-[10px] p-3" style="background:rgb(99 102 241 / .08); border:1px solid rgb(99 102 241 / .25);">
+        <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+          <i data-lucide="repeat" class="w-3 h-3"></i>Беспл. продление
+        </div>
+        <div class="text-[20px] font-semibold mt-1" style="color:var(--color-brand-500)" id="freeRenewalVal">—</div>
+        <div class="text-[11px] text-muted2 mt-0.5">воспользовались</div>
+      </div>
+      <div class="rounded-[10px] p-3" style="background:rgb(148 163 184 / .08); border:1px solid rgb(148 163 184 / .25);">
+        <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+          <i data-lucide="user-x" class="w-3 h-3"></i>Не использовали триал
+        </div>
+        <div class="text-[20px] font-semibold mt-1" style="color:#94a3b8" id="trialUnusedVal">—</div>
+        <div class="text-[11px] text-muted2 mt-0.5" id="trialUnusedSub">от всех</div>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+
+{% if not forbidden %}
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   Аналитика — клиентский код
+   ════════════════════════════════════════════════════════════════════════ */
+
+const AN_PALETTE = [
+  '#6366f1', '#10b981', '#3b82f6', '#a855f7', '#f59e0b',
+  '#ec4899', '#06b6d4', '#84cc16', '#f43f5e', '#71717a',
+];
+const AN_TYPE_COLORS = {
+  subscription:   { bg: 'rgb(99 102 241 / .15)',  fg: 'var(--color-brand-500)' },
+  traffic_topup:  { bg: 'rgb(16 185 129 / .15)',  fg: '#10b981' },
+  device_upgrade: { bg: 'rgb(168 85 247 / .15)',  fg: '#a855f7' },
+};
+const AN_STATUS_COLORS = {
+  'Активные':     '#10b981',
+  'Истёкшие':     '#f43f5e',
+  'Без подписки': '#94a3b8',
+};
+
+let anCurrentPeriod = '30d';
+let anLoading = false;
+let anRegChart = null;
+let anRevChart = null;
+
+function anFmtNum(n) {
+  n = Number(n) || 0;
+  return n.toLocaleString('ru-RU');
+}
+
+function anPluralPayments(n) {
+  const v = Math.abs(Number(n) || 0);
+  const mod10 = v % 10;
+  const mod100 = v % 100;
+  const num = anFmtNum(v);
+  if (mod10 === 1 && mod100 !== 11) return `${num} платёж`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${num} платежа`;
+  return `${num} платежей`;
+}
+
+const AN_PERIOD_LABELS = {
+  '7d': '7 дней',
+  '30d': '30 дней',
+  '90d': '90 дней',
+  '365d': 'год',
+  'all': 'всё время',
+};
+
+function anFmtMoney(n) {
+  n = Math.round(Number(n) || 0);
+  return n.toLocaleString('ru-RU') + ' ₽';
+}
+function anFmtMoneyShort(n) {
+  n = Number(n) || 0;
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M ₽';
+  if (n >= 1_000)     return (n / 1000).toFixed(0) + 'K ₽';
+  return Math.round(n) + ' ₽';
+}
+function anEsc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function anSet(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+function anSetLastUpdate() {
+  const el = document.getElementById('anLastUpdate');
+  if (!el) return;
+  const d = new Date();
+  el.textContent = `Обновлено в ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
+function anToast(msg, kind) {
+  if (window.adminToast) window.adminToast(msg, kind || 'info', { duration: 2500 });
+  else console.log('[ANALYTICS]', kind || 'info', msg);
+}
+
+/* ── Период-сегмент ─────────────────────────────────────────────────────── */
+document.getElementById('anPeriodSeg')?.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-period]');
+  if (!b || b.classList.contains('active')) return;
+  document.querySelectorAll('#anPeriodSeg button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  anCurrentPeriod = b.dataset.period;
+  anLoad();
+});
+
+/* ── KPI ────────────────────────────────────────────────────────────────── */
+function anRenderKpi(kpi, periodDays) {
+  anSet('kpiUsers',         anFmtNum(kpi.users_total));
+  anSet('kpiUsersSub',      `+${anFmtNum(kpi.users_new_period)} за период`);
+
+  anSet('kpiNewUsers',      anFmtNum(kpi.users_new_period));
+  if (periodDays && periodDays > 0) {
+    const perDay = (kpi.users_new_period / periodDays).toFixed(1);
+    anSet('kpiNewUsersSub', `~${perDay} в день`);
+  } else {
+    anSet('kpiNewUsersSub', '—');
+  }
+
+  anSet('kpiActiveSubs',    anFmtNum(kpi.subs_active));
+  const totalUsers = kpi.users_total || 1;
+  const activePct  = (kpi.subs_active / totalUsers * 100).toFixed(1);
+  anSet('kpiActiveSubsSub', `${activePct}% от всех`);
+
+  anSet('kpiExpiring',      anFmtNum(kpi.subs_expiring_7d));
+
+  anSet('kpiRevenue',       anFmtMoney(kpi.revenue_period));
+  anSet('kpiRevenueSub',    `всего ${anFmtMoney(kpi.revenue_total)}`);
+
+  anSet('kpiAvgCheck',      anFmtMoney(kpi.avg_check_period));
+  anSet('kpiAvgCheckSub',   `${anFmtNum(kpi.payments_succ_period)} платежей`);
+
+  anSet('kpiArpu',          anFmtMoney(kpi.arpu_period));
+  anSet('kpiArpuSub',       `${anFmtNum(kpi.unique_payers_period)} платящих`);
+
+  // Когортная конверсия: «сколько из новых юзеров периода уже сделали платёж».
+  // Числитель — kpi.cohort_paid_count, знаменатель — kpi.users_new_period.
+  // Значение всегда 0..100% (в отличие от прежней формулы, которая давала >100%).
+  anSet('kpiConversion',    `${(kpi.conversion_period || 0).toFixed(1)}%`);
+  anSet('kpiConversionSub', `${anFmtNum(kpi.cohort_paid_count)} из ${anFmtNum(kpi.users_new_period)} новых`);
+
+  anSet('kpiPayers',        anFmtNum(kpi.unique_payers_total));
+  anSet('kpiPayersSub',     `за период: ${anFmtNum(kpi.unique_payers_period)}`);
+
+  anSet('kpiExpired',       anFmtNum(kpi.subs_expired));
+  anSet('kpiExpiredSub',    `${(kpi.subs_expired / totalUsers * 100).toFixed(1)}% от всех`);
+
+  anSet('kpiNoSubs',        anFmtNum(kpi.subs_none));
+  anSet('kpiNoSubsSub',     `${(kpi.subs_none / totalUsers * 100).toFixed(1)}% от всех`);
+
+  anSet('kpiBlocked',       anFmtNum(kpi.blocked));
+  anSet('kpiBlockedSub',    'списком отдельно');
+
+  // Триал и бонусы
+  const trialUsed   = kpi.trial_used   || 0;
+  const trialPaid   = kpi.trial_paid   || 0;
+  const trialUnused = Math.max(0, (kpi.users_total || 0) - trialUsed);
+  const trialConvPct = trialUsed > 0 ? (trialPaid / trialUsed * 100) : 0;
+  const trialUnusedPct = (kpi.users_total || 0) > 0 ? (trialUnused / kpi.users_total * 100) : 0;
+
+  anSet('trialUsedVal',    anFmtNum(trialUsed));
+  anSet('trialUsedSub',    `${(kpi.users_total ? trialUsed / kpi.users_total * 100 : 0).toFixed(1)}% от всех юзеров`);
+  anSet('trialPaidVal',    anFmtNum(trialPaid));
+  anSet('trialPaidSub',    `${trialConvPct.toFixed(1)}% триала`);
+  anSet('freeRenewalVal',  anFmtNum(kpi.free_renewal_used || 0));
+  anSet('trialUnusedVal',  anFmtNum(trialUnused));
+  anSet('trialUnusedSub',  `${trialUnusedPct.toFixed(1)}% от всех`);
+}
+
+/* ── Распределения (бары) ──────────────────────────────────────────────── */
+function anRenderBars(containerId, items, opts) {
+  opts = opts || {};
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!items || items.length === 0) {
+    container.innerHTML = '<div class="an-empty">Нет данных</div>';
+    return;
+  }
+  const totalKey = opts.totalKey || 'count';
+  const total = items.reduce((s, x) => s + (Number(x[totalKey]) || 0), 0);
+  let html = '';
+  items.forEach((it, i) => {
+    const value = Number(it[totalKey]) || 0;
+    const pct   = total > 0 ? (value / total * 100) : 0;
+    const color = (opts.colorMap && opts.colorMap[it.label]) || (opts.color) || AN_PALETTE[i % AN_PALETTE.length];
+    const right = opts.formatRight ? opts.formatRight(it) : `${anFmtNum(value)}`;
+    const subText = opts.subText ? opts.subText(it) : `${pct.toFixed(1)}%`;
+    const iconHtml = (typeof opts.iconResolver === 'function')
+      ? opts.iconResolver(it)
+      : `<span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${color}"></span>`;
+    html += `
+      <div class="an-bar-row">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 text-[12.5px]" style="color:var(--admin-text-base)">
+            ${iconHtml}
+            <span class="truncate">${anEsc(it.label || '—')}</span>
+          </div>
+          <div class="an-bar-track"><div class="an-bar-fill" style="width:${pct.toFixed(1)}%; background:${color};"></div></div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-[12.5px] font-semibold" style="color:var(--admin-text-base)">${right}</div>
+          <div class="text-[10.5px] text-muted2">${subText}</div>
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+/* Карта label-метода (как приходит из analytics.py) → slug для брендовых SVG */
+const AN_METHOD_SLUG = {
+  'YooKassa':  'yookassa',
+  'CryptoBot': 'cryptobot',
+  'TG Stars':  'tgstar',
+  'YooMoney':  'yoomoney',
+  'Platega':   'platega',
+  'Wata':      'wata',
+};
+
+function anMethodIcon(it) {
+  const slug = AN_METHOD_SLUG[it.label];
+  const url  = (slug && typeof window.__PAYMENT_BRAND_URL__ === 'function')
+                 ? window.__PAYMENT_BRAND_URL__(slug)
+                 : null;
+  if (url) {
+    return `<span class="inline-flex items-center justify-center w-5 h-5 rounded-md flex-shrink-0 overflow-hidden p-0.5"
+                  style="background: var(--admin-bg-soft); border: 1px solid rgb(var(--admin-border));">
+              <img src="${url}" alt="" class="w-full h-full object-contain" loading="lazy" aria-hidden="true">
+            </span>`;
+  }
+  return `<span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:#94a3b8"></span>`;
+}
+
+/* ── Топ-таблицы ───────────────────────────────────────────────────────── */
+function anRenderTopList(containerId, items, opts) {
+  opts = opts || {};
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!items || items.length === 0) {
+    container.innerHTML = '<div class="an-empty">Нет данных</div>';
+    return;
+  }
+  let html = '';
+  items.forEach((it, i) => {
+    const meta = opts.formatMeta ? opts.formatMeta(it) : '';
+    const right = opts.formatRight ? opts.formatRight(it) : '';
+    html += `
+      <div class="an-rank-row">
+        <div class="num">#${i+1}</div>
+        <div class="name" title="${anEsc(it.name || '')}">${anEsc(it.name || '—')}</div>
+        <div class="meta">${meta}</div>
+        <div class="total">${right}</div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+/* ── Воронка ───────────────────────────────────────────────────────────── */
+function anRenderFunnel(funnel) {
+  const reg = funnel.registered || 0;
+  const att = funnel.attempted  || 0;
+  const paid = funnel.paid       || 0;
+  const rep  = funnel.repeat     || 0;
+  anSet('funReg',  `${anFmtNum(reg)}`);
+  anSet('funAtt',  `${anFmtNum(att)} (${reg > 0 ? (att/reg*100).toFixed(1) : 0}%)`);
+  anSet('funPaid', `${anFmtNum(paid)} (${reg > 0 ? (paid/reg*100).toFixed(1) : 0}%)`);
+  anSet('funRep',  `${anFmtNum(rep)} (${reg > 0 ? (rep/reg*100).toFixed(1) : 0}%)`);
+  const setBar = (id, val) => { const el = document.getElementById(id); if (!el) return;
+    el.style.width = (reg > 0 ? Math.min(100, val/reg*100) : 0).toFixed(1) + '%'; };
+  setBar('funAttBar',  att);
+  setBar('funPaidBar', paid);
+  setBar('funRepBar',  rep);
+}
+
+/* ── Графики (Chart.js — динамическая загрузка) ────────────────────────── */
+const AN_CHART_CDN = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
+let _anChartLoadingPromise = null;
+function anLoadChartJs() {
+  if (window.Chart) return Promise.resolve();
+  if (_anChartLoadingPromise) return _anChartLoadingPromise;
+  _anChartLoadingPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = AN_CHART_CDN;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Не удалось загрузить Chart.js'));
+    document.head.appendChild(s);
+  });
+  return _anChartLoadingPromise;
+}
+
+function anChartTextColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--admin-text-muted').trim() || '#888';
+}
+function anChartGridColor() {
+  // полупрозрачная линия для тёмной/светлой темы
+  return getComputedStyle(document.documentElement).getPropertyValue('--admin-border').trim();
+}
+
+function anRenderRegChart(data) {
+  if (!window.Chart) return;
+  const ctx = document.getElementById('regChart')?.getContext('2d');
+  if (!ctx) return;
+  if (anRegChart) { try { anRegChart.destroy(); } catch (_) {} anRegChart = null; }
+
+  const total = (data.tg || []).reduce((a,b) => a+b, 0) + (data.site || []).reduce((a,b) => a+b, 0);
+  document.getElementById('regChartChip').textContent = anFmtNum(total) + ' за период';
+
+  if (!data.labels || data.labels.length === 0) {
+    document.getElementById('regChartChip').textContent = '0';
+    ctx.canvas.parentElement.innerHTML = '<div class="an-empty">Нет данных за период</div>';
+    return;
+  }
+
+  anRegChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.labels,
+      datasets: [
+        { label: 'Telegram',
+          data: data.tg, borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.15)',
+          tension: 0.35, fill: true, borderWidth: 2,
+          pointRadius: 2, pointHoverRadius: 5,
+        },
+        { label: 'Сайт',
+          data: data.site, borderColor: '#a855f7',
+          backgroundColor: 'rgba(168, 85, 247, 0.15)',
+          tension: 0.35, fill: true, borderWidth: 2,
+          pointRadius: 2, pointHoverRadius: 5,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: anChartTextColor(), boxWidth: 10, padding: 12, font: { size: 12 } } },
+        tooltip: { backgroundColor: 'rgba(15,17,23,.95)', padding: 10 },
+      },
+      scales: {
+        x: { ticks: { color: anChartTextColor(), maxRotation: 0, autoSkipPadding: 14, font: { size: 11 } },
+             grid: { display: false } },
+        y: { ticks: { color: anChartTextColor(), precision: 0, font: { size: 11 } },
+             grid: { color: 'rgba(128, 128, 128, 0.08)' },
+             beginAtZero: true },
+      }
+    }
+  });
+}
+
+function anRenderRevChart(data) {
+  if (!window.Chart) return;
+  const ctx = document.getElementById('revChart')?.getContext('2d');
+  if (!ctx) return;
+  if (anRevChart) { try { anRevChart.destroy(); } catch (_) {} anRevChart = null; }
+
+  const totalRev = (data.revenue || []).reduce((a,b) => a + Number(b), 0);
+  document.getElementById('revChartChip').textContent = anFmtMoneyShort(totalRev);
+
+  if (!data.labels || data.labels.length === 0) {
+    ctx.canvas.parentElement.innerHTML = '<div class="an-empty">Нет данных за период</div>';
+    return;
+  }
+
+  anRevChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.labels,
+      datasets: [
+        { label: 'Выручка ₽',
+          data: data.revenue, backgroundColor: 'rgba(16, 185, 129, 0.6)',
+          borderColor: '#10b981', borderWidth: 1, borderRadius: 4,
+          yAxisID: 'y',
+        },
+        { label: 'Платежей',
+          data: data.count, type: 'line',
+          borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)',
+          tension: 0.35, fill: false, borderWidth: 2,
+          pointRadius: 2, pointHoverRadius: 5,
+          yAxisID: 'y1',
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: anChartTextColor(), boxWidth: 10, padding: 12, font: { size: 12 } } },
+        tooltip: { backgroundColor: 'rgba(15,17,23,.95)', padding: 10,
+                   callbacks: {
+                     label: (ctx) => {
+                       const lbl = ctx.dataset.label || '';
+                       const v = ctx.parsed.y;
+                       if (lbl.includes('₽')) return `${lbl}: ${anFmtMoney(v)}`;
+                       return `${lbl}: ${anFmtNum(v)}`;
+                     }
+                   }
+                 },
+      },
+      scales: {
+        x: { ticks: { color: anChartTextColor(), maxRotation: 0, autoSkipPadding: 14, font: { size: 11 } },
+             grid: { display: false } },
+        y: { type: 'linear', position: 'left', beginAtZero: true,
+             ticks: { color: anChartTextColor(), font: { size: 11 },
+                       callback: (v) => v >= 1000 ? (v/1000).toFixed(0)+'K' : v },
+             grid: { color: 'rgba(128, 128, 128, 0.08)' } },
+        y1: { type: 'linear', position: 'right', beginAtZero: true,
+              ticks: { color: anChartTextColor(), precision: 0, font: { size: 11 } },
+              grid: { display: false } },
+      }
+    }
+  });
+}
+
+/* ── Главная функция загрузки ──────────────────────────────────────────── */
+async function anLoad() {
+  if (anLoading) return;
+  anLoading = true;
+  const btn = document.getElementById('anRefreshBtn');
+  if (btn) btn.disabled = true;
+
+  try {
+    const url = `{{ url_for('admin.analytics_data') }}?period=${anCurrentPeriod}`;
+    const [resp] = await Promise.all([
+      fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } }),
+      anLoadChartJs().catch(e => console.warn('[AN] Chart.js не загрузился:', e)),
+    ]);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || 'Ошибка загрузки');
+
+    anRenderKpi(data.kpi || {}, data.period_days);
+
+    // Распределения
+    anRenderBars('typesList', data.distributions.types || [], {
+      totalKey: 'count',
+      colorMap: { 'Подписки': '#6366f1', 'Докупка трафика': '#10b981', 'Лимит устройств': '#a855f7' },
+      formatRight: (it) => anFmtMoneyShort(it.total),
+      subText: (it) => `${anFmtNum(it.count)} шт.`,
+    });
+    anRenderBars('methodsList', data.distributions.methods || [], {
+      totalKey: 'count',
+      formatRight: (it) => anFmtMoneyShort(it.total),
+      subText: (it) => `${anFmtNum(it.count)} шт.`,
+      iconResolver: anMethodIcon,
+    });
+    anRenderBars('subStatusList', data.distributions.sub_status || [], {
+      colorMap: AN_STATUS_COLORS,
+      totalKey: 'count',
+    });
+    anRenderBars('sourcesList', data.distributions.sources || [], {
+      colorMap: { 'Telegram': '#3b82f6', 'Сайт': '#a855f7' },
+      totalKey: 'count',
+    });
+
+    const periodLbl = AN_PERIOD_LABELS[data.period] || 'период';
+    const topSub = document.getElementById('topCustomersSub');
+    if (topSub) {
+      topSub.textContent = `успешные RUB-платежи за ${periodLbl}`;
+    }
+
+    // Распределение по лимиту устройств — клиенты с зафиксированным лимитом
+    anRenderBars('limitsList', data.distributions.limits || [], {
+      totalKey: 'count',
+      // Цвет — оттенки brand для разных лимитов; ∞ — серый
+      formatRight: (it) => `${anFmtNum(it.count)} ${it.count === 1 ? 'клиент' : (it.count < 5 ? 'клиента' : 'клиентов')}`,
+      subText: (it) => {
+        const total = (data.distributions.limits || []).reduce((s, x) => s + (x.count || 0), 0);
+        const pct = total > 0 ? (it.count / total * 100) : 0;
+        return `${pct.toFixed(1)}%`;
+      },
+    });
+
+    // Топ клиентов
+    anRenderTopList('topCustomers', data.top_customers || [], {
+      formatMeta: (it) => anPluralPayments(it.count),
+      formatRight: (it) => anFmtMoneyShort(it.total),
+    });
+
+    // Воронка
+    anRenderFunnel(data.funnel || {});
+
+    // Графики
+    if (window.Chart) {
+      anRenderRegChart(data.registrations_chart || { labels: [], tg: [], site: [] });
+      anRenderRevChart(data.revenue_chart      || { labels: [], revenue: [], count: [] });
+    }
+
+    anSetLastUpdate();
+    if (window.lucide) try { lucide.createIcons(); } catch (_) {}
+  } catch (e) {
+    console.error('[ANALYTICS] Ошибка:', e);
+    anToast('Ошибка загрузки: ' + (e.message || e), 'error');
+  } finally {
+    anLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ── Старт ─────────────────────────────────────────────────────────────── */
+(function anInit() {
+  anLoad();
+  // Перерисовка графиков на смену темы (если событие есть)
+  document.addEventListener('admin:theme-changed', () => {
+    if (anRegChart || anRevChart) anLoad();
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

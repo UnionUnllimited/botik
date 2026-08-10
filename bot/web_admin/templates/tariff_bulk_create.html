@@ -1,0 +1,711 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Редактировать линейку' if mode == 'edit' else 'Создать линейку' }} — {{ super() }}{% endblock %}
+
+{% set method_meta = {
+  'yookassa':  ('YooKassa',       '#3b82f6'),
+  'tgstar':    ('Telegram Stars', '#a855f7'),
+  'cryptobot': ('CryptoBot',      '#f59e0b'),
+  'yoomoney':  ('YooMoney',       '#eab308'),
+  'platega':   ('Platega (СБП)',  '#10b981'),
+  'wata':      ('Wata',           '#6366f1'),
+} %}
+
+{% block extra_head %}
+<style>
+.pm-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 9px; border-radius: 999px; font-size: 10px; font-weight: 600;
+  border: 1px solid rgb(var(--admin-border));
+  background: var(--admin-bg-soft); color: var(--admin-text-muted);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4"
+     id="bulk-editor-root"
+     data-bulk-mode="{{ mode }}"
+     data-default-method="{{ default_method or 'yookassa' }}"
+     data-preset-days="{{ preset_days or 0 }}">
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 text-[12px] tw-text-muted2 mb-1">
+        <a href="{{ url_for('admin.tariffs_list') }}"
+           class="hover:underline flex items-center gap-1">
+          <i data-lucide="arrow-left" class="w-3 h-3"></i> К&nbsp;тарифам
+        </a>
+      </div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="layers" class="w-5 h-5"></i>
+        {% if mode == 'edit' %}
+          Редактирование линейки{% if preset_days %} <span class="text-[16px] font-normal tw-text-muted2">· {{ preset_days }} дн.</span>{% endif %}
+        {% else %}
+          {% if preset_days %}Новая линейка <span class="text-[16px] font-normal tw-text-muted2">· {{ preset_days }} дн.</span>{% else %}Создание линейки{% endif %}
+        {% endif %}
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        {% if mode == 'edit' %}
+          Все цены — в&nbsp;<strong>RUB&nbsp;₽</strong>. Сохранение применится <strong>ко&nbsp;всем {{ all_methods_count|default(6) }} методам</strong> оплаты.{% if preset_days %} Чтобы добавить тарифы с другим сроком — вернитесь и&nbsp;нажмите «Новая линейка».{% endif %}
+        {% else %}
+          Сразу создайте всю линейку «1, 2, 3 …&nbsp;N&nbsp;устройств» — она появится <strong>во&nbsp;всех {{ all_methods_count|default(6) }} методах</strong>. Все цены в&nbsp;<strong>RUB&nbsp;₽</strong>.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {% if mode == 'edit' and (methods_missing or price_mismatch_methods) %}
+  <div class="tw-card p-3.5 flex items-start gap-3" style="border-left: 3px solid #f59e0b;">
+    <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" style="color:#f59e0b;"></i>
+    <div class="text-[12px] tw-text-muted2 space-y-1">
+      {% if methods_missing %}
+      <div><strong class="tw-text-base2">Нет в методах:</strong>
+        {% for m in methods_missing %}{{ method_meta.get(m, (m, ''))[0] }}{% if not loop.last %}, {% endif %}{% endfor %}
+        — будут созданы при сохранении.</div>
+      {% endif %}
+      {% if price_mismatch_methods %}
+      <div><strong class="tw-text-base2">Разные цены:</strong>
+        {% for m in price_mismatch_methods %}{{ method_meta.get(m, (m, ''))[0] }}{% if not loop.last %}, {% endif %}{% endfor %}
+        — при сохранении выровняются по этой линейке.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <form method="post"
+        action="{{ url_for('admin.tariff_bulk_edit') if mode == 'edit' else url_for('admin.tariff_bulk_create') }}{% if mode == 'edit' and preset_days %}?days={{ preset_days }}{% endif %}"
+        id="bulkForm">
+    <input type="hidden" name="tariffs_json" id="fld_json">
+    <input type="hidden" name="payment_method" id="fld_method" value="{{ default_method or 'yookassa' }}">
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+      {# ═══ ЛЕВАЯ КОЛОНКА (2/3) ═══ #}
+      <div class="xl:col-span-2 space-y-4">
+
+        {# Параметры #}
+        <div class="tw-card">
+          <div class="px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+            <h3 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+              <i data-lucide="sliders" class="w-4 h-4"></i> Общие параметры
+            </h3>
+          </div>
+          <div class="p-4 space-y-3">
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold tw-text-base2 mb-1">Срок (дней)</label>
+                <input type="number" id="g_days"
+                       value="{{ preset_days if preset_days else 30 }}"
+                       min="1" class="tw-input"
+                       {% if mode == 'edit' and preset_days %}readonly title="Срок линейки нельзя менять — иначе она сольётся с другой линейкой того же срока"{% endif %}
+                       {% if mode == 'create' and preset_days %}readonly title="Срок задан со страницы тарифов"{% endif %}>
+                {% if mode == 'edit' and preset_days %}
+                <div class="text-[10px] tw-text-subtle2 mt-1">Заблокировано — это идентификатор линейки.</div>
+                {% endif %}
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-[11px] font-semibold tw-text-base2 mb-1.5">Методы оплаты</label>
+                <div class="flex flex-wrap gap-1.5">
+                  {% for slug, (label, color) in method_meta.items() %}
+                  <span class="pm-badge" style="border-color: {{ color }}33; color: {{ color }};">{{ label }}</span>
+                  {% endfor %}
+                </div>
+                <div class="text-[10px] tw-text-subtle2 mt-1.5">
+                  Выбор не нужен — линейка всегда сохраняется во все {{ all_methods_count|default(6) }} методов.
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold tw-text-base2 mb-1">Sort (с)</label>
+                <input type="number" id="g_sort" value="1" min="0" class="tw-input">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold tw-text-base2 mb-1 flex items-center gap-1">
+                  Валюта
+                  <span class="text-[9px] font-normal tw-text-subtle2">(только RUB)</span>
+                </label>
+                <input type="text" value="RUB ₽" disabled class="tw-input" style="opacity:.7;cursor:not-allowed;">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold tw-text-base2 mb-1">Шаблон названия</label>
+                <input type="text" id="g_name_tpl" value="🗓 {days} дней | {devices} уст." class="tw-input">
+                <div class="text-[10px] tw-text-subtle2 mt-1">Переменные: <code>{days}</code> <code>{devices}</code> <code>{gb}</code> <code>{price}</code></div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold tw-text-base2 mb-1">Шаблон описания</label>
+                <textarea id="g_desc_tpl" rows="2" class="tw-input" style="height:auto;padding-top:6px;padding-bottom:6px;resize:vertical;font-size:12px;">➕ Будет добавлено: {gb} GB</textarea>
+                <div class="text-[10px] tw-text-subtle2 mt-1">HTML-теги сохраняются. При изменении шаблона — обновляются все строки.</div>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t" style="border-color: rgb(var(--admin-border));">
+              <div class="text-[10px] font-bold tw-text-subtle2 uppercase tracking-wider mb-2">Расчёт цены</div>
+              <div class="flex flex-wrap items-center gap-2 mb-3">
+                <label class="mode-chip is-active" data-mode="linear">
+                  <input type="radio" name="price_mode" value="linear" checked>
+                  <i data-lucide="trending-up" class="w-3 h-3"></i>
+                  Линейный
+                </label>
+                <label class="mode-chip" data-mode="step">
+                  <input type="radio" name="price_mode" value="step">
+                  <i data-lucide="bar-chart-3" class="w-3 h-3"></i>
+                  Ступенчатый
+                </label>
+                <label class="mode-chip" data-mode="manual">
+                  <input type="radio" name="price_mode" value="manual">
+                  <i data-lucide="hand" class="w-3 h-3"></i>
+                  Вручную
+                </label>
+              </div>
+              <div class="flex items-center flex-wrap gap-3">
+                <div class="cfield"><span>Цена (1 уст.)</span><input type="number" id="g_base_price" value="50" style="width:75px;"></div>
+                <div class="cfield"><span>GB (1 уст.)</span><input type="number" id="g_base_gb" value="15" style="width:65px;"></div>
+                <div class="cfield"><span>+₽/уст.</span><input type="number" id="g_price_step" value="33" style="width:65px;"></div>
+                <div class="cfield"><span>+GB/уст.</span><input type="number" id="g_gb_step" value="10" style="width:60px;"></div>
+                <div class="cfield"><span>Округл.</span>
+                  <select id="g_round" style="width:62px;">
+                    <option value="1">1</option>
+                    <option value="5" selected>5</option>
+                    <option value="10">10</option>
+                    <option value="50">50</option>
+                  </select>
+                </div>
+                <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="btn_recalc">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                  Пересчитать
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {# Строки тарифов #}
+        <div class="tw-card">
+          <div class="px-4 py-3 border-b flex items-center justify-between gap-2"
+               style="border-color: rgb(var(--admin-border));">
+            <h3 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+              <i data-lucide="list" class="w-4 h-4"></i> Тарифы
+              <span class="inline-flex items-center px-1.5 rounded text-[10px] font-semibold"
+                    style="background:rgb(var(--admin-border) / .35); color: var(--admin-text-muted);"
+                    id="row_count_badge">0</span>
+            </h3>
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="btn_add">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              Добавить строку
+            </button>
+          </div>
+
+          {# header columns — desktop only #}
+          <div class="hidden sm:flex items-center gap-2 px-4 py-1.5 border-b"
+               style="border-color: rgb(var(--admin-border)); font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color: var(--admin-text-subtle);">
+            <div style="width:30px; flex-shrink:0; text-align:center;">№</div>
+            <div style="width:88px; flex-shrink:0; text-align:right;">Цена, ₽</div>
+            <div style="width:70px; flex-shrink:0; text-align:right;">GB</div>
+            <div style="flex:1;">Название</div>
+            <div style="width:52px; flex-shrink:0; text-align:center;">Sort</div>
+            <div style="width:24px; flex-shrink:0; text-align:center;" title="Создать">✓</div>
+            <div style="width:34px; flex-shrink:0;"></div>
+          </div>
+
+          <div id="blk_list"></div>
+
+          <div class="px-4 py-2 border-t" style="border-color: rgb(var(--admin-border)); font-size:11px; color: var(--admin-text-muted);">
+            <i data-lucide="info" class="w-3 h-3 inline-block align-middle mr-1"></i>
+            Снимите галочку у строк, которые создавать не нужно. Описание задаётся глобально шаблоном выше.
+          </div>
+        </div>
+
+      </div>
+
+      {# ═══ ПРАВАЯ КОЛОНКА (1/3) ═══ #}
+      <div class="xl:col-span-1">
+        <div class="tw-card sticky" style="top: 20px;">
+          <div class="px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+            <h3 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+              <i data-lucide="eye" class="w-4 h-4"></i> Превью
+            </h3>
+          </div>
+          <div class="p-3">
+            <div class="prev-grid" id="prev_grid"></div>
+          </div>
+          <div class="px-4 py-3 border-t space-y-1.5" style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+            <div class="flex justify-between text-[12px]">
+              <span class="tw-text-muted2">Всего строк:</span>
+              <span id="s_total" class="font-semibold tw-text-base2">0</span>
+            </div>
+            <div class="flex justify-between text-[12px]">
+              <span class="tw-text-muted2">{% if mode == 'edit' %}К&nbsp;сохранению:{% else %}Будет создано:{% endif %}</span>
+              <span id="s_active" class="font-semibold" style="color:#10b981;">0</span>
+            </div>
+            {% if mode == 'edit' %}
+            <div class="flex justify-between text-[12px]">
+              <span class="tw-text-muted2">К&nbsp;удалению:</span>
+              <span id="s_deleted" class="font-semibold" style="color:#ef4444;">0</span>
+            </div>
+            {% endif %}
+            <div class="flex justify-between text-[12px]">
+              <span class="tw-text-muted2">Методы:</span>
+              <span id="s_method" class="font-semibold tw-text-base2 text-right">все {{ all_methods_count|default(6) }}</span>
+            </div>
+            <div class="grid gap-2 pt-2">
+              <button type="button" class="tw-btn tw-btn-primary tw-btn-sm justify-center" id="btn_submit">
+                <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                {% if mode == 'edit' %}Сохранить линейку{% else %}Создать тарифы{% endif %}
+              </button>
+              <a href="{{ url_for('admin.tariffs_list') }}"
+                 class="tw-btn tw-btn-secondary tw-btn-sm justify-center">
+                Отмена
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </form>
+</div>
+
+{# существующие тарифы (для режима edit) — рендерим JSON в безопасном script-теге #}
+<script type="application/json" id="existing_tariffs_data">{{ (existing_tariffs or [])|tojson }}</script>
+
+<script>
+(function () {
+    'use strict';
+
+    var rootEl = document.getElementById('bulk-editor-root');
+    var MODE = rootEl ? (rootEl.dataset.bulkMode || 'create') : 'create';
+    var IS_EDIT = MODE === 'edit';
+
+    var rows = [];
+
+    function $(id) { return document.getElementById(id); }
+    function gv(id) { var el = $(id); return el ? el.value : ''; }
+    function gi(id) { return parseInt(gv(id), 10) || 0; }
+    function gf(id) { return parseFloat(gv(id)) || 0; }
+    function mode() { var el = document.querySelector('input[name="price_mode"]:checked'); return el ? el.value : 'linear'; }
+    function tpl(str, vars) { return str.replace(/\{(\w+)\}/g, function (m, k) { return vars[k] !== undefined ? String(vars[k]) : m; }); }
+    function roundTo(v, s) { return Math.round(v / s) * s; }
+    function esc(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .replace(/\n/g, '&#10;');
+    }
+    function isActiveVal(v) {
+        return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+    }
+
+    var STEPS = [0, 30, 70, 100, 150, 200, 250, 300, 370, 450];
+
+    function syncFromDom() {
+        var list = $('blk_list');
+        if (!list) return;
+        list.querySelectorAll('input[data-i][data-f], textarea[data-i][data-f]').forEach(function (inp) {
+            var i = +inp.dataset.i;
+            var f = inp.dataset.f;
+            if (!rows[i]) return;
+            if (inp.type === 'checkbox') rows[i].active = inp.checked;
+            else if (f === 'price') rows[i].price = parseFloat(inp.value) || 0;
+            else if (f === 'gb' || f === 'sort') rows[i][f] = parseInt(inp.value, 10) || 0;
+            else rows[i][f] = inp.value;
+        });
+    }
+
+    function applyGlobalTemplates() {
+        var days = gi('g_days') || 1;
+        var nameTpl = gv('g_name_tpl');
+        var descTpl = gv('g_desc_tpl');
+        rows.forEach(function (r) {
+            if (r._delete) return;
+            var v = { days: days, devices: r.devices, gb: r.gb, price: r.price };
+            r.name = tpl(nameTpl, v);
+            r.desc = tpl(descTpl, v);
+            r.name_custom = true;
+            r.desc_custom = true;
+        });
+        renderList();
+        renderPreview();
+        renderSummary();
+    }
+
+    /* ── инициализация ── */
+    function initRows() {
+        rows = [];
+
+        if (IS_EDIT) {
+            var dataEl = $('existing_tariffs_data');
+            var existing = [];
+            try { existing = JSON.parse(dataEl ? (dataEl.textContent || '[]') : '[]'); } catch (e) { existing = []; }
+
+            existing.forEach(function (t) {
+                rows.push({
+                    id:          t.id,
+                    devices:     parseInt(t.limit_ip, 10) || 0,
+                    price:       parseFloat(t.price) || 0,
+                    gb:          parseInt(t.traffic_gb, 10) || 0,
+                    days:        parseInt(t.days, 10) || 30,
+                    name:        t.name || '',
+                    desc:        t.description || '',
+                    sort:        parseInt(t.sort_order, 10) || 0,
+                    active:      isActiveVal(t.is_active),
+                    desc_custom: true,
+                    name_custom: true,
+                    _delete:     false
+                });
+            });
+
+            if (rows.length) {
+                $('g_days').value = rows[0].days || 30;
+                var rm = document.querySelector('input[name="price_mode"][value="manual"]');
+                if (rm) { rm.checked = true; updateModeChips(); }
+            }
+            renderList();
+            renderPreview();
+            renderSummary();
+            return;
+        }
+
+        for (var d = 1; d <= 10; d++) {
+            rows.push({
+                devices: d, price: 0, gb: 0, days: gi('g_days') || 30,
+                name: '', desc: '', sort: d, active: true,
+                desc_custom: false, name_custom: false, _delete: false
+            });
+        }
+        recalc();
+    }
+
+    function updateModeChips() {
+        document.querySelectorAll('.mode-chip').forEach(function (chip) {
+            var input = chip.querySelector('input');
+            chip.classList.toggle('is-active', !!(input && input.checked));
+        });
+    }
+
+    function recalc() {
+        var basePrice = gf('g_base_price');
+        var baseGb    = gi('g_base_gb');
+        var priceStep = gf('g_price_step');
+        var gbStep    = gi('g_gb_step');
+        var rnd       = gi('g_round') || 1;
+        var days      = gi('g_days')  || 1;
+        var sortStart = gi('g_sort')  || 1;
+        var nameTpl   = gv('g_name_tpl');
+        var descTpl   = gv('g_desc_tpl');
+        var m         = mode();
+
+        rows.forEach(function (r, i) {
+            r.days = days;
+            var ex = (parseInt(r.devices, 10) || 1) - 1;
+            if (m !== 'manual') {
+                r.gb    = baseGb + ex * gbStep;
+                r.price = (m === 'linear')
+                    ? roundTo(basePrice + ex * priceStep, rnd)
+                    : basePrice + (STEPS[Math.min(ex, STEPS.length - 1)] || ex * priceStep);
+            }
+            // sort пересчитываем только если это новые/нерасставленные строки
+            if (!IS_EDIT) r.sort = sortStart + i;
+
+            var v = { days: days, devices: r.devices, gb: r.gb, price: r.price };
+            if (!r.name_custom) r.name = tpl(nameTpl, v);
+            if (!r.desc_custom) r.desc = tpl(descTpl, v);
+        });
+
+        renderList();
+        renderPreview();
+        renderSummary();
+    }
+
+    /* ── рендер строк ── */
+    function renderList() {
+        var days  = gi('g_days') || 30;
+        var list  = $('blk_list');
+        list.innerHTML = '';
+
+        rows.forEach(function (r, i) {
+            var div = document.createElement('div');
+            var classes = ['blk-row'];
+            if (!r.active) classes.push('row-off');
+            if (r._delete) classes.push('row-deleted');
+            div.className = classes.join(' ');
+
+            var idTag = (IS_EDIT && r.id)
+                ? '<span class="id-tag">#' + r.id + '</span>'
+                : '';
+
+            var actionBtn = r._delete
+                ? '<button type="button" class="icon-btn icon-btn-restore" data-restore="' + i + '" title="Восстановить"><i data-lucide="rotate-ccw" style="width:12px;height:12px;"></i></button>'
+                : '<button type="button" class="icon-btn" data-del="' + i + '" title="' + (IS_EDIT && r.id ? 'Удалить (можно отменить до сохранения)' : 'Убрать строку') + '"><i data-lucide="x" style="width:12px;height:12px;"></i></button>';
+
+            div.innerHTML =
+                /* мобильный заголовок */
+                '<div class="d-sm-none mb-1 flex items-center gap-2" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--admin-text-subtle);">' +
+                    '<span>Устройств: ' + r.devices + '</span>' + idTag +
+                '</div>' +
+
+                '<div class="flex items-start gap-2">' +
+
+                    /* бейдж с числом устройств — desktop */
+                    '<div class="hidden sm:flex flex-col items-center gap-1" style="flex-shrink:0;">' +
+                        '<span class="dev-badge">' + r.devices + '</span>' +
+                        idTag +
+                    '</div>' +
+
+                    /* тело */
+                    '<div class="flex-grow-1 min-w-0">' +
+
+                        /* desktop: row 1 — числа + название */
+                        '<div class="hidden sm:flex items-start gap-2 mb-1">' +
+                            '<div style="width:88px;flex-shrink:0;">' +
+                                '<input type="number" class="row-input" value="' + r.price + '" min="0" step="0.01" data-i="' + i + '" data-f="price">' +
+                                '<div class="price-hint">' + (days ? (r.price / days).toFixed(1) : '—') + ' ₽/д</div>' +
+                            '</div>' +
+                            '<div style="width:70px;flex-shrink:0;">' +
+                                '<input type="number" class="row-input" value="' + r.gb + '" min="0" data-i="' + i + '" data-f="gb">' +
+                            '</div>' +
+                            '<div class="flex-grow-1">' +
+                                '<input type="text" class="row-input" value="' + esc(r.name) + '" placeholder="Название" data-i="' + i + '" data-f="name">' +
+                            '</div>' +
+                            '<div style="width:52px;flex-shrink:0;">' +
+                                '<input type="number" class="row-input" value="' + r.sort + '" min="0" data-i="' + i + '" data-f="sort" style="text-align:center;">' +
+                            '</div>' +
+                        '</div>' +
+
+                        /* desktop: row 2 — описание */
+                        '<div class="hidden sm:block" style="padding-left:calc(88px + 70px + 8px);">' +
+                            '<textarea class="row-input row-input-desc" rows="2" data-i="' + i + '" data-f="desc" placeholder="Описание…">' + esc(r.desc) + '</textarea>' +
+                        '</div>' +
+
+                        /* mobile: name + description */
+                        '<div class="d-sm-none mb-2">' +
+                            '<div class="row-field-lbl">Название</div>' +
+                            '<input type="text" class="row-input mb-1" value="' + esc(r.name) + '" data-i="' + i + '" data-f="name">' +
+                            '<div class="row-field-lbl mt-1">Описание</div>' +
+                            '<textarea class="row-input row-input-desc" rows="2" data-i="' + i + '" data-f="desc" placeholder="Описание…">' + esc(r.desc) + '</textarea>' +
+                        '</div>' +
+
+                        /* mobile: цена + GB + sort */
+                        '<div class="d-sm-none grid grid-cols-12 gap-2">' +
+                            '<div class="col-span-6">' +
+                                '<div class="row-field-lbl">Цена, ₽</div>' +
+                                '<input type="number" class="row-input" value="' + r.price + '" min="0" step="0.01" data-i="' + i + '" data-f="price">' +
+                                '<div class="price-hint">' + (days ? (r.price / days).toFixed(1) : '—') + ' ₽/д</div>' +
+                            '</div>' +
+                            '<div class="col-span-3">' +
+                                '<div class="row-field-lbl">GB</div>' +
+                                '<input type="number" class="row-input" value="' + r.gb + '" min="0" data-i="' + i + '" data-f="gb">' +
+                            '</div>' +
+                            '<div class="col-span-3">' +
+                                '<div class="row-field-lbl">Sort</div>' +
+                                '<input type="number" class="row-input" value="' + r.sort + '" min="0" data-i="' + i + '" data-f="sort" style="text-align:center;">' +
+                            '</div>' +
+                        '</div>' +
+
+                    '</div>' +
+
+                    /* ✓ + actions */
+                    '<div class="flex flex-col items-center gap-1.5" style="flex-shrink:0;padding-top:4px;">' +
+                        '<input type="checkbox"' + (r.active ? ' checked' : '') + (r._delete ? ' disabled' : '') + ' data-i="' + i + '" data-f="active" style="width:16px;height:16px;cursor:pointer;">' +
+                        actionBtn +
+                    '</div>' +
+
+                '</div>';
+
+            list.appendChild(div);
+        });
+
+        // делегирование событий
+        list.querySelectorAll('input[data-i], textarea[data-i]').forEach(function (inp) {
+            var ev = inp.type === 'checkbox' ? 'change' : 'input';
+            inp.addEventListener(ev, function () {
+                var idx   = +this.dataset.i;
+                var field = this.dataset.f;
+                var val   = this.type === 'checkbox' ? this.checked : this.value;
+                rowChange(idx, field, val);
+            });
+        });
+
+        list.querySelectorAll('[data-del]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = +this.dataset.del;
+                if (IS_EDIT && rows[idx].id) {
+                    // soft-delete
+                    rows[idx]._delete = true;
+                    rows[idx].active  = false;
+                    renderList();
+                    renderPreview();
+                    renderSummary();
+                } else {
+                    // hard remove (новая строка)
+                    rows.splice(idx, 1);
+                    renderList();
+                    renderPreview();
+                    renderSummary();
+                }
+            });
+        });
+
+        list.querySelectorAll('[data-restore]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = +this.dataset.restore;
+                rows[idx]._delete = false;
+                rows[idx].active  = true;
+                renderList();
+                renderPreview();
+                renderSummary();
+            });
+        });
+
+        $('row_count_badge').textContent = rows.length;
+
+        if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+    }
+
+    function rowChange(i, field, val) {
+        if      (field === 'active') rows[i].active = !!val;
+        else if (field === 'price')  rows[i].price  = parseFloat(val) || 0;
+        else if (field === 'gb' || field === 'sort') rows[i][field] = parseInt(val, 10) || 0;
+        else rows[i][field] = val;
+
+        if (field === 'desc') rows[i].desc_custom = true;
+        if (field === 'name') rows[i].name_custom = true;
+
+        // если численные поля — пересоберём desc/name из шаблона (если не кастомные)
+        if (field !== 'active' && field !== 'name' && field !== 'desc') {
+            var days    = gi('g_days') || 1;
+            var nameTpl = gv('g_name_tpl');
+            var descTpl = gv('g_desc_tpl');
+            var v = { days: days, devices: rows[i].devices, gb: rows[i].gb, price: rows[i].price };
+            if (!rows[i].name_custom) rows[i].name = tpl(nameTpl, v);
+            if (!rows[i].desc_custom) rows[i].desc = tpl(descTpl, v);
+        }
+
+        // не делаем полный re-render для производительности — пересчитаем только превью/итоги
+        var items = $('blk_list').querySelectorAll('.blk-row');
+        if (items[i]) {
+            items[i].classList.toggle('row-off', !rows[i].active);
+            items[i].classList.toggle('row-deleted', !!rows[i]._delete);
+        }
+        renderPreview();
+        renderSummary();
+    }
+
+    /* ── превью ── */
+    function renderPreview() {
+        var days = gv('g_days');
+        var grid = $('prev_grid');
+        grid.innerHTML = '';
+        rows.forEach(function (r) {
+            var el = document.createElement('div');
+            var cls = ['prev-card'];
+            if (r._delete) cls.push('del');
+            else if (!r.active) cls.push('off');
+            el.className = cls.join(' ');
+
+            var tags = '';
+            if (r._delete)      tags += '<span class="pc-tag del">Удалить</span>';
+            else if (r.active)  tags += '<span class="pc-tag on">' + (IS_EDIT && r.id ? 'Сохранить' : 'Создать') + '</span>';
+            else                tags += '<span class="pc-tag">Пропуск</span>';
+            tags += '<span class="pc-tag">sort ' + r.sort + '</span>';
+            if (IS_EDIT && r.id) tags += '<span class="pc-tag id">#' + r.id + '</span>';
+
+            el.innerHTML =
+                '<div class="pc-dev">' + r.devices + ' уст.</div>' +
+                '<div class="pc-name">' + esc(r.name) + '</div>' +
+                '<div class="pc-price">' + r.price + ' <span>₽</span></div>' +
+                '<div class="pc-meta">' + r.gb + ' GB · ' + days + ' дн.</div>' +
+                '<div class="pc-tags">' + tags + '</div>';
+            grid.appendChild(el);
+        });
+    }
+
+    /* ── итого ── */
+    function renderSummary() {
+        $('s_total').textContent = rows.length;
+        var active  = rows.filter(function (r) { return r.active && !r._delete; }).length;
+        var deleted = rows.filter(function (r) { return r._delete && r.id; }).length;
+        $('s_active').textContent = active;
+        var sd = $('s_deleted');
+        if (sd) sd.textContent = deleted;
+    }
+
+    /* ── отправка ── */
+    function submitBulk() {
+        syncFromDom();
+        var method   = gv('fld_method') || 'yookassa';
+        var days     = gi('g_days') || 30;
+        var payload  = rows.map(function (r) {
+            return {
+                id: r.id || null,
+                devices: r.devices, price: r.price, gb: r.gb,
+                name: (r.name || '').trim(), desc: (r.desc || '').trim(), sort: r.sort,
+                active: r.active, days: days,
+                payment_method: method,
+                _delete: !!r._delete
+            };
+        });
+
+        var hasMutations = payload.some(function (p) {
+            return p._delete || p.id || (p.active && p.name && p.price > 0 && p.devices > 0);
+        });
+        if (!hasMutations) {
+            alert('Нет ни одной строки для сохранения.');
+            return;
+        }
+
+        $('fld_json').value = JSON.stringify(payload);
+        $('fld_method').value = method;
+        $('bulkForm').submit();
+    }
+
+    /* ── привязка событий ── */
+    document.addEventListener('DOMContentLoaded', function () {
+        ['g_days','g_sort',
+         'g_base_price','g_base_gb','g_price_step','g_gb_step','g_round']
+        .forEach(function (id) {
+            var el = $(id);
+            if (!el) return;
+            el.addEventListener('input',  recalc);
+            el.addEventListener('change', recalc);
+        });
+        $('g_name_tpl').addEventListener('input', applyGlobalTemplates);
+        $('g_desc_tpl').addEventListener('input', applyGlobalTemplates);
+
+        document.querySelectorAll('input[name="price_mode"]').forEach(function (r) {
+            r.addEventListener('change', function () { updateModeChips(); recalc(); });
+        });
+
+        $('btn_recalc').addEventListener('click', function () {
+            recalc();
+            applyGlobalTemplates();
+        });
+        $('btn_add').addEventListener('click', function () {
+            var maxDev = rows.length
+                ? Math.max.apply(null, rows.map(function (r) { return parseInt(r.devices, 10) || 0; })) + 1
+                : 1;
+            rows.push({
+                devices: maxDev, price: 0, gb: 0, days: gi('g_days') || 30,
+                name: '— новый', desc: '', sort: maxDev, active: true,
+                desc_custom: false, name_custom: false, _delete: false
+            });
+            recalc();
+        });
+        $('btn_submit').addEventListener('click', submitBulk);
+
+        updateModeChips();
+        initRows();
+    });
+
+})();
+</script>
+{% endblock %}

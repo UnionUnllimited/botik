@@ -1,0 +1,2693 @@
+{% extends "base.html" %}
+{% block title %}Кабинет — {{ project_name }}{% endblock %}
+
+{% macro pm_icon(name) %}
+  {%- set n = (name or '')|lower -%}
+  {%- if 'сбп' in n or 'sbp' in n or 'быстр' in n -%}
+    <img src="/static/sbp.png" class="w-4 h-4 object-contain flex-shrink-0" alt="СБП">
+  {%- elif 'мир' in n or 'mir' in n -%}
+    <img src="/static/mir.png" class="w-4 h-4 object-contain flex-shrink-0" alt="Мир">
+  {%- elif 'крипт' in n or 'crypt' in n or 'usdt' in n or 'btc' in n or 'crypto' in n -%}
+    <img src="/static/crypt.png" class="w-4 h-4 object-contain flex-shrink-0" alt="Крипто">
+  {%- endif -%}
+{% endmacro %}
+
+{# ЮКасса: два статических SVG — у `<img>` нет currentColor; переключение через Tailwind `dark:` по классу на `<html>`. #}
+{% macro yk_logo_img(extra_class='') %}
+<span class="inline-flex shrink-0 {{ extra_class }}" aria-hidden="true">
+  <img src="/static/yk.svg" alt="" class="h-4 w-auto dark:hidden"/>
+  <img src="/static/yk-dark.svg" alt="" class="h-4 w-auto hidden dark:block"/>
+</span>
+{% endmacro %}
+
+{# ЮMoney: парный SVG, переключение по теме (как у ЮКассы). #}
+{% macro ym_logo_img(extra_class='') %}
+<span class="inline-flex shrink-0 {{ extra_class }}" aria-hidden="true">
+  <img src="/static/ym.svg" alt="" class="h-4 w-auto dark:hidden"/>
+  <img src="/static/ym-dark.svg" alt="" class="h-4 w-auto hidden dark:block"/>
+</span>
+{% endmacro %}
+
+{# Wata: одиночная SVG-иконка `wata.svg` (по аналогии с Platega) + текст из btn_payment_wata. Рендерится напрямую в кнопке, отдельный макрос не нужен. #}
+
+{% block content %}
+<div class="cabinet-page max-w-[980px] mx-auto px-3 sm:px-6 lg:px-8 py-8 sm:py-16 overflow-x-hidden">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-10">
+    <div>
+      <h1 class="text-[28px] sm:text-[34px] font-bold tracking-tight text-black dark:text-white mb-1">Кабинет</h1>
+      <p class="text-[14px] text-gray-600 dark:text-white/40 mb-1">
+        {% if email %}
+        <span style="display:inline-block;max-width:min(100%,340px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;" title="{{ email }}">{{ email }}</span>
+        {% else %}<span class="text-gray-400 dark:text-white/25 italic">Email ещё не привязан</span>{% endif %}
+      </p>
+      {% if user %}
+      <button onclick="copyClientId('{{ user.telegram_id }}')"
+              class="inline-flex items-center gap-1.5 text-[12px] font-medium text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-white/[0.07] hover:bg-gray-200 dark:hover:bg-white/[0.12] border border-gray-200 dark:border-white/[0.1] px-2.5 py-1 rounded-full transition-all duration-200 active:scale-95">
+        <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"/></svg>
+        <span id="client-id-label">ID: {{ user.telegram_id }}</span>
+      </button>
+      <p class="text-[10px] text-gray-500 dark:text-white/40 mt-1">Укажите ID при обращении в поддержку</p>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-2">
+      {% set _sup = support_url or support_link or '' %}
+      {% if _sup %}
+      <a href="{{ _sup }}" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-1.5 text-[13px] font-medium text-white bg-blue-500 hover:bg-blue-600 px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
+        <span class="hidden sm:inline">Поддержка</span>
+      </a>
+      {% endif %}
+      <a href="/auth/logout" hx-boost="false" class="inline-flex items-center gap-1.5 text-[13px] font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 border border-red-200 dark:border-red-500/30 hover:border-red-400 dark:hover:border-red-400/50 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/></svg>
+        Выйти
+      </a>
+    </div>
+  </div>
+
+  <!-- Баннер "На рабочий стол" -->
+  <div id="pwa-banner" style="display:none" class="mb-6 flex items-center justify-between gap-2 px-3.5 py-2.5 bg-gray-50 dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.08] rounded-2xl">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <img src="/static/icon.svg" onerror="this.src='/static/icon.png'" width="32" height="32" style="width:32px;height:32px;object-fit:contain;flex-shrink:0;border-radius:8px" alt="">
+      <div class="min-w-0">
+        <p class="text-[13px] font-semibold text-gray-900 dark:text-white leading-tight">Добавить на рабочий стол</p>
+        <p class="text-[11px] text-gray-500 dark:text-white/40 leading-tight">Быстрый доступ без браузера</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5 flex-shrink-0">
+      <button onclick="showPwaInstall()"
+              class="text-[12px] font-semibold bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-full hover:opacity-75 transition-all active:scale-95 whitespace-nowrap">
+        Установить
+      </button>
+      <button onclick="document.getElementById('pwa-banner').style.display='none';localStorage.setItem('pwa_banner_dismissed','1')"
+              class="text-gray-400 dark:text-white/30 hover:text-gray-600 dark:hover:text-white/60 transition-colors p-1 flex-shrink-0">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  {% if request.query_params.get('paid') %}
+  <div class="mb-6 flex items-start gap-3 px-4 py-3.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 rounded-2xl">
+    <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <p class="text-[13px] text-emerald-700 dark:text-emerald-400">Оплата прошла. Подписка активируется в течение минуты — обновите страницу.</p>
+  </div>
+  {% endif %}
+
+  {% set is_active = sub_info.is_active if sub_info else (sub and sub.subscription_end_date and sub.subscription_end_date > now) %}
+  {% set limit_ip = sub_info.limit_ip if sub_info and sub_info.limit_ip is defined else (sub.limit_ip if sub else 0) %}
+  {% set days_left_val = sub_info.days_left|int if sub_info and sub_info.days_left is defined and sub_info.days_left != '' else -1 %}
+
+  <!-- Баннер "скоро истекает" -->
+  {% if is_active and days_left_val >= 0 and days_left_val <= 5 %}
+  <div class="mb-6 flex items-start gap-3 px-4 py-3.5 bg-orange-50 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-800/30 rounded-2xl">
+    <svg class="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <div>
+      <p class="text-[13px] font-semibold text-orange-700 dark:text-orange-400">
+        {% if days_left_val == 0 %}
+          {% if sub_info and sub_info.hours_left is defined %}
+            {% set _bh = sub_info.hours_left|int %}
+            {% if _bh == 0 %}Подписка истекает в ближайшее время
+            {% else %}Осталось {{ _bh }} {{ 'час' if _bh % 10 == 1 and _bh % 100 != 11 else ('часа' if _bh % 10 >= 2 and _bh % 10 <= 4 and (_bh % 100 < 10 or _bh % 100 >= 20) else 'часов') }}{% endif %}
+          {% else %}Подписка заканчивается сегодня{% endif %}
+        {% else %}Осталось {{ days_left_val }} {{ 'день' if days_left_val == 1 else ('дня' if days_left_val < 5 else 'дней') }}{% endif %}
+      </p>
+      <p class="text-[12px] text-orange-600/80 dark:text-orange-400/60 mt-0.5">Продлите подписку, чтобы не потерять доступ к серверам</p>
+    </div>
+  </div>
+  {% endif %}
+
+
+  <!-- Cabinet tabs: mobile and desktop use one clean adaptive navigation -->
+  <!-- top следует за плавающей шапкой через --app-header-offset (см. base.html):
+       шапка видна → таб под ней; шапка скрыта при скролле → таб поднимается выше -->
+  <div class="cabinet-tabs-wrap mb-5 sticky z-20" style="top: var(--app-header-offset, calc(3.5rem + env(safe-area-inset-top))); transition: top .35s ease">
+    <div class="cabinet-tabs-shell bg-white/88 dark:bg-[#111]/88 backdrop-blur-xl border border-gray-200/80 dark:border-white/[0.08] rounded-[26px] shadow-[0_8px_28px_rgba(0,0,0,0.10)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.38)] p-1 overflow-hidden">
+      <div class="grid grid-cols-3 gap-1" role="tablist" aria-label="Разделы кабинета">
+        <button type="button" id="cab-tab-info" onclick="switchCabinetSection('info')" class="cabinet-mobile-tab active" role="tab" aria-controls="cab-section-info" aria-selected="true">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+          <span>Информация</span>
+        </button>
+        <button type="button" id="cab-tab-connect" onclick="switchCabinetSection('connect')" class="cabinet-mobile-tab" role="tab" aria-controls="cab-section-connect" aria-selected="false">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 0h10.5a.75.75 0 01.75.75v9a.75.75 0 01-.75.75H3.75A.75.75 0 013 20.25v-9a.75.75 0 01.75-.75zm13.5-3.75h.008v.008h-.008V6.75zm0 3h.008v.008h-.008V9.75zm0 3h.008v.008h-.008v-.008z"/></svg>
+          <span>Подключить VPN</span>
+        </button>
+        <button type="button" id="cab-tab-renew" onclick="switchCabinetSection('renew')" class="cabinet-mobile-tab" role="tab" aria-controls="cab-section-renew" aria-selected="false">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-9.75h5.25A2.25 2.25 0 0116.5 10.5v0a2.25 2.25 0 01-2.25 2.25H9m0 0h5.25A2.25 2.25 0 0116.5 15v0a2.25 2.25 0 01-2.25 2.25H9"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>Продлить</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cabinet-sections-shell grid lg:grid-cols-5 gap-5">
+
+    <!-- LEFT col (3/5) -->
+    <div class="lg:col-span-3 space-y-5">
+
+      <!-- Subscription card -->
+      <div id="cab-section-info" data-cabinet-section="info" class="cabinet-mobile-section card-appear bg-white dark:bg-[#141414] border border-gray-200/80 dark:border-white/[0.07] rounded-3xl overflow-hidden shadow-[0_2px_16px_rgba(0,0,0,0.07)] dark:shadow-[0_2px_16px_rgba(0,0,0,0.4)] min-w-0" style="animation-delay:0.05s">
+
+        <div class="px-3 sm:px-6 pt-4 sm:pt-6 pb-4 sm:pb-6">
+          {% if sub and sub.subscription_end_date %}
+            {% set exp = sub_info.expires_at if sub_info and sub_info.expires_at else sub.subscription_end_date[:10] %}
+
+            <!-- Compact subscription overview -->
+            <div class="cab-sub-card relative overflow-hidden rounded-[24px] sm:rounded-[28px] border border-gray-200/80 dark:border-white/[0.08] bg-gray-50/80 dark:bg-white/[0.035] p-3 sm:p-5 mb-3 sm:mb-4">
+              <div class="relative flex items-center justify-between gap-2 mb-3 sm:mb-5 min-w-0 flex-wrap">
+                {% if is_active %}
+                <div class="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/20 px-3 py-1.5 rounded-full">
+                  <span class="relative flex h-1.5 w-1.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                  </span>
+                  <span class="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">Активна</span>
+                </div>
+                {% else %}
+                <div class="inline-flex items-center gap-1.5 bg-red-50 dark:bg-red-500/10 border border-red-200/70 dark:border-red-500/20 px-3 py-1.5 rounded-full">
+                  <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                  <span class="text-[12px] font-semibold text-red-600 dark:text-red-400">Истекла</span>
+                </div>
+                {% endif %}
+
+                <button id="refresh-btn" onclick="refreshCabinet(this)"
+                        class="inline-flex items-center gap-1.5 text-[12px] font-semibold text-gray-500 dark:text-white/55 hover:text-gray-900 dark:hover:text-white bg-white/80 dark:bg-white/[0.05] border border-gray-200 dark:border-white/[0.08] hover:border-gray-300 dark:hover:border-white/15 px-2.5 sm:px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95 shadow-sm shadow-black/[0.02] flex-shrink-0">
+                  <svg id="refresh-icon" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                  Обновить
+                </button>
+              </div>
+
+              <div class="cab-sub-grid relative grid grid-cols-1 md:grid-cols-[1.15fr_.85fr] gap-2.5 sm:gap-3 items-stretch">
+                <div class="cab-stat-card cab-stat-main rounded-[22px] sm:rounded-[24px] bg-white dark:bg-black/10 border border-black/[0.04] dark:border-white/[0.06] px-4 py-4 min-w-0">
+                  {% if sub_info and sub_info.days_left is defined and sub_info.days_left != '' %}
+                  {% set _d = sub_info.days_left|int %}
+                  <div class="cab-stat-label mb-2">
+                    <svg class="cab-stat-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M5.25 5.25h13.5A1.5 1.5 0 0120.25 6.75v12A1.5 1.5 0 0118.75 20.25H5.25A1.5 1.5 0 013.75 18.75v-12A1.5 1.5 0 015.25 5.25z"/>
+                    </svg>
+                    <span>Осталось</span>
+                  </div>
+                  {% if _d == 0 and sub_info.hours_left is defined %}
+                  {% set _h = sub_info.hours_left|int %}
+                  {% set _hm10 = _h % 10 %}{% set _hm100 = _h % 100 %}
+                  {% if _hm100 >= 11 and _hm100 <= 14 %}{% set _hword = 'часов' %}
+                  {% elif _hm10 == 1 %}{% set _hword = 'час' %}
+                  {% elif _hm10 >= 2 and _hm10 <= 4 %}{% set _hword = 'часа' %}
+                  {% else %}{% set _hword = 'часов' %}{% endif %}
+                  <div class="cab-value-row flex items-end gap-2">
+                    <span class="cab-days-number text-[32px] sm:text-[38px] font-bold tracking-tight text-orange-500 dark:text-orange-400 leading-none tabular-nums">{{ _h }}</span>
+                    <span class="cab-value-unit text-[15px] font-semibold text-orange-400 dark:text-orange-400/80 mb-1">{{ _hword }}</span>
+                  </div>
+                  {% else %}
+                  {% set _m10 = _d % 10 %}{% set _m100 = _d % 100 %}
+                  {% if _m100 >= 11 and _m100 <= 14 %}{% set _word = 'дней' %}
+                  {% elif _m10 == 1 %}{% set _word = 'день' %}
+                  {% elif _m10 >= 2 and _m10 <= 4 %}{% set _word = 'дня' %}
+                  {% else %}{% set _word = 'дней' %}{% endif %}
+                  <div class="cab-value-row flex items-end gap-2">
+                    <span class="cab-days-number text-[32px] sm:text-[38px] font-bold tracking-tight text-gray-950 dark:text-white leading-none tabular-nums">{{ _d }}</span>
+                    <span class="cab-value-unit text-[15px] font-semibold text-gray-500 dark:text-white/55 mb-1">{{ _word }}</span>
+                  </div>
+                  {% endif %}
+                  <p class="text-[13px] text-gray-500 dark:text-white/50 mt-2 truncate">до {{ exp }}</p>
+                  {% else %}
+                  <p class="text-[15px] font-semibold text-gray-900 dark:text-white">До {{ exp }}</p>
+                  {% endif %}
+                </div>
+
+                <div class="cab-sub-side grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-2 min-w-0">
+                  {% if limit_ip and limit_ip > 0 %}
+                  <div class="cab-stat-card rounded-[22px] bg-white dark:bg-black/10 border border-black/[0.04] dark:border-white/[0.06] px-4 py-3 min-w-0">
+                    <div class="cab-stat-label">
+                      <svg class="cab-stat-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h7.5m-7.5 10.5h7.5M9 2.75h6A2.25 2.25 0 0117.25 5v14A2.25 2.25 0 0115 21.25H9A2.25 2.25 0 016.75 19V5A2.25 2.25 0 019 2.75z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 18.25h1.5"/>
+                      </svg>
+                      <span>Лимит</span>
+                    </div>
+                    <div class="cab-value-row mt-1 flex items-baseline gap-1.5 min-w-0">
+                      <span class="cab-limit-number text-[22px] font-bold text-gray-950 dark:text-white tabular-nums leading-none">{{ limit_ip }}</span>
+                      <span class="cab-value-unit text-[11px] font-semibold text-gray-400 dark:text-white/40 truncate">устройств</span>
+                    </div>
+                  </div>
+                  {% endif %}
+
+                  {% if sub_info and sub_info.traffic_limit_gb is defined %}
+                  <div class="cab-stat-card cab-traffic-card rounded-[22px] bg-white dark:bg-black/10 border border-black/[0.04] dark:border-white/[0.06] px-4 py-3 min-w-0 overflow-hidden">
+                    {% set _tpct = [sub_info.traffic_pct, 100]|min %}
+                    {% if _tpct >= 85 %}{% set _tbar = 'traffic-bar-red' %}{% elif _tpct >= 60 %}{% set _tbar = 'traffic-bar-yellow' %}{% else %}{% set _tbar = 'traffic-bar-green' %}{% endif %}
+                    <div class="flex items-start justify-between gap-3 mb-3 min-w-0">
+                      <div class="cab-stat-label min-w-0">
+                        <svg class="cab-stat-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+                        </svg>
+                        <span>Трафик</span>
+                      </div>
+                      <span class="cab-traffic-percent text-[11px] font-bold text-gray-500 dark:text-white/45 tabular-nums whitespace-nowrap">{{ _tpct }}%</span>
+                    </div>
+                    <div class="flex items-end justify-between gap-3 mb-2 min-w-0">
+                      <div class="min-w-0">
+                        <div class="text-[20px] sm:text-[22px] font-bold text-gray-950 dark:text-white leading-none tabular-nums">{{ sub_info.traffic_used_gb }} ГБ</div>
+                        <div class="text-[11px] font-semibold text-gray-400 dark:text-white/40 mt-1 truncate">из {{ sub_info.traffic_limit_gb }} ГБ доступно</div>
+                      </div>
+                      <div class="cab-traffic-ring flex-shrink-0" style="--traffic-pct: {{ _tpct }}%;"></div>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-white/[0.06] rounded-full h-2 overflow-hidden">
+                      <div class="h-2 rounded-full transition-all duration-700 {{ _tbar }}" style="width:{{ _tpct }}%"></div>
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+
+              {% if limit_ip and limit_ip > 0 and (device_upgrade or device_upgrade_status) %}
+              <div class="relative mt-3">
+                {% if device_upgrade %}
+                <button type="button" onclick="openDeviceUpgradeModal()"
+                        class="w-full rounded-[20px] sm:rounded-[22px] bg-black text-white dark:bg-white dark:text-black px-4 py-3 flex items-center justify-between gap-3 text-left transition-all duration-200 active:scale-[0.99] hover:opacity-90 overflow-hidden">
+                  <span class="min-w-0">
+                    <span class="block text-[13px] font-bold truncate">Расширить лимит устройств</span>
+                    <span class="block text-[11px] opacity-70 truncate">Доплата только за оставшиеся дни</span>
+                  </span>
+                  <span class="w-8 h-8 rounded-full bg-white/12 dark:bg-black/10 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6"/></svg>
+                  </span>
+                </button>
+                {% elif device_upgrade_status and device_upgrade_status.reason == 'too_few_days_left' %}
+                {% set _min_du_days = device_upgrade_status.config.min_days_left|default(3)|int %}
+                {% set _du_left = device_upgrade_status.days_left|default(0)|int %}
+                {% set _min_m10 = _min_du_days % 10 %}{% set _min_m100 = _min_du_days % 100 %}
+                {% if _min_m100 >= 11 and _min_m100 <= 14 %}{% set _min_word = 'дней' %}
+                {% elif _min_m10 == 1 %}{% set _min_word = 'день' %}
+                {% elif _min_m10 >= 2 and _min_m10 <= 4 %}{% set _min_word = 'дня' %}
+                {% else %}{% set _min_word = 'дней' %}{% endif %}
+                {% set _left_m10 = _du_left % 10 %}{% set _left_m100 = _du_left % 100 %}
+                {% if _left_m100 >= 11 and _left_m100 <= 14 %}{% set _left_word = 'дней' %}
+                {% elif _left_m10 == 1 %}{% set _left_word = 'день' %}
+                {% elif _left_m10 >= 2 and _left_m10 <= 4 %}{% set _left_word = 'дня' %}
+                {% else %}{% set _left_word = 'дней' %}{% endif %}
+                <div class="rounded-[22px] bg-amber-50 dark:bg-amber-400/[0.08] border border-amber-200/80 dark:border-amber-300/15 px-4 py-3 flex items-start gap-3">
+                  <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-400/10 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-amber-700 dark:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-bold text-amber-900 dark:text-amber-100">Расширение сейчас недоступно</p>
+                    <p class="text-[12px] text-amber-800/75 dark:text-amber-100/65 leading-snug mt-0.5">Минимум — {{ _min_du_days }} {{ _min_word }} до конца подписки, сейчас осталось {{ _du_left }} {{ _left_word }}. Сначала продлите подписку.</p>
+                  </div>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <div class="py-4 text-center">
+              <!-- Иконка пустого состояния -->
+              <div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center mx-auto mb-4">
+                <svg class="w-7 h-7 text-gray-300 dark:text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+                </svg>
+              </div>
+              <p class="text-[15px] font-semibold text-gray-900 dark:text-white mb-2">Подписка не активна</p>
+              <p class="text-[12px] text-gray-400 dark:text-white/35 leading-relaxed mb-4 max-w-[220px] mx-auto">Пробный период недоступен из соображений безопасности</p>
+              <p class="text-[12px] text-gray-500 dark:text-white/45 leading-relaxed">Выберите тариф справа — подписка активируется в течение 5 минут после оплаты.</p>
+            </div>
+          {% endif %}
+        </div>
+
+        {% if (ref_link or show_partner) and sub and sub.subscription_end_date %}
+        <div class="border-t border-gray-100 dark:border-white/[0.05] px-3 sm:px-6 py-3 sm:py-4 mt-0">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {% if ref_link %}
+          <button onclick="openRefModal()"
+                  class="group rounded-[22px] bg-amber-50/90 dark:bg-amber-400/10 border border-amber-200/80 dark:border-amber-400/20 hover:bg-amber-100 dark:hover:bg-amber-400/15 px-4 py-4 text-left transition-all duration-200 active:scale-[0.99] min-w-0 min-h-[76px] flex items-center">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="w-9 h-9 rounded-2xl bg-white/70 dark:bg-black/10 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-amber-700 dark:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[13px] font-bold text-amber-900 dark:text-amber-100 truncate">Бонусы</span>
+                <span class="block text-[12px] font-semibold text-amber-700/75 dark:text-amber-200/60 truncate">{{ ref_count }} приглашений</span>
+              </span>
+            </div>
+          </button>
+          {% endif %}
+          {% if show_partner %}
+          <button onclick="openPartnerModal()"
+                  class="group rounded-[22px] bg-emerald-50/90 dark:bg-emerald-400/10 border border-emerald-200/80 dark:border-emerald-400/20 hover:bg-emerald-100 dark:hover:bg-emerald-400/15 px-4 py-4 text-left transition-all duration-200 active:scale-[0.99] min-w-0 min-h-[76px] flex items-center">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="w-9 h-9 rounded-2xl bg-white/70 dark:bg-black/10 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-emerald-700 dark:text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"/></svg>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[13px] font-bold text-emerald-900 dark:text-emerald-100 truncate">Партнёрка</span>
+                <span class="block text-[12px] font-semibold text-emerald-700/75 dark:text-emerald-200/60 truncate">{{ partner_balance|default(0)|int }} ₽ на балансе</span>
+              </span>
+            </div>
+          </button>
+          {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+
+      {% if devices_enabled and sub and sub.subscription_end_date %}
+      <!-- Inline devices under subscription info -->
+      <div id="cab-section-devices" data-cabinet-section="info" class="cabinet-mobile-section card-appear bg-white dark:bg-[#141414] border border-gray-200/80 dark:border-white/[0.07] rounded-3xl overflow-hidden shadow-[0_2px_16px_rgba(0,0,0,0.07)] dark:shadow-[0_2px_16px_rgba(0,0,0,0.4)]" style="animation-delay:0.09s">
+        <div class="px-6 py-5 border-b border-gray-100 dark:border-white/[0.08] flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/50">Устройства</p>
+            <h2 class="text-[17px] font-semibold text-black dark:text-white mt-1">Подключённые устройства</h2>
+            <p id="inlineDevicesCounter" class="text-[12px] text-gray-500 dark:text-white/45 mt-0.5">Загружаем список…</p>
+          </div>
+          <button type="button" onclick="_loadInlineDevices(this)"
+                  class="inline-flex items-center justify-center w-9 h-9 rounded-2xl bg-gray-100 dark:bg-white/[0.07] hover:bg-gray-200 dark:hover:bg-white/[0.12] text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white transition-all duration-200 active:scale-95"
+                  title="Обновить устройства" aria-label="Обновить устройства">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+          </button>
+        </div>
+
+        <div id="inlineDevicesOverLimitBanner" class="hidden mx-5 mt-4 flex items-start gap-3 px-4 py-3.5 bg-red-50 dark:bg-red-950/20 border border-red-200/70 dark:border-red-800/30 rounded-2xl">
+          <svg class="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12V16.5zM10.29 3.86L1.82 18a2.25 2.25 0 001.93 3.375h16.5A2.25 2.25 0 0022.18 18L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          <div>
+            <p class="text-[13px] font-semibold text-red-700 dark:text-red-400">Превышен лимит устройств</p>
+            <p class="text-[12px] text-red-600/80 dark:text-red-400/60 mt-0.5 leading-relaxed">Удалите лишние устройства из списка ниже.</p>
+          </div>
+        </div>
+
+        <div id="inlineDevicesLoading" class="px-6 py-8 text-center">
+          <div class="inline-flex items-center gap-2 text-[13px] text-gray-400 dark:text-white/35">
+            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+            Загружаем устройства…
+          </div>
+        </div>
+
+        <div id="inlineDevicesError" class="hidden px-6 py-8 text-center">
+          <div class="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center mx-auto mb-3">
+            <svg class="w-6 h-6 text-gray-300 dark:text-white/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12V16.5zM21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <p class="text-[13px] text-gray-500 dark:text-white/45">Не удалось загрузить устройства</p>
+          <button type="button" onclick="_loadInlineDevices(this)" class="mt-3 text-[12px] font-semibold text-blue-600 dark:text-blue-400 hover:opacity-75">Повторить</button>
+        </div>
+
+        <div id="inlineDevicesEmpty" class="hidden px-6 py-8 text-center">
+          <div class="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center mx-auto mb-3">
+            <svg class="w-6 h-6 text-gray-300 dark:text-white/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3"/></svg>
+          </div>
+          <p class="text-[13px] font-semibold text-gray-700 dark:text-white/70">Пока нет подключённых устройств</p>
+          <p class="text-[12px] text-gray-400 dark:text-white/35 mt-1 leading-relaxed">После подключения через приложение устройство появится здесь.</p>
+        </div>
+
+        <div id="inlineDevicesList" class="hidden px-5 py-4"></div>
+      </div>
+      {% endif %}
+
+      <!-- 3-step guide -->
+      {% if sub and sub.subscription_end_date and sub.subscription_end_date > now %}
+      <div id="cab-section-connect" data-cabinet-section="connect" class="cabinet-mobile-section cabinet-focus-panel card-appear bg-white dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.1] rounded-3xl overflow-hidden shadow-[0_2px_16px_rgba(0,0,0,0.07)] dark:shadow-[0_2px_16px_rgba(0,0,0,0.4)]" style="animation-delay:0.12s">
+        <div class="px-6 py-5 border-b border-gray-100 dark:border-white/[0.08]">
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/50">Подключение</p>
+        </div>
+        <div class="cab-connect-steps divide-y divide-gray-100 dark:divide-white/[0.08]">
+
+          <!-- Step 1 -->
+          <div class="px-6 py-5 flex gap-5">
+            <div class="flex flex-col items-center">
+              <span class="flex-shrink-0 w-6 h-6 rounded-full border border-gray-300 dark:border-white/[0.2] flex items-center justify-center text-[11px] font-semibold text-gray-500 dark:text-white/60">1</span>
+              <div class="w-px flex-1 bg-gray-200 dark:bg-white/[0.1] mt-2 min-h-[20px]"></div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="mb-3 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-[13px] font-semibold text-black dark:text-white">Скачайте Клиент</p>
+                  <p class="text-[11px] text-gray-500 dark:text-white/40 mt-0.5 leading-snug">Выберите платформу — активная подсвечена зелёным</p>
+                </div>
+              </div>
+
+              <!-- Выбор платформы -->
+              <div class="app-platform-tabs flex gap-2 mb-3" id="appTabBar" role="tablist" aria-label="Выбор платформы для скачивания">
+                {% if app_ios or app_ios_global %}
+                <button onclick="switchAppTab('ios')" id="appTab-ios" class="app-platform-card" role="tab" aria-selected="false">
+                  <div class="app-platform-icon-wrap">
+                    <img src="/static/apple.png" class="w-5 h-5 object-contain" alt="">
+                  </div>
+                  <span class="app-platform-label">iOS</span>
+                </button>
+                {% endif %}
+                {% if app_android or app_android_apk %}
+                <button onclick="switchAppTab('android')" id="appTab-android" class="app-platform-card" role="tab" aria-selected="false">
+                  <div class="app-platform-icon-wrap">
+                    <img src="/static/android.png" class="w-5 h-5 object-contain" alt="">
+                  </div>
+                  <span class="app-platform-label">Android</span>
+                </button>
+                {% endif %}
+                {% if app_windows or app_mac %}
+                <button onclick="switchAppTab('pc')" id="appTab-pc" class="app-platform-card" role="tab" aria-selected="false">
+                  <div class="app-platform-icon-wrap">
+                    <img src="/static/windows.png" class="w-5 h-5 object-contain" alt="">
+                  </div>
+                  <span class="app-platform-label">PC</span>
+                </button>
+                {% endif %}
+              </div>
+
+              <!-- Ссылки для скачивания -->
+              {% if app_ios or app_ios_global %}
+              <div id="appLinks-ios" class="app-links-panel hidden">
+                {% if app_ios %}
+                <a href="{{ app_ios }}" target="_blank" rel="noopener" class="app-dl-btn">
+                  <div class="app-dl-icon-wrap">
+                    <img src="/static/apple.png" class="w-4 h-4 object-contain" alt="">
+                  </div>
+                  <div class="app-dl-text">
+                    <span class="app-dl-store">App Store</span>
+                    <span class="app-dl-sub"><img src="/static/ru.png" class="inline w-3 h-3 rounded-[2px] mr-0.5" alt="">Россия</span>
+                  </div>
+                  <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+                {% endif %}
+                {% if app_ios_global %}
+                <a href="{{ app_ios_global }}" target="_blank" rel="noopener" class="app-dl-btn">
+                  <div class="app-dl-icon-wrap">
+                    <img src="/static/apple.png" class="w-4 h-4 object-contain" alt="">
+                  </div>
+                  <div class="app-dl-text">
+                    <span class="app-dl-store">App Store</span>
+                    <span class="app-dl-sub"><img src="/static/eu.png" class="inline w-3 h-3 rounded-[2px] mr-0.5" alt="">Global</span>
+                  </div>
+                  <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              {% if app_android or app_android_apk %}
+              <div id="appLinks-android" class="app-links-panel hidden">
+                {% if app_android %}
+                <a href="{{ app_android }}" target="_blank" rel="noopener" class="app-dl-btn">
+                  <div class="app-dl-icon-wrap">
+                    <img src="/static/android.png" class="w-4 h-4 object-contain" alt="">
+                  </div>
+                  <div class="app-dl-text">
+                    <span class="app-dl-store">Google Play</span>
+                    <span class="app-dl-sub">Официальный магазин</span>
+                  </div>
+                  <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+                {% endif %}
+                {% if app_android_apk %}
+                <a href="{{ app_android_apk }}" target="_blank" rel="noopener" class="app-dl-btn">
+                  <div class="app-dl-icon-wrap">
+                    <img src="/static/apk.png" class="w-4 h-4 object-contain" alt="">
+                  </div>
+                  <div class="app-dl-text">
+                    <span class="app-dl-store">APK файл</span>
+                    <span class="app-dl-sub">Прямая загрузка</span>
+                  </div>
+                  <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              {% if app_windows or app_mac %}
+              <div id="appLinks-pc" class="app-links-panel hidden">
+                {% if app_windows %}
+                <a href="{{ app_windows }}" target="_blank" rel="noopener" class="app-dl-btn">
+                  <div class="app-dl-icon-wrap">
+                    <img src="/static/windows.png" class="w-4 h-4 object-contain" alt="">
+                  </div>
+                  <div class="app-dl-text">
+                    <span class="app-dl-store">Windows</span>
+                    <span class="app-dl-sub">Установщик .exe / .msix</span>
+                  </div>
+                  <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+                {% endif %}
+                {% if app_mac %}
+                <a href="{{ app_mac }}" target="_blank" rel="noopener" class="app-dl-btn">
+                  <div class="app-dl-icon-wrap">
+                    <img src="/static/mac.png" class="w-4 h-4 object-contain" alt="">
+                  </div>
+                  <div class="app-dl-text">
+                    <span class="app-dl-store">macOS</span>
+                    <span class="app-dl-sub">Образ диска .dmg</span>
+                  </div>
+                  <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="px-6 py-5 flex gap-5">
+            <div class="flex flex-col items-center">
+              <span class="flex-shrink-0 w-6 h-6 rounded-full border border-gray-300 dark:border-white/[0.2] flex items-center justify-center text-[11px] font-semibold text-gray-500 dark:text-white/60">2</span>
+              <div class="w-px flex-1 bg-gray-200 dark:bg-white/[0.1] mt-2 min-h-[20px]"></div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-[14px] font-semibold text-black dark:text-white mb-1">Добавьте подписку в Клиент</p>
+              <p class="text-[13px] text-gray-600 dark:text-white/60 mb-4">Выберите удобный способ — автоматически через приложение, QR-кодом или вручную</p>
+
+              {% if sub_key or sub_url %}
+              {% set the_key = sub_key or sub_url %}
+
+              <!-- Основные кнопки -->
+              <div class="cab-connect-actions flex gap-2 mb-4">
+                <button onclick="autoAdd(this.dataset.key)" data-key="{{ the_key }}"
+                        class="btn-autoadd flex-1 inline-flex items-center justify-center gap-2 text-[13px] font-semibold px-4 py-2.5 rounded-2xl transition-colors duration-200 active:scale-95">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+                  Автодобавление в Клиент
+                </button>
+                <button onclick="openQR(this.dataset.key)" data-key="{{ the_key }}"
+                        class="inline-flex items-center justify-center gap-2 bg-gray-100 dark:bg-white/[0.08] hover:bg-gray-200 dark:hover:bg-white/[0.14] text-gray-800 dark:text-white text-[13px] font-semibold px-4 py-2.5 rounded-2xl transition-all duration-200 active:scale-95">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z"/></svg>
+                  QR код
+                </button>
+              </div>
+
+              <!-- Ручная вставка / поделиться подпиской -->
+              <div class="mb-3 rounded-2xl border border-blue-100 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-500/[0.08] px-4 py-3 relative overflow-hidden">
+                <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500/70 dark:bg-blue-400/70"></div>
+                <div class="flex items-start gap-2.5 pl-1">
+                  <svg class="w-4 h-4 text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 3.186m0-3.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-3.186l9.566-5.314m-9.566 8.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-13.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
+                  <div class="min-w-0">
+                    <p class="text-[12px] font-bold text-gray-900 dark:text-white mb-1">Как поделиться подпиской?</p>
+                    <p class="text-[11px] text-gray-600 dark:text-white/55 leading-relaxed">Скопируйте ссылку подписки, отправьте её на другое устройство и подключитесь, открыв ссылку и следуя инструкции внутри.</p>
+                  </div>
+                </div>
+              </div>
+              <button onclick="copyKey(this, this.dataset.key)" data-key="{{ the_key }}"
+                      class="w-full text-left bg-gray-50 dark:bg-white/[0.05] border border-gray-200 dark:border-white/[0.12] rounded-2xl px-4 py-3 hover:border-gray-300 dark:hover:border-white/25 transition-all duration-200 group">
+                <span class="font-mono text-[11px] text-gray-500 dark:text-white/60 group-hover:text-gray-700 dark:group-hover:text-white/80 transition-colors block" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%">{{ the_key[:28] }}…</span>
+              </button>
+              <p id="copy-hint" class="text-[11px] text-gray-400 dark:text-white/40 mt-1.5 text-center">нажмите, чтобы скопировать ссылку подписки</p>
+
+              <!-- Инструкции по платформам -->
+              <div class="cab-connect-instr-grid grid grid-cols-2 gap-2 mt-4">
+                <button onclick="openStepModal('mobile')"
+                        class="flex items-center gap-2 border border-gray-200 dark:border-white/[0.12] rounded-2xl px-3 py-2 hover:border-gray-300 dark:hover:border-white/25 transition-all duration-200">
+                  <div class="flex gap-1">
+                    <img src="/static/apple.png" class="w-4 h-4 object-contain opacity-50 dark:opacity-60" alt="">
+                    <img src="/static/android.png" class="w-4 h-4 object-contain opacity-50 dark:opacity-60" alt="">
+                  </div>
+                  <span class="text-[11px] font-medium text-gray-600 dark:text-white/60">iPhone / Android</span>
+                </button>
+                <button onclick="openStepModal('windows')"
+                        class="flex items-center gap-2 border border-gray-200 dark:border-white/[0.12] rounded-2xl px-3 py-2 hover:border-gray-300 dark:hover:border-white/25 transition-all duration-200">
+                  <img src="/static/windows.png" class="w-4 h-4 object-contain opacity-50 dark:opacity-60" alt="">
+                  <span class="text-[11px] font-medium text-gray-600 dark:text-white/60">Windows</span>
+                </button>
+              </div>
+
+              {% else %}
+              <p class="text-[13px] text-gray-600 dark:text-white/55">Ключ появится после активации</p>
+              {% endif %}
+            </div>
+          </div>
+
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- RIGHT col (2/5) - Tariffs + Referral -->
+    <div id="cab-section-renew" data-cabinet-section="renew" class="cabinet-mobile-section cabinet-focus-panel lg:col-span-2 space-y-5">
+      <div class="card-appear bg-gray-50 dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.08] rounded-3xl overflow-hidden sticky top-16 shadow-[0_2px_16px_rgba(0,0,0,0.07)] dark:shadow-[0_2px_16px_rgba(0,0,0,0.4)]" style="animation-delay:0.18s">
+
+        <div class="px-4 py-3 border-b border-gray-200 dark:border-white/[0.06] flex items-center justify-between gap-2">
+          {% if traffic_renewal_enabled and traffic_topup_tariffs %}
+          <!-- Переключатель: Подписка / Трафик -->
+          <div class="flex items-center gap-1 bg-gray-100 dark:bg-white/[0.07] rounded-full p-0.5 min-w-0">
+            <button id="tab-sub" onclick="switchPayTab('sub')"
+                    class="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 bg-white dark:bg-white/20 text-gray-900 dark:text-white shadow-sm whitespace-nowrap inline-flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <span>{% if is_active %}Продлить{% else %}Купить{% endif %}</span>
+            </button>
+            <button id="tab-traffic" onclick="switchPayTab('traffic')"
+                    class="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-all duration-200 text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 whitespace-nowrap inline-flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+              <span>Трафик</span>
+            </button>
+          </div>
+          {% else %}
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-600 dark:text-white/30">
+            {% if is_active %}Продлить{% else %}Купить{% endif %}
+          </p>
+          {% endif %}
+          {% if limit_ip and limit_ip > 0 %}
+          <div class="relative flex-shrink-0" id="limit-badge-wrap">
+            <button onclick="toggleLimitTip()"
+                    class="inline-flex items-center gap-1 text-[11px] text-gray-600 dark:text-white/30 hover:text-gray-900 dark:hover:text-white/60 transition-colors">
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 8.25h3m-3 0a.75.75 0 000 1.5h3a.75.75 0 000-1.5"/></svg>
+              {% if device_upgrade %}Расширить лимит · {{ limit_ip }} уст.{% else %}{{ limit_ip }} уст.{% endif %}
+            </button>
+            <div id="limit-tip"
+                 class="hidden absolute right-0 top-full mt-2 w-56 z-30 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/[0.1] rounded-2xl shadow-xl p-3 text-left">
+              {% if device_upgrade %}
+              <button onclick="openDeviceUpgradeModal()"
+                      class="w-full mb-2 inline-flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-black dark:bg-white dark:text-black rounded-xl py-2 hover:opacity-90 transition-opacity">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-7 7m7-7l7 7"/></svg>
+                Расширить лимит
+              </button>
+              <div class="h-px bg-black/[0.06] dark:bg-white/[0.08] mb-2"></div>
+              {% endif %}
+              {% if can_change_limit %}
+              <p class="text-[12px] text-gray-600 dark:text-white/70 leading-relaxed">
+                Срок подписки заканчивается — вы можете выбрать любой тариф для продления, в&nbsp;том числе с&nbsp;другим лимитом устройств.
+              </p>
+              {% else %}
+              <p class="text-[12px] text-gray-600 dark:text-white/70 leading-relaxed">
+                {% if device_upgrade %}Текущий лимит: <span class="font-semibold">{{ limit_ip }} уст.</span> Расширить — кнопкой выше. {% endif %}Хотите <span class="font-semibold">уменьшить</span> лимит устройств? Обратитесь в поддержку.
+              </p>
+              {% set _sup = support_url or support_link or '' %}
+              {% if _sup %}
+              <a href="{{ _sup }}" target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-1 mt-2 text-[12px] font-semibold text-blue-600 dark:text-blue-400 hover:opacity-75 transition-opacity">
+                Написать в поддержку →
+              </a>
+              {% endif %}
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Панель: Подписка -->
+        <div id="pane-sub">
+
+        <!-- Информер про окно продления (для существующих юзеров с подпиской ≤7 дней) -->
+        {% if is_renewal_window_open %}
+        <div class="px-4 py-3 border-b border-black/[0.04] dark:border-white/[0.04]"
+             style="background: rgba(245,158,11,.06);">
+          <div class="flex items-start gap-2">
+            <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="#f59e0b" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div class="text-[12.5px] leading-relaxed" style="color:#92400e;">
+              {% if days_until_end is not none and days_until_end > 0 %}
+                {% set _d = (days_until_end|round(0, 'ceil'))|int %}
+                Подписка заканчивается через <strong>{{ _d }} {{ 'день' if _d == 1 else ('дня' if _d < 5 else 'дней') }}</strong>.
+              {% else %}
+                Подписка истекла.
+              {% endif %}
+              При продлении можете выбрать любой тариф, в&nbsp;том числе с&nbsp;другим лимитом устройств.
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Limit selector (доступен при первой покупке и в окне продления) -->
+        {% if can_change_limit and limit_groups|length > 1 %}
+        <div class="px-4 py-4 border-b border-black/[0.04] dark:border-white/[0.04]">
+          <div class="mb-3">
+            <p class="text-[13px] font-semibold text-gray-900 dark:text-white mb-1">
+              {% if is_first_purchase %}Выберите лимит устройств{% else %}Лимит устройств{% endif %}
+            </p>
+            <p class="text-[12px] text-gray-500 dark:text-white/55 leading-relaxed">Один ключ будет работать на нескольких устройствах с Happ — выберите сколько одновременных подключений вам нужно.</p>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            {% for lim, lim_tariffs in limit_groups.items()|sort %}
+            <button onclick="selectLimit({{ lim }})" id="lim-btn-{{ lim }}"
+                    class="w-10 h-10 text-[13px] font-semibold rounded-full border transition-all duration-200 flex items-center justify-center flex-shrink-0
+                           {% if lim == default_limit %}bg-black dark:bg-white text-white dark:text-black border-transparent{% else %}border-black/[0.1] dark:border-white/[0.1] text-gray-600 dark:text-white/40 hover:border-black/20 dark:hover:border-white/20{% endif %}">
+              {{ lim if lim > 0 else '∞' }}
+            </button>
+            {% endfor %}
+          </div>
+          {% if is_first_purchase %}
+          <p class="text-[10px] text-gray-600 dark:text-white/40 mt-2">Фиксируется после первой оплаты</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Tariff list -->
+        {% if tariffs %}
+        <div class="divide-y divide-gray-200 dark:divide-white/[0.06]">
+          {% for t in tariffs %}
+          {% set tariff_pm = (t.payment_method or 'all')|lower %}
+          {% set show_yk = yookassa_on and tariff_pm in ('all', 'both', 'yookassa') %}
+          {% set show_pl = platega_on and tariff_pm in ('all', 'both', 'platega') %}
+          {% set show_ym = yoomoney_on and tariff_pm in ('all', 'yoomoney') %}
+          {% set show_wt = wata_on and tariff_pm in ('all', 'wata') %}
+          <div class="px-5 py-4 tariff-row" data-limit="{{ t.limit_ip or 0 }}"
+               {% if can_change_limit and (t.limit_ip or 0) != default_limit %}style="display:none"{% endif %}>
+            <div class="flex items-center justify-between mb-3.5">
+              <p class="text-[14px] font-semibold text-gray-900 dark:text-white">{{ t.name }}</p>
+              <p class="text-[18px] font-bold text-gray-900 dark:text-white tabular-nums">{{ '%g'|format(t.price) }}<span class="text-[13px] font-normal text-gray-600 dark:text-white/30"> ₽</span></p>
+            </div>
+            <div class="space-y-1.5">
+              {% if show_yk %}
+              <button type="button" aria-label="Оплата через ЮКасса"
+                      onclick='openPay({{ t.id }}, "yookassa", 0, {{ t.name|tojson }}, {{ t.price }}, {{ t.traffic_gb or 0 }})'
+                      class="w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+                {{ yk_logo_img() }}
+              </button>
+              {% endif %}
+              {% if show_pl %}
+                <button onclick='openPay({{ t.id }}, "platega", 0, {{ t.name|tojson }}, {{ t.price }}, {{ t.traffic_gb or 0 }})'
+                        class="w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+                  <img src="/static/platega.svg" alt="" class="h-4 w-auto" />
+                  <span>{{ platega_btn_text }}</span>
+                </button>
+              {% endif %}
+              {% if show_ym %}
+              <button type="button" aria-label="Оплата через ЮMoney"
+                      onclick='openPay({{ t.id }}, "yoomoney", 0, {{ t.name|tojson }}, {{ t.price }}, {{ t.traffic_gb or 0 }})'
+                      class="w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+                {{ ym_logo_img() }}
+              </button>
+              {% endif %}
+              {% if show_wt %}
+              <button onclick='openPay({{ t.id }}, "wata", 0, {{ t.name|tojson }}, {{ t.price }}, {{ t.traffic_gb or 0 }})'
+                      class="w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+                <img src="/static/wata.svg" alt="" class="h-5 w-auto -my-1" />
+                <span>{{ wata_btn_text }}</span>
+              </button>
+              {% endif %}
+              {% if not show_yk and not show_pl and not show_ym and not show_wt %}
+              <p class="text-[12px] text-gray-600 dark:text-white/40 text-center py-1">Оплата недоступна</p>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-5 py-10 text-center text-[14px] text-gray-600 dark:text-white/40">Нет доступных тарифов</div>
+        {% endif %}
+
+        </div>{# /pane-sub #}
+
+        <!-- Панель: Трафик -->
+        {% if traffic_renewal_enabled and traffic_topup_tariffs %}
+        <div id="pane-traffic" style="display:none">
+          <div class="divide-y divide-gray-100 dark:divide-white/[0.06]">
+            {% for tt in traffic_topup_tariffs %}
+            <div class="px-5 py-4">
+              <!-- Название + цена -->
+              <div class="flex items-start justify-between mb-3">
+                <div class="min-w-0">
+                  <p class="text-[14px] font-semibold text-gray-900 dark:text-white leading-snug">
+                    {{ tt.name or (tt.traffic_gb|string + ' ГБ') }}
+                  </p>
+                  {% if tt.description %}
+                  <p class="text-[12px] text-gray-500 dark:text-white/50 mt-0.5">{{ tt.description }}</p>
+                  {% endif %}
+                </div>
+                <span class="text-[15px] font-bold text-gray-900 dark:text-white flex-shrink-0 ml-3">{{ tt.price|int }} ₽</span>
+              </div>
+              <!-- Кнопки оплаты — всегда в столбец/сетку -->
+              {% set tt_pm = (tt.payment_method or 'all')|lower %}
+              {% set tt_show_yk = yookassa_on and tt_pm in ('all', 'both', 'yookassa') %}
+              {% set tt_show_pl = platega_on and tt_pm in ('all', 'both', 'platega') %}
+              {% set tt_show_ym = yoomoney_on and tt_pm in ('all', 'yoomoney') %}
+              {% set tt_show_wt = wata_on and tt_pm in ('all', 'wata') %}
+              <div class="flex flex-col gap-1.5">
+                {% if tt_show_yk %}
+                <button type="button" aria-label="Оплата через ЮКасса"
+                        onclick='openTrafficPay({{ tt.id }}, "yookassa", 0, {{ (tt.name or (tt.traffic_gb|string + " ГБ"))|tojson }}, {{ tt.price|int }}, {{ tt.traffic_gb or 0 }})'
+                        class="w-full text-[12px] font-medium border border-gray-200 dark:border-white/[0.12] text-gray-700 dark:text-white/70 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-white/[0.06] transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-1.5">
+                  {{ yk_logo_img() }}
+                </button>
+                {% endif %}
+                {% if tt_show_pl %}
+                <button onclick='openTrafficPay({{ tt.id }}, "platega", 0, {{ (tt.name or (tt.traffic_gb|string + " ГБ"))|tojson }}, {{ tt.price|int }}, {{ tt.traffic_gb or 0 }})'
+                        class="w-full text-[12px] font-medium border border-gray-200 dark:border-white/[0.12] text-gray-700 dark:text-white/70 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-white/[0.06] transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-1.5">
+                  <img src="/static/platega.svg" alt="" class="h-4 w-auto" />
+                  <span>{{ platega_btn_text }}</span>
+                </button>
+                {% endif %}
+                {% if tt_show_ym %}
+                <button type="button" aria-label="Оплата через ЮMoney"
+                        onclick='openTrafficPay({{ tt.id }}, "yoomoney", 0, {{ (tt.name or (tt.traffic_gb|string + " ГБ"))|tojson }}, {{ tt.price|int }}, {{ tt.traffic_gb or 0 }})'
+                        class="w-full text-[12px] font-medium border border-gray-200 dark:border-white/[0.12] text-gray-700 dark:text-white/70 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-white/[0.06] transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-1.5">
+                  {{ ym_logo_img() }}
+                </button>
+                {% endif %}
+                {% if tt_show_wt %}
+                <button onclick='openTrafficPay({{ tt.id }}, "wata", 0, {{ (tt.name or (tt.traffic_gb|string + " ГБ"))|tojson }}, {{ tt.price|int }}, {{ tt.traffic_gb or 0 }})'
+                        class="w-full text-[12px] font-medium border border-gray-200 dark:border-white/[0.12] text-gray-700 dark:text-white/70 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-white/[0.06] transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-1.5">
+                  <img src="/static/wata.svg" alt="" class="h-5 w-auto -my-1" />
+                  <span>{{ wata_btn_text }}</span>
+                </button>
+                {% endif %}
+                {% if not tt_show_yk and not tt_show_pl and not tt_show_ym and not tt_show_wt %}
+                <p class="text-[12px] text-gray-600 dark:text-white/40 text-center py-1">Оплата недоступна</p>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Welcome / trial modal -->
+{% if show_welcome %}
+<div id="welcomeModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closeWelcomeModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl p-6 shadow-2xl">
+
+    <!-- Иконка -->
+    <div class="flex justify-center mb-4">
+      <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-violet-500 flex items-center justify-center shadow-lg">
+        <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Заголовок -->
+    <h2 class="text-[20px] font-bold text-black dark:text-white text-center mb-2">Добро пожаловать! 🎉</h2>
+    <p class="text-[14px] text-gray-500 dark:text-white/55 text-center leading-relaxed mb-5">
+      Вам активирован бесплатный пробный период на
+      <span class="font-semibold text-black dark:text-white">{{ trial_days }}&nbsp;{{ 'день' if trial_days == 1 else ('дня' if 2 <= trial_days <= 4 else 'дней') }}</span>
+      — чтобы вы могли познакомиться с нашим сервисом.
+    </p>
+
+    <!-- Кнопки -->
+    <button onclick="closeWelcomeModal()"
+            class="inline-flex items-center justify-center gap-1.5 w-full text-[14px] font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 border border-green-200 dark:border-green-500/30 hover:border-green-400 dark:hover:border-green-400/50 bg-green-50 dark:bg-green-500/10 hover:bg-green-100 dark:hover:bg-green-500/20 px-4 py-2.5 rounded-full transition-all duration-200 active:scale-95 cursor-pointer outline-none">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/>
+      </svg>
+      Начать
+    </button>
+
+  </div>
+</div>
+{% endif %}
+
+<!-- Referral modal -->
+{% if ref_link %}
+<div id="refModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closeRefModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl p-6 shadow-2xl">
+
+    <!-- Заголовок -->
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <p class="text-[17px] font-semibold text-black dark:text-white">Бонусы</p>
+        {% if ref_count > 0 %}
+        <p class="text-[12px] text-gray-500 dark:text-white/50 mt-0.5">Приглашено: {{ ref_count }} {{ 'человек' if ref_count >= 5 else ('человека' if ref_count >= 2 else 'человек') }}</p>
+        {% endif %}
+      </div>
+      <button onclick="closeRefModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <p class="text-[13px] text-gray-500 dark:text-white/55 leading-relaxed mb-4">
+      За каждого приглашённого друга по реферальной ссылке, который оплатит подписку — вы получите <span class="font-semibold text-gray-900 dark:text-white">+{{ ref_bonus_days }} дней</span> бесплатно.
+    </p>
+
+    <button onclick="copyRefLink(this, '{{ ref_link }}')"
+            class="w-full text-left bg-gray-50 dark:bg-white/[0.05] border border-gray-200 dark:border-white/[0.12] rounded-2xl px-4 py-3 hover:border-gray-300 dark:hover:border-white/25 transition-all duration-200 group mb-1.5">
+      <span class="font-mono text-[11px] text-gray-500 dark:text-white/60 group-hover:text-gray-700 dark:group-hover:text-white/80 transition-colors block" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%">{{ ref_link }}</span>
+    </button>
+    <p id="ref-copy-hint" class="text-[11px] text-gray-400 dark:text-white/40 text-center">нажмите чтобы скопировать</p>
+
+  </div>
+</div>
+{% endif %}
+
+<!-- Partner modal -->
+{% if show_partner %}
+<div id="partnerModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closePartnerModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <p class="text-[17px] font-semibold text-black dark:text-white">Партнёрская программа</p>
+        {% if partner_percent > 0 %}<p class="text-[12px] text-gray-500 dark:text-white/50 mt-0.5">Вы получаете {{ partner_percent }}% от каждой оплаты</p>{% endif %}
+      </div>
+      <button onclick="closePartnerModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl px-4 py-3 mb-4">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-[13px] text-emerald-700 dark:text-emerald-400">Баланс партнёра</span>
+        <span class="text-[18px] font-semibold text-emerald-800 dark:text-emerald-300">{{ '%.2f'|format(partner_balance|default(0)) }} ₽</span>
+      </div>
+      <p class="text-[11px] text-emerald-700/70 dark:text-emerald-300/55 mt-1 leading-relaxed">Сумма начислений по партнёрской программе. Для вывода средств обратитесь в поддержку.</p>
+    </div>
+
+    {% if partner_link %}
+    <p class="text-[12px] text-gray-500 dark:text-white/55 mb-2">Ваша партнёрская ссылка:</p>
+    <button onclick="copyPartnerLink(this, '{{ partner_link }}')"
+            class="w-full text-left bg-gray-50 dark:bg-white/[0.05] border border-gray-200 dark:border-white/[0.12] rounded-2xl px-4 py-3 hover:border-gray-300 dark:hover:border-white/25 transition-all duration-200 group mb-1.5">
+      <span class="font-mono text-[11px] text-gray-500 dark:text-white/60 group-hover:text-gray-700 dark:group-hover:text-white/80 transition-colors block" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%">{{ partner_link }}</span>
+    </button>
+    <p id="partner-copy-hint" class="text-[11px] text-gray-400 dark:text-white/40 text-center mb-4">нажмите чтобы скопировать</p>
+    {% else %}
+    <p class="text-[13px] text-gray-500 dark:text-white/50 leading-relaxed mb-3">Партнёрская ссылка ещё не создана. Напишите нам — мы подключим вас к программе.</p>
+    {% set _sup = support_url or support_link or '' %}
+    {% if _sup %}
+    <a href="{{ _sup }}" target="_blank"
+       class="flex items-center justify-center gap-2 w-full bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/25 text-blue-600 dark:text-blue-400 rounded-2xl px-4 py-3 text-[13px] font-medium hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-all duration-200 mb-4">
+      <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      Написать в поддержку
+    </a>
+    {% else %}
+    <p class="text-[12px] text-gray-400 dark:text-white/35 text-center mb-4">Свяжитесь с поддержкой для подключения</p>
+    {% endif %}
+    {% endif %}
+
+    {% if partner_accruals %}
+    <div class="border-t border-gray-100 dark:border-white/[0.08] pt-4">
+      <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-3">Последние начисления</p>
+      <div class="space-y-2">
+        {% for a in partner_accruals %}
+        {% set _bonus = a.bonus|float %}
+        <div class="flex items-center justify-between">
+          <span class="text-[12px] text-gray-500 dark:text-white/50">{{ a.created_at | format_msk }}</span>
+          {% if _bonus < 0 %}
+          <span class="text-[12px] font-semibold text-red-500 dark:text-red-400">{{ '%.2f'|format(_bonus) }} ₽</span>
+          {% else %}
+          <span class="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">+{{ '%.2f'|format(_bonus) }} ₽</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- PWA install modal -->
+<div id="pwaModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closePwaModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl p-6 shadow-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <p class="text-[17px] font-semibold text-black dark:text-white">На рабочий стол</p>
+      <button onclick="closePwaModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <p class="text-[13px] text-gray-500 dark:text-white/50 mb-5 leading-relaxed">Установите кабинет как приложение — быстрый доступ без адресной строки.</p>
+
+    <!-- Android -->
+    <div class="mb-4">
+      <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/30 mb-2">Android</p>
+      <button id="pwa-android-btn" onclick="triggerAndroidInstall()" class="w-full bg-black dark:bg-white text-white dark:text-black text-[14px] font-semibold py-3 rounded-2xl hover:opacity-75 transition-all active:scale-[0.98]">
+        Добавить на главную
+      </button>
+      <p id="pwa-android-hint" class="text-[11px] text-gray-400 dark:text-white/30 text-center mt-2 hidden">Откройте страницу в Chrome и попробуйте снова</p>
+      <p class="text-[11px] text-gray-400 dark:text-white/30 text-center mt-2 leading-relaxed">Если кнопка не работает — возможно, приложение уже добавлено на главный экран или ваш браузер не поддерживает установку PWA.</p>
+    </div>
+
+    <!-- Разделитель -->
+    <div class="flex items-center gap-3 mb-4">
+      <div class="flex-1 h-px bg-gray-100 dark:bg-white/[0.06]"></div>
+      <span class="text-[11px] text-gray-400 dark:text-white/30">iPhone / iPad</span>
+      <div class="flex-1 h-px bg-gray-100 dark:bg-white/[0.06]"></div>
+    </div>
+
+    <!-- iOS -->
+    <div class="space-y-2.5">
+      <div class="flex items-start gap-3">
+        <span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-500 dark:text-white/50 mt-0.5">1</span>
+        <p class="text-[12px] text-gray-600 dark:text-white/60">Нажмите <svg class="inline w-3.5 h-3.5 mb-0.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 00-2.25 2.25v9a2.25 2.25 0 002.25 2.25h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25H15M9 12l3 3m0 0l3-3m-3 3V2.25"/></svg> внизу Safari</p>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-500 dark:text-white/50 mt-0.5">2</span>
+        <p class="text-[12px] text-gray-600 dark:text-white/60">Выберите <strong class="text-gray-800 dark:text-white/80">«На экран Домой»</strong></p>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-500 dark:text-white/50 mt-0.5">3</span>
+        <p class="text-[12px] text-gray-600 dark:text-white/60">Нажмите <strong class="text-gray-800 dark:text-white/80">«Добавить»</strong></p>
+      </div>
+      <p class="text-[11px] text-gray-400 dark:text-white/30 text-center pt-2 leading-relaxed">Если пункт не появляется — возможно, приложение уже добавлено на главный экран.</p>
+    </div>
+  </div>
+</div>
+
+<!-- QR modal -->
+<div id="qrModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-md" onclick="closeQR()"></div>
+  <div class="relative bg-white dark:bg-[#111] border border-black/[0.06] dark:border-white/[0.1] rounded-3xl p-7 w-full max-w-[360px] text-center shadow-2xl overflow-hidden">
+    <p class="text-[15px] font-semibold text-black dark:text-white mb-1">QR код</p>
+    <p class="text-[12px] text-gray-400 dark:text-white/30 mb-5">Отсканируйте в приложении Happ</p>
+    <!-- QR всегда на белом фоне для чёткости -->
+    <div class="bg-white rounded-2xl p-4 mx-auto w-fit max-w-full shadow-inner border border-gray-100 overflow-hidden">
+      <div id="qr-container" class="max-w-full"></div>
+    </div>
+    <button onclick="closeQR()" class="mt-5 block w-full text-[13px] font-medium text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors py-1">Закрыть</button>
+  </div>
+</div>
+
+<!-- Step modal (mobile / windows) -->
+<div id="stepModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closeStepModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl overflow-hidden shadow-2xl">
+    <div id="stepModalContent"></div>
+    <div class="px-5 pb-5">
+      <button onclick="closeStepModal()" class="w-full text-[14px] text-red-400 hover:text-red-600 dark:hover:text-red-300 py-2.5 rounded-full transition-colors">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- Traffic Pay modal -->
+{% if traffic_renewal_enabled and traffic_topup_tariffs %}
+<div id="trafficPayModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm" onclick="closeTrafficModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-black/[0.08] dark:border-white/[0.08] rounded-3xl shadow-2xl overflow-hidden">
+
+    <div class="px-6 pt-6 pb-5">
+      <p class="text-[12px] font-medium uppercase tracking-widest text-black/30 dark:text-white/30 mb-3">Подтвердите оплату</p>
+
+      <div class="flex items-center justify-between bg-gray-50 dark:bg-white/[0.05] rounded-2xl px-4 py-3.5 mb-4">
+        <div>
+          <p id="trafficPayName" class="text-[14px] font-semibold text-black dark:text-white"></p>
+          <p id="trafficPaySub" class="text-[12px] text-black/40 dark:text-white/40 mt-0.5">Трафик</p>
+        </div>
+        <p id="trafficPayPrice" class="text-[22px] font-bold text-black dark:text-white tabular-nums"></p>
+      </div>
+
+      <div class="flex items-center gap-2.5 px-1">
+        <div id="trafficPayIconShell" class="w-7 h-7 rounded-lg flex items-center justify-center bg-black/[0.05] dark:bg-white/[0.07] flex-shrink-0 overflow-hidden hidden">
+          <div id="trafficPayIcon" class="flex items-center justify-center max-w-full max-h-full"></div>
+        </div>
+        <div>
+          <p id="trafficPayMethod" class="text-[13px] font-medium text-black dark:text-white"></p>
+          <p class="text-[11px] text-black/40 dark:text-white/40">Трафик добавится сразу после оплаты</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="h-px bg-black/[0.05] dark:bg-white/[0.06]"></div>
+
+    <div class="px-6 py-4 space-y-2">
+      <button id="trafficPayConfirmBtn" onclick="confirmTrafficPay()"
+              class="w-full bg-black dark:bg-white text-white dark:text-black text-[15px] font-semibold py-3.5 rounded-full hover:opacity-80 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+        Перейти к оплате
+      </button>
+      <button onclick="closeTrafficModal()"
+              class="w-full text-[14px] text-black/35 dark:text-white/35 hover:text-black/60 dark:hover:text-white/60 py-2.5 rounded-full transition-colors duration-200">
+        Отмена
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+<!-- Стили платформ и кнопок скачивания (всегда нужны, вне зависимости от devices_enabled) -->
+<style>
+/* Limit button pop animation */
+@keyframes limPop{
+  0%   {transform:scale(1)}
+  30%  {transform:scale(1.13)}
+  60%  {transform:scale(0.94)}
+  80%  {transform:scale(1.04)}
+  100% {transform:scale(1)}
+}
+.lim-pop{animation:limPop .42s cubic-bezier(.34,1.56,.64,1) forwards}
+
+/* Tariff card entrance */
+@keyframes tariffIn{
+  from{opacity:0;transform:translateY(12px)}
+  to  {opacity:1;transform:translateY(0)}
+}
+.tariff-in{animation:tariffIn .28s cubic-bezier(.4,0,.2,1) both}
+
+/* Кнопка автодобавления — зелёная, мягко пульсирует, привлекает внимание */
+@keyframes autoaddPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}
+  50%{box-shadow:0 0 0 9px rgba(34,197,94,0)}
+}
+.btn-autoadd{background:#16a34a;color:#fff;animation:autoaddPulse 2s ease-in-out infinite}
+.btn-autoadd:hover{background:#15803d}
+.dark .btn-autoadd{background:#22c55e;color:#052e16}
+.dark .btn-autoadd:hover{background:#16a34a}
+@media (prefers-reduced-motion:reduce){.btn-autoadd{animation:none}}
+
+
+/* Cabinet tabs + adaptive section layout */
+#cab-section-info, #cab-section-devices, #cab-section-connect, #cab-section-renew{min-width:0;max-width:100%}
+.cabinet-page{width:100%;max-width:980px;overflow:hidden}
+.cabinet-tabs-wrap{scroll-margin-top:calc(var(--app-header-offset,3.5rem) + 12px)}
+.cabinet-tabs-shell{position:relative}
+.cabinet-mobile-tab{position:relative;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:18px;padding:11px 10px;font-size:12px;line-height:1.1;text-align:center;font-weight:800;color:#6b7280;transition:transform .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;min-height:46px;white-space:nowrap;overflow:hidden}
+.cabinet-mobile-tab svg{width:16px;height:16px;flex:0 0 auto;transition:transform .18s ease}
+.cabinet-mobile-tab span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.cabinet-mobile-tab:hover{background:rgba(0,0,0,.045);color:#111;transform:translateY(-1px)}
+.cabinet-mobile-tab:active{transform:scale(.985)}
+.cabinet-mobile-tab.active{background:#111;color:#fff;box-shadow:0 10px 24px rgba(0,0,0,.15)}
+.cabinet-mobile-tab.active svg{transform:scale(1.04)}
+.dark .cabinet-mobile-tab{color:rgba(255,255,255,.52)}
+.dark .cabinet-mobile-tab:hover{background:rgba(255,255,255,.07);color:#fff}
+.dark .cabinet-mobile-tab.active{background:#fff;color:#111;box-shadow:0 10px 24px rgba(0,0,0,.38)}
+/* «Подключить VPN» — акцентная зелёная вкладка, чтобы сразу привлекать внимание */
+#cab-tab-connect:not(.active){background:rgba(16,185,129,.12);color:#059669;box-shadow:inset 0 0 0 1px rgba(16,185,129,.35)}
+#cab-tab-connect:not(.active):hover{background:rgba(16,185,129,.2);color:#047857}
+#cab-tab-connect.active{background:#10b981;color:#fff;box-shadow:0 10px 24px rgba(16,185,129,.35)}
+.dark #cab-tab-connect:not(.active){background:rgba(16,185,129,.16);color:#34d399;box-shadow:inset 0 0 0 1px rgba(16,185,129,.3)}
+.dark #cab-tab-connect:not(.active):hover{background:rgba(16,185,129,.24);color:#6ee7b7}
+.dark #cab-tab-connect.active{background:#10b981;color:#fff;box-shadow:0 10px 24px rgba(16,185,129,.4)}
+.cabinet-mobile-section{display:none}
+.cabinet-mobile-section.active{display:block;animation:cabinetSectionIn .22s ease both}
+@media (min-width:1024px){
+  .cabinet-tabs-wrap{margin-bottom:22px!important}
+  .cabinet-tabs-shell{border-radius:30px!important;padding:6px!important;background:rgba(255,255,255,.74)!important;box-shadow:0 14px 42px rgba(0,0,0,.08)!important}
+  .dark .cabinet-tabs-shell{background:rgba(17,17,17,.72)!important;box-shadow:0 14px 42px rgba(0,0,0,.32)!important}
+  .cabinet-tabs-shell > .grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important}
+  .cabinet-mobile-tab{min-height:58px;border-radius:24px;font-size:13px;gap:9px;letter-spacing:-.01em}
+  .cabinet-mobile-tab svg{width:18px;height:18px}
+  .cabinet-sections-shell{display:block!important}
+  .cabinet-sections-shell > .lg\:col-span-3{display:block!important}
+  .cabinet-sections-shell > .lg\:col-span-3 > .cabinet-mobile-section:not(.active){display:none!important}
+  #cab-section-renew:not(.active){display:none!important}
+  #cab-section-renew{width:100%}
+  #cab-section-renew > .card-appear{position:relative!important;top:auto!important}
+  #cab-section-info,#cab-section-devices,#cab-section-connect,#cab-section-renew{animation:cabinetSectionIn .24s ease both}
+  /* Вкладки «Подключить» / «Продлить» — компактная колонка по центру, не на всю ширину */
+  .cabinet-focus-panel.active{
+    width:100%;
+    max-width:520px;
+    margin-left:auto;
+    margin-right:auto;
+  }
+  #cab-section-connect.active{max-width:640px}
+  #cab-section-connect.active .cab-connect-steps > div{padding-left:1.5rem;padding-right:1.5rem}
+  #cab-section-connect.active #appTabBar{justify-content:flex-start;flex-wrap:wrap}
+  #cab-section-connect.active .app-links-panel{max-width:100%}
+  #cab-section-connect.active .cab-connect-actions{flex-direction:column;align-items:stretch}
+  #cab-section-connect.active .cab-connect-actions .btn-autoadd{flex:none!important;width:100%}
+  #cab-section-connect.active .cab-connect-instr-grid{grid-template-columns:1fr}
+  #cab-section-renew.active{max-width:440px}
+  #cab-section-renew.active > .card-appear{border-radius:28px;box-shadow:0 18px 48px rgba(0,0,0,.08)!important}
+  .dark #cab-section-renew.active > .card-appear{box-shadow:0 18px 48px rgba(0,0,0,.34)!important}
+}
+@media (min-width:1280px){
+  #cab-section-connect.active{max-width:760px}
+  #cab-section-connect.active .cab-connect-steps{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
+    gap:0;
+  }
+  #cab-section-connect.active .cab-connect-steps > div{
+    padding:1.35rem 1.5rem;
+    border-top:none!important;
+  }
+  #cab-section-connect.active .cab-connect-steps > div:first-child{
+    border-right:1px solid rgba(0,0,0,.06);
+  }
+  .dark #cab-section-connect.active .cab-connect-steps > div:first-child{border-right-color:rgba(255,255,255,.08)}
+  #cab-section-connect.active .cab-connect-steps > div .w-px.flex-1{display:none}
+  #cab-section-connect.active .cab-connect-actions{flex-direction:row;flex-wrap:wrap}
+  #cab-section-connect.active .cab-connect-actions .btn-autoadd{flex:1 1 auto!important;min-width:0;width:auto}
+  #cab-section-connect.active .cab-connect-instr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:1023px){
+  .cabinet-tabs-wrap{margin-bottom:16px!important}
+  .cabinet-mobile-tab{flex-direction:column;gap:5px;border-radius:18px;padding:9px 5px;font-size:10px;min-height:58px;white-space:normal}
+  .cabinet-mobile-tab svg{width:15px;height:15px}
+}
+@keyframes cabinetSectionIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Cabinet visual polish: no horizontal overflow, compact subscription summary */
+.cab-sub-card,.cab-stat-card{max-width:100%}
+.cab-traffic-card{position:relative}
+.cab-traffic-card:before{display:none!important;content:none!important}
+.dark .cab-traffic-card:before{display:none!important;content:none!important}
+.cab-traffic-ring{width:36px;height:36px;border-radius:999px;background:conic-gradient(currentColor var(--traffic-pct), rgba(0,0,0,.08) 0);color:#111;opacity:.18;position:relative}
+.dark .cab-traffic-ring{color:#fff;opacity:.22;background:conic-gradient(currentColor var(--traffic-pct), rgba(255,255,255,.10) 0)}
+.cab-traffic-ring:after{content:"";position:absolute;inset:5px;border-radius:999px;background:#fff}
+.dark .cab-traffic-ring:after{background:#171717}
+@media (max-width:640px){
+  html,body{overflow-x:hidden}
+  .cabinet-page{padding-left:14px!important;padding-right:14px!important;padding-top:24px!important}
+  .cabinet-mobile-tab{min-height:50px;border-radius:17px;font-size:9.5px!important;line-height:1.05!important;letter-spacing:-.01em!important;gap:4px;padding:7px 3px}
+  .cabinet-mobile-tab svg{width:15px;height:15px}
+  .cabinet-mobile-tab span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #cab-section-info{border-radius:24px}
+  #cab-section-info button{max-width:100%}
+  .cab-sub-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .cab-sub-side{display:contents!important}
+  .cab-stat-card{border-radius:20px!important;padding:13px 12px!important;min-height:92px;display:flex;flex-direction:column;justify-content:center;text-align:center;align-items:center!important}
+  .cab-stat-main{min-height:92px!important}
+  .cab-stat-card p{font-size:10px!important;letter-spacing:.13em!important;margin-bottom:7px!important;width:100%;text-align:center}
+  .cab-days-number{font-size:30px!important}
+  .cab-stat-card span[class*="text-[15px]"]{font-size:12px!important}
+  .cab-stat-card span[class*="text-[22px]"]{font-size:29px!important}
+  .cab-stat-card span[class*="text-[11px]"]{font-size:10px!important}
+  .cab-stat-card .mt-1{margin-top:0!important}
+  .cab-stat-main p:last-child{font-size:11px!important;margin-top:7px!important;letter-spacing:0!important;text-transform:none!important;width:100%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cab-value-row{width:100%;justify-content:center;align-items:flex-end!important;gap:5px!important;min-height:34px}
+  .cab-days-number,.cab-limit-number{font-size:31px!important;line-height:.95!important;min-width:32px;text-align:center}
+  .cab-value-unit{font-size:12px!important;line-height:1!important;margin-bottom:3px!important;white-space:nowrap}
+  .cab-traffic-card{grid-column:1/-1!important;min-height:112px!important;text-align:left!important;align-items:stretch!important;padding:14px!important}
+  .cab-traffic-card .cab-stat-label{justify-content:flex-start!important;width:auto!important;margin:0!important}
+  .cab-traffic-card .cab-stat-label span{font-size:10px!important}
+  .cab-traffic-card .cab-traffic-percent{font-size:11px!important}
+  .cab-traffic-card .text-\[20px\]{font-size:23px!important;text-align:left!important}
+  .cab-traffic-card .text-\[11px\]{font-size:11px!important;text-align:left!important;letter-spacing:0!important;text-transform:none!important;margin:0!important}
+  #refresh-btn{padding:7px 10px!important;font-size:11px!important}
+  .cab-sub-card button[onclick="openDeviceUpgradeModal()"]{border-radius:20px!important;padding:13px 14px!important}
+  .cab-sub-card button[onclick="openDeviceUpgradeModal()"] span.block:first-child{font-size:12px!important}
+  .cab-sub-card button[onclick="openDeviceUpgradeModal()"] span.block:last-child{font-size:10px!important;white-space:normal!important;line-height:1.25!important}
+  #cab-section-info > .border-t{padding-top:12px!important;padding-bottom:12px!important;margin-top:0!important}
+  #cab-section-info > .border-t .grid{align-items:stretch}
+  #cab-section-info > .border-t button{display:flex!important;align-items:center!important;min-height:76px!important;padding-top:14px!important;padding-bottom:14px!important}
+  #cab-section-info > .border-t button > div{width:100%;align-items:center!important}
+}
+@media (max-width:370px){
+  .cabinet-page{padding-left:10px!important;padding-right:10px!important}
+  .cab-days-number{font-size:27px!important}
+  .cab-stat-card{padding:12px 10px!important}
+  #refresh-btn{max-width:112px;overflow:hidden;white-space:nowrap}
+}
+
+/* Cabinet stat labels with icons */
+.cab-stat-label{display:flex;align-items:center;gap:7px;color:#9ca3af;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;min-width:0}
+.dark .cab-stat-label{color:rgba(255,255,255,.35)}
+.cab-stat-label span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cab-stat-icon{width:15px;height:15px;flex:0 0 auto;color:#9ca3af;opacity:.9}
+.dark .cab-stat-icon{color:rgba(255,255,255,.38)}
+@media (max-width:640px){
+  .cab-stat-label{width:100%;justify-content:center;font-size:10px!important;letter-spacing:.13em!important;margin-bottom:7px!important;gap:6px}
+  .cab-stat-icon{width:14px;height:14px}
+}
+
+/* Platform selector cards */
+.app-platform-tabs{padding:4px;border-radius:18px;background:rgba(0,0,0,.025);border:1px solid rgba(0,0,0,.055);overflow-x:auto;scrollbar-width:none}
+.app-platform-tabs::-webkit-scrollbar{display:none}
+.dark .app-platform-tabs{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.075)}
+.app-platform-card{position:relative;display:flex;flex:1;min-width:76px;flex-direction:column;align-items:center;gap:6px;padding:10px 12px;border-radius:15px;border:1.5px solid transparent;background:transparent;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease;cursor:pointer;outline:none}
+.app-platform-card:hover{background:rgba(0,0,0,.04)}
+.dark .app-platform-card:hover{background:rgba(255,255,255,.055)}
+.app-platform-card:active{transform:scale(.985)}
+.app-platform-card.active{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.34);box-shadow:0 8px 22px rgba(16,185,129,.13), inset 0 1px 0 rgba(255,255,255,.65)}
+.dark .app-platform-card.active{background:rgba(16,185,129,.16);border-color:rgba(52,211,153,.34);box-shadow:0 8px 24px rgba(16,185,129,.12), inset 0 1px 0 rgba(255,255,255,.08)}
+.app-platform-card.active:after{content:'выбрано';position:absolute;top:5px;right:6px;font-size:8px;font-weight:800;line-height:1;text-transform:uppercase;letter-spacing:.04em;color:#047857;background:rgba(255,255,255,.72);border:1px solid rgba(16,185,129,.18);padding:3px 4px;border-radius:999px;opacity:.95}
+.dark .app-platform-card.active:after{color:#6ee7b7;background:rgba(0,0,0,.22);border-color:rgba(110,231,183,.18)}
+.app-platform-icon-wrap{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.05);transition:background .18s ease,box-shadow .18s ease,transform .18s ease}
+.dark .app-platform-icon-wrap{background:rgba(255,255,255,.07)}
+.app-platform-card.active .app-platform-icon-wrap{background:rgba(16,185,129,.16);box-shadow:0 0 0 5px rgba(16,185,129,.06);transform:translateY(-1px)}
+.dark .app-platform-card.active .app-platform-icon-wrap{background:rgba(16,185,129,.22);box-shadow:0 0 0 5px rgba(16,185,129,.08)}
+.app-platform-label{font-size:11px;font-weight:700;color:#9ca3af;transition:color .18s ease}
+.dark .app-platform-label{color:rgba(255,255,255,.38)}
+.app-platform-card.active .app-platform-label{color:#047857}
+.dark .app-platform-card.active .app-platform-label{color:#a7f3d0}
+@media (max-width:420px){.app-platform-card{min-width:70px;padding:9px 8px}.app-platform-card.active:after{display:none}}
+/* Download rows */
+.app-links-panel{display:flex;flex-direction:column;gap:6px}
+.app-links-panel.hidden{display:none}
+@keyframes appdlin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.app-links-panel:not(.hidden){animation:appdlin .18s ease}
+.app-dl-btn{display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:15px;background:rgba(255,255,255,.68);border:1px solid rgba(0,0,0,.07);text-decoration:none;transition:background .15s ease,border-color .15s ease,transform .15s ease,box-shadow .15s ease;box-shadow:0 1px 0 rgba(255,255,255,.55) inset}
+.dark .app-dl-btn{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.08);box-shadow:none}
+.app-dl-btn:hover{background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.22);transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.055)}
+.dark .app-dl-btn:hover{background:rgba(16,185,129,.09);border-color:rgba(52,211,153,.18);box-shadow:0 8px 18px rgba(0,0,0,.18)}
+.app-dl-icon-wrap{width:32px;height:32px;border-radius:9px;flex-shrink:0;background:#fff;border:1px solid rgba(0,0,0,.07);display:flex;align-items:center;justify-content:center}
+.dark .app-dl-icon-wrap{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1)}
+.app-dl-text{flex:1;display:flex;flex-direction:column;gap:1px}
+.app-dl-store{font-size:12px;font-weight:600;color:#111}
+.dark .app-dl-store{color:#fff}
+.app-dl-sub{font-size:10px;color:#9ca3af}
+.dark .app-dl-sub{color:rgba(255,255,255,.35)}
+.app-dl-arrow{width:16px;height:16px;flex-shrink:0;color:#d1d5db}
+.dark .app-dl-arrow{color:rgba(255,255,255,.25)}
+</style>
+
+{% if device_upgrade %}
+<!-- Device upgrade modal -->
+<div id="deviceUpgradeModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closeDeviceUpgradeModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl shadow-2xl max-h-[88vh] flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
+      <div>
+        <p class="text-[17px] font-semibold text-black dark:text-white">Расширить лимит</p>
+        <p class="text-[12px] text-gray-500 dark:text-white/50 mt-0.5">
+          Текущий лимит: <span class="font-semibold">{{ device_upgrade.old_limit }} уст.</span>
+          {% if device_upgrade.subscription_end_date %}· до {{ device_upgrade.subscription_end_date }}{% endif %}
+        </p>
+      </div>
+      <button onclick="closeDeviceUpgradeModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all flex-shrink-0">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="overflow-y-auto flex-1 min-h-0 px-5 pb-5">
+      <p class="text-[12px] text-gray-500 dark:text-white/55 leading-relaxed mb-3">
+        Доплата рассчитывается за оставшиеся дни подписки. Срок подписки не меняется.
+      </p>
+
+      <!-- Выбор нового лимита -->
+      <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-2">Новый лимит</p>
+      <div class="flex flex-wrap gap-1.5 mb-4">
+        {% for opt in device_upgrade.options %}
+        <button type="button" id="du-opt-{{ opt.new_limit }}"
+                onclick="selectDuLimit({{ opt.new_limit }}, {{ opt.price }}, {{ opt.monthly_price|tojson }}, {{ opt.monthly_days|tojson }}, {{ opt.monthly_traffic_gb|tojson }})"
+                class="du-chip min-w-[44px] h-10 px-2 text-[13px] font-semibold rounded-full border transition-all duration-200 flex items-center justify-center
+                       border-black/[0.1] dark:border-white/[0.1] text-gray-600 dark:text-white/50 hover:border-black/25 dark:hover:border-white/25">
+          {{ opt.new_limit }}
+        </button>
+        {% endfor %}
+      </div>
+
+      <!-- Цена -->
+      <div class="space-y-2 mb-4">
+        <div class="rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-500/[0.10] border border-amber-200/80 dark:border-amber-400/20">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[11px] font-semibold uppercase tracking-widest text-amber-700/70 dark:text-amber-300/70">Доплата сейчас</p>
+              <p id="duPeriodText" class="text-[12px] text-amber-800/70 dark:text-amber-200/65 mt-0.5 leading-snug">За текущий период подписки</p>
+            </div>
+            <span id="duPrice" class="text-[22px] font-extrabold text-amber-900 dark:text-amber-100 tabular-nums whitespace-nowrap">—</span>
+          </div>
+        </div>
+
+        <div class="rounded-2xl px-4 py-3 bg-gray-50 dark:bg-white/[0.04] border border-black/[0.05] dark:border-white/[0.06]">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/35">Подписка далее</p>
+              <p id="duFutureHint" class="text-[12px] text-gray-500 dark:text-white/45 mt-0.5 leading-snug">Стоимость следующего продления с новым лимитом</p>
+            </div>
+            <div class="text-right shrink-0">
+              <span id="duFuturePrice" class="text-[18px] font-bold text-gray-900 dark:text-white tabular-nums whitespace-nowrap">—</span>
+              <div id="duFutureMeta" class="hidden flex flex-wrap justify-end gap-1 mt-1.5">
+                <span id="duFutureDays" class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200/90 dark:bg-white/[0.08] text-gray-600 dark:text-white/55 tabular-nums"></span>
+                <span id="duFutureGb" class="hidden text-[11px] font-medium px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/15 text-sky-800 dark:text-sky-300 tabular-nums"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Способы оплаты -->
+      <p class="text-[11px] font-semibold uppercase tracking-widest text-gray-400 dark:text-white/40 mb-2">Способ оплаты</p>
+      <div class="space-y-1.5">
+        {% if yookassa_on %}
+        <button type="button" onclick="payDeviceUpgrade('yookassa')"
+                class="du-pay-btn w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+          {{ yk_logo_img() }}
+        </button>
+        {% endif %}
+        {% if platega_on %}
+        <button type="button" onclick="payDeviceUpgrade('platega')"
+                class="du-pay-btn w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+          <img src="/static/platega.svg" alt="" class="h-4 w-auto" />
+          <span>{{ platega_btn_text }}</span>
+        </button>
+        {% endif %}
+        {% if yoomoney_on %}
+        <button type="button" onclick="payDeviceUpgrade('yoomoney')"
+                class="du-pay-btn w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+          {{ ym_logo_img() }}
+        </button>
+        {% endif %}
+        {% if wata_on %}
+        <button type="button" onclick="payDeviceUpgrade('wata')"
+                class="du-pay-btn w-full border border-black/[0.1] dark:border-white/[0.1] text-[13px] font-medium py-2.5 rounded-full hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:border-black/20 dark:hover:border-white/20 transition-all duration-200 flex items-center justify-center gap-1.5">
+          <img src="/static/wata.svg" alt="" class="h-5 w-auto -my-1" />
+          <span>{{ wata_btn_text }}</span>
+        </button>
+        {% endif %}
+        {% if not yookassa_on and not platega_on and not yoomoney_on and not wata_on %}
+        <p class="text-[12px] text-gray-600 dark:text-white/40 text-center py-1">Оплата недоступна</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if devices_enabled %}
+<!-- Devices modal styles -->
+<style>
+.dev-card{background:#f9fafb;border:1px solid rgba(0,0,0,.07);border-radius:18px;display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 10px 10px 12px;margin-bottom:8px;min-width:0;box-shadow:0 1px 0 rgba(0,0,0,.02);transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.dev-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.dev-rename-btn,.dev-delete-btn{width:28px;height:28px;border-radius:10px;border:1px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s,transform .15s}
+.dev-rename-btn svg,.dev-delete-btn svg{width:14px;height:14px}
+.dev-rename-btn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.20);color:#f59e0b}
+.dev-rename-btn:hover{background:rgba(245,158,11,.22);border-color:rgba(245,158,11,.32)}
+.dev-rename-btn:active,.dev-delete-btn:active{transform:scale(.92)}
+.dark .dev-rename-btn{background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.26);color:#fbbf24}
+.dark .dev-rename-btn:hover{background:rgba(245,158,11,.26)}
+.dev-card:hover{background:#f3f4f6;border-color:rgba(0,0,0,.10)}
+.dark .dev-card{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08);box-shadow:none}
+.dark .dev-card:hover{background:rgba(255,255,255,.065);border-color:rgba(255,255,255,.12)}
+.dev-icon-wrap{width:40px;height:40px;border-radius:14px;flex-shrink:0;background:#fff;border:1px solid rgba(0,0,0,.07);display:flex;align-items:center;justify-content:center}
+.dark .dev-icon-wrap{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.09)}
+.dev-main{min-width:0;overflow:hidden}
+.dev-title-row{display:flex;align-items:center;min-width:0}
+.dev-title{display:block;max-width:min(100%,18ch);font-size:13px;font-weight:700;line-height:1.2;color:#111;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dark .dev-title{color:#fff}
+.dev-os{font-size:11px;color:#6b7280;margin-top:2px;line-height:1.25;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}
+.dark .dev-os{color:rgba(255,255,255,.42)}
+.dev-meta{display:flex;align-items:center;gap:5px;margin-top:5px;flex-wrap:nowrap;min-width:0;overflow:hidden}
+.dev-hwid,.dev-ua,.dev-date{min-width:0;max-width:100%;font-size:10px;line-height:1.35;padding:2px 6px;border-radius:999px;background:rgba(0,0,0,.045);color:#8b94a3;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dev-hwid{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;max-width:92px;flex:0 1 auto}
+.dev-ua{font-size:10.5px;max-width:96px;flex:0 1 auto}
+.dev-date{max-width:90px;flex:0 0 auto;color:#9ca3af}
+.dark .dev-hwid,.dark .dev-ua,.dark .dev-date{background:rgba(255,255,255,.06);color:rgba(255,255,255,.42)}
+.dev-delete-btn{background:rgba(239,68,68,.10);border-color:rgba(239,68,68,.18);color:#ef4444}
+.dev-delete-btn:hover{background:rgba(239,68,68,.20);border-color:rgba(239,68,68,.30)}
+.dark .dev-delete-btn{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.26);color:#f87171}
+.dark .dev-delete-btn:hover{background:rgba(239,68,68,.26)}
+.dev-more-btn{width:100%;margin-top:6px;padding:9px 12px;border-radius:14px;border:1px dashed rgba(0,0,0,.14);background:transparent;color:#6b7280;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,border-color .15s,color .15s}
+.dev-more-btn:hover{background:rgba(0,0,0,.03);color:#111;border-color:rgba(0,0,0,.22)}
+.dark .dev-more-btn{border-color:rgba(255,255,255,.14);color:rgba(255,255,255,.5)}
+.dark .dev-more-btn:hover{background:rgba(255,255,255,.05);color:#fff;border-color:rgba(255,255,255,.24)}
+.dev-more-btn svg{transition:transform .2s ease}
+.dev-more-btn.open svg{transform:rotate(180deg)}
+.dev-extra{display:none}
+.dev-extra.open{display:block}
+.dev-card-removing{overflow:hidden;opacity:0;transform:translateX(14px) scale(0.97);margin-bottom:0!important;transition:opacity .3s ease,transform .3s ease,max-height .35s ease,margin-bottom .35s ease,padding .35s ease}
+.device-delete-panel{animation:deviceDeleteIn .22s ease-out}
+@keyframes deviceDeleteIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+#qr-container canvas,#qr-container img{max-width:100%!important;height:auto!important;display:block}
+@media (max-width:420px){.dev-card{grid-template-columns:36px minmax(0,1fr) auto;gap:9px;padding:9px 9px 9px 10px;border-radius:16px}.dev-icon-wrap{width:36px;height:36px;border-radius:13px}.dev-title{max-width:14ch}.dev-hwid{max-width:78px}.dev-ua{max-width:74px}.dev-date{display:none}.dev-delete-btn,.dev-rename-btn{width:26px;height:26px;border-radius:9px}.dev-actions{gap:5px}}
+</style>
+
+<!-- Devices modal -->
+<div id="devicesModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onclick="closeDevicesModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-gray-200 dark:border-white/[0.1] rounded-3xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0">
+      <div>
+        <p class="text-[17px] font-semibold text-black dark:text-white">Мои устройства</p>
+        <p id="devicesSubtitle" class="text-[12px] text-gray-500 dark:text-white/50 mt-0.5">Устройства, подключённые к подписке</p>
+      </div>
+      <button onclick="closeDevicesModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all flex-shrink-0">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Over-limit warning — тот же стиль что баннер "скоро истекает" -->
+    <div id="devicesOverLimitBanner" class="hidden flex-shrink-0 mx-5 mb-3 flex items-start gap-3 px-4 py-3.5 bg-red-50 dark:bg-red-950/20 border border-red-200/70 dark:border-red-800/30 rounded-2xl">
+      <svg class="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+      <div class="min-w-0">
+        <p class="text-[13px] font-semibold text-red-700 dark:text-red-400">Превышен лимит устройств</p>
+        <p class="text-[12px] text-red-600/80 dark:text-red-400/60 mt-0.5 leading-relaxed">Удалите лишние устройства из мобильного приложения или запросите в поддержке сброс данных подписки, затем заново добавьте ключ.</p>
+        {% set _sup = support_url or support_link or '' %}
+        {% if _sup %}
+        <a href="{{ _sup }}" target="_blank" rel="noopener"
+           class="inline-flex items-center gap-1 mt-1.5 text-[12px] font-semibold text-red-600 dark:text-red-400 hover:opacity-75 transition-opacity">
+          Написать в поддержку →
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="devicesLoading" class="px-5 py-12 text-center flex-shrink-0">
+      <div class="w-7 h-7 border-2 border-gray-200 dark:border-white/[0.1] border-t-gray-400 dark:border-t-white/40 rounded-full animate-spin mx-auto mb-3"></div>
+      <p class="text-[13px] text-gray-400 dark:text-white/30">Загружаем список устройств…</p>
+    </div>
+
+    <!-- Error -->
+    <div id="devicesError" class="hidden px-5 py-12 text-center flex-shrink-0">
+      <p class="text-[13px] text-gray-500 dark:text-white/40">Не удалось загрузить устройства</p>
+      <p class="text-[12px] text-gray-400 dark:text-white/25 mt-1">Попробуйте обновить список ещё раз</p>
+      <button type="button" onclick="_loadDevices()" class="mt-3 inline-flex items-center justify-center rounded-xl bg-gray-100 dark:bg-white/[0.07] hover:bg-gray-200 dark:hover:bg-white/[0.12] px-3 py-2 text-[12px] font-semibold text-gray-700 dark:text-white/70 transition-all active:scale-95">Обновить</button>
+    </div>
+
+    <!-- Empty -->
+    <div id="devicesEmpty" class="hidden px-5 py-12 text-center flex-shrink-0">
+      <div class="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-white/[0.06] flex items-center justify-center mx-auto mb-3">
+        <svg class="w-6 h-6 text-gray-300 dark:text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3"/></svg>
+      </div>
+      <p class="text-[14px] font-medium text-gray-600 dark:text-white/50">Устройств не найдено</p>
+      <p class="text-[12px] text-gray-400 dark:text-white/25 mt-1 leading-relaxed">Подключитесь через мобильное приложение —<br>устройство появится здесь</p>
+    </div>
+
+    <!-- List — min-h-0 обязателен для скролла внутри flex-col -->
+    <div id="devicesList" class="hidden overflow-y-auto flex-1 min-h-0 px-5 pb-5"></div>
+  </div>
+</div>
+
+<!-- Device delete confirm modal -->
+<div id="deviceDeleteModal" class="hidden fixed inset-0 flex items-end sm:items-center justify-center p-4" style="z-index:9999">
+  <div class="absolute inset-0 bg-black/35 dark:bg-black/65 backdrop-blur-md" onclick="closeDeviceDeleteModal()"></div>
+  <div class="device-delete-panel relative w-full max-w-sm bg-white dark:bg-[#111] border border-black/[0.08] dark:border-white/[0.08] rounded-[28px] shadow-2xl overflow-hidden">
+
+    <div class="px-5 pt-5 pb-4">
+      <div class="flex items-start gap-3">
+        <div class="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 flex items-center justify-center flex-shrink-0">
+          <svg class="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M10 11v5M14 11v5M9 7V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7m2 0-.55 10.2A2 2 0 0114.45 19h-4.9a2 2 0 01-2-1.8L7 7"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-[18px] font-semibold tracking-tight text-black dark:text-white leading-tight">Удалить устройство?</p>
+          <p class="text-[12px] text-gray-500 dark:text-white/45 leading-relaxed mt-1">Оно пропадёт из списка привязанных устройств.</p>
+        </div>
+      </div>
+
+      <div class="mt-4 flex items-center gap-3 bg-gray-50 dark:bg-white/[0.05] border border-gray-100 dark:border-white/[0.07] rounded-2xl px-4 py-3">
+        <div class="w-8 h-8 rounded-xl bg-white dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4 text-gray-500 dark:text-white/45" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3"/></svg>
+        </div>
+        <p id="deviceDeleteName" class="text-[13px] font-semibold text-black dark:text-white truncate min-w-0 flex-1"></p>
+      </div>
+
+      <div class="mt-3 flex items-start gap-2.5 rounded-2xl bg-gray-50/70 dark:bg-white/[0.035] border border-gray-100 dark:border-white/[0.06] px-4 py-3">
+        <svg class="w-4 h-4 text-gray-400 dark:text-white/35 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M12 8.25h.008v.008H12V8.25zM21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="text-[12px] text-gray-500 dark:text-white/42 leading-relaxed">При следующем подключении приложение может добавить устройство снова. Для полного сброса привязки лучше обратиться в поддержку.</p>
+      </div>
+    </div>
+
+    <div class="px-5 pb-5 pt-1 grid grid-cols-2 gap-2.5">
+      <button onclick="closeDeviceDeleteModal()"
+              class="w-full bg-gray-100 hover:bg-gray-200 dark:bg-white/[0.07] dark:hover:bg-white/[0.11] text-gray-700 dark:text-white/70 text-[14px] font-semibold py-3.5 rounded-full transition-all duration-200 active:scale-[0.98]">
+        Отмена
+      </button>
+      <button id="deviceDeleteConfirmBtn" onclick="confirmDeleteDevice()"
+              class="w-full bg-red-500 hover:bg-red-600 active:scale-[0.98] text-white text-[14px] font-semibold py-3.5 rounded-full transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+        Удалить
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Rename device modal -->
+<div id="deviceRenameModal" class="hidden fixed inset-0 flex items-end sm:items-center justify-center p-4" style="z-index:9999">
+  <div class="absolute inset-0 bg-black/35 dark:bg-black/65 backdrop-blur-md" onclick="closeDeviceRenameModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-black/[0.08] dark:border-white/[0.08] rounded-[28px] shadow-2xl overflow-hidden">
+
+    <div class="px-5 pt-5 pb-4">
+      <div class="flex items-start gap-3">
+        <div class="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 flex items-center justify-center flex-shrink-0">
+          <svg class="w-5 h-5 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.86 4.49l2.65 2.65M3 21l.53-3.86a2 2 0 01.56-1.12L15.3 4.31a1.87 1.87 0 012.65 0l1.74 1.74a1.87 1.87 0 010 2.65L8.48 19.91a2 2 0 01-1.12.56L3 21z"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-[18px] font-semibold tracking-tight text-black dark:text-white leading-tight">Имя устройства</p>
+          <p class="text-[12px] text-gray-500 dark:text-white/45 leading-relaxed mt-1">Будет показываться вместо модели. До 15 символов.</p>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <input id="deviceRenameInput" type="text" maxlength="15" autocomplete="off"
+               placeholder="Например: Мой телефон"
+               class="w-full bg-gray-50 dark:bg-white/[0.05] border border-gray-200 dark:border-white/[0.09] rounded-2xl px-4 py-3 text-[14px] text-black dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/30 outline-none focus:border-blue-400 dark:focus:border-blue-500/60 transition-colors">
+        <div class="mt-1.5 flex justify-end">
+          <span id="deviceRenameCounter" class="text-[11px] text-gray-400 dark:text-white/35">0/15</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-5 pb-5 pt-1 grid grid-cols-2 gap-2.5">
+      <button onclick="closeDeviceRenameModal()"
+              class="w-full bg-gray-100 hover:bg-gray-200 dark:bg-white/[0.07] dark:hover:bg-white/[0.11] text-gray-700 dark:text-white/70 text-[14px] font-semibold py-3.5 rounded-full transition-all duration-200 active:scale-[0.98]">
+        Отмена
+      </button>
+      <button id="deviceRenameConfirmBtn" onclick="confirmRenameDevice()"
+              class="w-full bg-blue-500 hover:bg-blue-600 active:scale-[0.98] text-white text-[14px] font-semibold py-3.5 rounded-full transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+        Сохранить
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Pay modal -->
+<div id="payModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div class="relative w-full max-w-sm bg-white dark:bg-[#111] border border-black/[0.08] dark:border-white/[0.08] rounded-3xl shadow-2xl overflow-hidden">
+
+    <!-- Шапка -->
+    <div class="px-6 pt-6 pb-5">
+      <p class="text-[12px] font-medium uppercase tracking-widest text-black/30 dark:text-white/30 mb-3">Подтвердите оплату</p>
+
+      <!-- Карточка: тариф + сумма -->
+      <div class="flex items-center justify-between bg-gray-50 dark:bg-white/[0.05] rounded-2xl px-4 py-3.5 mb-4">
+        <div>
+          <p id="payModalName" class="text-[14px] font-semibold text-black dark:text-white"></p>
+          <p id="payModalSub" class="text-[12px] text-black/40 dark:text-white/40 mt-0.5">Подписка</p>
+        </div>
+        <p id="payModalPrice" class="text-[22px] font-bold text-black dark:text-white tabular-nums"></p>
+      </div>
+
+      <!-- Метод оплаты -->
+      <div class="flex items-center gap-2.5 px-1">
+        <div id="payModalIconShell" class="w-7 h-7 rounded-lg flex items-center justify-center bg-black/[0.05] dark:bg-white/[0.07] flex-shrink-0 overflow-hidden hidden">
+          <div id="payModalIcon" class="flex items-center justify-center max-w-full max-h-full"></div>
+        </div>
+        <div>
+          <p id="payModalMethod" class="text-[13px] font-medium text-black dark:text-white"></p>
+          <p class="text-[11px] text-black/40 dark:text-white/40">После оплаты дождитесь активации</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Разделитель -->
+    <div class="h-px bg-black/[0.05] dark:bg-white/[0.06]"></div>
+
+    <!-- Кнопки -->
+    <div class="px-6 py-4 space-y-2">
+      <button id="payConfirmBtn" onclick="confirmPay()"
+              class="w-full bg-black dark:bg-white text-white dark:text-black text-[15px] font-semibold py-3.5 rounded-full hover:opacity-80 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+        Перейти к оплате
+      </button>
+      <button onclick="closeModal()"
+              class="w-full text-[14px] text-black/35 dark:text-white/35 hover:text-black/60 dark:hover:text-white/60 py-2.5 rounded-full transition-colors duration-200">
+        Отмена
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{# Иконки кнопок тарифов — _pmIcon; в модалке подтверждения — только Platega (_pmIconForConfirmModal) #}
+<template id="cabinet-yk-logo-tpl">{{ yk_logo_img() }}</template>
+<template id="cabinet-ym-logo-tpl">{{ ym_logo_img() }}</template>
+<script>
+// Управление блокировкой скролла при модалках
+var _openModals = 0;
+function _lockScroll() { if (++_openModals === 1) document.body.style.overflow = 'hidden'; }
+function _unlockScroll() { if (--_openModals <= 0) { _openModals = 0; document.body.style.overflow = ''; } }
+
+// Мобильное меню кабинета: Инфо / Подключение / Продление
+function switchCabinetSection(section) {
+  section = section || 'info';
+  var allowed = ['info', 'connect', 'renew'];
+  if (allowed.indexOf(section) === -1) section = 'info';
+  if (!document.querySelector('[data-cabinet-section="' + section + '"]')) section = 'info';
+
+  document.querySelectorAll('[data-cabinet-section]').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-cabinet-section') === section);
+  });
+  document.querySelectorAll('.cabinet-mobile-tab').forEach(function(btn) {
+    var isActive = btn.id === 'cab-tab-' + section;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+
+  try { localStorage.setItem('cabinetSection', section); } catch(e) {}
+}
+
+function initCabinetSections() {
+  // При входе в кабинет всегда показываем «Информация о подписке».
+  switchCabinetSection('info');
+}
+
+// QR modal
+var _qrLib = false;
+function openQR(text) {
+  _lockScroll();
+  document.getElementById('qrModal').classList.remove('hidden');
+  var container = document.getElementById('qr-container');
+  container.innerHTML = '';
+  // Вычисляем доступную ширину: экран - отступы модала(32) - паддинг карточки(56) - паддинг белого блока(32) = 120
+  var size = Math.min(240, window.innerWidth - 120);
+  if (size < 160) size = 160;
+  // L (7%) вместо M (15%): меньше модулей → лучше читается для длинных ключей
+  function _makeQR() {
+    new QRCode(container, { text: text, width: size, height: size, correctLevel: QRCode.CorrectLevel.L });
+    // Масштабируем canvas/img если браузер всё равно выходит за рамки
+    var el = container.querySelector('canvas') || container.querySelector('img');
+    if (el) { el.style.maxWidth = '100%'; el.style.height = 'auto'; el.style.display = 'block'; }
+  }
+  if (typeof QRCode !== 'undefined') {
+    _makeQR();
+  } else {
+    if (!_qrLib) {
+      _qrLib = true;
+      var s = document.createElement('script');
+      s.src = '/static/qrcode.min.js';
+      s.onload = _makeQR;
+      document.head.appendChild(s);
+    }
+  }
+}
+function closeQR() { document.getElementById('qrModal').classList.add('hidden'); _unlockScroll(); }
+
+// Step modals
+var stepContents = {
+  mobile: `
+    <div class="px-5 pt-5 pb-3">
+      <p class="text-[15px] font-semibold text-black dark:text-white mb-1">iPhone / Android</p>
+      <p class="text-[13px] text-gray-600 dark:text-white/40 mb-4">Как добавить подписку в Happ вручную</p>
+      <div class="space-y-3 text-[13px]">
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">1</span><span class="text-gray-700 dark:text-white/70">Откройте приложение Happ</span></div>
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">2</span><span class="text-gray-700 dark:text-white/70">В правом верхнем углу нажмите <strong>«+»</strong></span></div>
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">3</span><span class="text-gray-700 dark:text-white/70">Выберите <strong>«Добавить по URL подписки»</strong> и вставьте из буфера обмена</span></div>
+      </div>
+    </div>`,
+  windows: `
+    <div class="px-5 pt-5 pb-3">
+      <p class="text-[15px] font-semibold text-black dark:text-white mb-1">Windows</p>
+      <p class="text-[13px] text-gray-600 dark:text-white/40 mb-4">Как добавить подписку в Happ вручную</p>
+      <div class="space-y-3 text-[13px]">
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">1</span><span class="text-gray-700 dark:text-white/70">Откройте Happ на Windows <strong>от имени администратора</strong></span></div>
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">2</span><span class="text-gray-700 dark:text-white/70">После запуска в правом верхнем углу нажмите <strong>«+»</strong></span></div>
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">3</span><span class="text-gray-700 dark:text-white/70">Выберите <strong>«Добавить по URL подписки»</strong> и вставьте из буфера обмена</span></div>
+        <div class="flex gap-3"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 dark:bg-white/[0.08] flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-white/30">4</span><span class="text-gray-700 dark:text-white/70">Нажмите <strong>«Добавить»</strong> и подключитесь</span></div>
+      </div>
+    </div>`
+};
+function openStepModal(type) {
+  _lockScroll();
+  document.getElementById('stepModalContent').innerHTML = stepContents[type] || '';
+  document.getElementById('stepModal').classList.remove('hidden');
+}
+function closeStepModal() { document.getElementById('stepModal').classList.add('hidden'); _unlockScroll(); }
+
+// Копировать ID клиента
+function copyClientId(id) {
+  navigator.clipboard.writeText(String(id)).then(function() {
+    showToast('ID скопирован');
+  });
+}
+
+// Приветственная модалка (пробный период)
+function closeWelcomeModal() {
+  var m = document.getElementById('welcomeModal');
+  if (m) { m.classList.add('hidden'); _unlockScroll(); }
+}
+{% if show_welcome %}
+(function() {
+  _lockScroll();
+  // Убираем ?welcome=1 из URL без перезагрузки страницы
+  history.replaceState(null, '', '/cabinet');
+})();
+{% endif %}
+
+// Реферальная модалка
+function openRefModal() { _lockScroll(); document.getElementById('refModal').classList.remove('hidden'); }
+function closeRefModal() { document.getElementById('refModal').classList.add('hidden'); _unlockScroll(); }
+
+// Партнёрская модалка
+function openPartnerModal() {
+  var m = document.getElementById('partnerModal');
+  if (m) { _lockScroll(); m.classList.remove('hidden'); }
+}
+function closePartnerModal() {
+  var m = document.getElementById('partnerModal');
+  if (m) { m.classList.add('hidden'); _unlockScroll(); }
+}
+function copyPartnerLink(btn, url) {
+  navigator.clipboard.writeText(url).then(function() {
+    showToast('Партнёрская ссылка скопирована');
+  });
+}
+
+// Копировать реферальную ссылку
+function copyRefLink(btn, url) {
+  navigator.clipboard.writeText(url).then(function() {
+    showToast('Реферальная ссылка скопирована');
+  });
+}
+
+// Обновить кабинет без перезагрузки страницы
+async function refreshCabinet(btn) {
+  var icon = document.getElementById('refresh-icon');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  if (icon) icon.style.animation = 'spin 0.7s linear infinite';
+
+  try {
+    var res = await fetch('/cabinet', { headers: { 'X-No-Boost': '1' } });
+    if (res.redirected) { window.location.href = res.url; return; }
+    var html = await res.text();
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var newMain = doc.getElementById('main-content');
+    var curMain = document.getElementById('main-content');
+    if (!newMain || !curMain) return;
+
+    curMain.innerHTML = newMain.innerHTML;
+    showToast('Данные обновлены');
+    setTimeout(initCabinetSections, 0);
+
+    curMain.querySelectorAll('script').forEach(function(s) {
+      var ns = document.createElement('script');
+      ns.textContent = s.textContent;
+      document.head.appendChild(ns);
+      document.head.removeChild(ns);
+    });
+  } catch(e) {
+    // refresh failed silently
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    if (icon) icon.style.animation = '';
+  }
+}
+
+// Автодобавление ключа в приложение
+var _ADD_LINK = {{ add_link | tojson }};
+function autoAdd(key) {
+  // Если https:// (subscription режим) — оборачиваем в ADD_LINK для автоимпорта
+  var deepLink = (key.startsWith('http://') || key.startsWith('https://'))
+    ? _ADD_LINK + key
+    : key;
+  var a = document.createElement('a');
+  a.href = deepLink;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() { if (a.parentNode) document.body.removeChild(a); }, 500);
+  // Если через 2с страница всё ещё открыта — показываем подсказку
+  setTimeout(function() {
+    var hint = document.getElementById('copy-hint');
+    if (hint) {
+      hint.textContent = 'Не открылось? Скопируйте ключ вручную';
+      hint.classList.add('text-amber-500');
+      setTimeout(function() {
+        hint.textContent = 'нажмите чтобы скопировать';
+        hint.classList.remove('text-amber-500');
+      }, 4000);
+    }
+  }, 2000);
+}
+
+// Copy key
+function copyKey(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Ссылка подписки скопирована');
+    var hint = document.getElementById('copy-hint');
+    if (hint) {
+      hint.textContent = 'Скопировано ✓ отправьте ссылку на другое устройство';
+      hint.classList.remove('text-gray-400','dark:text-white/40');
+      hint.classList.add('text-emerald-600','dark:text-emerald-400');
+    }
+    if (btn) {
+      if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+      btn.innerHTML = '<span class="inline-flex items-center justify-center gap-2 w-full text-[13px] font-semibold text-emerald-700 dark:text-emerald-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Скопировано</span>';
+      btn.classList.add('border-emerald-300','dark:border-emerald-500/40','bg-emerald-50','dark:bg-emerald-500/10');
+      clearTimeout(btn._copyTimer);
+      btn._copyTimer = setTimeout(function() {
+        btn.innerHTML = btn.dataset.originalHtml;
+        btn.classList.remove('border-emerald-300','dark:border-emerald-500/40','bg-emerald-50','dark:bg-emerald-500/10');
+        if (hint) {
+          hint.textContent = 'нажмите, чтобы скопировать ссылку подписки';
+          hint.classList.add('text-gray-400','dark:text-white/40');
+          hint.classList.remove('text-emerald-600','dark:text-emerald-400');
+        }
+      }, 2200);
+    }
+  });
+}
+
+// Limit selector
+function selectLimit(lim) {
+  // Сбрасываем все кнопки
+  document.querySelectorAll('[id^="lim-btn-"]').forEach(b => {
+    b.className = b.className.replace(
+      'bg-black dark:bg-white text-white dark:text-black border-transparent',
+      'border-black/[0.1] dark:border-white/[0.1] text-gray-600 dark:text-white/40'
+    );
+    b.classList.remove('lim-pop');
+  });
+
+  // Активируем нужную кнопку + spring-анимация
+  var btn = document.getElementById('lim-btn-' + lim);
+  if (btn) {
+    btn.className = btn.className.replace(
+      'border-black/[0.1] dark:border-white/[0.1] text-gray-600 dark:text-white/40',
+      'bg-black dark:bg-white text-white dark:text-black border-transparent'
+    );
+    void btn.offsetWidth; // reflow для перезапуска анимации
+    btn.classList.add('lim-pop');
+    btn.addEventListener('animationend', () => btn.classList.remove('lim-pop'), { once: true });
+  }
+
+  // Показываем нужные тарифы с stagger-анимацией
+  var visIdx = 0;
+  document.querySelectorAll('.tariff-row').forEach(r => {
+    if (parseInt(r.dataset.limit) === lim) {
+      r.classList.remove('tariff-in');
+      r.style.display = '';
+      void r.offsetWidth;
+      r.style.animationDelay = (visIdx * 0.06) + 's';
+      r.classList.add('tariff-in');
+      r.addEventListener('animationend', () => r.classList.remove('tariff-in'), { once: true });
+      visIdx++;
+    } else {
+      r.style.display = 'none';
+    }
+  });
+}
+
+// PWA установка
+(function() {
+  var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isStandalone) return;
+  // Кнопка в шапке
+  var btn = document.getElementById('pwa-install-btn');
+  if (btn) btn.style.display = '';
+  // Баннер под заголовком (если не скрыт)
+  if (!localStorage.getItem('pwa_banner_dismissed')) {
+    var banner = document.getElementById('pwa-banner');
+    if (banner) banner.style.display = '';
+  }
+})();
+
+function showPwaInstall() {
+  // installPWA() определена в base.html и работает с beforeinstallprompt
+  if (typeof installPWA === 'function' && (window._deferredPrompt || typeof _deferredPrompt !== 'undefined' && _deferredPrompt)) {
+    installPWA();
+    return;
+  }
+  // Иначе показываем модалку с инструкцией
+  _lockScroll();
+  document.getElementById('pwaModal').classList.remove('hidden');
+}
+
+function triggerAndroidInstall() {
+  var prompt = window._deferredPrompt || (typeof _deferredPrompt !== 'undefined' ? _deferredPrompt : null);
+  if (prompt) {
+    prompt.prompt();
+    prompt.userChoice.then(function(r) {
+      window._deferredPrompt = null;
+      if (typeof _deferredPrompt !== 'undefined') _deferredPrompt = null;
+      if (r.outcome === 'accepted') closePwaModal();
+    });
+  } else {
+    var hint = document.getElementById('pwa-android-hint');
+    var abtn = document.getElementById('pwa-android-btn');
+    if (hint) hint.classList.remove('hidden');
+    if (abtn) { abtn.disabled = true; abtn.style.opacity = '0.4'; }
+  }
+}
+function closePwaModal() { document.getElementById('pwaModal').classList.add('hidden'); _unlockScroll(); }
+
+// Тултип лимита устройств
+function toggleLimitTip() {
+  var tip = document.getElementById('limit-tip');
+  if (!tip) return;
+  tip.classList.toggle('hidden');
+}
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('limit-badge-wrap');
+  var tip  = document.getElementById('limit-tip');
+  if (tip && wrap && !wrap.contains(e.target)) tip.classList.add('hidden');
+});
+
+// Переключатель табов: Подписка / Трафик
+function switchPayTab(tab) {
+  var pSub = document.getElementById('pane-sub');
+  var pTr  = document.getElementById('pane-traffic');
+  var tSub = document.getElementById('tab-sub');
+  var tTr  = document.getElementById('tab-traffic');
+  if (!pSub || !pTr) return;
+  var activeClass = 'bg-white dark:bg-white/20 text-gray-900 dark:text-white shadow-sm';
+  var inactiveClass = 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80';
+  if (tab === 'traffic') {
+    pSub.style.display = 'none'; pTr.style.display = '';
+    tTr.className = tTr.className.replace(inactiveClass, activeClass);
+    tSub.className = tSub.className.replace(activeClass, inactiveClass);
+  } else {
+    pTr.style.display = 'none'; pSub.style.display = '';
+    tSub.className = tSub.className.replace(inactiveClass, activeClass);
+    tTr.className = tTr.className.replace(activeClass, inactiveClass);
+  }
+}
+
+function _pmIconForConfirmModal(method) {
+  if (method === 'platega') return _pmIcon('platega');
+  if (method === 'wata')    return _pmIcon('wata');
+  return '';
+}
+function _readTpl(id) {
+  try {
+    var t = document.getElementById(id);
+    return (t && t.innerHTML) ? String(t.innerHTML).trim() : '';
+  } catch (e) { return ''; }
+}
+var _cabinetYkLogoHtml = _readTpl('cabinet-yk-logo-tpl');
+var _cabinetYmLogoHtml = _readTpl('cabinet-ym-logo-tpl');
+function _pmIcon(label) {
+  var n = (label || '').toLowerCase();
+  var img = function(src, alt, h) {
+    var size = h || 18;
+    return '<img src="/static/' + src + '" style="height:' + size + 'px;width:auto;object-fit:contain" alt="' + alt + '">';
+  };
+  if (n.includes('platega') || n.includes('платега'))                  return img('platega.svg', 'Platega', 16);
+  if (n.includes('wata') || n.includes('вата'))                        return img('wata.svg', 'Wata', 20);
+  if (n.includes('юкасс') || n.includes('yookassa'))               return _cabinetYkLogoHtml || '';
+  if (n.includes('юmoney') || n.includes('yoomoney') || n.includes('юмани'))  return _cabinetYmLogoHtml || '';
+  if (n.includes('сбп') || n.includes('sbp') || n.includes('быстр')) return img('sbp.png', 'СБП');
+  if (n.includes('мир') || n.includes('mir'))                         return img('mir.png', 'Мир');
+  if (n.includes('крипт') || n.includes('crypt') || n.includes('usdt') || n.includes('btc')) return img('crypt.png', 'Крипто');
+  return '<svg viewBox="0 0 24 24" fill="none" style="width:18px;height:18px" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>';
+}
+
+// Имя метода для модалки/aria
+function _pmLabel(method) {
+  if (method === 'yookassa') return 'ЮКасса';
+  if (method === 'platega')  return _PLATEGA_LABEL;
+  if (method === 'yoomoney') return 'ЮMoney';
+  if (method === 'wata')     return _WATA_LABEL;
+  return method || '';
+}
+
+// Название кнопки Platega — берётся из настройки бота
+var _PLATEGA_LABEL = {{ platega_btn_text|tojson }};
+// Название кнопки Wata — берётся из настройки бота
+var _WATA_LABEL = {{ wata_btn_text|tojson }};
+
+// Traffic topup pay
+var _traffic_tid = null, _traffic_method = null, _traffic_pmid = 0;
+function openTrafficPay(id, method, pmid, tariffName, tariffPrice, trafficGb) {
+  _lockScroll();
+  _traffic_tid = id; _traffic_method = method; _traffic_pmid = pmid || 0;
+  var label = _pmLabel(method);
+
+  var iconHtml = _pmIconForConfirmModal(method);
+  var tShell = document.getElementById('trafficPayIconShell');
+  var tIcon = document.getElementById('trafficPayIcon');
+  if (iconHtml && tShell && tIcon) {
+    tShell.classList.remove('hidden');
+    tIcon.innerHTML = iconHtml;
+  } else if (tShell && tIcon) {
+    tShell.classList.add('hidden');
+    tIcon.innerHTML = '';
+  }
+
+  document.getElementById('trafficPayName').textContent  = tariffName  || '';
+  document.getElementById('trafficPayPrice').textContent = tariffPrice ? tariffPrice + ' ₽' : '';
+  document.getElementById('trafficPaySub').textContent   = (trafficGb && trafficGb > 0) ? trafficGb + ' ГБ трафика' : 'Трафик';
+  document.getElementById('trafficPayMethod').textContent = label;
+  document.getElementById('trafficPayModal').classList.remove('hidden');
+}
+function closeTrafficModal() { document.getElementById('trafficPayModal').classList.add('hidden'); _unlockScroll(); }
+async function confirmTrafficPay() {
+  var btn = document.getElementById('trafficPayConfirmBtn');
+  var payWin = window.open('', '_blank');
+  if (payWin) payWin.document.write('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f5"><p style="color:#999;font-size:15px">Переход на страницу оплаты…</p></body></html>');
+  btn.disabled = true; btn.textContent = 'Перенаправляем...';
+  var fd = new FormData();
+  fd.append('method', _traffic_method);
+  try {
+    var r = await fetch('/pay/traffic/' + _traffic_tid, { method: 'POST', body: fd });
+    var d = await r.json();
+    if (d.ok) {
+      if (payWin) payWin.location.href = d.redirect; else window.location.href = d.redirect;
+      closeTrafficModal(); btn.disabled = false; btn.textContent = 'Перейти к оплате';
+    } else {
+      if (payWin) payWin.close();
+      showToast(d.error || 'Ошибка', '⚠️');
+      btn.disabled = false; btn.textContent = 'Перейти к оплате';
+    }
+  } catch(e) {
+    if (payWin) payWin.close();
+    showToast('Ошибка соединения', '⚠️');
+    btn.disabled = false; btn.textContent = 'Перейти к оплате';
+  }
+}
+
+// Payment modal
+var _tid = null, _method = null, _pmid = 0;
+
+function openPay(id, method, pmid, tariffName, tariffPrice, trafficGb) {
+  _lockScroll();
+  _tid = id; _method = method; _pmid = pmid || 0;
+
+  var label = _pmLabel(method);
+
+  var iconHtml = _pmIconForConfirmModal(method);
+  var shell = document.getElementById('payModalIconShell');
+  var iconEl = document.getElementById('payModalIcon');
+  if (iconHtml && shell && iconEl) {
+    shell.classList.remove('hidden');
+    iconEl.innerHTML = iconHtml;
+  } else if (shell && iconEl) {
+    shell.classList.add('hidden');
+    iconEl.innerHTML = '';
+  }
+
+  document.getElementById('payModalName').textContent  = tariffName  || '';
+  document.getElementById('payModalPrice').textContent = tariffPrice ? tariffPrice + ' ₽' : '';
+  document.getElementById('payModalSub').textContent   = (trafficGb && trafficGb > 0) ? trafficGb + ' ГБ трафика' : 'Подписка';
+  document.getElementById('payModalMethod').textContent = label;
+  document.getElementById('payModal').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('payModal').classList.add('hidden'); _unlockScroll(); }
+
+// Escape — закрыть любую открытую модалку
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  if (!document.getElementById('qrModal').classList.contains('hidden')) { closeQR(); return; }
+  if (!document.getElementById('stepModal').classList.contains('hidden')) { closeStepModal(); return; }
+  if (!document.getElementById('payModal').classList.contains('hidden')) { closeModal(); return; }
+  var dum = document.getElementById('deviceUpgradeModal'); if (dum && !dum.classList.contains('hidden')) { closeDeviceUpgradeModal(); return; }
+  var tm = document.getElementById('trafficPayModal'); if (tm && !tm.classList.contains('hidden')) { closeTrafficModal(); return; }
+  var rm = document.getElementById('refModal'); if (rm && !rm.classList.contains('hidden')) { closeRefModal(); return; }
+  var pm2 = document.getElementById('pwaModal'); if (pm2 && !pm2.classList.contains('hidden')) { closePwaModal(); return; }
+  var pm = document.getElementById('partnerModal'); if (pm && !pm.classList.contains('hidden')) { closePartnerModal(); return; }
+});
+async function confirmPay() {
+  var btn = document.getElementById('payConfirmBtn');
+  btn.disabled = true; btn.textContent = 'Перенаправляем...';
+
+  // Открываем окно ДО await — Safari требует window.open в синхронной части обработчика жеста
+  var payWin = window.open('', '_blank');
+  if (payWin) payWin.document.write('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f5"><p style="color:#999;font-size:15px">Переход на страницу оплаты…</p></body></html>');
+
+  var fd = new FormData();
+  fd.append('method', _method);
+  try {
+    var r = await fetch('/pay/' + _tid, { method: 'POST', body: fd });
+    var d = await r.json();
+    if (d.ok) {
+      if (payWin) { payWin.location.href = d.redirect; }
+      else { window.location.href = d.redirect; } // fallback если окно заблокировано
+      closeModal();
+      btn.disabled = false; btn.textContent = 'Перейти к оплате';
+    } else {
+      if (payWin) payWin.close();
+      showToast(d.error || 'Ошибка', '⚠️');
+      btn.disabled = false; btn.textContent = 'Перейти к оплате';
+    }
+  } catch(e) {
+    if (payWin) payWin.close();
+    showToast('Ошибка соединения', '⚠️');
+    btn.disabled = false; btn.textContent = 'Перейти к оплате';
+  }
+}
+
+{% if device_upgrade %}
+// ── Расширение лимита устройств ───────────────────────────────────────────────
+var _duOptions = {{ device_upgrade.options|tojson }};
+var _duNewLimit = 0;
+function _duActiveClass(){ return ['bg-black','dark:bg-white','text-white','dark:text-black','border-transparent']; }
+function _duInactiveClass(){ return ['text-gray-600','dark:text-white/50']; }
+function _duMoney(v) {
+  if (!(v || v === 0)) return '—';
+  var n = Number(v);
+  if (!isFinite(n)) return ('' + v) + ' ₽';
+  return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
+}
+function _duPluralDays(n) {
+  n = Math.abs(Number(n) || 0) % 100;
+  var n1 = n % 10;
+  if (n > 10 && n < 20) return 'дней';
+  if (n1 > 1 && n1 < 5) return 'дня';
+  if (n1 === 1) return 'день';
+  return 'дней';
+}
+function _duFormatGb(gb) {
+  var n = Number(gb);
+  if (!n || n <= 0) return '';
+  return (n % 1 === 0 ? String(n) : n.toFixed(1)) + ' GB';
+}
+function selectDuLimit(lim, price, monthlyPrice, monthlyDays, monthlyTrafficGb) {
+  _duNewLimit = lim;
+  (document.querySelectorAll('.du-chip') || []).forEach(function(b){
+    b.classList.remove('bg-black','dark:bg-white','text-white','dark:text-black','border-transparent');
+    b.classList.add('text-gray-600','dark:text-white/50');
+  });
+  var el = document.getElementById('du-opt-' + lim);
+  if (el) {
+    el.classList.remove('text-gray-600','dark:text-white/50');
+    el.classList.add('bg-black','dark:bg-white','text-white','dark:text-black','border-transparent');
+  }
+  var p = document.getElementById('duPrice');
+  if (p) p.textContent = _duMoney(price);
+
+  var period = document.getElementById('duPeriodText');
+  if (period) period.textContent = 'За оставшиеся {{ device_upgrade.days_left }} ' + _duPluralDays({{ device_upgrade.days_left }}) + ' текущей подписки';
+
+  var fp = document.getElementById('duFuturePrice');
+  var fh = document.getElementById('duFutureHint');
+  var metaWrap = document.getElementById('duFutureMeta');
+  var daysEl = document.getElementById('duFutureDays');
+  var gbEl = document.getElementById('duFutureGb');
+  if (monthlyPrice && monthlyDays) {
+    if (fp) fp.textContent = _duMoney(monthlyPrice);
+    if (daysEl) daysEl.textContent = monthlyDays + ' ' + _duPluralDays(monthlyDays);
+    var gbLabel = _duFormatGb(monthlyTrafficGb);
+    if (gbEl) {
+      if (gbLabel) {
+        gbEl.textContent = gbLabel;
+        gbEl.classList.remove('hidden');
+      } else {
+        gbEl.textContent = '';
+        gbEl.classList.add('hidden');
+      }
+    }
+    if (metaWrap) metaWrap.classList.remove('hidden');
+    if (fh) fh.textContent = 'Следующее продление с лимитом ' + lim + ' устр.';
+  } else {
+    if (fp) fp.textContent = 'уточняется';
+    if (metaWrap) metaWrap.classList.add('hidden');
+    if (gbEl) gbEl.classList.add('hidden');
+    if (fh) fh.textContent = 'Для этого лимита не найден активный RUB-тариф продления';
+  }
+}
+function openDeviceUpgradeModal() {
+  var tip = document.getElementById('limit-tip'); if (tip) tip.classList.add('hidden');
+  document.getElementById('deviceUpgradeModal').classList.remove('hidden');
+  _lockScroll();
+  if (_duOptions && _duOptions.length && !_duNewLimit) {
+    selectDuLimit(_duOptions[0].new_limit, _duOptions[0].price, _duOptions[0].monthly_price, _duOptions[0].monthly_days, _duOptions[0].monthly_traffic_gb);
+  }
+}
+function closeDeviceUpgradeModal() {
+  document.getElementById('deviceUpgradeModal').classList.add('hidden');
+  _unlockScroll();
+}
+async function payDeviceUpgrade(method) {
+  if (!_duNewLimit) { showToast('Выберите новый лимит', '⚠️'); return; }
+  var btns = document.querySelectorAll('#deviceUpgradeModal .du-pay-btn');
+  btns.forEach(function(b){ b.disabled = true; b.style.opacity = '0.6'; });
+  // Safari: окно открываем синхронно, до await
+  var payWin = window.open('', '_blank');
+  if (payWin) payWin.document.write('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f5"><p style="color:#999;font-size:15px">Переход на страницу оплаты…</p></body></html>');
+  var fd = new FormData();
+  fd.append('method', method);
+  fd.append('new_limit', _duNewLimit);
+  try {
+    var r = await fetch('/pay/device-upgrade', { method: 'POST', body: fd });
+    var d = await r.json();
+    if (d.ok && d.redirect) {
+      if (payWin) payWin.location.href = d.redirect; else window.location.href = d.redirect;
+      closeDeviceUpgradeModal();
+    } else {
+      if (payWin) payWin.close();
+      showToast(d.error || 'Ошибка', '⚠️');
+    }
+  } catch(e) {
+    if (payWin) payWin.close();
+    showToast('Ошибка соединения', '⚠️');
+  } finally {
+    btns.forEach(function(b){ b.disabled = false; b.style.opacity = ''; });
+  }
+}
+{% endif %}
+
+{% if devices_enabled %}
+// ── Мои устройства ────────────────────────────────────────────────────────────
+var _devicesLimit = 0;
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openDevicesModal(limit) {
+  _devicesLimit = limit || 0;
+  var modal = document.getElementById('devicesModal');
+  modal.classList.remove('hidden');
+  _lockScroll();
+  _loadDevices();
+}
+
+function closeDevicesModal() {
+  document.getElementById('devicesModal').classList.add('hidden');
+  _unlockScroll();
+}
+
+function _devShow(id) {
+  ['devicesLoading','devicesError','devicesEmpty','devicesList'].forEach(function(i) {
+    document.getElementById(i).classList.toggle('hidden', i !== id);
+  });
+}
+
+function _shortUA(ua) {
+  if (!ua) return '—';
+  var known = [
+    ['Happ', 'Happ'], ['ClashMeta', 'Clash Meta'], ['clash-meta', 'Clash Meta'],
+    ['NekoBox', 'NekoBox'], ['NekoRay', 'NekoRay'], ['v2rayN', 'v2rayN'],
+    ['v2rayNG', 'v2rayNG'], ['sing-box', 'sing-box'], ['Shadowrocket', 'Shadowrocket'],
+    ['Quantumult', 'Quantumult'], ['Streisand', 'Streisand'], ['Loon', 'Loon'],
+    ['Surge', 'Surge'], ['Stash', 'Stash'], ['FoXray', 'FoXray'],
+  ];
+  for (var i = 0; i < known.length; i++) {
+    if (ua.indexOf(known[i][0]) !== -1) return known[i][1];
+  }
+  return ua.length > 32 ? ua.slice(0, 30) + '…' : ua;
+}
+
+function _osIcon(os) {
+  var o = (os || '').toLowerCase();
+  var src = '';
+  if (o.indexOf('ios') !== -1 || o.indexOf('iphone') !== -1 || o.indexOf('ipad') !== -1) src = '/static/ios.png';
+  else if (o.indexOf('android') !== -1) src = '/static/and.png';
+  else if (o.indexOf('windows') !== -1) src = '/static/win.png';
+  else if (o.indexOf('mac') !== -1 || o.indexOf('darwin') !== -1) src = '/static/mac.png';
+  if (src) return '<img src="' + src + '" class="w-5 h-5 object-contain" alt="">';
+  // Фоллбэк — SVG смартфона
+  return '<svg class="w-5 h-5 text-gray-400 dark:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3"/></svg>';
+}
+
+function _fmtDate(s) {
+  if (!s) return '';
+  try {
+    var d = new Date(s.replace(' ', 'T') + (s.indexOf('Z') === -1 ? 'Z' : ''));
+    var now = new Date();
+    var diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return 'только что';
+    if (diff < 3600) return Math.floor(diff / 60) + ' мин. назад';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' ч. назад';
+    if (diff < 86400 * 3) return Math.floor(diff / 86400) + ' дн. назад';
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  } catch(e) { return s; }
+}
+
+function _pluralDevices(n) {
+  var mod10 = n % 10, mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'устройств';
+  if (mod10 === 1) return 'устройство';
+  if (mod10 >= 2 && mod10 <= 4) return 'устройства';
+  return 'устройств';
+}
+
+function _makeDeviceCard(dev) {
+  var hwid = dev.hwid || '';
+  var hwShort = hwid.length > 12 ? hwid.slice(0, 10) + '…' : hwid;
+  var osLine = [dev.os, dev.os_version].filter(Boolean).join(' ');
+  var model = dev.model || '';
+  var custom = (dev.custom_name || '').trim();
+  var ua = _shortUA(dev.user_agent);
+  var icon = _osIcon(dev.os);
+  var date = _fmtDate(dev.last_access);
+  // Если задано имя — показываем его как заголовок, а модель/ОС уводим в подпись.
+  var baseName = model || osLine || 'Устройство';
+  var title = custom || baseName;
+  var sub = custom ? [model, osLine].filter(Boolean).join(' · ') : ((model && osLine) ? osLine : '');
+
+  var card = document.createElement('div');
+  card.className = 'dev-card';
+  card.dataset.hwid = hwid;
+  card.dataset.customName = custom;
+  card.innerHTML =
+    '<div class="dev-icon-wrap">' + icon + '</div>' +
+    '<div class="dev-main">' +
+      '<div class="dev-title-row">' +
+        '<span class="dev-title" title="' + _esc(title) + '">' + _esc(title) + '</span>' +
+      '</div>' +
+      (sub ? '<div class="dev-os" title="' + _esc(sub) + '">' + _esc(sub) + '</div>' : '') +
+      '<div class="dev-meta">' +
+        (hwShort ? '<span class="dev-hwid" title="' + _esc(hwid) + '">HWID&nbsp;' + _esc(hwShort) + '</span>' : '') +
+        (ua !== '—' ? '<span class="dev-ua" title="' + _esc(dev.user_agent || ua) + '">' + _esc(ua) + '</span>' : '') +
+        (date ? '<span class="dev-date">' + _esc(date) + '</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="dev-actions">' +
+      '<button class="dev-rename-btn" title="Изменить имя" aria-label="Изменить имя устройства" onclick="openDeviceRenameModal(this)">' +
+        '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.86 4.49l2.65 2.65M3 21l.53-3.86a2 2 0 01.56-1.12L15.3 4.31a1.87 1.87 0 012.65 0l1.74 1.74a1.87 1.87 0 010 2.65L8.48 19.91a2 2 0 01-1.12.56L3 21z"/></svg>' +
+      '</button>' +
+      '<button class="dev-delete-btn" title="Удалить устройство" aria-label="Удалить устройство" onclick="openDeviceDeleteModal(this)">' +
+        '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M10 11v5M14 11v5M9 7V5.75A1.75 1.75 0 0110.75 4h2.5A1.75 1.75 0 0115 5.75V7m2 0-.55 10.2A2 2 0 0114.45 19h-4.9a2 2 0 01-2-1.8L7 7"/></svg>' +
+      '</button>' +
+    '</div>';
+  return card;
+}
+
+function _renderDeviceList(list, devices) {
+  if (!list) return;
+  list.innerHTML = '';
+  var VISIBLE = 3;
+  devices.slice(0, VISIBLE).forEach(function(dev) { list.appendChild(_makeDeviceCard(dev)); });
+  if (devices.length <= VISIBLE) return;
+
+  var hidden = devices.length - VISIBLE;
+  var extra = document.createElement('div');
+  extra.className = 'dev-extra';
+  devices.slice(VISIBLE).forEach(function(dev) { extra.appendChild(_makeDeviceCard(dev)); });
+
+  var moreLabel = function() { return 'Показать ещё ' + hidden + ' ' + _pluralDevices(hidden); };
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'dev-more-btn';
+  btn.innerHTML = '<span class="dev-more-label">' + moreLabel() + '</span>' +
+    '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>';
+  btn.addEventListener('click', function() {
+    var open = extra.classList.toggle('open');
+    btn.classList.toggle('open', open);
+    var lbl = btn.querySelector('.dev-more-label');
+    if (lbl) lbl.textContent = open ? 'Скрыть' : moreLabel();
+  });
+
+  list.appendChild(extra);
+  list.appendChild(btn);
+}
+
+function _inlineDevShow(id) {
+  ['inlineDevicesLoading','inlineDevicesError','inlineDevicesEmpty','inlineDevicesList'].forEach(function(i) {
+    var el = document.getElementById(i);
+    if (el) el.classList.toggle('hidden', i !== id);
+  });
+}
+
+async function _fetchDevices() {
+  var resp = await fetch('/api/my-devices?_=' + Date.now(), {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'Accept': 'application/json' }
+  });
+  var data = {};
+  try {
+    data = await resp.json();
+  } catch (e) {
+    data = { ok: false, error: 'bad_json', devices: [] };
+  }
+  if (!resp.ok && data.ok !== true) data.ok = false;
+  if (!Array.isArray(data.devices)) data.devices = [];
+  return data;
+}
+
+async function _loadDevices() {
+  _devShow('devicesLoading');
+  var over = document.getElementById('devicesOverLimitBanner');
+  if (over) over.classList.add('hidden');
+  try {
+    var data = await _fetchDevices();
+    if (!data.ok) { _devShow('devicesError'); return; }
+
+    var devices = data.devices || [];
+    var subtitle = document.getElementById('devicesSubtitle');
+    if (devices.length === 0) {
+      if (subtitle) subtitle.textContent = 'Устройства, подключённые к подписке';
+      _devShow('devicesEmpty');
+      return;
+    }
+
+    if (subtitle) subtitle.textContent = devices.length + ' ' + _pluralDevices(devices.length);
+    if (_devicesLimit > 0 && devices.length > _devicesLimit && over) over.classList.remove('hidden');
+    _renderDeviceList(document.getElementById('devicesList'), devices);
+    _devShow('devicesList');
+  } catch(e) {
+    _devShow('devicesError');
+  }
+}
+
+async function _loadInlineDevices(btn) {
+  var limit = {{ limit_ip|default(0)|int }};
+  var counter = document.getElementById('inlineDevicesCounter');
+  var over = document.getElementById('inlineDevicesOverLimitBanner');
+  if (btn) { btn.disabled = true; btn.style.opacity = '.65'; }
+  if (over) over.classList.add('hidden');
+  _inlineDevShow('inlineDevicesLoading');
+  try {
+    var data = await _fetchDevices();
+    if (!data.ok) {
+      if (counter) counter.textContent = 'Не удалось загрузить список';
+      _inlineDevShow('inlineDevicesError');
+      return;
+    }
+    var devices = data.devices || [];
+    if (counter) {
+      counter.textContent = devices.length
+        ? devices.length + ' ' + _pluralDevices(devices.length) + (limit > 0 ? ' из ' + limit : '')
+        : 'Устройств пока нет';
+    }
+    if (limit > 0 && devices.length > limit && over) over.classList.remove('hidden');
+    if (devices.length === 0) { _inlineDevShow('inlineDevicesEmpty'); return; }
+    _renderDeviceList(document.getElementById('inlineDevicesList'), devices);
+    _inlineDevShow('inlineDevicesList');
+  } catch(e) {
+    if (counter) counter.textContent = 'Не удалось загрузить список';
+    _inlineDevShow('inlineDevicesError');
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  }
+}
+
+function _initInlineDevices() {
+  if (document.getElementById('inlineDevicesList')) _loadInlineDevices();
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initInlineDevices);
+} else {
+  _initInlineDevices();
+}
+
+var _deleteTargetHwid = null;
+var _deleteTargetCard = null;
+
+function openDeviceDeleteModal(btn) {
+  var card = btn.closest('.dev-card');
+  if (!card) return;
+  var hwid = card.dataset.hwid || '';
+  var title = card.querySelector('.dev-title');
+  var name = title ? title.textContent : 'Устройство';
+  _deleteTargetHwid = hwid;
+  _deleteTargetCard = card;
+  var nameEl = document.getElementById('deviceDeleteName');
+  if (nameEl) nameEl.textContent = name;
+  var confirmBtn = document.getElementById('deviceDeleteConfirmBtn');
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.innerHTML = 'Удалить';
+  }
+  document.getElementById('deviceDeleteModal').classList.remove('hidden');
+  _lockScroll();
+}
+
+function closeDeviceDeleteModal() {
+  document.getElementById('deviceDeleteModal').classList.add('hidden');
+  _deleteTargetHwid = null;
+  _deleteTargetCard = null;
+  _unlockScroll();
+}
+
+var _renameTargetHwid = null;
+
+function _sanitizeDeviceName(s) {
+  s = String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/[<>]/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s.slice(0, 15);
+}
+
+function openDeviceRenameModal(btn) {
+  var card = btn.closest('.dev-card');
+  if (!card) return;
+  _renameTargetHwid = card.dataset.hwid || '';
+  var input = document.getElementById('deviceRenameInput');
+  var counter = document.getElementById('deviceRenameCounter');
+  if (input) {
+    input.value = card.dataset.customName || '';
+    if (counter) counter.textContent = input.value.length + '/15';
+  }
+  var confirmBtn = document.getElementById('deviceRenameConfirmBtn');
+  if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.innerHTML = 'Сохранить'; }
+  document.getElementById('deviceRenameModal').classList.remove('hidden');
+  _lockScroll();
+  if (input) setTimeout(function() { input.focus(); }, 50);
+}
+
+function closeDeviceRenameModal() {
+  document.getElementById('deviceRenameModal').classList.add('hidden');
+  _renameTargetHwid = null;
+  _unlockScroll();
+}
+
+async function confirmRenameDevice() {
+  if (!_renameTargetHwid) return;
+  var input = document.getElementById('deviceRenameInput');
+  var name = _sanitizeDeviceName(input ? input.value : '');
+  var btn = document.getElementById('deviceRenameConfirmBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Сохраняем…'; }
+  try {
+    var resp = await fetch('/api/my-devices/' + encodeURIComponent(_renameTargetHwid) + '/name', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ custom_name: name })
+    });
+    var data = await resp.json();
+    if (data && data.ok) {
+      closeDeviceRenameModal();
+      var modal = document.getElementById('devicesModal');
+      if (modal && !modal.classList.contains('hidden')) _loadDevices();
+      if (document.getElementById('inlineDevicesList')) _loadInlineDevices();
+    } else if (btn) {
+      btn.disabled = false; btn.innerHTML = 'Сохранить';
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Сохранить'; }
+  }
+}
+
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.id === 'deviceRenameInput') {
+    var counter = document.getElementById('deviceRenameCounter');
+    if (counter) counter.textContent = e.target.value.length + '/15';
+  }
+});
+
+async function confirmDeleteDevice() {
+  if (!_deleteTargetHwid) return;
+  var btn = document.getElementById('deviceDeleteConfirmBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Удаляем…'; }
+  try {
+    var resp = await fetch('/api/my-devices/' + encodeURIComponent(_deleteTargetHwid), { method: 'DELETE' });
+    var data = await resp.json();
+    if (data.ok) {
+      if (_deleteTargetCard) {
+        var card = _deleteTargetCard;
+        // Фиксируем текущую высоту чтобы transition max-height работал
+        card.style.maxHeight = card.offsetHeight + 'px';
+        card.style.paddingTop = getComputedStyle(card).paddingTop;
+        card.style.paddingBottom = getComputedStyle(card).paddingBottom;
+        // Даём браузеру зафиксировать значение, затем схлопываем
+        requestAnimationFrame(function() {
+          requestAnimationFrame(function() {
+            card.style.maxHeight = '0';
+            card.style.paddingTop = '0';
+            card.style.paddingBottom = '0';
+            card.classList.add('dev-card-removing');
+          });
+        });
+        setTimeout(function() {
+          if (card && card.parentNode) card.parentNode.removeChild(card);
+          // После удаления обновляем и модальное окно, и встроенный список в кабинете.
+          if (!document.getElementById('devicesModal').classList.contains('hidden')) _loadDevices();
+          if (document.getElementById('inlineDevicesList')) _loadInlineDevices();
+        }, 380);
+      } else {
+        if (!document.getElementById('devicesModal').classList.contains('hidden')) _loadDevices();
+        if (document.getElementById('inlineDevicesList')) _loadInlineDevices();
+      }
+      closeDeviceDeleteModal();
+    } else {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Удалить'; }
+      alert(data.error || 'Не удалось удалить устройство');
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Удалить'; }
+    alert('Ошибка соединения');
+  }
+}
+{% endif %}
+
+initCabinetSections();
+
+// ── App platform selector ─────────────────────────────────────────────────────
+function switchAppTab(tab) {
+  document.querySelectorAll('.app-links-panel').forEach(function(el) { el.classList.add('hidden'); });
+  document.querySelectorAll('.app-platform-card').forEach(function(el) {
+    el.classList.remove('active');
+    el.setAttribute('aria-selected', 'false');
+  });
+  var panel = document.getElementById('appLinks-' + tab);
+  var btn   = document.getElementById('appTab-' + tab);
+  if (panel) panel.classList.remove('hidden');
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+  }
+}
+
+(function initAppTabs() {
+  var ua = (navigator.userAgent || '').toLowerCase();
+  var tab = 'pc';
+  if (/iphone|ipad|ipod/.test(ua))  tab = 'ios';
+  else if (/android/.test(ua))       tab = 'android';
+  if (!document.getElementById('appTab-' + tab)) {
+    var first = document.querySelector('.app-platform-card');
+    if (first) tab = first.id.replace('appTab-', '');
+  }
+  switchAppTab(tab);
+})();
+</script>
+{% endblock %}

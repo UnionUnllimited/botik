@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Обновления - {{ super() }}{% endblock %}
+{% block content %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   Tools · Обновления
+   - Версия и дата сборки
+   - Drag & drop загрузка zip-архива с прогрессом (XHR)
+   - Перезагрузить все сервисы
+   - «Что нового» с моноширинным форматированием
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+<div class="tw-anim">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Обновления</h1>
+      <p class="text-[13px] text-muted2 mt-1">
+        Загрузка и применение обновлений кода. После применения — перезапустите сервисы, чтобы изменения вступили в силу.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <a href="{{ url_for('admin.services_page') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="server-cog" class="w-3.5 h-3.5"></i>
+        Сервисы
+      </a>
+      <form method="post" action="{{ url_for('admin.restart_services') }}"
+            id="updRestartForm" class="inline">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" id="updRestartBtn">
+          <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+          Перезагрузить всё
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ───── Сводка: Версия / Дата сборки / Что нового / Перезапуск ───── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0"
+           style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="git-branch" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Версия</div>
+        <div class="text-[18px] font-semibold leading-tight font-mono truncate" title="{{ app_version }}">
+          {% if '|' in app_version %}{% set ver, _ = app_version.split('|', 1) %}{{ ver.strip() }}{% else %}{{ app_version }}{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0"
+           style="background: var(--admin-bg-soft);">
+        <i data-lucide="calendar" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Дата сборки</div>
+        <div class="text-[14px] font-semibold leading-tight">
+          {% if '|' in app_version %}{% set _, date = app_version.split('|', 1) %}{{ date.strip() }}{% elif version_mtime %}{{ version_mtime }}{% else %}—{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0"
+           style="background: rgb(245 158 11 / .12);">
+        <i data-lucide="sparkles" class="w-4 h-4" style="color: #f59e0b;"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Что нового</div>
+        <div class="text-[14px] font-semibold leading-tight">
+          {% if whats_new %}<a href="#updWhatsNew" style="color: var(--color-brand-500);" class="hover:underline">читать</a>{% else %}—{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0"
+           style="background: rgb(16 185 129 / .12);">
+        <i data-lucide="server-cog" class="w-4 h-4" style="color: #10b981;"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Сервисы</div>
+        <div class="text-[14px] font-semibold leading-tight">
+          <a href="{{ url_for('admin.services_page') }}"
+             style="color: var(--color-brand-500);" class="hover:underline">управление</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ───── Загрузка ───── #}
+  <div class="tw-card p-4 mt-4">
+    <div class="flex items-center gap-2 mb-3">
+      <i data-lucide="cloud-upload" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      <h3 class="text-[14px] font-semibold m-0">Загрузить обновление</h3>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" id="updForm">
+      <label for="updFile" class="upd-dropzone block" id="updDrop">
+        <input type="file" name="update_zip" accept=".zip" id="updFile"
+               required class="sr-only" style="position:absolute; opacity:0; pointer-events:none;">
+        <div class="upd-dropzone-ico">
+          <i data-lucide="file-archive" class="w-7 h-7" id="updDropIcon"></i>
+        </div>
+        <div class="text-[14px] font-semibold mb-1" id="updDropTitle">Перетащите zip-архив сюда</div>
+        <div class="text-[12px] text-muted2" id="updDropSubtitle">или кликните для выбора файла · только .zip</div>
+
+        <div id="updFileMeta" class="hidden mt-3 inline-flex items-center gap-2 text-[12px]"
+             style="color: #10b981;">
+          <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+          <span class="font-mono" id="updFileName">—</span>
+          <span class="text-subtle2">·</span>
+          <span id="updFileSize">—</span>
+        </div>
+
+        <div class="upd-progress hidden" id="updProgress">
+          <div class="upd-progress-bar" id="updProgressBar"></div>
+        </div>
+        <div class="text-[12px] text-muted2 mt-2 hidden" id="updProgressLabel">Загрузка…</div>
+      </label>
+
+      <div class="flex items-center justify-between gap-2 mt-4 flex-wrap">
+        <div class="text-[11px] text-subtle2 flex items-center gap-1.5 min-w-0">
+          <i data-lucide="info" class="w-3 h-3 shrink-0"></i>
+          Архив распакуется в корень проекта поверх существующих файлов.
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="updResetBtn" class="tw-btn tw-btn-secondary tw-btn-sm hidden">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i> Очистить
+          </button>
+          <button type="submit" id="updSubmit" class="tw-btn tw-btn-primary tw-btn-sm" disabled>
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+            <span id="updSubmitLabel">Загрузить и применить</span>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  {# ───── What's new ───── #}
+  {% if whats_new %}
+  <div class="tw-card p-4 mt-4" id="updWhatsNew">
+    <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+      <div class="flex items-center gap-2">
+        <i data-lucide="sparkles" class="w-4 h-4" style="color: #f59e0b;"></i>
+        <h3 class="text-[14px] font-semibold m-0">Что нового в этой версии</h3>
+      </div>
+      {% if whats_new_mtime %}
+      <span class="text-[11px] text-subtle2">обновлено {{ whats_new_mtime }}</span>
+      {% endif %}
+    </div>
+    <div class="upd-whatsnew tw-scroll">{{ whats_new }}</div>
+  </div>
+  {% endif %}
+
+  {# ───── Подсказка ───── #}
+  <div class="mt-4 rounded-[10px] px-3 py-2.5 flex items-start gap-2 text-[12.5px]"
+       style="background: rgb(245 158 11 / .08); color: var(--admin-text-base);
+              border: 1px solid rgb(245 158 11 / .25);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 mt-0.5" style="color: #f59e0b;"></i>
+    <div>
+      После загрузки и распаковки нажмите <strong>«Перезагрузить всё»</strong>, чтобы перезапустить
+      <code class="tw-kbd">vpn-bot</code>, <code class="tw-kbd">vpn-webadmin</code> и <code class="tw-kbd">xuiweb</code>.
+      Без перезапуска часть изменений может не применяться.
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const drop      = $('#updDrop');
+  const input     = $('#updFile');
+  const meta      = $('#updFileMeta');
+  const nameEl    = $('#updFileName');
+  const sizeEl    = $('#updFileSize');
+  const titleEl   = $('#updDropTitle');
+  const subEl     = $('#updDropSubtitle');
+  const iconEl    = $('#updDropIcon');
+  const progress  = $('#updProgress');
+  const bar       = $('#updProgressBar');
+  const label     = $('#updProgressLabel');
+  const submit    = $('#updSubmit');
+  const submitLab = $('#updSubmitLabel');
+  const resetBtn  = $('#updResetBtn');
+  const form      = $('#updForm');
+
+  function fmtSize(bytes) {
+    if (!bytes) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB'];
+    let i = 0; let v = bytes;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v >= 100 || i === 0 ? 0 : 1) + ' ' + u[i];
+  }
+
+  function setFile(file) {
+    if (!file) { reset(); return; }
+    if (!/\.zip$/i.test(file.name)) {
+      alert('Поддерживаются только .zip архивы.');
+      reset();
+      return;
+    }
+    nameEl.textContent = file.name;
+    sizeEl.textContent = fmtSize(file.size);
+    meta.classList.remove('hidden');
+    drop.classList.add('has-file');
+    drop.classList.remove('is-dragover');
+    titleEl.textContent = 'Готово к применению';
+    subEl.textContent = 'Нажмите «Загрузить и применить» ниже';
+    submit.disabled = false;
+    resetBtn.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+  function reset() {
+    input.value = '';
+    meta.classList.add('hidden');
+    drop.classList.remove('has-file', 'is-uploading');
+    titleEl.textContent = 'Перетащите zip-архив сюда';
+    subEl.textContent = 'или кликните для выбора файла · только .zip';
+    progress.classList.add('hidden');
+    label.classList.add('hidden');
+    bar.style.width = '0%';
+    submit.disabled = true;
+    submitLab.textContent = 'Загрузить и применить';
+    resetBtn.classList.add('hidden');
+  }
+
+  // ─── Drag & drop ───
+  ['dragenter','dragover'].forEach(ev =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.add('is-dragover'); })
+  );
+  ['dragleave','drop'].forEach(ev =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.remove('is-dragover'); })
+  );
+  drop.addEventListener('drop', (e) => {
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) {
+      // Прокидываем файл в input через DataTransfer
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(files[0]);
+        input.files = dt.files;
+      } catch(_) { /* fallback — input.files может быть read-only в старых браузерах */ }
+      setFile(files[0]);
+    }
+  });
+
+  input.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    setFile(f);
+  });
+
+  resetBtn.addEventListener('click', (e) => { e.preventDefault(); reset(); });
+
+  // ─── Submit через XHR с прогрессом ───
+  form.addEventListener('submit', (e) => {
+    if (!input.files || !input.files.length) return;
+    e.preventDefault();
+    const fd = new FormData();
+    fd.append('update_zip', input.files[0]);
+
+    drop.classList.add('is-uploading');
+    submit.disabled = true;
+    submitLab.textContent = 'Загрузка…';
+    progress.classList.remove('hidden');
+    label.classList.remove('hidden');
+    bar.style.width = '0%';
+    label.textContent = 'Подготовка…';
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action || window.location.href, true);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+    xhr.upload.addEventListener('progress', (ev) => {
+      if (!ev.lengthComputable) return;
+      const pct = Math.round((ev.loaded / ev.total) * 100);
+      bar.style.width = pct + '%';
+      label.textContent = `Загрузка ${pct}% (${(ev.loaded/1024/1024).toFixed(1)} / ${(ev.total/1024/1024).toFixed(1)} MB)`;
+      if (pct >= 100) label.textContent = 'Распаковываем архив…';
+    });
+
+    xhr.addEventListener('load', () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch(_) {}
+      const ok = (xhr.status >= 200 && xhr.status < 300) && data.success;
+      if (ok) {
+        bar.style.width = '100%';
+        label.textContent = data.message || 'Готово';
+        drop.classList.remove('is-uploading');
+        drop.classList.add('has-file');
+        titleEl.textContent = 'Готово!';
+        subEl.textContent = data.message || 'Обновление применено.';
+        submitLab.textContent = 'Готово';
+        // Через 1.2s подсказываем перезапуск
+        setTimeout(() => {
+          if (confirm('Обновление применено. Перезапустить сервисы сейчас?')) {
+            document.getElementById('updRestartForm').submit();
+          } else {
+            window.location.reload();
+          }
+        }, 800);
+      } else {
+        drop.classList.remove('is-uploading');
+        bar.style.width = '0%';
+        label.textContent = data.message || 'Ошибка загрузки';
+        label.style.color = '#f43f5e';
+        submitLab.textContent = 'Повторить';
+        submit.disabled = false;
+      }
+    });
+    xhr.addEventListener('error', () => {
+      drop.classList.remove('is-uploading');
+      label.textContent = 'Сетевая ошибка';
+      label.style.color = '#f43f5e';
+      submitLab.textContent = 'Повторить';
+      submit.disabled = false;
+    });
+    xhr.send(fd);
+  });
+
+  // ─── Подтверждение перезагрузки ───
+  document.getElementById('updRestartForm').addEventListener('submit', (e) => {
+    if (!confirm('Перезапустить все сервисы (vpn-bot, vpn-webadmin, xuiweb)? Текущая сессия может ненадолго оборваться.')) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+
+{% endblock %}

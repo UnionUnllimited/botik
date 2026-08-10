@@ -1,0 +1,325 @@
+{% extends 'base.html' %}
+{% block title %}Партнёры — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Партнёрская программа</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Партнёры и их рефералы (метод <code>partner</code>). Глобальный процент: <strong>{{ "%.1f"|format(global_pct) }}%</strong>
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('admin.partners_export_csv') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Скачать всех партнёров (CSV)">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>CSV</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# === KPI === #}
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="users" class="w-3.5 h-3.5"></i> Партнёров
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ kpi.total_partners or 0 }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">с активным кодом</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="wallet" class="w-3.5 h-3.5"></i> К выплате
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none" style="color: #f59e0b;">
+        {{ "%.0f"|format(kpi.total_balance or 0) }} ₽
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2">сумма балансов</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="trending-up" class="w-3.5 h-3.5"></i> Начислено всего
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none" style="color: #10b981;">
+        {{ "%.0f"|format(kpi.total_accrued or 0) }} ₽
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2">за всё время</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="banknote" class="w-3.5 h-3.5"></i> Выплачено
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none" style="color: #6366f1;">
+        {{ "%.0f"|format(kpi.total_payouts or 0) }} ₽
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2">админ-снятия с баланса</div>
+    </div>
+  </div>
+
+  {# === Toolbar + таблица === #}
+  <div class="tw-card">
+    <form method="get" action="{{ url_for('admin.partners_list') }}"
+          class="p-3 sm:p-4 flex flex-col gap-3 border-b"
+          style="border-color: rgb(var(--admin-border));">
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+        <div class="relative flex-1 min-w-0">
+          <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 tw-text-subtle2 pointer-events-none"></i>
+          <input type="text" name="q" value="{{ q }}"
+                 placeholder="Поиск: ID, username, код партнёра, email…"
+                 class="tw-input tw-input-with-icon" autocomplete="off">
+        </div>
+
+        <select name="sort" class="tw-select" onchange="this.form.submit()" title="Сортировка">
+          <option value="bal" {% if sort == 'bal' %}selected{% endif %}>По балансу</option>
+          <option value="ref" {% if sort == 'ref' %}selected{% endif %}>По приглашённым</option>
+          <option value="pay" {% if sort == 'pay' %}selected{% endif %}>По платежам</option>
+        </select>
+
+        <select name="per_page" class="tw-select" onchange="this.form.submit()" title="На странице">
+          {% for n in [15, 30, 50, 100] %}
+          <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }} / стр.</option>
+          {% endfor %}
+        </select>
+
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
+        </button>
+
+        {% if q or sort != 'bal' or per_page != 30 %}
+        <a href="{{ url_for('admin.partners_list') }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm" title="Сбросить">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i><span>Сброс</span>
+        </a>
+        {% endif %}
+      </div>
+      <div class="text-[12px] tw-text-muted2">
+        Найдено: <span class="font-semibold tw-text-base2">{{ total }}</span>
+      </div>
+    </form>
+
+    {# Desktop: таблица #}
+    <div class="hidden md:block overflow-x-auto tw-scroll">
+      <table class="tw-tbl" style="table-layout: fixed; width: 100%;">
+        <colgroup>
+          <col>
+          <col style="width: 160px;">
+          <col style="width: 90px;">
+          <col style="width: 120px;">
+          <col style="width: 120px;">
+          <col style="width: 110px;">
+          <col style="width: 110px;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Партнёр</th>
+            <th>Код</th>
+            <th class="text-center">%</th>
+            <th class="text-end">Баланс</th>
+            <th class="text-center">Приглашено</th>
+            <th class="text-center">Платежей</th>
+            <th class="text-end"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not partners %}
+          <tr>
+            <td colspan="7" class="text-center py-10 tw-text-muted2">
+              <div class="flex flex-col items-center gap-1.5">
+                <i data-lucide="search-x" class="w-6 h-6 tw-text-subtle2"></i>
+                <div class="text-[13px]">Партнёров не найдено</div>
+                {% if q %}<div class="text-[11px]">Попробуйте уточнить запрос.</div>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+          {% for p in partners %}
+          <tr>
+            <td>
+              <button type="button" class="text-left hover:opacity-80 transition-opacity"
+                      onclick="window.openUserModal({{ p.telegram_id }}); return false;">
+                <div class="text-[13px] font-medium tw-text-base2 truncate">
+                  {{ (p.real_username or p.username) or 'N/A' }}
+                </div>
+                <div class="text-[11px] tw-text-muted2">
+                  ID: <code class="text-[11px]" data-copy="{{ p.telegram_id }}" title="Скопировать">{{ p.telegram_id }}</code>
+                </div>
+              </button>
+            </td>
+            <td>
+              {% if p.partner_ref_code %}
+              <code class="text-[12px] px-1.5 py-0.5 rounded"
+                    style="background: rgb(var(--admin-bg-soft)); color: rgb(var(--admin-text));"
+                    data-copy="{{ p.partner_ref_code }}" title="Скопировать">{{ p.partner_ref_code }}</code>
+              {% else %}<span class="tw-text-subtle2">—</span>{% endif %}
+            </td>
+            <td class="text-center">
+              {% if p.partner_percent_rub != '' and p.partner_percent_rub is not none %}
+              <span class="tw-chip" style="background: rgb(99 102 241 / .12); color: #6366f1;">
+                {{ "%.1f"|format(p.partner_percent_rub|float) }}%
+              </span>
+              {% else %}
+              <span class="text-[11px] tw-text-subtle2">{{ "%.1f"|format(global_pct) }}% (гл.)</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <span class="font-semibold {% if (p.balance or 0) > 0 %}text-amber-500{% endif %}">
+                {{ "%.2f"|format(p.balance or 0) }} ₽
+              </span>
+            </td>
+            <td class="text-center">
+              {% if (p.referrals_count or 0) > 0 %}
+              <span class="tw-chip" style="background: rgb(16 185 129 / .14); color: #10b981;">
+                <i data-lucide="users" class="w-3 h-3"></i> {{ p.referrals_count }}
+              </span>
+              {% else %}
+              <span class="tw-text-subtle2">0</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if (p.payments_count or 0) > 0 %}
+              <span class="tw-chip" style="background: rgb(99 102 241 / .12); color: #6366f1;">
+                <i data-lucide="credit-card" class="w-3 h-3"></i> {{ p.payments_count }}
+              </span>
+              {% else %}
+              <span class="tw-text-subtle2">0</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('admin.partner_details', telegram_id=p.telegram_id) }}"
+                 class="tw-btn tw-btn-secondary tw-btn-sm">
+                <span>Открыть</span>
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Mobile: карточки #}
+    <div class="md:hidden p-3 space-y-2">
+      {% if not partners %}
+      <div class="text-center py-10 tw-text-muted2">
+        <i data-lucide="search-x" class="w-6 h-6 mx-auto mb-1.5 tw-text-subtle2"></i>
+        <div class="text-[13px]">Партнёров не найдено</div>
+      </div>
+      {% endif %}
+      {% for p in partners %}
+      <a href="{{ url_for('admin.partner_details', telegram_id=p.telegram_id) }}"
+         class="tw-card p-3 block hover:opacity-95 transition-opacity">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-[13.5px] font-semibold tw-text-base2 truncate">
+              {{ (p.real_username or p.username) or 'N/A' }}
+            </div>
+            <div class="text-[11px] tw-text-muted2">
+              ID: <code class="text-[11px]">{{ p.telegram_id }}</code>
+              {% if p.partner_ref_code %}
+              · <code class="text-[11px]">{{ p.partner_ref_code }}</code>
+              {% endif %}
+            </div>
+          </div>
+          <div class="text-end shrink-0">
+            <div class="text-[13.5px] font-semibold {% if (p.balance or 0) > 0 %}text-amber-500{% else %}tw-text-base2{% endif %}">
+              {{ "%.0f"|format(p.balance or 0) }} ₽
+            </div>
+            <div class="text-[10.5px] tw-text-subtle2">баланс</div>
+          </div>
+        </div>
+        <div class="mt-2 flex items-center gap-1.5 flex-wrap">
+          <span class="tw-chip" style="background: rgb(16 185 129 / .14); color: #10b981;">
+            <i data-lucide="users" class="w-3 h-3"></i> {{ p.referrals_count or 0 }}
+          </span>
+          <span class="tw-chip" style="background: rgb(99 102 241 / .12); color: #6366f1;">
+            <i data-lucide="credit-card" class="w-3 h-3"></i> {{ p.payments_count or 0 }}
+          </span>
+          <span class="tw-chip" style="background: rgb(245 158 11 / .14); color: #f59e0b;">
+            <i data-lucide="percent" class="w-3 h-3"></i>
+            {% if p.partner_percent_rub != '' and p.partner_percent_rub is not none %}
+              {{ "%.1f"|format(p.partner_percent_rub|float) }}%
+            {% else %}
+              {{ "%.1f"|format(global_pct) }}%
+            {% endif %}
+          </span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+
+    {# Pagination #}
+    <div class="p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2 border-t"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="text-[12px] tw-text-muted2">
+        {% if total_pages > 1 %}
+          Страница <span class="font-semibold tw-text-base2">{{ page }}</span> из
+          <span class="font-semibold tw-text-base2">{{ total_pages }}</span> ·
+          всего <span class="font-semibold tw-text-base2">{{ total }}</span>
+        {% else %}
+          Всего: <span class="font-semibold tw-text-base2">{{ total }}</span>
+        {% endif %}
+      </div>
+      {% if total_pages > 1 %}
+        {% set qs_base = {'sort': sort, 'per_page': per_page} %}
+        {% if q %}{% set _ = qs_base.update({'q': q}) %}{% endif %}
+        <nav class="tw-pagination">
+          <a class="pg-item {% if page == 1 %}disabled{% endif %}"
+             href="{{ url_for('admin.partners_list', page=page-1, **qs_base) if page > 1 else '#' }}"
+             aria-label="Предыдущая">
+            <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+          </a>
+          {% set ns = namespace(last=0) %}
+          {% for p in range(1, total_pages + 1) %}
+            {% set is_first = (p == 1) %}
+            {% set is_last  = (p == total_pages) %}
+            {% set near     = (p >= page - 1 and p <= page + 1) %}
+            {% if is_first or is_last or near %}
+              {% if ns.last and p - ns.last > 1 %}
+                <span class="pg-item disabled">…</span>
+              {% endif %}
+              <a class="pg-item {% if p == page %}active{% endif %}"
+                 href="{{ url_for('admin.partners_list', page=p, **qs_base) }}">{{ p }}</a>
+              {% set ns.last = p %}
+            {% endif %}
+          {% endfor %}
+          <a class="pg-item {% if page == total_pages %}disabled{% endif %}"
+             href="{{ url_for('admin.partners_list', page=page+1, **qs_base) if page < total_pages else '#' }}"
+             aria-label="Следующая">
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+          </a>
+        </nav>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  // Click-to-copy для элементов [data-copy]
+  document.addEventListener('click', function(e) {
+    const t = e.target.closest('[data-copy]');
+    if (!t) return;
+    const val = t.getAttribute('data-copy');
+    if (!val) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).then(function() {
+        if (window.adminToast) window.adminToast('Скопировано: ' + val, 'success');
+      }).catch(function() {});
+    }
+  });
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    try { window.lucide.createIcons(); } catch (_) {}
+  }
+})();
+</script>
+{% endblock %}

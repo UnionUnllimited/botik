@@ -1,0 +1,20 @@
+[Unit]
+Description=VPN Web Admin
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/bot
+Environment="PATH=/root/bot/web_admin/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/root/bot"
+ExecStart=/root/bot/web_admin/venv/bin/hypercorn web_admin.run:app -w 1 --bind 127.0.0.1:8181 --keep-alive 30
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

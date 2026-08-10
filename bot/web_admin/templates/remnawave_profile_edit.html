@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'new' %}Новый профиль{% else %}Редактирование профиля{% endif %} — Remnawave — {{ super() }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4" id="rwPeRoot"
+     data-mode="{{ mode }}"
+     data-uuid="{{ profile_uuid }}"
+     data-name="{{ profile_name|e }}"
+     data-secret-path="{{ ('/' + admin_secret_path) if admin_secret_path else '' }}"
+     data-api-base="{{ url_for('admin.remnawave_profiles_list') }}">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">
+        {% if mode == 'new' %}Новый config-профиль{% else %}Редактирование профиля{% endif %}
+      </h1>
+      <p class="text-[13px] text-muted2 mt-1">Входящие, исходящие, маршрутизация и DNS — с синхронизацией JSON.</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <a href="{{ url_for('admin.remnawave_profiles_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm gap-1.5">
+        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+        К списку
+      </a>
+      <button type="button" id="rwPeSaveBtn" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+        <span>Сохранить</span>
+      </button>
+    </div>
+  </div>
+
+  {% with active='profiles' %}
+  {% include 'remnawave_subnav.html' %}
+  {% endwith %}
+
+  <div class="tw-surface rounded-[var(--radius-card)] p-4 space-y-4">
+    <div class="rw-pe-field" style="margin-bottom:0;">
+      <label for="rwPeName">Имя профиля</label>
+      <input type="text" id="rwPeName" maxlength="30" placeholder="Например: VKCLOUDEC (латиница, 2–30 символов)"
+             value="{{ profile_name }}">
+    </div>
+    {% if mode == 'edit' and profile_meta %}
+    <div class="text-[11.5px] text-muted2 flex flex-wrap gap-x-4 gap-y-1">
+      <span>UUID: <code>{{ profile_meta.uuid }}</code></span>
+      {% if profile_meta.nodes %}
+      <span>{{ profile_meta.nodes|length }} нод(а)</span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="rw-pe-tabs" id="rwPeTabs">
+    <button type="button" class="rw-pe-tab is-active" data-tab="general">Общее</button>
+    <button type="button" class="rw-pe-tab" data-tab="inbounds">Инбаунды</button>
+    <button type="button" class="rw-pe-tab" data-tab="outbounds">Аутбаунды</button>
+    <button type="button" class="rw-pe-tab" data-tab="routing">Маршрутизация</button>
+    <button type="button" class="rw-pe-tab" data-tab="dns">DNS</button>
+    <button type="button" class="rw-pe-tab" data-tab="json">JSON</button>
+  </div>
+
+  {# ── General ── #}
+  <div class="rw-pe-pane is-active tw-surface rounded-[var(--radius-card)] p-4" data-pane="general">
+    <div class="text-[13px] font-semibold mb-3">Логи (log)</div>
+    <div class="rw-pe-field-grid">
+      <div class="rw-pe-field">
+        <label for="rwPeLogLevel">Уровень (loglevel)</label>
+        <select id="rwPeLogLevel">
+          <option value="none">none</option>
+          <option value="error">error</option>
+          <option value="warning">warning</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+      </div>
+      <div class="rw-pe-field">
+        <label for="rwPeDomainStrategy">Стратегия доменов (domainStrategy)</label>
+        <select id="rwPeDomainStrategy">
+          <option value="AsIs">AsIs</option>
+          <option value="IPIfNonMatch">IPIfNonMatch</option>
+          <option value="IPOnDemand">IPOnDemand</option>
+        </select>
+      </div>
+      <div class="rw-pe-field rw-pe-field-full">
+        <label for="rwPeLogError">Ошибки (error)</label>
+        <input type="text" id="rwPeLogError" class="tw-input font-mono text-[12px]"
+               placeholder="/var/log/remnanode/error.log">
+      </div>
+      <div class="rw-pe-field rw-pe-field-full">
+        <label for="rwPeLogAccess">Access (access)</label>
+        <input type="text" id="rwPeLogAccess" class="tw-input font-mono text-[12px]"
+               placeholder="/var/log/remnanode/access.log">
+      </div>
+    </div>
+    <p class="text-[12px] text-muted2 mt-2">
+      Пути <code>error</code> / <code>access</code> — только если нужны файловые логи на ноде
+      (том <code>/var/log/remnanode</code> в docker compose). Пустые поля не попадают в JSON.
+      Остальное — на вкладках «Инбаунды», «Аутбаунды», «Маршрутизация».
+    </p>
+  </div>
+
+  {# ── Inbounds ── #}
+  <div class="rw-pe-pane tw-surface rounded-[var(--radius-card)] overflow-hidden" data-pane="inbounds">
+    <div class="px-4 py-3 border-b flex items-center justify-between gap-2 flex-wrap"
+         style="border-color: rgb(var(--admin-border));">
+      <span class="text-[13px] font-semibold">Инбаунды (входящие)</span>
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="rw-pe-chip-row" id="rwPeInboundPresets">
+          <button type="button" class="rw-pe-chip" data-preset="vless_reality">VLESS REALITY</button>
+          <button type="button" class="rw-pe-chip" data-preset="vless_ws">VLESS WS</button>
+          <button type="button" class="rw-pe-chip" data-preset="shadowsocks">Shadowsocks</button>
+          <button type="button" class="rw-pe-chip" data-preset="trojan_tls">Trojan TLS</button>
+          <button type="button" class="rw-pe-chip" data-preset="hysteria2">Hysteria2</button>
+        </div>
+        <button type="button" id="rwPeInboundAdd" class="tw-btn tw-btn-secondary tw-btn-sm gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Пустой
+        </button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="rw-pe-table">
+        <thead>
+          <tr>
+            <th>Тег</th>
+            <th>Протокол</th>
+            <th>Порт</th>
+            <th>Транспорт / TLS</th>
+            <th style="width:130px;"></th>
+          </tr>
+        </thead>
+        <tbody id="rwPeInboundTbody"></tbody>
+      </table>
+    </div>
+    <div id="rwPeInboundEmpty" class="rw-pe-empty" style="display:none;">Нет инбаундов — добавьте из шаблона или пустой.</div>
+  </div>
+
+  {# ── Outbounds ── #}
+  <div class="rw-pe-pane tw-surface rounded-[var(--radius-card)] overflow-hidden" data-pane="outbounds">
+    <div class="px-4 py-3 border-b flex items-center justify-between gap-2 flex-wrap"
+         style="border-color: rgb(var(--admin-border));">
+      <span class="text-[13px] font-semibold">Аутбаунды (исходящие)</span>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" id="rwPeOutboundImport" class="tw-btn tw-btn-secondary tw-btn-sm gap-1">
+          <i data-lucide="link" class="w-3.5 h-3.5"></i> Из ссылки
+        </button>
+        <button type="button" class="rw-pe-chip" data-out-preset="freedom">+ DIRECT</button>
+        <button type="button" class="rw-pe-chip" data-out-preset="blackhole">+ BLOCK</button>
+        <button type="button" id="rwPeOutboundAdd" class="tw-btn tw-btn-secondary tw-btn-sm gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Пустой
+        </button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="rw-pe-table">
+        <thead>
+          <tr>
+            <th>Тег</th>
+            <th>Протокол</th>
+            <th>Адрес</th>
+            <th style="width:130px;"></th>
+          </tr>
+        </thead>
+        <tbody id="rwPeOutboundTbody"></tbody>
+      </table>
+    </div>
+    <div id="rwPeOutboundEmpty" class="rw-pe-empty" style="display:none;">Нет аутбаундов.</div>
+  </div>
+
+  {# ── Routing ── #}
+  <div class="rw-pe-pane tw-surface rounded-[var(--radius-card)] overflow-hidden" data-pane="routing">
+    <div class="px-4 py-3 border-b flex items-center justify-between gap-2 flex-wrap"
+         style="border-color: rgb(var(--admin-border));">
+      <span class="text-[13px] font-semibold">Правила маршрутизации</span>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" class="rw-pe-chip" data-rule-preset="block_private">BLOCK private</button>
+        <button type="button" class="rw-pe-chip" data-rule-preset="block_bt">BLOCK bittorrent</button>
+        <button type="button" id="rwPeRuleAdd" class="tw-btn tw-btn-secondary tw-btn-sm gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Правило
+        </button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="rw-pe-table">
+        <thead>
+          <tr>
+            <th style="width:28px;"></th>
+            <th>#</th>
+            <th>Тип</th>
+            <th>Инбаунд</th>
+            <th>Условие</th>
+            <th>Аутбаунд</th>
+            <th style="width:130px;"></th>
+          </tr>
+        </thead>
+        <tbody id="rwPeRuleTbody"></tbody>
+      </table>
+    </div>
+    <div id="rwPeRuleEmpty" class="rw-pe-empty" style="display:none;">Нет правил маршрутизации.</div>
+  </div>
+
+  {# ── DNS ── #}
+  <div class="rw-pe-pane tw-surface rounded-[var(--radius-card)] p-4" data-pane="dns">
+    <div class="flex items-center justify-between gap-2 mb-3">
+      <span class="text-[13px] font-semibold">DNS</span>
+      <label class="flex items-center gap-2 text-[12px] cursor-pointer">
+        <input type="checkbox" id="rwPeDnsEnabled" class="rounded">
+        Включить секцию dns
+      </label>
+    </div>
+    <div id="rwPeDnsBody" style="display:none;">
+      <div class="rw-pe-field">
+        <label for="rwPeDnsServers">Серверы (по одному на строку)</label>
+        <textarea id="rwPeDnsServers" rows="4" placeholder="1.1.1.1&#10;8.8.8.8"></textarea>
+      </div>
+      <div class="rw-pe-field">
+        <label for="rwPeDnsQueryStrategy">queryStrategy</label>
+        <select id="rwPeDnsQueryStrategy">
+          <option value="">— не задано —</option>
+          <option value="UseIP">UseIP</option>
+          <option value="UseIPv4">UseIPv4</option>
+          <option value="UseIPv6">UseIPv6</option>
+        </select>
+      </div>
+    </div>
+    <p id="rwPeDnsOffHint" class="text-[12px] text-muted2">Секция <code>dns</code> отсутствует в конфиге. Включите, если нужны кастомные DNS-серверы.</p>
+  </div>
+
+  {# ── JSON ── #}
+  <div class="rw-pe-pane tw-surface rounded-[var(--radius-card)] p-4" data-pane="json">
+    <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+      <span class="text-[13px] font-semibold">Полный JSON конфига</span>
+      <div class="flex gap-2">
+        <button type="button" id="rwPeJsonFromGui" class="tw-btn tw-btn-secondary tw-btn-sm">Из формы → JSON</button>
+        <button type="button" id="rwPeJsonToGui" class="tw-btn tw-btn-secondary tw-btn-sm">JSON → в форму</button>
+        <button type="button" id="rwPeJsonFormat" class="tw-btn tw-btn-secondary tw-btn-sm">Форматировать</button>
+      </div>
+    </div>
+    <div class="rw-pe-json-editor">
+      <textarea id="rwPeJsonTextarea">{{ profile_config_json }}</textarea>
+    </div>
+    <p id="rwPeJsonError" class="text-[12px] mt-2" style="color:#ef4444;display:none;"></p>
+  </div>
+</div>
+
+{# ── Modal: inbound/outbound/rule editor ── #}
+<div class="rw-pe-modal-backdrop" id="rwPeModal">
+  <div class="rw-pe-modal">
+    <div class="rw-pe-modal-head">
+      <span class="text-[14px] font-semibold" id="rwPeModalTitle">Редактор</span>
+      <button type="button" class="rw-pe-icon-btn" id="rwPeModalClose" title="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="rw-pe-modal-body" id="rwPeModalBody"></div>
+    <div class="rw-pe-modal-foot">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="rwPeModalCancel">Отмена</button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" id="rwPeModalSave">Применить</button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: import link ── #}
+<div class="rw-pe-modal-backdrop" id="rwPeLinkModal">
+  <div class="rw-pe-modal" style="max-width:560px;">
+    <div class="rw-pe-modal-head">
+      <span class="text-[14px] font-semibold">Импорт аутбаунда из ссылки</span>
+      <button type="button" class="rw-pe-icon-btn" id="rwPeLinkModalClose">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="rw-pe-modal-body">
+      <div class="rw-pe-field">
+        <label>Ссылка</label>
+        <textarea id="rwPeLinkInput" rows="4" placeholder="vless://...&#10;ss://...&#10;trojan://...&#10;hysteria2://..."></textarea>
+      </div>
+      <div class="rw-pe-field">
+        <label for="rwPeLinkTag">Тег (необязательно)</label>
+        <input type="text" id="rwPeLinkTag" placeholder="REALITY">
+      </div>
+    </div>
+    <div class="rw-pe-modal-foot">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="rwPeLinkCancel">Отмена</button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" id="rwPeLinkImport">Импортировать</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="rwPeInitialConfig">{{ profile_config_json|safe }}</script>
+<script src="{{ url_for('admin.admin_static', filename='js/rw_profile_editor.js') }}?v={{ pwa_cache_version }}"></script>
+{% endblock %}

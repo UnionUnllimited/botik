@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ project_name }} - Роутеры</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/vendor/inter.css">
+    <link rel="stylesheet" href="/static/css/tailwind-built.css">
+    <script src="/static/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
+</head>
+<body class="relative bg-app-bg text-zinc-100 transition-colors duration-300 min-h-screen pb-12 lg:pb-16 selection:bg-blue-500/30">
+
+    <div class="router-desk-bg" aria-hidden="true"></div>
+    <div id="toast-container" class="fixed z-[9999] flex flex-col gap-2.5 px-4 pointer-events-none"></div>
+
+    <div class="relative z-[1] w-full max-w-[500px] mx-auto pt-[calc(1.5rem+env(safe-area-inset-top))] px-4 sm:max-w-[520px] lg:max-w-none lg:flex lg:flex-col lg:items-center lg:pt-14 lg:px-10 xl:px-14 lg:pb-8">
+
+        <div class="w-full router-shell">
+        <div class="flex justify-between items-start gap-3 mb-6 px-1 lg:mb-8 lg:px-0 lg:gap-8 animate-card" style="animation-delay: 0s;">
+            <div class="min-w-0 flex-1">
+                <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-500/90 dark:text-indigo-400/90 mb-1.5 lg:mb-2 hidden lg:block">Подписка · роутер</p>
+                <h1 class="text-2xl lg:text-[1.85rem] font-bold tracking-tight text-black dark:text-white">Роутеры</h1>
+                <p class="text-[13px] lg:text-[14px] text-zinc-500 dark:text-zinc-400 mt-1 font-medium lg:max-w-xl">Конфигурации для вашего устройства</p>
+                <p class="text-[11px] lg:text-xs text-zinc-400 dark:text-zinc-500 mt-2 leading-relaxed max-w-[20rem] lg:max-w-2xl">Замер пинга делайте с выключенным VPN — напрямую через сеть оператора или провайдера.</p>
+            </div>
+            
+            <div class="flex items-center gap-2 shrink-0 pt-0.5 lg:pt-1">
+                <button type="button" id="btnSortPing" onpointerdown="haptic('selection')" onclick="sortAllByPing()"
+                        class="h-9 lg:h-10 px-3 lg:px-4 rounded-xl bg-white/10 hover:bg-white/20 lg:hover:bg-white/[0.14] active:scale-90 transition-all duration-300 text-[12px] lg:text-[13px] font-bold text-zinc-300 whitespace-nowrap shadow-sm lg:shadow-none"
+                        title="Сравнить примерный сетевой отклик. Проверяйте с выключенным VPN" aria-label="Сортировать серверы по примерному отклику">
+                    По пингу
+                </button>
+            </div>
+        </div>
+
+        <div id="routerOuter" class="flex flex-col gap-3 lg:gap-4">
+            {% if enable_copy_keys %}
+                {% set sl = servers_list or [] %}
+                {% if sl %}
+                <div id="routerServerList" class="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-x-5 lg:gap-y-4">
+                {% for server in sl %}
+                <div class="server-card animate-card relative p-3.5 lg:p-4 bg-light-card dark:bg-card-bg backdrop-blur-xl rounded-2xl border border-light-border dark:border-card-border shadow-sm flex items-center gap-3.5 lg:gap-4 transition-all duration-300 lg:h-full lg:hover:border-zinc-400/50 lg:dark:hover:border-white/[0.2] lg:hover:shadow-md lg:hover:-translate-y-px lg:min-h-[5.75rem]" data-key="{{ server.key|e }}" style="animation-delay: {{ loop.index0 * 0.05 + 0.05 }}s;">
+                    
+                    <div class="w-12 h-12 lg:w-[3.25rem] lg:h-[3.25rem] shrink-0 flex items-center justify-center text-[24px] lg:text-[26px] bg-black/5 dark:bg-white/5 rounded-[14px] lg:rounded-2xl border border-black/5 dark:border-white/5 shadow-inner flag-emoji relative overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent dark:from-white/10 dark:to-transparent opacity-50"></div>
+                        <span class="relative z-10 drop-shadow-sm">🌍</span>
+                    </div>
+
+                    <div class="flex-1 min-w-0 py-0.5">
+                        <div class="server-name text-[15px] lg:text-[15.5px] font-bold text-zinc-900 dark:text-white truncate lg:whitespace-normal lg:line-clamp-2 leading-tight tracking-tight">{{ server.name }}</div>
+                        <div class="flex items-center gap-1.5 mt-1.5">
+                            <!-- Бэдж протокола теперь будет подсвечиваться через JS -->
+                            <span class="protocol-badge px-1.5 py-0.5 rounded-[6px] bg-zinc-200 dark:bg-zinc-800 text-[9px] font-mono font-black text-zinc-600 dark:text-zinc-400 tracking-widest uppercase border border-transparent">ROUTER</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onpointerdown="haptic('light')" onclick="checkPing(this)" title="Проверить сетевой отклик" aria-label="Проверить сетевой отклик сервера" class="ping-btn relative flex items-center justify-center h-9 px-3 min-w-[36px] rounded-xl bg-zinc-100 dark:bg-white/5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-white/10 active:scale-90 transition-all duration-300 overflow-hidden">
+                            <svg class="ping-icon w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                            </svg>
+                            <div class="ping-result hidden items-center gap-1.5 whitespace-nowrap">
+                                <div class="ping-dot w-2 h-2 rounded-full bg-current shadow-[0_0_8px_currentColor]"></div>
+                                <span class="ping-text text-[12px] font-bold font-mono tracking-tight text-zinc-800 dark:text-white"></span>
+                            </div>
+                        </button>
+
+                        <button onpointerdown="haptic('selection')" onclick="copyRouterKey(this)" aria-label="Скопировать ключ роутера" class="copy-btn flex items-center justify-center h-9 w-9 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 dark:hover:bg-blue-500/30 active:scale-90 transition-all duration-300">
+                            <svg class="copy-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                </div>
+                {% endfor %}
+                </div>
+                {% else %}
+                <div class="py-14 lg:py-16 px-4 lg:px-8 text-center animate-card rounded-2xl lg:rounded-[1.25rem] bg-zinc-100/55 dark:bg-white/[0.04] border border-dashed border-zinc-300/60 dark:border-white/[0.1]">
+                    <div class="w-16 h-16 mx-auto bg-zinc-100 dark:bg-white/5 rounded-2xl flex items-center justify-center mb-4 text-3xl">📭</div>
+                    <p class="text-[15px] font-bold text-zinc-900 dark:text-white">Список пуст</p>
+                    <p class="text-[13px] text-zinc-500 dark:text-zinc-400 mt-1">Доступных серверов пока нет</p>
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="py-14 lg:py-16 px-4 lg:px-8 text-center animate-card bg-light-card dark:bg-card-bg rounded-3xl border border-light-border dark:border-card-border backdrop-blur-xl lg:rounded-[1.5rem] lg:shadow-sm">
+                    <div class="w-16 h-16 mx-auto bg-red-500/10 text-red-500 rounded-2xl flex items-center justify-center mb-4 text-3xl">🔒</div>
+                    <p class="text-[15px] font-bold text-zinc-900 dark:text-white">Доступ закрыт</p>
+                    <p class="text-[13px] text-zinc-500 dark:text-zinc-400 mt-1">Выдача ключей отключена</p>
+                </div>
+            {% endif %}
+        </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Улучшенный модуль Haptics ---
+        function haptic(style = 'light') {
+            try { 
+                const tg = window.Telegram?.WebApp?.HapticFeedback;
+                if (!tg) return;
+                
+                // Поддержка разных типов вибрации для премиум-ощущений
+                if (['light', 'medium', 'heavy', 'rigid', 'soft'].includes(style)) {
+                    tg.impactOccurred(style);
+                } else if (['error', 'success', 'warning'].includes(style)) {
+                    tg.notificationOccurred(style);
+                } else if (style === 'selection') {
+                    tg.selectionChanged();
+                }
+            } catch (e) {}
+        }
+
+        // --- Цвета протоколов ---
+        function getProtocolStyles(proto) {
+            const p = proto.toUpperCase();
+            switch(p) {
+                case 'VLESS': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20 shadow-[0_0_8px_rgba(168,85,247,0.15)]';
+                case 'VMESS': return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 shadow-[0_0_8px_rgba(6,182,212,0.15)]';
+                case 'TROJAN': return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 shadow-[0_0_8px_rgba(244,63,94,0.15)]';
+                case 'SHADOWSOCKS':
+                case 'SS': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 shadow-[0_0_8px_rgba(59,130,246,0.15)]';
+                case 'WIREGUARD':
+                case 'WG': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.15)]';
+                default: return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 shadow-[0_0_8px_rgba(99,102,241,0.15)]';
+            }
+        }
+
+        // --- Заглушки: локальные адреса ---
+        function isStubOutboundHost(host) {
+            if (!host || typeof host !== 'string') return true;
+            let h = host.trim().replace(/^\[|\]$/g, '').toLowerCase();
+            if (!h || h === 'localhost' || h === '0.0.0.0' || h === '::' || h === '::1') return true;
+            if (h.startsWith('127.') || h.startsWith('10.') || h.startsWith('192.168.') || h.startsWith('169.254.')) return true;
+            const m = h.match(/^172\.(\d+)\./);
+            if (m) {
+                const n = parseInt(m[1], 10);
+                if (n >= 16 && n <= 31) return true;
+            }
+            if (h.startsWith('fe80:')) return true;
+            return false;
+        }
+
+        function parseHostsFromKey(key) {
+            let mainHost = '';
+            let sniHost = '';
+            try {
+                const url = new URL(key.replace(/^[a-zA-Z0-9]+:\/\//, 'http://'));
+                mainHost = url.hostname || '';
+                sniHost = (url.searchParams.get('sni') || url.searchParams.get('host') || '').trim();
+            } catch (e) {
+                const fb = key.match(/@([^:/?#\]]+|\[[^\]]+\])/);
+                if (fb) mainHost = fb[1].replace(/^\[|\]$/g, '');
+            }
+            const pingHost = (mainHost || '').trim();
+            return { mainHost: (mainHost || '').trim(), sniHost, pingHost };
+        }
+
+        async function measurePingMs(host) {
+            const start = performance.now();
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2500);
+                await fetch(`https://${host}/`, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+                clearTimeout(timeoutId);
+            } catch (e) { /* ok */ }
+            const raw = Math.round(performance.now() - start);
+            if (raw >= 2400) return { sortKey: 999999, label: 'ERR', err: true };
+            const displayPing = Math.max(8, Math.floor(raw * 0.8));
+            return { sortKey: displayPing, label: displayPing + 'ms', err: false };
+        }
+
+        function applyPingToButton(btn, r) {
+            if (!btn || !r) return;
+            const icon = btn.querySelector('.ping-icon');
+            const resultWrapper = btn.querySelector('.ping-result');
+            const dot = btn.querySelector('.ping-dot');
+            const textEl = btn.querySelector('.ping-text');
+            btn.classList.remove('ping-loading-ring', 'pointer-events-none');
+            if (icon) {
+                icon.style.animation = '';
+                icon.classList.add('hidden');
+            }
+            resultWrapper?.classList.remove('hidden');
+            resultWrapper?.classList.add('flex');
+            
+            if (r.err) {
+                if (textEl) textEl.textContent = 'ERR';
+                if (dot) dot.className = 'ping-dot w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]';
+                haptic('error');
+                return;
+            }
+            if (textEl) textEl.textContent = r.label;
+            const dp = r.sortKey;
+            if (!dot) return;
+            if (dp < 120) {
+                dot.className = 'ping-dot w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]';
+            } else if (dp < 250) {
+                dot.className = 'ping-dot w-2 h-2 rounded-full bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.8)]';
+            } else {
+                dot.className = 'ping-dot w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]';
+            }
+            haptic('success');
+        }
+
+
+        function animateReorder(container, orderedCards) {
+            if (!container || !orderedCards || !orderedCards.length) return;
+
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                orderedCards.forEach((card) => container.appendChild(card));
+                return;
+            }
+
+            const firstPositions = new Map(
+                orderedCards.map((card) => [card, card.getBoundingClientRect()])
+            );
+
+            orderedCards.forEach((card) => container.appendChild(card));
+
+            orderedCards.forEach((card) => {
+                const first = firstPositions.get(card);
+                const last = card.getBoundingClientRect();
+                if (!first) return;
+
+                const dx = first.left - last.left;
+                const dy = first.top - last.top;
+
+                if (!dx && !dy) return;
+
+                card.animate(
+                    [
+                        { transform: `translate(${dx}px, ${dy}px)` },
+                        { transform: 'translate(0, 0)' }
+                    ],
+                    {
+                        duration: 420,
+                        easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+                    }
+                );
+            });
+        }
+
+        let routerSortInProgress = false;
+
+        async function sortAllByPing() {
+            const list = document.getElementById('routerServerList');
+            if (!list || routerSortInProgress) return;
+            const cards = [...list.querySelectorAll('.server-card')].filter((r) => {
+                const st = window.getComputedStyle(r);
+                if (st.display === 'none') return false;
+                return !!(r.getAttribute('data-host') || '').trim();
+            });
+            if (cards.length < 2) {
+                showToast('Нужно минимум 2 сервера', 'error');
+                return;
+            }
+            routerSortInProgress = true;
+            const headBtn = document.getElementById('btnSortPing');
+            if (headBtn) {
+                headBtn.disabled = true;
+                headBtn.textContent = '…';
+                headBtn.classList.add('opacity-60', 'pointer-events-none', 'scale-95');
+            }
+
+            const pairs = await Promise.all(
+                cards.map(async (row) => {
+                    const host = row.getAttribute('data-host');
+                    const pingBtn = row.querySelector('.ping-btn');
+                    const r = await measurePingMs(host);
+                    if (pingBtn) applyPingToButton(pingBtn, r);
+                    return { row, sortKey: r.sortKey };
+                })
+            );
+            pairs.sort((a, b) => a.sortKey - b.sortKey);
+            animateReorder(list, pairs.map(({ row }) => row));
+
+            routerSortInProgress = false;
+            if (headBtn) {
+                headBtn.disabled = false;
+                headBtn.textContent = 'По пингу';
+                headBtn.classList.remove('opacity-60', 'pointer-events-none', 'scale-95');
+            }
+            showToast('Готово', 'success');
+        }
+
+        function extractLeadingEmoji(str) {
+            const t = (str || '').trim();
+            if (!t) return { lead: '', rest: '' };
+            let mm = t.match(/^(\p{Regional_Indicator}{2})/u);
+            if (mm) return { lead: mm[1], rest: t.slice(mm[1].length).trimStart() };
+            mm = t.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u);
+            if (mm) return { lead: mm[1], rest: t.slice(mm[1].length).trimStart() };
+            return { lead: '', rest: t };
+        }
+
+        function renderLeadingEmojiTwemoji(span) {
+            if (!span || typeof twemoji === 'undefined') return;
+            try { twemoji.parse(span, { folder: 'svg', ext: '.svg' }); } catch (e) {}
+        }
+
+
+        function showEmptyIfNoVisibleServers() {
+            const list = document.getElementById('routerServerList');
+            if (!list) return;
+
+            const visible = [...list.querySelectorAll('.server-card')]
+                .some((card) => card.style.display !== 'none');
+
+            const oldEmpty = document.getElementById('routerGeneratedEmptyState');
+
+            if (visible) {
+                if (oldEmpty) oldEmpty.remove();
+                return;
+            }
+
+            if (oldEmpty) return;
+
+            list.insertAdjacentHTML('afterend', `
+                <div id="routerGeneratedEmptyState" class="py-14 lg:py-16 px-4 lg:px-8 text-center animate-card rounded-2xl lg:rounded-[1.25rem] bg-zinc-100/55 dark:bg-white/[0.04] border border-dashed border-zinc-300/60 dark:border-white/[0.1]">
+                    <div class="w-16 h-16 mx-auto bg-zinc-100 dark:bg-white/5 rounded-2xl flex items-center justify-center mb-4 text-3xl">📭</div>
+                    <p class="text-[15px] font-bold text-zinc-900 dark:text-white">Серверы недоступны</p>
+                    <p class="text-[13px] text-zinc-500 dark:text-zinc-400 mt-1">Нет подходящих адресов для роутера</p>
+                </div>
+            `);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.server-card').forEach((row) => {
+                const key = row.getAttribute('data-key') || '';
+                const nameEl = row.querySelector('.server-name');
+                const protoBadge = row.querySelector('.protocol-badge');
+                const emojiContainer = row.querySelector('.flag-emoji span');
+                const pingBtn = row.querySelector('.ping-btn');
+
+                const protoMatch = key.match(/^([a-zA-Z0-9]+):\/\//);
+                if (protoMatch && protoBadge) {
+                    const pName = protoMatch[1].toUpperCase();
+                    protoBadge.innerText = pName;
+                    // Подсветка протокола
+                    protoBadge.className = `protocol-badge px-1.5 py-0.5 rounded-[6px] text-[9.5px] font-mono font-black tracking-widest uppercase border transition-all duration-300 ${getProtocolStyles(pName)}`;
+                }
+
+                const { mainHost, pingHost } = parseHostsFromKey(key);
+
+                if (isStubOutboundHost(mainHost)) {
+                    row.style.display = 'none';
+                    return;
+                }
+
+                if (pingHost) {
+                    row.setAttribute('data-host', pingHost);
+                } else if (pingBtn) {
+                    pingBtn.style.display = 'none';
+                }
+
+                let text = (nameEl && nameEl.innerText) ? nameEl.innerText.trim() : '';
+                const { lead: emojiLead, rest: nameRest } = extractLeadingEmoji(text);
+                if (emojiLead && emojiContainer) {
+                    emojiContainer.textContent = emojiLead;
+                    renderLeadingEmojiTwemoji(emojiContainer);
+                    if (nameEl) nameEl.textContent = nameRest;
+                } else if (emojiContainer && typeof twemoji !== 'undefined') {
+                    renderLeadingEmojiTwemoji(emojiContainer);
+                }
+            });
+
+            showEmptyIfNoVisibleServers();
+        });
+
+        async function checkPing(btn) {
+            const row = btn.closest('.server-card');
+            const host = row && row.getAttribute('data-host');
+            const icon = btn.querySelector('.ping-icon');
+            const resultWrapper = btn.querySelector('.ping-result');
+
+            if (!host) return showToast('Адрес не найден', 'error');
+
+            btn.classList.add('ping-loading-ring', 'pointer-events-none');
+            if (icon) {
+                icon.classList.remove('hidden');
+                icon.style.animation = 'heartbeat 0.9s ease-in-out infinite';
+            }
+            if (resultWrapper) resultWrapper.classList.add('hidden');
+
+            const r = await measurePingMs(host);
+            applyPingToButton(btn, r);
+        }
+
+        function showToast(text, type = 'success', options) {
+            options = options || {};
+            const subtitle = options.subtitle || '';
+            const duration = typeof options.duration === 'number' ? options.duration : subtitle ? 4200 : 2600;
+
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            
+            // Исправлен баг: переменная el не была объявлена
+            const el = document.createElement('div');
+
+            const tone = type === 'error'
+                    ? 'bg-red-950/90 text-red-100 border-red-500/35'
+                    : 'bg-zinc-900/92 text-white border-white/12';
+
+            el.className = 'toast-bubble px-4 py-3.5 rounded-2xl flex flex-col items-stretch shadow-2xl backdrop-blur-xl border ' + tone;
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(22px) scale(0.94)';
+
+            if (subtitle) {
+                const title = document.createElement('div');
+                title.className = 'text-[15px] font-bold leading-snug text-center';
+                title.textContent = text;
+                const sub = document.createElement('div');
+                sub.className = 'text-[11.5px] font-semibold leading-relaxed mt-2 text-center opacity-90 tracking-tight text-zinc-200';
+                sub.textContent = subtitle;
+                el.appendChild(title);
+                el.appendChild(sub);
+            } else {
+                const row = document.createElement('div');
+                row.className = 'text-[14px] font-bold leading-snug text-center';
+                row.textContent = text;
+                el.appendChild(row);
+            }
+
+            container.appendChild(el);
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    el.style.opacity = '1';
+                    el.style.transform = 'translateY(0) scale(1)';
+                });
+            });
+
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(14px) scale(0.96)';
+                setTimeout(() => el.remove(), 420);
+            }, duration);
+        }
+
+        function copyRouterKey(btn) {
+            if (!btn || btn.dataset.busy === '1') return;
+            btn.dataset.busy = '1';
+
+            const row = btn.closest('.server-card');
+            const key = row && row.getAttribute('data-key');
+
+            if (!key) {
+                btn.dataset.busy = '0';
+                showToast('Ключ не найден', 'error');
+                haptic('error');
+                return;
+            }
+
+            const originalHTML = btn.innerHTML;
+            const originalClasses = btn.className;
+
+            const reset = () => {
+                btn.className = originalClasses;
+                btn.innerHTML = originalHTML;
+                btn.dataset.busy = '0';
+                if (row) row.classList.remove('card-copied-glow');
+            };
+
+            const successAction = () => {
+                haptic('success');
+                showToast('Ключ скопирован');
+
+                btn.className = 'copy-btn flex items-center justify-center h-9 w-9 rounded-xl bg-green-500 text-white shadow-[0_0_15px_rgba(34,197,94,0.5)] transition-all duration-300 transform scale-105';
+                btn.innerHTML = '<svg class="w-5 h-5 icon-pop" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>';
+
+                if (row) {
+                    row.classList.add('card-copied-glow', 'transition-all', 'duration-300');
+                }
+
+                setTimeout(reset, 1800);
+            };
+
+            const failAction = () => {
+                btn.dataset.busy = '0';
+                if (typeof failCallback === 'function') failCallback();
+                else {
+                    showToast('Ошибка копирования', 'error');
+                    haptic('error');
+                }
+            };
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(key)
+                    .then(successAction)
+                    .catch(() => fallbackCopy(key, successAction, failAction));
+            } else {
+                fallbackCopy(key, successAction, failAction);
+            }
+        }
+
+        function fallbackCopy(key, successCallback, failCallback) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = key;
+                ta.style.cssText = 'position:fixed;opacity:0;';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                successCallback();
+            } catch (e) {
+                if (typeof failCallback === 'function') failCallback();
+                else {
+                    showToast('Ошибка копирования', 'error');
+                    haptic('error');
+                }
+            }
+        }
+
+        function applyTelegramChromeDark() {
+            try {
+                const tg = window.Telegram?.WebApp;
+                if (tg) {
+                    tg.setHeaderColor('#09090b');
+                    tg.setBackgroundColor('#09090b');
+                }
+            } catch (e) {}
+        }
+
+        document.documentElement.classList.add('dark');
+        applyTelegramChromeDark();
+
+        try {
+            if (window.Telegram?.WebApp) {
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+            }
+        } catch (e) {}
+    </script>
+</body>
+</html>

@@ -1,0 +1,837 @@
+{% extends "base.html" %}
+{% block title %}Remnawave — настройки · {{ super() }}{% endblock %}
+
+{% macro row_val(key) %}{{ settings_by_key[key].value if key in settings_by_key else '' }}{% endmacro %}
+{% macro row_desc(key) %}{{ settings_by_key[key].description if key in settings_by_key else '' }}{% endmacro %}
+
+{% block content %}
+<div class="tw-anim space-y-4 min-w-0 max-w-full">
+
+  <div class="min-w-0 pt-2">
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2.5 flex-wrap">
+      <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg shrink-0"
+            style="background: rgba(59, 130, 246, 0.15); color: #3b82f6;">
+        <i data-lucide="globe-2" class="w-4 h-4"></i>
+      </span>
+      Remnawave — настройки
+    </h1>
+    <p class="text-[13px] tw-text-muted2 mt-1 leading-relaxed">
+      Подключение к панели, вебхуки NO&nbsp;LIMIT, JSON-подписка и умная балансировка.
+    </p>
+  </div>
+
+  {% with active='settings' %}
+  {% include 'remnawave_subnav.html' %}
+  {% endwith %}
+
+  <form method="post" class="space-y-4" id="rw-settings-form">
+    <div class="flex flex-wrap items-center justify-end gap-2 pb-1 border-b border-[rgb(var(--admin-border))]/60">
+      <a href="{{ url_for('admin.remnawave_dashboard') }}" class="tw-btn tw-btn-secondary tw-btn-sm">Отмена</a>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+        Сохранить
+      </button>
+    </div>
+
+    {# ── Табы ── #}
+    <div class="sp-tabs-wrap">
+      <div class="sp-tabs" id="rw-settings-tabs">
+        <div class="sp-tab active" data-tab="connection" role="button" tabindex="0">
+          <i data-lucide="plug" class="w-4 h-4"></i> Подключение
+        </div>
+        <div class="sp-tab" data-tab="webhooks" role="button" tabindex="0">
+          <i data-lucide="link-2" class="w-4 h-4"></i> Вебхуки и NO&nbsp;LIMIT
+        </div>
+        <div class="sp-tab" data-tab="json" role="button" tabindex="0">
+          <i data-lucide="braces" class="w-4 h-4"></i> JSON подписка
+        </div>
+      </div>
+    </div>
+
+    {# ── Таб 1: Подключение ── #}
+    <div class="sp-pane active space-y-4" data-pane="connection">
+
+      <div class="tw-card overflow-hidden">
+        <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))]">
+          <h2 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="plug" class="w-4 h-4 tw-text-muted2"></i>
+            Подключение к панели
+          </h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Включить интеграцию с панелью Remnawave">
+              <input type="checkbox" id="rw-remnawave-enabled" name="remnawave_enabled" value="1"
+                     {% if row_val('remnawave_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <label for="rw-remnawave-enabled" class="sp-toggle-title">Включить Remnawave</label>
+              <div class="sp-toggle-hint">{{ row_desc('remnawave_enabled') }}</div>
+            </div>
+          </div>
+          <div>
+            <label for="remnawave_base_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Base URL</label>
+            <p class="text-[12px] tw-text-muted2 mb-1.5">{{ row_desc('remnawave_base_url') }}</p>
+            <input type="text" id="remnawave_base_url" name="remnawave_base_url" autocomplete="off"
+                   value="{{ row_val('remnawave_base_url') }}"
+                   placeholder="https://panel.example.com"
+                   class="tw-input">
+          </div>
+          <div>
+            <label for="remnawave_api_token" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">API Token</label>
+            <p class="text-[12px] tw-text-muted2 mb-1.5">{{ row_desc('remnawave_api_token') }}</p>
+            <div class="flex gap-2">
+              <input type="password" id="remnawave_api_token" name="remnawave_api_token" autocomplete="new-password"
+                     value="{{ row_val('remnawave_api_token') }}"
+                     class="tw-input flex-1 min-w-0" placeholder="JWT">
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm shrink-0" onclick="rwTogglePw('remnawave_api_token')" title="Показать / скрыть">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tw-card overflow-hidden">
+        <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))]">
+          <h2 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="users-round" class="w-4 h-4 tw-text-muted2"></i>
+            Новые пользователи и миграция
+          </h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <div>
+            <label for="remnawave_default_internal_squad_uuid" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">UUID внутреннего сквада</label>
+            <p class="text-[12px] tw-text-muted2 mb-1.5">{{ row_desc('remnawave_default_internal_squad_uuid') }}</p>
+            <input type="text" id="remnawave_default_internal_squad_uuid" name="remnawave_default_internal_squad_uuid"
+                   value="{{ row_val('remnawave_default_internal_squad_uuid') }}" class="tw-input font-mono text-[13px]">
+          </div>
+          <div>
+            <label for="remnawave_default_traffic_limit_gb" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Лимит трафика по умолчанию (ГБ)</label>
+            <p class="text-[12px] tw-text-muted2 mb-1.5">{{ row_desc('remnawave_default_traffic_limit_gb') }}</p>
+            <input type="number" id="remnawave_default_traffic_limit_gb" name="remnawave_default_traffic_limit_gb"
+                   min="0" step="1" value="{{ row_val('remnawave_default_traffic_limit_gb') }}" class="tw-input max-w-[200px]">
+            <p class="text-[11px] tw-text-subtle2 mt-1">0 — безлимит по данным лимита в панели.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tw-card overflow-hidden">
+        <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))]">
+          <h2 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 tw-text-muted2"></i>
+            Доп возможности
+          </h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Продление трафика отдельной опцией">
+              <input type="checkbox" id="rw-traffic-renewal" name="traffic_renewal_enabled" value="1"
+                     {% if row_val('traffic_renewal_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <label for="rw-traffic-renewal" class="sp-toggle-title">Продление трафика (отдельная опция)</label>
+              <div class="sp-toggle-hint">{{ row_desc('traffic_renewal_enabled') }}</div>
+            </div>
+          </div>
+
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Один ключ на одинаковое имя в текстовой подписке">
+              <input type="checkbox" id="rw-sub-link-dedup" name="sub_link_dedup_enabled" value="1"
+                     {% if row_val('sub_link_dedup_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <div class="inline-flex items-center gap-1.5 flex-wrap">
+                <label for="rw-sub-link-dedup" class="sp-toggle-title">Балансировка текстовых ключей (один ключ на имя)</label>
+                {% with info_key='sub_link_dedup', info_label='балансировка текстовых ключей' %}
+                {% include '_partials/admin_info_icon.html' %}
+                {% endwith %}
+              </div>
+              <div class="sp-toggle-hint">{{ row_desc('sub_link_dedup_enabled') }}</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl {% if row_val('sub_link_dedup_enabled') not in ('1','true','yes','on') %}opacity-50{% endif %}">
+            <div>
+              <label for="sub_link_dedup_mode" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Режим выбора</label>
+              <select id="sub_link_dedup_mode" name="sub_link_dedup_mode" class="tw-input max-w-full">
+                {% set dedup_mode = row_val('sub_link_dedup_mode') or 'random' %}
+                <option value="random" {% if dedup_mode == 'random' %}selected{% endif %}>random — случайный при каждой выдаче</option>
+                <option value="online" {% if dedup_mode == 'online' %}selected{% endif %}>online — приоритет менее загруженным</option>
+              </select>
+              <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('sub_link_dedup_mode') }}</p>
+            </div>
+            <div id="sub_link_dedup_online_opts" class="space-y-3 {% if dedup_mode != 'online' %}hidden{% endif %}">
+              <div>
+                <label for="sub_link_dedup_online_threshold" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Порог онлайна на ноде</label>
+                <input type="number" id="sub_link_dedup_online_threshold" name="sub_link_dedup_online_threshold"
+                       min="1" step="1" value="{{ row_val('sub_link_dedup_online_threshold') or '100' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('sub_link_dedup_online_threshold') }}</p>
+              </div>
+              <div>
+                <label for="sub_link_dedup_online_interval_sec" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Интервал опроса (сек)</label>
+                <input type="number" id="sub_link_dedup_online_interval_sec" name="sub_link_dedup_online_interval_sec"
+                       min="30" step="10" value="{{ row_val('sub_link_dedup_online_interval_sec') or '60' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('sub_link_dedup_online_interval_sec') }}</p>
+              </div>
+            </div>
+          </div>
+
+          {% if row_val('sub_link_dedup_enabled') in ('1','true','yes','on') %}
+          <div class="pt-2">
+            <a href="{{ url_for('admin.remnawave_host_balancer_page') }}"
+               class="tw-btn tw-btn-secondary tw-btn-sm gap-1.5">
+              <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
+              Балансировка хостов
+            </a>
+            <p class="text-[11px] tw-text-subtle2 mt-2 m-0">Управление пулами имён в Remnawave для текстовой подписки.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+
+    {# ── Таб 2: Вебхуки ── #}
+    <div class="sp-pane space-y-4" data-pane="webhooks">
+
+      <div class="tw-card overflow-hidden">
+        <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))]">
+          <h2 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="link-2" class="w-4 h-4 tw-text-muted2"></i>
+            Вебхуки и NO&nbsp;LIMIT
+          </h2>
+        </div>
+        <div class="p-4 space-y-4">
+
+          <div class="tw-card p-4 flex gap-3.5" style="border-left: 4px solid #ea580c; background: linear-gradient(135deg, rgba(234, 88, 12, 0.07) 0%, rgba(234, 88, 12, 0.02) 100%);">
+            <div class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center" style="background: rgba(234, 88, 12, 0.18); color: #c2410c;">
+              <i data-lucide="shield-alert" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0 space-y-2">
+              <p class="text-[14px] font-semibold tw-text-base2 leading-snug">Используйте этот блок только если условия ниже выполняются</p>
+              <ul class="text-[13px] tw-text-muted2 space-y-1.5 list-disc pl-4 marker:text-orange-500">
+                <li>На сервере Remnawave уже заданы <span class="tw-kbd text-[11px]">WEBHOOK_ENABLED=true</span> и корректный <span class="tw-kbd text-[11px]">WEBHOOK_URL</span> на ваш бот.</li>
+                <li>Endpoint доступен из интернета (HTTPS, без блокировок), секрет совпадает с полем ниже.</li>
+                <li>Вам нужны события исчерпания трафика: уведомление пользователю и учёт в аналитике — или полный сценарий NO&nbsp;LIMIT+ с переносом в отдельный squad.</li>
+              </ul>
+              <p class="text-[12px] tw-text-muted2 pt-2 border-t border-orange-500/20 mt-2 leading-relaxed">
+                <strong class="tw-text-base2">Режим работы зависит от поля «Squad при исчерпании трафика»:</strong><br>
+                <span class="inline-block mt-1.5">• <strong>Пусто</strong> — вебхук в режиме <strong>уведомлений</strong>: сообщение об окончании трафика и данные для аналитики, без смены squad и без NO&nbsp;LIMIT.</span><br>
+                <span class="inline-block mt-1">• <strong>Заполнено</strong> — активируется режим <strong>NO&nbsp;LIMIT+</strong>: сброс лимита, перенос пользователя в указанный squad.</span>
+              </p>
+              <p class="text-[12px] tw-text-subtle2 pt-2 border-t border-orange-500/20 mt-2">
+                Если вебхуки не настроены на стороне панели или вы не используете этот сценарий — оставьте «Принимать вебхуки» выключенным, иначе возможны лишние запросы и путаница в логах.
+              </p>
+            </div>
+          </div>
+
+          <div class="tw-card p-3.5 border-[rgb(var(--admin-border))]">
+            <p class="text-[12px] font-semibold tw-text-base2 mb-2 flex items-center gap-2">
+              <i data-lucide="server" class="w-4 h-4 tw-text-muted2"></i>
+              Настройка на стороне Remnawave (<code class="tw-kbd text-[11px]">.env</code>)
+            </p>
+            <pre class="tw-kbd text-[11px] whitespace-pre-wrap break-all p-3 rounded-lg border border-[rgb(var(--admin-border))] bg-[var(--admin-bg-soft)] leading-relaxed">WEBHOOK_ENABLED=true
+WEBHOOK_URL={% if connect_page_url %}{{ connect_page_url }}/remnawave/webhook{% else %}https://ваш-домен/remnawave/webhook{% endif %}</pre>
+            <p class="text-[12px] tw-text-muted2 mt-2">
+              Домен берётся из <span class="tw-kbd text-[11px]">connect_page_url</span> в Основных настройках + путь <span class="tw-kbd text-[11px]">/remnawave/webhook</span>.
+            </p>
+          </div>
+
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Принимать HTTP-вебхуки от панели Remnawave">
+              <input type="checkbox" id="rw-webhook-enabled" name="remnawave_webhook_enabled" value="1"
+                     {% if row_val('remnawave_webhook_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <label for="rw-webhook-enabled" class="sp-toggle-title">Принимать вебхуки от Remnawave</label>
+              <div class="sp-toggle-hint">{{ row_desc('remnawave_webhook_enabled') }}</div>
+            </div>
+          </div>
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Проверять доступность панели Remnawave и уведомлять администратора">
+              <input type="checkbox" id="rw-health-enabled" name="remnawave_health_check_enabled" value="1"
+                     {% if row_val('remnawave_health_check_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <label for="rw-health-enabled" class="sp-toggle-title">Проверка доступности панели</label>
+              <div class="sp-toggle-hint">Каждые 10 минут (3 попытки), уведомляет администратора при потере связи с панелью Remnawave.</div>
+            </div>
+          </div>
+          <div>
+            <label for="remnawave_webhook_secret" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Секрет вебхука</label>
+            <p class="text-[12px] tw-text-muted2 mb-1.5">{{ row_desc('remnawave_webhook_secret') }}</p>
+            <div class="flex gap-2">
+              <input type="password" id="remnawave_webhook_secret" name="remnawave_webhook_secret" autocomplete="new-password"
+                     value="{{ row_val('remnawave_webhook_secret') }}" class="tw-input flex-1 min-w-0">
+              <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm shrink-0" onclick="rwTogglePw('remnawave_webhook_secret')">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label for="remnawave_traffic_exhausted_squad_uuid" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Squad при исчерпании трафика</label>
+            <p class="text-[12px] tw-text-muted2 mb-1.5">{{ row_desc('remnawave_traffic_exhausted_squad_uuid') }}</p>
+            <input type="text" id="remnawave_traffic_exhausted_squad_uuid" name="remnawave_traffic_exhausted_squad_uuid"
+                   value="{{ row_val('remnawave_traffic_exhausted_squad_uuid') }}"
+                   placeholder="UUID или несколько через запятую"
+                   class="tw-input font-mono text-[13px]">
+            <p class="text-[11px] tw-text-subtle2 mt-1">
+              Пусто — режим уведомлений (сообщение об окончании трафика и аналитика). Заполнено — режим NO&nbsp;LIMIT+ (безлимит и перенос в squad).
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    {# ── Таб 3: JSON подписка ── #}
+    <div class="sp-pane space-y-4" data-pane="json">
+
+      <div class="tw-card overflow-hidden">
+        <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))]">
+          <h2 class="text-[13px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="braces" class="w-4 h-4 tw-text-muted2"></i>
+            JSON подписка
+          </h2>
+        </div>
+        <div class="p-4 space-y-4">
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Добавлять Xray JSON в ответ API подписки">
+              <input type="checkbox" id="rw-xray-json-enabled" name="xray_json_enabled" value="1"
+                     {% if row_val('xray_json_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <label for="rw-xray-json-enabled" class="sp-toggle-title">Активирует подписку JSON</label>
+              <div class="sp-toggle-hint">{{ row_desc('xray_json_enabled') }}</div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.35)] p-3.5 space-y-3">
+            <div>
+              <p class="text-[12px] font-semibold tw-text-base2 m-0">Клиенты для JSON-подписки</p>
+              <p class="text-[11px] tw-text-subtle2 mt-1 mb-0">
+                Поле <span class="tw-kbd text-[11px]">xrayConfig</span> отдаётся только выбранным приложениям (по User-Agent).
+                Снятые галочки получают plain-ссылки <code>vless://</code>. Перезапуск xuiweb не нужен.
+              </p>
+            </div>
+            <div class="space-y-2">
+              <div class="sp-toggle-row">
+                <label class="tw-switch" title="JSON для Happ">
+                  <input type="checkbox" id="rw-xray-json-client-happ" name="xray_json_client_happ" value="1"
+                         {% if row_val('xray_json_client_happ') != '0' %}checked{% endif %}>
+                  <span class="track"></span>
+                  <span class="thumb"></span>
+                </label>
+                <div class="sp-toggle-text">
+                  <label for="rw-xray-json-client-happ" class="sp-toggle-title">Happ</label>
+                  <div class="sp-toggle-hint">{{ row_desc('xray_json_client_happ') }}</div>
+                </div>
+              </div>
+              <div class="sp-toggle-row">
+                <label class="tw-switch" title="JSON для INCY">
+                  <input type="checkbox" id="rw-xray-json-client-incy" name="xray_json_client_incy" value="1"
+                         {% if row_val('xray_json_client_incy') != '0' %}checked{% endif %}>
+                  <span class="track"></span>
+                  <span class="thumb"></span>
+                </label>
+                <div class="sp-toggle-text">
+                  <label for="rw-xray-json-client-incy" class="sp-toggle-title">INCY</label>
+                  <div class="sp-toggle-hint">{{ row_desc('xray_json_client_incy') }}</div>
+                </div>
+              </div>
+              <div class="sp-toggle-row">
+                <label class="tw-switch" title="JSON для v2raytun">
+                  <input type="checkbox" id="rw-xray-json-client-v2raytun" name="xray_json_client_v2raytun" value="1"
+                         {% if row_val('xray_json_client_v2raytun') != '0' %}checked{% endif %}>
+                  <span class="track"></span>
+                  <span class="thumb"></span>
+                </label>
+                <div class="sp-toggle-text">
+                  <label for="rw-xray-json-client-v2raytun" class="sp-toggle-title">v2raytun</label>
+                  <div class="sp-toggle-hint">{{ row_desc('xray_json_client_v2raytun') }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sp-toggle-row">
+            <label class="tw-switch" title="Умная балансировка Xray JSON для Happ / v2raytun / INCY">
+              <input type="checkbox" id="rw-xray-balancer-enabled" name="xray_balancer_enabled" value="1"
+                     {% if row_val('xray_balancer_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="thumb"></span>
+            </label>
+            <div class="sp-toggle-text">
+              <label for="rw-xray-balancer-enabled" class="sp-toggle-title">Умная балансировка</label>
+              <div class="sp-toggle-hint">{{ row_desc('xray_balancer_enabled') }}</div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-amber-500/35 overflow-hidden" style="background: rgba(245, 158, 11, 0.06);">
+            <div class="px-3.5 py-2.5 border-b border-amber-500/25 flex items-center gap-2">
+              <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400"></i>
+              <span class="text-[12px] font-semibold tw-text-base2">Экспериментальная функция</span>
+            </div>
+            <div class="px-3.5 py-3 text-[12px] tw-text-base2 leading-relaxed space-y-2">
+              <p class="m-0">
+                Умная балансировка находится в стадии разработки: поведение может меняться между версиями,
+                отдельные сценарии (группы стран, AUTO, LTE, failover) ещё требуют доработки и тестирования на вашей инфраструктуре.
+              </p>
+              <p class="m-0 tw-text-muted2">
+                Перед включением в продакшене проверьте подписку на целевых клиентах (Happ, INCY, v2raytun).
+                При сбоях отключите переключатель — клиенты получат обычные ссылки из Remnawave без пересборки JSON.
+              </p>
+              <table class="w-full text-[11px] border-collapse mt-1">
+                <tbody>
+                  <tr class="border-t border-amber-500/20">
+                    <td class="py-2 pr-3 align-top tw-text-subtle2 font-medium whitespace-nowrap w-[38%]">Статус</td>
+                    <td class="py-2 align-top">Экспериментально — не гарантируется стабильная работа во всех конфигурациях</td>
+                  </tr>
+                  <tr class="border-t border-amber-500/20">
+                    <td class="py-2 pr-3 align-top tw-text-subtle2 font-medium whitespace-nowrap">Зависимости</td>
+                    <td class="py-2 align-top">Включённая JSON-подписка, хосты и имена серверов в Remnawave, совместимый User-Agent клиента</td>
+                  </tr>
+                  <tr class="border-t border-amber-500/20">
+                    <td class="py-2 pr-3 align-top tw-text-subtle2 font-medium whitespace-nowrap">Документация</td>
+                    <td class="py-2 align-top">
+                      Подробное описание принципа взаимодействия (Remnawave → xuiweb → <span class="tw-kbd text-[10px]">xrayConfig</span> → клиент)
+                      готовится; пока ориентируйтесь на
+                      <a href="https://xtls.github.io/ru/config/routing.html#balancerobject" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">документацию Xray balancer</a>
+                      и параметры ниже.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="border-t border-[rgb(var(--admin-border))]/60 pt-4 space-y-4">
+            <p class="text-[12px] font-semibold tw-text-base2 m-0 flex items-center gap-2">
+              <i data-lucide="sliders-horizontal" class="w-4 h-4 tw-text-muted2"></i>
+              Параметры балансировщика
+            </p>
+            <p class="text-[12px] tw-text-subtle2 m-0">
+              Применяются при каждой выдаче подписки (перезапуск xuiweb не нужен).
+              <a href="https://xtls.github.io/ru/config/routing.html#balancerobject" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">Документация Xray balancer</a>.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="sm:col-span-2">
+                <label for="xray_balancer_mode" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Режим балансировки</label>
+                <select id="xray_balancer_mode" name="xray_balancer_mode" class="tw-input max-w-full">
+                  {% set bm = row_val('xray_balancer_mode') or 'full' %}
+                  <option value="full" {% if bm == 'full' %}selected{% endif %}>Полный контроль — AUTO, LTE AUTO и все группы стран</option>
+                  <option value="auto_only" {% if bm == 'auto_only' %}selected{% endif %}>Только AUTO + LTE AUTO — остальные серверы как от Remnawave</option>
+                </select>
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_mode') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="xray_balancer_strategy" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Стратегия балансировки</label>
+                <select id="xray_balancer_strategy" name="xray_balancer_strategy" class="tw-input max-w-full">
+                  {% set strat = row_val('xray_balancer_strategy') or 'leastLoad' %}
+                  <option value="leastLoad" {% if strat == 'leastLoad' %}selected{% endif %}>leastLoad — наименьшая нагрузка / лучший ping</option>
+                  <option value="leastPing" {% if strat == 'leastPing' %}selected{% endif %}>leastPing — минимальная задержка</option>
+                  <option value="random" {% if strat == 'random' %}selected{% endif %}>random — случайный доступный сервер</option>
+                  <option value="roundRobin" {% if strat == 'roundRobin' %}selected{% endif %}>roundRobin — по очереди</option>
+                </select>
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_strategy') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_auto_group_name" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Название группы AUTO</label>
+                <input type="text" id="xray_balancer_auto_group_name" name="xray_balancer_auto_group_name"
+                       value="{{ row_val('xray_balancer_auto_group_name') or '🇪🇺 AUTO | Самые быстрые' }}"
+                       class="tw-input max-w-full" autocomplete="off">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_auto_group_name') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_lte_auto_group_name" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Название группы LTE AUTO</label>
+                <input type="text" id="xray_balancer_lte_auto_group_name" name="xray_balancer_lte_auto_group_name"
+                       value="{{ row_val('xray_balancer_lte_auto_group_name') or '🇷🇺 LTE AUTO | Самые быстрые' }}"
+                       class="tw-input max-w-full" autocomplete="off">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_lte_auto_group_name') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="xray_balancer_lte_triggers" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">LTE-триггеры и baseline</label>
+                <textarea id="xray_balancer_lte_triggers" name="xray_balancer_lte_triggers" rows="3"
+                          class="tw-input max-w-full font-mono text-[12px]" autocomplete="off"
+                          placeholder="LTE:900, MOBILE:1500, 4G:2800">{{ row_val('xray_balancer_lte_triggers') or 'LTE' }}</textarea>
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_lte_triggers') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="xray_balancer_auto_exclude" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Исключения из 🇪🇺 AUTO</label>
+                <textarea id="xray_balancer_auto_exclude" name="xray_balancer_auto_exclude" rows="3"
+                          class="tw-input max-w-full font-mono text-[12px]" autocomplete="off"
+                          placeholder="Backup, VIP, Test">{{ row_val('xray_balancer_auto_exclude') or '' }}</textarea>
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_auto_exclude') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="xray_balancer_dns_servers" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">DNS-серверы</label>
+                <input type="text" id="xray_balancer_dns_servers" name="xray_balancer_dns_servers"
+                       value="{{ row_val('xray_balancer_dns_servers') or '1.1.1.1,1.0.0.1' }}"
+                       placeholder="1.1.1.1,1.0.0.1"
+                       class="tw-input max-w-full font-mono text-[12px]" autocomplete="off">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_dns_servers') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_dns_query_strategy" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">dns.queryStrategy</label>
+                <select id="xray_balancer_dns_query_strategy" name="xray_balancer_dns_query_strategy" class="tw-input max-w-full">
+                  {% set qs = row_val('xray_balancer_dns_query_strategy') or 'UseIP' %}
+                  <option value="AsIs" {% if qs == 'AsIs' %}selected{% endif %}>AsIs</option>
+                  <option value="UseIP" {% if qs == 'UseIP' %}selected{% endif %}>UseIP</option>
+                  <option value="UseIPv4" {% if qs == 'UseIPv4' %}selected{% endif %}>UseIPv4</option>
+                  <option value="UseIPv6" {% if qs == 'UseIPv6' %}selected{% endif %}>UseIPv6</option>
+                </select>
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_dns_query_strategy') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_domain_strategy" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">routing.domainStrategy</label>
+                <select id="xray_balancer_domain_strategy" name="xray_balancer_domain_strategy" class="tw-input max-w-full">
+                  {% set ds = row_val('xray_balancer_domain_strategy') or routing_cfg.domain_strategy or 'IPIfNonMatch' %}
+                  <option value="AsIs" {% if ds == 'AsIs' %}selected{% endif %}>AsIs</option>
+                  <option value="IPIfNonMatch" {% if ds == 'IPIfNonMatch' %}selected{% endif %}>IPIfNonMatch</option>
+                  <option value="IPOnDemand" {% if ds == 'IPOnDemand' %}selected{% endif %}>IPOnDemand</option>
+                </select>
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_domain_strategy') }}</p>
+              </div>
+            </div>
+
+            <p class="text-[11px] font-semibold tw-text-base2 m-0 pt-1">burstObservatory (ping серверов)</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="sm:col-span-2">
+                <label for="xray_balancer_probe_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Probe URL</label>
+                <input type="url" id="xray_balancer_probe_url" name="xray_balancer_probe_url"
+                       value="{{ row_val('xray_balancer_probe_url') or 'https://www.gstatic.com/generate_204' }}"
+                       class="tw-input max-w-full font-mono text-[12px]">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_probe_url') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_probe_interval" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Интервал</label>
+                <input type="text" id="xray_balancer_probe_interval" name="xray_balancer_probe_interval"
+                       value="{{ row_val('xray_balancer_probe_interval') or '3m' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_probe_interval') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_probe_timeout" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Таймаут пробы</label>
+                <input type="text" id="xray_balancer_probe_timeout" name="xray_balancer_probe_timeout"
+                       value="{{ row_val('xray_balancer_probe_timeout') or '3s' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_probe_timeout') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_probe_sampling" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Sampling</label>
+                <input type="number" id="xray_balancer_probe_sampling" name="xray_balancer_probe_sampling"
+                       min="1" step="1" value="{{ row_val('xray_balancer_probe_sampling') or '3' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_probe_sampling') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_load_expected" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">expected (пул кандидатов)</label>
+                <input type="number" id="xray_balancer_load_expected" name="xray_balancer_load_expected"
+                       min="1" step="1" value="{{ row_val('xray_balancer_load_expected') or '3' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_load_expected') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_tolerance" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">tolerance (main)</label>
+                <input type="number" id="xray_balancer_tolerance" name="xray_balancer_tolerance"
+                       min="0.1" step="0.1" value="{{ row_val('xray_balancer_tolerance') or '0.5' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_tolerance') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_tolerance_fallback" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">tolerance (fallback)</label>
+                <input type="number" id="xray_balancer_tolerance_fallback" name="xray_balancer_tolerance_fallback"
+                       min="0.1" step="0.1" value="{{ row_val('xray_balancer_tolerance_fallback') or '0.8' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_tolerance_fallback') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_single_baseline_ms" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">baseline: страна (мс)</label>
+                <input type="number" id="xray_balancer_single_baseline_ms" name="xray_balancer_single_baseline_ms"
+                       min="1" step="1" value="{{ row_val('xray_balancer_single_baseline_ms') or '800' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_single_baseline_ms') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_main_lte_baseline_ms" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">baseline: main+LTE (мс)</label>
+                <input type="number" id="xray_balancer_main_lte_baseline_ms" name="xray_balancer_main_lte_baseline_ms"
+                       min="1" step="1" value="{{ row_val('xray_balancer_main_lte_baseline_ms') or '500' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_main_lte_baseline_ms') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_lte_baseline_ms" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">baseline: LTE (мс)</label>
+                <input type="number" id="xray_balancer_lte_baseline_ms" name="xray_balancer_lte_baseline_ms"
+                       min="1" step="1" value="{{ row_val('xray_balancer_lte_baseline_ms') or '1500' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_lte_baseline_ms') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_lte_plus_baseline_ms" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">baseline: LTE+ (мс)</label>
+                <input type="number" id="xray_balancer_lte_plus_baseline_ms" name="xray_balancer_lte_plus_baseline_ms"
+                       min="1" step="1" value="{{ row_val('xray_balancer_lte_plus_baseline_ms') or '900' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_lte_plus_baseline_ms') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_lte_minus_baseline_ms" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">baseline: LTE- (мс)</label>
+                <input type="number" id="xray_balancer_lte_minus_baseline_ms" name="xray_balancer_lte_minus_baseline_ms"
+                       min="1" step="1" value="{{ row_val('xray_balancer_lte_minus_baseline_ms') or '2800' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_lte_minus_baseline_ms') }}</p>
+              </div>
+            </div>
+            <p class="text-[11px] tw-text-subtle2 m-0">baseline для leastLoad/leastPing. У каждого LTE-триггера свой порог через <code>ТРИГГЕР:мс</code> — +/- в имени хоста не нужны.</p>
+          </div>
+
+          <div class="border-t border-[rgb(var(--admin-border))]/60 pt-4 space-y-4">
+            <p class="text-[12px] font-semibold tw-text-base2 m-0 flex items-center gap-2">
+              <i data-lucide="activity" class="w-4 h-4 tw-text-muted2"></i>
+              Фильтр перегруженных нод (node_stats)
+            </p>
+            <div class="sp-toggle-row">
+              <label class="tw-switch" title="Исключать перегруженные ноды из балансировки">
+                <input type="checkbox" id="rw-xray-balancer-node-stats" name="xray_balancer_node_stats_enabled" value="1"
+                       {% if row_val('xray_balancer_node_stats_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+              <div class="sp-toggle-text">
+                <label for="rw-xray-balancer-node-stats" class="sp-toggle-title">Фильтровать перегруженные ноды</label>
+                <div class="sp-toggle-hint">{{ row_desc('xray_balancer_node_stats_enabled') }}</div>
+              </div>
+            </div>
+            <p class="text-[12px] tw-text-subtle2 m-0">
+              xuiweb опрашивает Remnawave <span class="tw-kbd text-[11px]">/api/nodes/</span> и не отдаёт клиентам серверы на offline- или перегруженных нодах. Требует умную балансировку и API token на вкладке «Подключение».
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="xray_balancer_max_users_per_gb" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Макс. юзеров / GB RAM</label>
+                <input type="number" id="xray_balancer_max_users_per_gb" name="xray_balancer_max_users_per_gb"
+                       min="1" step="1" value="{{ row_val('xray_balancer_max_users_per_gb') or '50' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_max_users_per_gb') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_max_users_per_cpu" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Макс. юзеров / CPU</label>
+                <input type="number" id="xray_balancer_max_users_per_cpu" name="xray_balancer_max_users_per_cpu"
+                       min="1" step="1" value="{{ row_val('xray_balancer_max_users_per_cpu') or '80' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_max_users_per_cpu') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_node_load_threshold" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Порог load</label>
+                <input type="number" id="xray_balancer_node_load_threshold" name="xray_balancer_node_load_threshold"
+                       min="0.1" step="0.1" value="{{ row_val('xray_balancer_node_load_threshold') or '1.0' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_node_load_threshold') }}</p>
+              </div>
+              <div>
+                <label for="xray_balancer_node_stats_interval_sec" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Интервал опроса (сек)</label>
+                <input type="number" id="xray_balancer_node_stats_interval_sec" name="xray_balancer_node_stats_interval_sec"
+                       min="30" step="10" value="{{ row_val('xray_balancer_node_stats_interval_sec') or '120' }}"
+                       class="tw-input max-w-full">
+                <p class="text-[11px] tw-text-subtle2 mt-1 m-0">{{ row_desc('xray_balancer_node_stats_interval_sec') }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="border-t border-[rgb(var(--admin-border))]/60 pt-4 space-y-4">
+            <p class="text-[12px] font-semibold tw-text-base2 m-0 flex items-center gap-2">
+              <i data-lucide="route" class="w-4 h-4 tw-text-muted2"></i>
+              Правила routing (block / proxy / direct)
+            </p>
+            <div class="sp-toggle-row">
+              <label class="tw-switch" title="Свои правила маршрутизации в Xray JSON">
+                <input type="checkbox" id="rw-xray-balancer-routing" name="xray_balancer_routing_enabled" value="1"
+                       {% if row_val('xray_balancer_routing_enabled') in ('1','true','yes','on') %}checked{% endif %}>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+              <div class="sp-toggle-text">
+                <label for="rw-xray-balancer-routing" class="sp-toggle-title">Свои правила routing</label>
+                <div class="sp-toggle-hint">{{ row_desc('xray_balancer_routing_enabled') }}</div>
+              </div>
+            </div>
+            <p class="text-[12px] tw-text-subtle2 m-0 leading-relaxed">
+              Одно правило на строку. Поддерживаются префиксы Xray:
+              <span class="tw-kbd text-[11px]">geosite:</span>,
+              <span class="tw-kbd text-[11px]">geoip:</span>,
+              <span class="tw-kbd text-[11px]">domain:</span>,
+              <span class="tw-kbd text-[11px]">full:</span>,
+              <span class="tw-kbd text-[11px]">regexp:</span> и другие —
+              <a href="https://xtls.github.io/ru/config/routing.html" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">документация routing</a>.
+              Остальной трафик идёт через балансировщик AUTO. Локальные сети и BitTorrent — всегда direct.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="xray_balancer_route_order" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Порядок правил</label>
+                <select id="xray_balancer_route_order" name="xray_balancer_route_order" class="tw-input max-w-full">
+                  {% set ro = routing_cfg.route_order or 'block-proxy-direct' %}
+                  <option value="block-proxy-direct" {% if ro == 'block-proxy-direct' %}selected{% endif %}>block → proxy → direct</option>
+                  <option value="block-direct-proxy" {% if ro == 'block-direct-proxy' %}selected{% endif %}>block → direct → proxy</option>
+                  <option value="proxy-block-direct" {% if ro == 'proxy-block-direct' %}selected{% endif %}>proxy → block → direct</option>
+                  <option value="proxy-direct-block" {% if ro == 'proxy-direct-block' %}selected{% endif %}>proxy → direct → block</option>
+                  <option value="direct-block-proxy" {% if ro == 'direct-block-proxy' %}selected{% endif %}>direct → block → proxy</option>
+                  <option value="direct-proxy-block" {% if ro == 'direct-proxy-block' %}selected{% endif %}>direct → proxy → block</option>
+                </select>
+              </div>
+            </div>
+            <div class="sp-toggle-row">
+              <label class="tw-switch" title="Блокировать UDP/443 (QUIC)">
+                <input type="checkbox" id="rw-xray-balancer-udp-quic" name="xray_balancer_udp_block_quic" value="1"
+                       {% if routing_cfg.udp_block_quic %}checked{% endif %}>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+              <div class="sp-toggle-text">
+                <label for="rw-xray-balancer-udp-quic" class="sp-toggle-title">Блокировать QUIC (UDP 443)</label>
+                <div class="sp-toggle-hint">Улучшает совместимость с прокси; YouTube и др. перейдут на TCP.</div>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <label for="xray_balancer_routing_block" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Block — домены</label>
+                <textarea id="xray_balancer_routing_block" name="xray_balancer_routing_block" rows="5"
+                          class="tw-input w-full font-mono text-[12px] leading-relaxed"
+                          placeholder="geosite:category-ads-all&#10;domain:example.com">{% for line in routing_cfg.block_sites %}{{ line }}
+{% endfor %}</textarea>
+              </div>
+              <div>
+                <label for="xray_balancer_routing_block_ip" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Block — IP / CIDR</label>
+                <textarea id="xray_balancer_routing_block_ip" name="xray_balancer_routing_block_ip" rows="5"
+                          class="tw-input w-full font-mono text-[12px] leading-relaxed"
+                          placeholder="geoip:private">{% for line in routing_cfg.block_ip %}{{ line }}
+{% endfor %}</textarea>
+              </div>
+              <div>
+                <label for="xray_balancer_routing_proxy" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Proxy — домены (через балансировщик)</label>
+                <textarea id="xray_balancer_routing_proxy" name="xray_balancer_routing_proxy" rows="5"
+                          class="tw-input w-full font-mono text-[12px] leading-relaxed"
+                          placeholder="geosite:youtube&#10;geosite:google">{% for line in routing_cfg.proxy_sites %}{{ line }}
+{% endfor %}</textarea>
+              </div>
+              <div>
+                <label for="xray_balancer_routing_proxy_ip" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Proxy — IP / CIDR</label>
+                <textarea id="xray_balancer_routing_proxy_ip" name="xray_balancer_routing_proxy_ip" rows="5"
+                          class="tw-input w-full font-mono text-[12px] leading-relaxed"
+                          placeholder="1.2.3.4/32">{% for line in routing_cfg.proxy_ip %}{{ line }}
+{% endfor %}</textarea>
+              </div>
+              <div>
+                <label for="xray_balancer_routing_direct" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Direct — домены</label>
+                <textarea id="xray_balancer_routing_direct" name="xray_balancer_routing_direct" rows="5"
+                          class="tw-input w-full font-mono text-[12px] leading-relaxed"
+                          placeholder="geosite:ru&#10;domain:local">{% for line in routing_cfg.direct_sites %}{{ line }}
+{% endfor %}</textarea>
+              </div>
+              <div>
+                <label for="xray_balancer_routing_direct_ip" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Direct — IP / CIDR</label>
+                <textarea id="xray_balancer_routing_direct_ip" name="xray_balancer_routing_direct_ip" rows="5"
+                          class="tw-input w-full font-mono text-[12px] leading-relaxed"
+                          placeholder="geoip:ru">{% for line in routing_cfg.direct_ip %}{{ line }}
+{% endfor %}</textarea>
+              </div>
+            </div>
+            <p class="text-[11px] tw-text-subtle2 m-0">
+              Списки правил применяются сразу после сохранения (перезапуск xuiweb не нужен). Перезапуск нужен только при включении или выключении переключателя «Свои правила routing».
+            </p>
+          </div>
+
+          <p class="text-[12px] tw-text-subtle2 flex items-start gap-1.5 m-0">
+            <i data-lucide="info" class="w-3.5 h-3.5 shrink-0 mt-0.5"></i>
+            <span>Поле <span class="tw-kbd text-[11px]">xrayConfig</span> получают только выбранные клиенты (Happ / INCY / v2raytun) по User-Agent. Шаблон и хосты настраиваются в панели Remnawave.</span>
+          </p>
+          <div class="tw-card p-3.5 border-amber-500/30" style="background: rgba(245, 158, 11, 0.06);">
+            <p class="text-[12px] tw-text-base2 m-0 flex items-start gap-2 leading-relaxed">
+              <i data-lucide="refresh-cw" class="w-4 h-4 shrink-0 mt-0.5 text-amber-600"></i>
+              <span>После включения или выключения JSON-подписки, балансировки, node_stats или переключателя «Свои правила routing» сохраните форму и перезапустите сервис:
+                <code class="tw-kbd text-[11px] block mt-1.5">sudo systemctl restart xuiweb.service</code>
+              </span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </form>
+</div>
+
+<script src="{{ url_for('admin.admin_static', filename='js/admin_info.js') }}?v={{ pwa_cache_version }}"></script>
+<script src="{{ url_for('admin.admin_static', filename='info/sub_link_dedup.js') }}?v={{ pwa_cache_version }}"></script>
+<script>
+function rwTogglePw(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+(function () {
+  var STORAGE_KEY = 'rw-settings-tab';
+
+  function activateTab(tabId) {
+    document.querySelectorAll('#rw-settings-form .sp-tab').forEach(function (t) {
+      t.classList.toggle('active', t.dataset.tab === tabId);
+    });
+    document.querySelectorAll('#rw-settings-form .sp-pane').forEach(function (p) {
+      p.classList.toggle('active', p.dataset.pane === tabId);
+    });
+    try { sessionStorage.setItem(STORAGE_KEY, tabId); } catch (_) {}
+  }
+
+  document.querySelectorAll('#rw-settings-form .sp-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      activateTab(tab.dataset.tab);
+    });
+    tab.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        activateTab(tab.dataset.tab);
+      }
+    });
+  });
+
+  try {
+    var saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved && document.querySelector('#rw-settings-form .sp-tab[data-tab="' + saved + '"]')) {
+      activateTab(saved);
+    }
+  } catch (_) {}
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var modeSel = document.getElementById('sub_link_dedup_mode');
+    var onlineOpts = document.getElementById('sub_link_dedup_online_opts');
+    function syncOnlineOpts() {
+      if (!modeSel || !onlineOpts) return;
+      onlineOpts.classList.toggle('hidden', modeSel.value !== 'online');
+    }
+    if (modeSel) {
+      modeSel.addEventListener('change', syncOnlineOpts);
+      syncOnlineOpts();
+    }
+    if (window.AdminInfo && typeof AdminInfo.init === 'function') {
+      AdminInfo.init();
+    }
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      try { lucide.createIcons(); } catch (_) {}
+    }
+  });
+})();
+</script>
+{% endblock %}

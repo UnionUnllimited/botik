@@ -1,0 +1,1314 @@
+{% extends "base.html" %}
+{% block title %}Remnawave - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Remnawave</h1>
+      <p class="text-[13px] text-muted2 mt-1">Мониторинг нод: скорость (realtime), накопительные счётчики трафика по метрикам Xray, управление.</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <span id="rwLastUpdate" class="text-[11.5px] text-muted2 mr-1"></span>
+      <button id="rwRefreshBtn" type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="rwRefresh()">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> <span>Обновить</span>
+      </button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" onclick="rwRestartAll()" title="Перезапустить Xray на всех нодах">
+        <i data-lucide="zap" class="w-3.5 h-3.5"></i> <span>Перезапустить все</span>
+      </button>
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="rwNodeInstallOpen()" title="Установить Remnawave Node на VPS по SSH">
+        <i data-lucide="terminal" class="w-3.5 h-3.5"></i> <span>Установить ноду</span>
+      </button>
+    </div>
+  </div>
+
+  {% with active='dashboard' %}
+  {% include 'remnawave_subnav.html' %}
+  {% endwith %}
+
+  {% if error %}
+  <div class="tw-surface rounded-[var(--radius-card)] p-4 border-l-4"
+       style="border-left-color: #ef4444; background: rgb(239 68 68 / .06);">
+    <div class="flex items-start gap-2">
+      <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#ef4444;"></i>
+      <div class="text-[13px]">
+        <div class="font-semibold mb-1" style="color:#ef4444;">Ошибка Remnawave</div>
+        <div class="text-muted2 break-words">{{ error }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ───── Сводные плашки ───── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3" title="Активные ноды / всего сконфигурировано">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: var(--admin-bg-soft);">
+        <i data-lucide="server" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider truncate">Серверы</div>
+        <div class="text-[20px] font-semibold leading-tight truncate">
+          <span id="rwAggOnlineNodes">{{ agg.online_nodes if agg else 0 }}</span><span class="text-[12px] text-muted2 font-normal ml-1">/ <span id="rwAggTotalNodes">{{ agg.total_nodes if agg else 0 }}</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3" title="Пользователи онлайн прямо сейчас">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(16 185 129 / .12);">
+        <i data-lucide="users-round" class="w-4 h-4" style="color:#10b981;"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider truncate">Онлайн</div>
+        <div class="text-[20px] font-semibold leading-tight text-emerald-500 truncate" id="rwOnlineNow">{{ system_stats.online_now if system_stats else 0 }}</div>
+      </div>
+    </div>
+
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3" title="Всего пользователей в Remnawave">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="user" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider truncate">Пользователей</div>
+        <div class="text-[20px] font-semibold leading-tight truncate" id="rwTotalUsers">{{ system_stats.total_users if system_stats else 0 }}</div>
+      </div>
+    </div>
+
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3" title="Скорость: realtime API; если 0 — сумма счётчиков по инбаундам из /system/nodes/metrics">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(245 158 11 / .12);">
+        <i data-lucide="activity" class="w-4 h-4" style="color:#f59e0b;"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider truncate">Потребление</div>
+        <div class="text-[20px] font-semibold leading-tight truncate" id="rwTotalBandwidth">—</div>
+        <div class="hidden sm:flex items-center gap-2 text-[10px] text-subtle2 normal-case tracking-normal mt-0.5 truncate min-w-0" id="rwBandwidthBreakdown"></div>
+      </div>
+    </div>
+  </div>
+
+  {# ───── Секция «Ноды» ───── #}
+  <div>
+    <div class="mb-3 flex flex-wrap items-center gap-2">
+      <h2 class="text-[14px] font-semibold tracking-tight" style="color: var(--admin-text-base);">Ноды</h2>
+      <span class="tw-chip" style="background: var(--admin-bg-soft); color: var(--admin-text-muted);" id="rwCountAllChip">0</span>
+      <label class="inline-flex items-center gap-1.5 text-[11px] text-muted2" for="rwNodesSort">
+        <span class="hidden sm:inline">Сортировка:</span>
+        <select id="rwNodesSort" class="tw-select text-[11px] py-0.5 h-7 min-w-[148px]" onchange="rwSetSort(this.value)"
+                title="Дата продления — по [ДД.ММ.ГГГГ] в имени; Онлайн — по числу пользователей; Нагрузка — по CPU/RAM/сети">
+          <option value="renewal">Дата продления</option>
+          <option value="online">Онлайн ↓</option>
+          <option value="load">Нагрузка ↓</option>
+        </select>
+      </label>
+      <div class="inline-flex items-center rounded-[10px] p-0.5 ml-auto" style="background: var(--admin-bg-soft); border:1px solid rgb(var(--admin-border));" role="tablist">
+        <button type="button" class="rw-tab tw-btn tw-btn-sm rw-tab-active" data-tab="all" onclick="rwSetTab('all')">
+          Все <span class="ml-1 text-[10.5px] opacity-70" id="rwCountAll">0</span>
+        </button>
+        <button type="button" class="rw-tab tw-btn tw-btn-sm" data-tab="online" onclick="rwSetTab('online')">
+          <span class="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style="background:#10b981;"></span>
+          Онлайн <span class="ml-1 text-[10.5px] opacity-70" id="rwCountOnline">0</span>
+        </button>
+        <button type="button" class="rw-tab tw-btn tw-btn-sm" data-tab="offline" onclick="rwSetTab('offline')">
+          <span class="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style="background:#f43f5e;"></span>
+          Офлайн <span class="ml-1 text-[10.5px] opacity-70" id="rwCountOffline">0</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="rwNodesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {% if not nodes %}
+        <div class="col-span-full">
+          <div class="tw-surface rounded-[var(--radius-card)] p-6 text-center text-[13px] text-muted2">
+            {% if not error %}Нет добавленных нод. Проверьте панель Remnawave и при необходимости раздел «Настройки».{% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{# ── Modal: дата продления ноды ── #}
+<div id="rwRenewalModal" class="tw-modal" role="dialog" aria-hidden="true" aria-labelledby="rwRenewalModalTitle"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop" onclick="rwRenewalCloseModal()"
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; max-width: 440px; width: 100%; overflow: hidden;
+              box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index: 1;">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[15px] font-semibold tracking-tight flex items-center gap-2" id="rwRenewalModalTitle">
+        <i data-lucide="calendar" class="w-4 h-4" style="color:#7c3aed;"></i> Дата продления
+      </h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" onclick="rwRenewalCloseModal()" aria-label="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="px-4 py-4 space-y-3">
+      <div>
+        <div class="text-[11px] text-muted2 uppercase tracking-wider mb-1">Нода</div>
+        <div class="text-[13px] font-medium break-words" id="rwRenewalNodeName">—</div>
+      </div>
+      <div>
+        <label for="rwRenewalDateInput" class="block text-[12px] font-semibold mb-1.5">Дата в имени [ДД.ММ.ГГГГ]</label>
+        <input type="date" id="rwRenewalDateInput" class="tw-input w-full">
+        <p class="text-[11px] text-muted2 mt-1.5">Запишется во внутреннее имя ноды в Remnawave.</p>
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t flex gap-2 justify-end flex-wrap"
+         style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" onclick="rwRenewalCloseModal()">Отмена</button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5" id="rwRenewalSaveBtn" onclick="rwSaveRenewalDate()">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i> Сохранить
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: SSH установка Remnawave Node ─────────────────────────────────── #}
+<div id="rwNodeInstallModal" class="tw-modal" role="dialog" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px; display: none !important;">
+  <div class="tw-modal-backdrop" onclick="rwNodeInstallClose()"
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; max-width: 760px; width: 100%; max-height: 92vh; overflow: hidden;
+              box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); z-index: 1;">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: rgb(var(--admin-border));">
+      <h3 class="text-[15px] font-semibold tracking-tight flex items-center gap-2">
+        <i data-lucide="server-cog" class="w-4 h-4 text-brand-500"></i> Установка Remnawave Node (SSH)
+      </h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" onclick="rwNodeInstallClose()" id="rwNodeInstallCloseBtn" aria-label="Закрыть">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="px-4 py-4 overflow-y-auto tw-scroll">
+      <form id="rwNodeInstallForm" class="space-y-3">
+        <div class="text-[12px] text-muted2 rounded-[8px] px-3 py-2 flex items-start gap-2" style="background: var(--admin-bg-soft);">
+          <p class="m-0 min-w-0 flex-1 leading-relaxed">
+            Создаёт ноду на панели, ставит Docker и контейнер <code>remnanode</code> на VPS.
+            Хост для клиентов (address, port, SNI и т.д.) настраивается отдельно в панели Remnawave — раздел <strong>Hosts</strong>.
+          </p>
+          {% with info_key='remnanode_compose', info_label='пример docker-compose' %}
+          {% include '_partials/admin_info_icon.html' %}
+          {% endwith %}
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">Адрес ноды (для панели) <span style="color:#f43f5e;">*</span></label>
+            <input type="text" class="tw-input w-full" id="rwi_node_address" placeholder="1.2.3.4" required>
+          </div>
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">Node Port (internal) <span style="color:#f43f5e;">*</span></label>
+            <input type="number" class="tw-input w-full" id="rwi_node_port" value="2222" min="1" max="65535" required>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">Внутреннее имя <span style="color:#f43f5e;">*</span></label>
+            <div class="flex gap-2 items-stretch">
+              <input type="text" class="tw-input flex-1 min-w-0" id="rwi_node_name"
+                     placeholder="🇩🇪 Germany" maxlength="30" required autocomplete="off">
+              <div class="tw-dropdown relative shrink-0">
+                <button type="button" class="tw-btn tw-btn-secondary tw-btn-icon-sm" id="rwi_flag_dropdown_btn"
+                        onclick="AdminCountries.toggleFlagDropdown(event, this);" title="Вставить флаг и страну">
+                  <i data-lucide="flag" class="w-4 h-4"></i>
+                </button>
+                <div id="rwi_flag_dropdown_menu"
+                     class="tw-dropdown-menu absolute right-0 mt-1 rounded-[10px] py-1.5 hidden tw-scroll"
+                     style="min-width: 220px; max-height: 280px; overflow-y: auto;
+                            background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+                            box-shadow: 0 12px 36px rgba(0,0,0,.18); z-index: 99999;"></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">Страна</label>
+            <select class="tw-select w-full" id="rwi_country_code"></select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[12px] text-subtle2 mb-1">Config Profile <span style="color:#f43f5e;">*</span></label>
+          <select class="tw-select w-full" id="rwi_config_profile" required>
+            <option value="">Загрузка профилей…</option>
+          </select>
+        </div>
+        <div id="rwi_inbounds_wrap" style="display:none;">
+          <label class="block text-[12px] text-subtle2 mb-1">Active Inbounds</label>
+          <div id="rwi_inbounds_list" class="space-y-1.5 rounded-[8px] p-2" style="background: var(--admin-bg-soft); max-height: 120px; overflow-y: auto;"></div>
+        </div>
+
+        <div class="border-t pt-3" style="border-color: rgb(var(--admin-border));">
+          <div class="text-[12px] font-semibold mb-2">SSH доступ</div>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="block text-[12px] text-subtle2 mb-1">SSH host</label>
+              <input type="text" class="tw-input w-full" id="rwi_ssh_host" placeholder="как адрес ноды">
+            </div>
+            <div>
+              <label class="block text-[12px] text-subtle2 mb-1">SSH порт</label>
+              <input type="number" class="tw-input w-full" id="rwi_ssh_port" value="22" min="1" max="65535">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="block text-[12px] text-subtle2 mb-1">SSH пользователь</label>
+            <input type="text" class="tw-input w-full" id="rwi_ssh_user" value="root">
+          </div>
+          <div class="flex gap-4 mb-2 text-[13px]">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="rwi_auth" value="password" checked style="accent-color: var(--color-brand-500);"> Пароль
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="rwi_auth" value="key" style="accent-color: var(--color-brand-500);"> Приватный ключ
+            </label>
+          </div>
+          <div id="rwi_ssh_password_wrap">
+            <label class="block text-[12px] text-subtle2 mb-1">SSH пароль</label>
+            <input type="password" class="tw-input w-full" id="rwi_ssh_password" placeholder="Не сохраняется">
+          </div>
+          <div id="rwi_ssh_key_wrap" style="display:none;">
+            <label class="block text-[12px] text-subtle2 mb-1">Приватный ключ (PEM)</label>
+            <textarea class="tw-input w-full font-mono text-[11px]" id="rwi_ssh_private_key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+          </div>
+        </div>
+
+        <div id="rwi_install_progress" style="display:none;" class="space-y-2 pt-2">
+          <div>
+            <div class="flex justify-between mb-1 text-[12px] text-subtle2">
+              <span id="rwi_progress_label">Прогресс</span>
+              <span id="rwi_progress_pct">0%</span>
+            </div>
+            <div class="w-full h-2 rounded-full overflow-hidden" style="background: var(--admin-bg-soft);">
+              <div id="rwi_progress_bar" class="h-full transition-all duration-300" style="width:0%; background: var(--color-brand-500);"></div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-[12px] text-subtle2 mb-1">Логи установки</label>
+            <div id="rwi_install_logs" class="rounded-[8px] tw-scroll text-[11px] font-mono whitespace-pre-wrap p-3"
+                 style="max-height: 220px; overflow-y: auto; background: #0f1117; color: #4ade80; border: 1px solid rgb(var(--admin-border));"></div>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="px-4 py-3 border-t flex justify-end gap-2 flex-wrap"
+         style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" onclick="rwNodeInstallClose()" id="rwNodeInstallCancelBtn">Отмена</button>
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5" id="rwNodeInstallStartBtn" onclick="rwNodeInstallStart()">
+        <i data-lucide="play" class="w-3.5 h-3.5"></i> Начать установку
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('admin.admin_static', filename='js/admin_info.js') }}?v={{ pwa_cache_version }}"></script>
+<script src="{{ url_for('admin.admin_static', filename='info/remnanode_compose.js') }}?v={{ pwa_cache_version }}"></script>
+<script src="{{ url_for('admin.admin_static', filename='js/admin_countries.js') }}?v={{ pwa_cache_version }}"></script>
+<script>
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Forматтеры                                                                  */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function rwFmtBitsPerSec(bps) {
+  bps = Number(bps) || 0;
+  if (bps < 1000)            return { value: Math.round(bps).toString(),       unit: 'bps' };
+  if (bps < 1_000_000)       return { value: Math.round(bps / 1e3).toString(), unit: 'Kbps' };
+  if (bps < 1_000_000_000)   return { value: Math.round(bps / 1e6).toString(), unit: 'Mbps' };
+  return                            { value: (bps / 1e9).toFixed(2),           unit: 'Gbps' };
+}
+
+/** Накопительные байты из метрик Prometheus/Xray (IEC KiB/MiB…) */
+function rwFmtBytesIEC(bytes) {
+  bytes = Number(bytes);
+  if (!bytes || bytes < 0 || !isFinite(bytes)) return null;
+  const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let i = 0;
+  let v = bytes;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  if (i === 0) return Math.round(v) + ' B';
+  const t = Math.round(v * 100) / 100;
+  return t + ' ' + u[i];
+}
+
+function rwFmtNumber(n) {
+  if (n === null || n === undefined) return '0';
+  try { return Number(n).toLocaleString('ru-RU'); } catch (e) { return String(n); }
+}
+
+function rwLoadColor(p) {
+  p = Number(p) || 0;
+  if (p >= 80) return '#f43f5e';
+  if (p >= 65) return '#f59e0b';
+  return 'var(--color-brand-500)';
+}
+
+function rwSecretFromUrl() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  return parts.length > 0 ? parts[0] : '';
+}
+
+function rwCountryDisplay(code) {
+  if (typeof AdminCountries !== 'undefined' && AdminCountries.label) {
+    return AdminCountries.label(code);
+  }
+  return String(code || '').toUpperCase();
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Toasts                                                                       */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function rwToast(message, kind) {
+  // Inline-toast в стиле settings_servers.html.
+  // kind ∈ {success, error, warning, info}
+  kind = kind || 'success';
+  const el = document.createElement('div');
+  const isErr = (kind === 'error');
+  const isWarn = (kind === 'warning');
+  el.className = 'tw-toast tw-toast-' + (isErr ? 'error' : 'success');
+  const icon = isErr ? 'alert-triangle' : (isWarn ? 'alert-circle' : 'check-circle-2');
+  el.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i><span></span>`;
+  el.querySelector('span').textContent = message;
+  document.body.appendChild(el);
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, 2700);
+  setTimeout(() => { el.remove(); }, 3100);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Рендер карточки ноды                                                         */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function rwFmtRenewalBadge(node) {
+  if (!node || !node.renewal_date) return '';
+  const days = Number(node.renewal_days_left);
+  if (node.renewal_soon) {
+    const label = days === 0
+      ? 'Скоро ожидается продление — сегодня'
+      : `Скоро ожидается продление — через ${days} дн.`;
+    return `<div class="rw-renewal-badge"><i data-lucide="calendar-clock" class="w-3 h-3"></i>${label}</div>`;
+  }
+  if (node.renewal_overdue) {
+    const overdue = Math.abs(days);
+    const word = overdue === 1 ? 'день' : (overdue >= 2 && overdue <= 4 ? 'дня' : 'дней');
+    return `<div class="rw-renewal-badge"><i data-lucide="alert-circle" class="w-3 h-3"></i>Продление просрочено на ${overdue} ${word}</div>`;
+  }
+  return '';
+}
+
+function rwNodeCardClasses(node) {
+  const classes = ['tw-surface', 'rounded-[var(--radius-card)]', 'p-3', 'flex', 'flex-col'];
+  if (node && node.renewal_soon) classes.push('rw-node-renewal-soon');
+  if (node && node.renewal_overdue) classes.push('rw-node-renewal-overdue');
+  return classes.join(' ');
+}
+
+const RW_NODES_SORT_KEY = 'rw_nodes_sort';
+
+function rwCmpNodeName(a, b) {
+  return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+}
+
+function rwNodeUsersCount(n) {
+  return Number(n?.connected_users ?? n?.users_online ?? 0) || 0;
+}
+
+/** Нагрузка сервера: CPU, RAM, сеть (без учёта числа пользователей) */
+function rwNodeLoadScore(n) {
+  const cpu = Number(n?.cpu_usage);
+  const ram = Number(n?.memory_usage);
+  const netBps = (Number(n?.network_upload || 0) + Number(n?.network_download || 0)) * 8;
+  const cpuVal = Number.isFinite(cpu) ? cpu : 0;
+  const ramVal = Number.isFinite(ram) ? ram : 0;
+  return Math.max(cpuVal, ramVal) * 1000 + (cpuVal + ramVal) * 10 + netBps / 1e6;
+}
+
+function rwSortNodes(nodes, mode) {
+  if (!Array.isArray(nodes)) return [];
+  const copy = nodes.slice();
+  const sortMode = mode || 'renewal';
+
+  if (sortMode === 'online') {
+    copy.sort((a, b) => {
+      const ua = rwNodeUsersCount(a);
+      const ub = rwNodeUsersCount(b);
+      if (ua !== ub) return ub - ua;
+      return rwCmpNodeName(a, b);
+    });
+    return copy;
+  }
+
+  if (sortMode === 'load') {
+    copy.sort((a, b) => {
+      const la = rwNodeLoadScore(a);
+      const lb = rwNodeLoadScore(b);
+      if (la !== lb) return lb - la;
+      return rwCmpNodeName(a, b);
+    });
+    return copy;
+  }
+
+  copy.sort((a, b) => {
+    const ad = a.renewal_date || '';
+    const bd = b.renewal_date || '';
+    if (ad && bd) {
+      if (ad !== bd) return ad < bd ? -1 : 1;
+      return rwCmpNodeName(a, b);
+    }
+    if (ad && !bd) return -1;
+    if (!ad && bd) return 1;
+    return rwCmpNodeName(a, b);
+  });
+  return copy;
+}
+
+function rwEscHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+let _rwRenewalEditUuid = null;
+
+function rwDefaultRenewalInputDate(node) {
+  if (node && node.renewal_date) return node.renewal_date;
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
+function rwRenewalCloseModal() {
+  const m = document.getElementById('rwRenewalModal');
+  if (!m) return;
+  m.classList.remove('is-open');
+  m.setAttribute('aria-hidden', 'true');
+  m.style.setProperty('display', 'none', 'important');
+  _rwRenewalEditUuid = null;
+  if (!document.querySelector('.tw-modal.is-open')) {
+    document.body.style.overflow = '';
+  }
+}
+
+function rwRenewalOpenModal(uuid, ev) {
+  if (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  const node = _rwAllNodes.find(n => n.uuid === uuid);
+  if (!node) return;
+  _rwRenewalEditUuid = uuid;
+  const nameEl = document.getElementById('rwRenewalNodeName');
+  const inp = document.getElementById('rwRenewalDateInput');
+  if (nameEl) nameEl.textContent = node.name || '—';
+  if (inp) inp.value = rwDefaultRenewalInputDate(node);
+  const m = document.getElementById('rwRenewalModal');
+  if (!m) return;
+  m.classList.add('is-open');
+  m.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  m.style.setProperty('display', 'flex', 'important');
+  m.style.setProperty('opacity', '1', 'important');
+  m.style.setProperty('visibility', 'visible', 'important');
+  m.style.setProperty('pointer-events', 'auto', 'important');
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+  if (inp) {
+    setTimeout(() => {
+      inp.focus();
+      try { inp.showPicker(); } catch (_) { /* Safari */ }
+    }, 50);
+  }
+}
+
+async function rwSaveRenewalDate() {
+  const uuid = _rwRenewalEditUuid;
+  if (!uuid) return;
+  const inp = document.getElementById('rwRenewalDateInput');
+  const btnEl = document.getElementById('rwRenewalSaveBtn');
+  if (!inp || !inp.value) {
+    rwToast('Выберите дату', 'warning');
+    return;
+  }
+  const node = _rwAllNodes.find(n => n.uuid === uuid);
+  const original = btnEl ? btnEl.innerHTML : '';
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Сохранение…';
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  }
+  try {
+    const secret = rwSecretFromUrl();
+    const r = await fetch(`/${secret}/api/remnawave/nodes/${uuid}/renewal-date`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ date: inp.value, name: node ? node.name : '' }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!data.ok) {
+      rwToast('❌ ' + (data.error || 'Ошибка'), 'error');
+      return;
+    }
+    const idx = _rwAllNodes.findIndex(n => n.uuid === uuid);
+    if (idx >= 0) {
+      _rwAllNodes[idx].name = data.name;
+      _rwAllNodes[idx].renewal_date = data.renewal_date;
+      _rwAllNodes[idx].renewal_days_left = data.renewal_days_left;
+      _rwAllNodes[idx].renewal_soon = !!data.renewal_soon;
+      _rwAllNodes[idx].renewal_overdue = !!data.renewal_overdue;
+    }
+    rwRenewalCloseModal();
+    rwUpdateNodesGrid(_rwAllNodes);
+    rwToast('✅ Дата продления обновлена', 'success');
+  } catch (e) {
+    rwToast('Сеть: ' + e.message, 'error');
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = original;
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+  }
+}
+
+function rwBuildNodeCard(node) {
+  const uuid = node.uuid || '';
+  const name = node.name || 'Без имени';
+  const addr = node.address ? `${node.address}${node.port ? ':' + node.port : ''}` : '';
+  const isDisabled = !!node.is_disabled;
+  const isOnline = node.is_connected === true;
+  const isConnecting = node.is_connecting === true;
+
+  // Status chip
+  let statusChip;
+  if (isDisabled) {
+    statusChip = `<span class="tw-chip" style="background: rgb(148 163 184 / .15); color:#94a3b8; border:1px solid rgb(148 163 184 / .25);">
+                    <i data-lucide="pause-circle" class="w-3 h-3"></i> Выключена
+                  </span>`;
+  } else if (isOnline) {
+    statusChip = `<span class="tw-chip" style="background: rgb(16 185 129 / .15); color:#10b981; border:1px solid rgb(16 185 129 / .25);">
+                    <i data-lucide="check-circle-2" class="w-3 h-3"></i> Онлайн
+                  </span>`;
+  } else if (isConnecting) {
+    statusChip = `<span class="tw-chip" style="background: rgb(245 158 11 / .15); color:#f59e0b; border:1px solid rgb(245 158 11 / .25);">
+                    <i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Подключение
+                  </span>`;
+  } else {
+    statusChip = `<span class="tw-chip" style="background: rgb(244 63 94 / .15); color:#f43f5e; border:1px solid rgb(244 63 94 / .25);">
+                    <i data-lucide="x-circle" class="w-3 h-3"></i> Офлайн
+                  </span>`;
+  }
+
+  // Status dot
+  const dotColor = isDisabled ? '#94a3b8' : (isOnline ? '#10b981' : '#f43f5e');
+
+  // CPU/RAM
+  const cpuVal = (node.cpu_usage !== null && node.cpu_usage !== undefined) ? Number(node.cpu_usage) : null;
+  const ramVal = (node.memory_usage !== null && node.memory_usage !== undefined) ? Number(node.memory_usage) : null;
+  const cpuCount = node.cpu_count || null;
+  const ramTotal = node.total_ram || null;
+
+  const metric = (label, val, sub, icon) => {
+    const has = val !== null && val !== undefined && !isNaN(Number(val));
+    const num = has ? Number(val) : 0;
+    const display = has ? `${num.toFixed(1)}<span class="text-[11px] text-muted2 font-normal">%</span>` : '<span class="text-muted2 text-[12px]">—</span>';
+    return `
+      <div class="rounded-[10px] p-2" style="background: var(--admin-bg-soft);">
+        <div class="flex items-center gap-1 text-[10.5px] text-subtle2 uppercase tracking-wider">
+          <i data-lucide="${icon}" class="w-3 h-3"></i>${label}
+          ${sub ? `<span class="ml-auto text-[9px] text-muted2 normal-case truncate" title="${String(sub)}">${sub}</span>` : ''}
+        </div>
+        <div class="mt-0.5 text-[14px] font-semibold leading-none" style="color:var(--admin-text-base);">${display}</div>
+        <div class="mt-1 h-1 rounded-full overflow-hidden" style="background: rgba(0,0,0,.05);">
+          <div class="h-full" style="width:${has ? num : 0}%; background:${rwLoadColor(num)};"></div>
+        </div>
+      </div>`;
+  };
+
+  /** Без процентов: только железо из API нод (Remnawave 2.7 не отдаёт load по ноде в metrics). */
+  const metricStatic = (label, valueText, icon) => `
+      <div class="rounded-[10px] p-2" style="background: var(--admin-bg-soft);">
+        <div class="flex items-center gap-1 text-[10.5px] text-subtle2 uppercase tracking-wider">
+          <i data-lucide="${icon}" class="w-3 h-3"></i>${label}
+        </div>
+        <div class="mt-0.5 text-[13px] font-semibold leading-tight truncate" style="color:var(--admin-text-base);" title="${valueText}">${valueText}</div>
+        <div class="mt-1 h-1 rounded-full overflow-hidden" style="background: rgba(0,0,0,.05);">
+          <div class="h-full w-0"></div>
+        </div>
+      </div>`;
+
+  let metricsHtml = '<div class="grid grid-cols-2 gap-2 mb-2" title="Проценты CPU/RAM с ноды API не отдаёт; показаны ядра и объём RAM из карточки ноды, если есть">';
+  if (cpuVal !== null && !isNaN(cpuVal)) {
+    metricsHtml += metric('CPU', cpuVal, cpuCount ? `${cpuCount} ядер` : '', 'cpu');
+  } else if (cpuCount) {
+    metricsHtml += metricStatic('CPU', `${cpuCount} ядер`, 'cpu');
+  } else {
+    metricsHtml += metric('CPU', null, '', 'cpu');
+  }
+  if (ramVal !== null && !isNaN(ramVal)) {
+    metricsHtml += metric('RAM', ramVal, ramTotal || '', 'memory-stick');
+  } else if (ramTotal) {
+    metricsHtml += metricStatic('RAM', String(ramTotal), 'memory-stick');
+  } else {
+    metricsHtml += metric('RAM', null, '', 'memory-stick');
+  }
+  metricsHtml += '</div>';
+
+  // Network: realtime (bps); если нет — накопительные счётчики Σ по инбаундам из /system/nodes/metrics
+  const upBps = (Number(node.network_upload || 0) * 8);
+  const dnBps = (Number(node.network_download || 0) * 8);
+  const hasRt = (upBps + dnBps) > 1e-3;
+  const mInUp = Number(node.metrics_inbound_upload_bytes || 0);
+  const mInDn = Number(node.metrics_inbound_download_bytes || 0);
+  const hasMet = (mInUp + mInDn) > 1e-3;
+
+  let dnFmt = rwFmtBitsPerSec(dnBps);
+  let upFmt = rwFmtBitsPerSec(upBps);
+  let dnNote = '';
+  let upNote = '';
+  let dnTitle = 'Текущая скорость приёма (bandwidth realtime)';
+  let upTitle = 'Текущая скорость передачи (bandwidth realtime)';
+
+  if (!hasRt && hasMet) {
+    dnTitle = 'Накопительный счётчик (Σ download по инбаундам, /system/nodes/metrics)';
+    upTitle = 'Накопительный счётчик (Σ upload по инбаундам, /system/nodes/metrics)';
+    const fd = rwFmtBytesIEC(mInDn);
+    const fu = rwFmtBytesIEC(mInUp);
+    if (fd) dnFmt = { value: fd, unit: '' };
+    if (fu) upFmt = { value: fu, unit: '' };
+    dnNote = '<div class="text-[9px] text-subtle2 mt-0.5 leading-tight">Σ метрики</div>';
+    upNote = dnNote;
+  } else if (hasRt && hasMet) {
+    const fd = rwFmtBytesIEC(mInDn);
+    const fu = rwFmtBytesIEC(mInUp);
+    if (fd) dnNote = `<div class="text-[9px] text-subtle2 mt-0.5 leading-tight truncate" title="Накопит. счётчики по инбаундам">Σ↓ ${fd}</div>`;
+    if (fu) upNote = `<div class="text-[9px] text-subtle2 mt-0.5 leading-tight truncate" title="Накопит. счётчики по инбаундам">Σ↑ ${fu}</div>`;
+  }
+
+  const usersCount = node.connected_users ?? node.users_online ?? 0;
+  const uptimeStr = node.uptime_display || '';
+
+  let bottomHtml = '<div class="grid grid-cols-2 gap-2 text-[12px] mb-2">';
+  bottomHtml += `
+    <div class="flex flex-col items-end min-w-0" title="${dnTitle}">
+      <div class="flex items-center gap-1 text-muted2 min-w-0 w-full">
+      <i data-lucide="arrow-down" class="w-3.5 h-3.5 shrink-0 text-emerald-500"></i>
+      <span class="ml-auto font-medium truncate min-w-0" style="color:var(--admin-text-base);">${dnFmt.value}<span class="text-[10px] text-muted2 font-normal ml-0.5">${dnFmt.unit}</span></span>
+      </div>${dnNote}
+    </div>
+    <div class="flex flex-col items-end min-w-0" title="${upTitle}">
+      <div class="flex items-center gap-1 text-muted2 min-w-0 w-full">
+      <i data-lucide="arrow-up" class="w-3.5 h-3.5 shrink-0" style="color: var(--color-brand-500);"></i>
+      <span class="ml-auto font-medium truncate min-w-0" style="color:var(--admin-text-base);">${upFmt.value}<span class="text-[10px] text-muted2 font-normal ml-0.5">${upFmt.unit}</span></span>
+      </div>${upNote}
+    </div>
+    <div class="flex items-center gap-1 text-muted2 min-w-0" title="Подключённые пользователи">
+      <i data-lucide="users" class="w-3.5 h-3.5 shrink-0"></i>
+      <span class="ml-auto font-medium truncate" style="color:var(--admin-text-base);">${rwFmtNumber(Math.round(Number(usersCount) || 0))}</span>
+    </div>
+    <div class="flex items-center gap-1 text-muted2 min-w-0" title="Uptime Xray">
+      <i data-lucide="clock" class="w-3.5 h-3.5 shrink-0"></i>
+      <span class="ml-auto font-medium truncate" style="color:var(--admin-text-base);">${uptimeStr || '—'}</span>
+    </div>`;
+  bottomHtml += '</div>';
+
+  // Действия
+  const enableDisableBtn = isDisabled
+    ? `<button type="button" class="tw-btn tw-btn-secondary tw-btn-sm flex-1" onclick="rwAction('${uuid}','enable',this)">
+         <i data-lucide="play" class="w-3.5 h-3.5"></i> Включить
+       </button>`
+    : `<button type="button" class="tw-btn tw-btn-secondary tw-btn-sm flex-1" onclick="rwAction('${uuid}','disable',this)" style="color:#f59e0b;">
+         <i data-lucide="pause" class="w-3.5 h-3.5"></i> Выключить
+       </button>`;
+
+  const actionsHtml = `
+    <div class="grid grid-cols-2 gap-1.5 pt-2 border-t" style="border-color: rgb(var(--admin-border));">
+      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" onclick="rwAction('${uuid}','restart',this)" title="Перезапустить Xray">
+        <i data-lucide="zap" class="w-3.5 h-3.5"></i> Restart
+      </button>
+      ${enableDisableBtn}
+    </div>`;
+
+  const renewalBadge = rwFmtRenewalBadge(node);
+
+  return `
+    <div class="${rwNodeCardClasses(node)}" data-node-uuid="${uuid}" id="rw-node-${uuid}">
+      <div class="flex items-start gap-2 mb-2 min-w-0">
+        <span class="w-2 h-2 rounded-full shrink-0 mt-1.5" style="background:${dotColor};"></span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1 min-w-0">
+            <div class="text-[14px] font-semibold leading-tight truncate flex-1 min-w-0" style="color:var(--admin-text-base);" title="${rwEscHtml(name)}">${rwEscHtml(name)}</div>
+            <button type="button" class="rw-renewal-cal-btn shrink-0" onclick="rwRenewalOpenModal('${uuid}', event)" title="Изменить дату продления [ДД.ММ.ГГГГ]">
+              <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          ${addr ? `<div class="text-[11px] text-muted2 truncate flex items-center gap-1 mt-0.5"><i data-lucide="map-pin" class="w-3 h-3 shrink-0"></i>${addr}</div>` : ''}
+          ${node.country_code ? `<div class="text-[10px] text-subtle2 mt-0.5 truncate">${rwEscHtml(rwCountryDisplay(node.country_code))}</div>` : ''}
+          ${renewalBadge}
+        </div>
+        ${statusChip}
+      </div>
+      ${metricsHtml}
+      ${bottomHtml}
+      ${actionsHtml}
+    </div>`;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Обновление UI                                                                */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function rwUpdateAggregates(systemStats, agg) {
+  const $ = id => document.getElementById(id);
+  if (agg) {
+    if ($('rwAggOnlineNodes')) $('rwAggOnlineNodes').textContent = String(agg.online_nodes || 0);
+    if ($('rwAggTotalNodes'))  $('rwAggTotalNodes').textContent  = String(agg.total_nodes  || 0);
+
+    const totalEl = $('rwTotalBandwidth');
+    const bdEl    = $('rwBandwidthBreakdown');
+    if (totalEl) {
+      const tbps = agg.total_bandwidth_bps || 0;
+      if (tbps > 1e-3) {
+        const total = rwFmtBitsPerSec(tbps);
+        totalEl.innerHTML = `${total.value}<span class="text-[12px] text-muted2 font-normal ml-1">${total.unit}</span>`;
+      } else {
+        const miu = Number(agg.metrics_inbound_upload_bytes || 0);
+        const mid = Number(agg.metrics_inbound_download_bytes || 0);
+        const fu = rwFmtBytesIEC(miu);
+        const fd = rwFmtBytesIEC(mid);
+        if (fu || fd) {
+          const line = [fu ? ('↑ ' + fu) : '', fd ? ('↓ ' + fd) : ''].filter(Boolean).join(' · ');
+          totalEl.innerHTML = `<span class="text-[15px]">${line}</span><span class="text-[10px] text-muted2 font-normal ml-1 block leading-tight">Σ инбаунды</span>`;
+        } else {
+          const total = rwFmtBitsPerSec(0);
+          totalEl.innerHTML = `${total.value}<span class="text-[12px] text-muted2 font-normal ml-1">${total.unit}</span>`;
+        }
+      }
+    }
+    if (bdEl) {
+      const tbps = agg.total_bandwidth_bps || 0;
+      if (tbps > 1e-3) {
+        const up = rwFmtBitsPerSec(agg.total_upload_bps   || 0);
+        const dn = rwFmtBitsPerSec(agg.total_download_bps || 0);
+        bdEl.innerHTML = `
+        <span class="inline-flex items-center gap-0.5 min-w-0 truncate" title="Текущая скорость приёма (realtime)">
+          <i data-lucide="arrow-down" class="w-2.5 h-2.5 shrink-0" style="color:#10b981;"></i><span class="truncate">${dn.value}${dn.unit}</span>
+        </span>
+        <span class="inline-flex items-center gap-0.5 min-w-0 truncate" title="Текущая скорость передачи (realtime)">
+          <i data-lucide="arrow-up" class="w-2.5 h-2.5 shrink-0" style="color: var(--color-brand-500);"></i><span class="truncate">${up.value}${up.unit}</span>
+        </span>`;
+      } else {
+        bdEl.innerHTML = `<span class="truncate text-subtle2 normal-case" title="При отсутствии realtime показывается сумма накопительных счётчиков по инбаундам">Σ без realtime — см. значение выше</span>`;
+      }
+    }
+  }
+  if (systemStats) {
+    if ($('rwOnlineNow'))  $('rwOnlineNow').textContent  = rwFmtNumber(systemStats.online_now);
+    if ($('rwTotalUsers')) $('rwTotalUsers').textContent = rwFmtNumber(systemStats.total_users);
+  }
+}
+
+/* Состояние табов и кэш последних нод */
+let _rwAllNodes = [];
+let _rwActiveTab = 'all'; // 'all' | 'online' | 'offline'
+let _rwSortMode = 'renewal'; // 'renewal' | 'online' | 'load'
+
+function rwIsNodeOnline(n) {
+  return !n.is_disabled && n.is_connected === true;
+}
+
+function rwCountByTab(nodes) {
+  let online = 0, offline = 0;
+  for (const n of nodes) {
+    if (rwIsNodeOnline(n)) online++; else offline++;
+  }
+  return { all: nodes.length, online, offline };
+}
+
+function rwFilterByTab(nodes, tab) {
+  if (tab === 'online')  return nodes.filter(rwIsNodeOnline);
+  if (tab === 'offline') return nodes.filter(n => !rwIsNodeOnline(n));
+  return nodes;
+}
+
+function rwSetTab(tab) {
+  _rwActiveTab = tab;
+  // Подсветка активной вкладки
+  document.querySelectorAll('.rw-tab').forEach(b => {
+    b.classList.toggle('rw-tab-active', b.dataset.tab === tab);
+  });
+  rwRenderNodes();
+}
+
+function rwSetSort(mode) {
+  _rwSortMode = mode || 'renewal';
+  try { localStorage.setItem(RW_NODES_SORT_KEY, _rwSortMode); } catch (e) { /* ignore */ }
+  const sel = document.getElementById('rwNodesSort');
+  if (sel && sel.value !== _rwSortMode) sel.value = _rwSortMode;
+  _rwAllNodes = rwSortNodes(_rwAllNodes, _rwSortMode);
+  rwRenderNodes();
+}
+
+function rwInitSortMode() {
+  try {
+    const saved = localStorage.getItem(RW_NODES_SORT_KEY);
+    if (saved === 'online' || saved === 'load' || saved === 'renewal') _rwSortMode = saved;
+  } catch (e) { /* ignore */ }
+  const sel = document.getElementById('rwNodesSort');
+  if (sel) sel.value = _rwSortMode;
+}
+
+function rwRenderNodes() {
+  const grid = document.getElementById('rwNodesGrid');
+  if (!grid) return;
+  const counts = rwCountByTab(_rwAllNodes);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(v); };
+  set('rwCountAll',     counts.all);
+  set('rwCountAllChip', counts.all);
+  set('rwCountOnline',  counts.online);
+  set('rwCountOffline', counts.offline);
+
+  const filtered = rwFilterByTab(_rwAllNodes, _rwActiveTab);
+  if (filtered.length === 0) {
+    const emptyText = _rwActiveTab === 'online'  ? 'Нет онлайн-нод.'
+                    : _rwActiveTab === 'offline' ? 'Нет офлайн-нод. Все работают штатно.'
+                    : 'Нет добавленных нод.';
+    grid.innerHTML = `<div class="col-span-full"><div class="tw-surface rounded-[var(--radius-card)] p-6 text-center text-[13px] text-muted2">${emptyText}</div></div>`;
+    return;
+  }
+  grid.innerHTML = filtered.map(rwBuildNodeCard).join('');
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+function rwUpdateNodesGrid(nodes) {
+  _rwAllNodes = rwSortNodes(Array.isArray(nodes) ? nodes : [], _rwSortMode);
+  rwRenderNodes();
+}
+
+function rwSetLastUpdate() {
+  const el = document.getElementById('rwLastUpdate');
+  if (!el) return;
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  el.textContent = `Обновлено в ${hh}:${mm}:${ss}`;
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Запросы                                                                      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+let _rwRefreshing = false;
+
+async function rwRefresh() {
+  if (_rwRefreshing) return;
+  _rwRefreshing = true;
+  const btn = document.getElementById('rwRefreshBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('{{ url_for("admin.remnawave_stats_api") }}', { headers: {'X-Requested-With': 'fetch'} });
+    const data = await r.json();
+    if (!data.ok) {
+      rwToast('Ошибка обновления: ' + (data.error || 'unknown'), 'error');
+      return;
+    }
+    rwUpdateAggregates(data.system_stats, data.agg);
+    rwUpdateNodesGrid(data.nodes || []);
+    rwSetLastUpdate();
+  } catch (e) {
+    rwToast('Сеть: ' + e.message, 'error');
+  } finally {
+    _rwRefreshing = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function rwAction(uuid, action, btnEl) {
+  if (!uuid) return;
+  // Подтверждения для опасных действий
+  if (action === 'disable' && !confirm('Выключить ноду? Клиенты, подключённые через неё, потеряют связь.')) return;
+  if (action === 'restart' && !confirm('Перезапустить Xray на ноде? Кратковременный разрыв соединений.')) return;
+
+  const original = btnEl ? btnEl.innerHTML : '';
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i>';
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  }
+  try {
+    const secret = rwSecretFromUrl();
+    const url = `/${secret}/api/remnawave/nodes/${uuid}/${action}`;
+    const r = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'} });
+    const data = await r.json().catch(() => ({}));
+    if (data.ok) {
+      const labels = { restart: 'Перезапуск', enable: 'Включена', disable: 'Выключена' };
+      rwToast(`✅ ${labels[action] || 'Готово'}`, 'success');
+      // Слегка ждём чтобы панель успела записать состояние
+      setTimeout(rwRefresh, 1200);
+    } else {
+      rwToast('❌ ' + (data.error || 'Ошибка'), 'error');
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = original;
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+      }
+    }
+  } catch (e) {
+    rwToast('Сеть: ' + e.message, 'error');
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = original;
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+  }
+}
+
+async function rwRestartAll() {
+  if (!confirm('Перезапустить Xray на ВСЕХ нодах одновременно? Это вызовет кратковременный разрыв соединений у всех пользователей.')) return;
+  try {
+    const secret = rwSecretFromUrl();
+    const r = await fetch(`/${secret}/api/remnawave/nodes/restart-all`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ force_restart: false })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (data.ok) {
+      rwToast('✅ Перезапуск всех нод запущен', 'success');
+      setTimeout(rwRefresh, 1500);
+    } else {
+      rwToast('❌ ' + (data.error || 'Ошибка'), 'error');
+    }
+  } catch (e) {
+    rwToast('Сеть: ' + e.message, 'error');
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* SSH-установка Remnawave Node                                                 */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+let _rwiProfiles = [];
+let _rwiTaskId = null;
+let _rwiPollTimer = null;
+let _rwiLogIndex = 0;
+let _rwiCountriesInited = false;
+
+function rwNodeInstallInitCountries() {
+  const sel = document.getElementById('rwi_country_code');
+  const nameEl = document.getElementById('rwi_node_name');
+  const menu = document.getElementById('rwi_flag_dropdown_menu');
+  if (!sel || !nameEl || typeof AdminCountries === 'undefined') return;
+
+  if (!_rwiCountriesInited) {
+    AdminCountries.fillSelect(sel, 'DE');
+    AdminCountries.fillFlagMenu(menu, function (pick) {
+      nameEl.value = (pick.flag + ' ' + pick.name).trim().slice(0, 30);
+      nameEl.dataset.manual = '1';
+      if (pick.code) sel.value = pick.code;
+      nameEl.focus();
+    });
+    sel.addEventListener('change', function () {
+      const label = AdminCountries.label(sel.value);
+      if (!nameEl.dataset.manual || !nameEl.value.trim()) {
+        nameEl.value = label.slice(0, 30);
+        nameEl.dataset.manual = '';
+      }
+    });
+    nameEl.addEventListener('input', function () {
+      nameEl.dataset.manual = nameEl.value.trim() ? '1' : '';
+    });
+    document.addEventListener('click', function (e) {
+      const modal = document.getElementById('rwNodeInstallModal');
+      if (!modal || !modal.classList.contains('is-open')) return;
+      if (e.target.closest('.tw-dropdown')) return;
+      modal.querySelectorAll('.tw-dropdown-menu').forEach(m => m.classList.add('hidden'));
+    });
+    _rwiCountriesInited = true;
+  } else {
+    AdminCountries.fillSelect(sel, sel.value || 'DE');
+  }
+}
+
+function rwNodeInstallClose() {
+  const m = document.getElementById('rwNodeInstallModal');
+  if (!m) return;
+  if (_rwiPollTimer) {
+    clearInterval(_rwiPollTimer);
+    _rwiPollTimer = null;
+  }
+  m.classList.remove('is-open');
+  m.setAttribute('aria-hidden', 'true');
+  m.style.setProperty('display', 'none', 'important');
+  if (!document.querySelector('.tw-modal.is-open')) {
+    document.body.style.overflow = '';
+  }
+}
+
+async function rwNodeInstallOpen() {
+  const m = document.getElementById('rwNodeInstallModal');
+  if (!m) return;
+  m.style.removeProperty('display');
+  m.classList.add('is-open');
+  m.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+
+  document.getElementById('rwi_install_progress').style.display = 'none';
+  document.getElementById('rwi_install_logs').innerHTML = '';
+  document.getElementById('rwNodeInstallStartBtn').disabled = false;
+  document.getElementById('rwNodeInstallCancelBtn').disabled = false;
+  _rwiTaskId = null;
+  _rwiLogIndex = 0;
+
+  rwNodeInstallInitCountries();
+  if (window.AdminInfo && typeof AdminInfo.init === 'function') {
+    AdminInfo.init(m);
+  }
+  const nameEl = document.getElementById('rwi_node_name');
+  if (nameEl) {
+    nameEl.dataset.manual = '';
+    if (!nameEl.value.trim()) {
+      const sel = document.getElementById('rwi_country_code');
+      if (sel && typeof AdminCountries !== 'undefined') {
+        nameEl.value = AdminCountries.label(sel.value || 'DE').slice(0, 30);
+      }
+    }
+  }
+
+  document.querySelectorAll('input[name="rwi_auth"]').forEach(r => {
+    r.onchange = rwNodeInstallSyncAuthFields;
+  });
+  rwNodeInstallSyncAuthFields();
+
+  const addr = document.getElementById('rwi_node_address');
+  const sshHost = document.getElementById('rwi_ssh_host');
+  if (addr && sshHost) {
+    addr.oninput = () => { if (!sshHost.dataset.manual) sshHost.value = addr.value; };
+    sshHost.oninput = () => { sshHost.dataset.manual = sshHost.value.trim() ? '1' : ''; };
+  }
+
+  const sel = document.getElementById('rwi_config_profile');
+  sel.innerHTML = '<option value="">Загрузка…</option>';
+  try {
+    const secret = rwSecretFromUrl();
+    const r = await fetch(`/${secret}/api/remnawave/config-profiles`, { headers: {'X-Requested-With': 'fetch'} });
+    const data = await r.json();
+    if (!data.ok || !Array.isArray(data.profiles)) {
+      sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+      rwToast(data.error || 'Не удалось загрузить профили', 'error');
+      return;
+    }
+    _rwiProfiles = data.profiles;
+    sel.innerHTML = '<option value="">— выберите профиль —</option>' +
+      _rwiProfiles.map(p => `<option value="${p.uuid}">${(p.name || p.uuid).replace(/"/g, '&quot;')}</option>`).join('');
+    sel.onchange = rwNodeInstallRenderInbounds;
+    if (_rwiProfiles.length === 1) {
+      sel.value = _rwiProfiles[0].uuid;
+      rwNodeInstallRenderInbounds();
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Ошибка</option>';
+    rwToast('Профили: ' + e.message, 'error');
+  }
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+function rwNodeInstallSyncAuthFields() {
+  const mode = document.querySelector('input[name="rwi_auth"]:checked')?.value || 'password';
+  document.getElementById('rwi_ssh_password_wrap').style.display = mode === 'password' ? '' : 'none';
+  document.getElementById('rwi_ssh_key_wrap').style.display = mode === 'key' ? '' : 'none';
+}
+
+function rwNodeInstallRenderInbounds() {
+  const uuid = document.getElementById('rwi_config_profile').value;
+  const wrap = document.getElementById('rwi_inbounds_wrap');
+  const list = document.getElementById('rwi_inbounds_list');
+  const prof = _rwiProfiles.find(p => p.uuid === uuid);
+  if (!prof || !prof.inbounds || !prof.inbounds.length) {
+    wrap.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  list.innerHTML = prof.inbounds.map(ib => `
+    <label class="flex items-center gap-2 text-[12px] cursor-pointer">
+      <input type="checkbox" class="rwi-inbound-cb" value="${ib.uuid}" checked style="accent-color: var(--color-brand-500);">
+      <span><code>${(ib.tag || '').replace(/</g, '')}</code> <span class="text-muted2">${ib.type || ''}</span></span>
+    </label>`).join('');
+}
+
+function rwNodeInstallAppendLogs(logs) {
+  if (!Array.isArray(logs)) return;
+  const box = document.getElementById('rwi_install_logs');
+  const slice = logs.slice(_rwiLogIndex);
+  slice.forEach(l => {
+    let timeStr = '';
+    let msgStr = '';
+    if (l && typeof l === 'object') {
+      msgStr = String(l.message ?? l.msg ?? '');
+      if (l.time) {
+        const d = new Date(l.time);
+        timeStr = isNaN(d) ? String(l.time) : d.toTimeString().slice(0, 8);
+      }
+    } else {
+      msgStr = String(l ?? '');
+    }
+    const line = document.createElement('div');
+    line.style.lineHeight = '1.45';
+    line.textContent = (timeStr ? `[${timeStr}] ` : '') + msgStr;
+    box.appendChild(line);
+  });
+  _rwiLogIndex = logs.length;
+  box.scrollTop = box.scrollHeight;
+}
+
+async function rwNodeInstallPoll() {
+  if (!_rwiTaskId) return;
+  try {
+    const secret = rwSecretFromUrl();
+    const r = await fetch(`/${secret}/api/remnawave/nodes/install-status/${_rwiTaskId}`);
+    const data = await r.json();
+    if (!data.ok) return;
+
+    const pct = Number(data.progress || 0);
+    document.getElementById('rwi_progress_bar').style.width = pct + '%';
+    document.getElementById('rwi_progress_pct').textContent = pct + '%';
+    if (data.message) document.getElementById('rwi_progress_label').textContent = data.message;
+
+    rwNodeInstallAppendLogs(data.logs);
+
+    if (data.status === 'completed' || data.status === 'error') {
+      clearInterval(_rwiPollTimer);
+      _rwiPollTimer = null;
+      const bar = document.getElementById('rwi_progress_bar');
+      bar.style.background = data.status === 'completed' ? '#10b981' : '#ef4444';
+      document.getElementById('rwNodeInstallStartBtn').disabled = false;
+      document.getElementById('rwNodeInstallCancelBtn').disabled = false;
+      if (data.status === 'completed') {
+        rwToast('✅ Remnawave Node установлена', 'success');
+        setTimeout(rwRefresh, 1500);
+      } else {
+        rwToast('❌ ' + (data.error || 'Ошибка установки'), 'error');
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function rwNodeInstallStart() {
+  const form = document.getElementById('rwNodeInstallForm');
+  if (!form.checkValidity()) { form.reportValidity(); return; }
+
+  const nodeAddress = document.getElementById('rwi_node_address').value.trim();
+  const nodePort = parseInt(document.getElementById('rwi_node_port').value, 10) || 2222;
+  const nodeName = document.getElementById('rwi_node_name').value.trim();
+  const countryCode = document.getElementById('rwi_country_code').value;
+  const profileUuid = document.getElementById('rwi_config_profile').value;
+  const inboundUuids = Array.from(document.querySelectorAll('.rwi-inbound-cb:checked')).map(el => el.value);
+
+  let sshHost = document.getElementById('rwi_ssh_host').value.trim();
+  if (!sshHost) sshHost = nodeAddress;
+  const sshPort = parseInt(document.getElementById('rwi_ssh_port').value, 10) || 22;
+  const sshUser = document.getElementById('rwi_ssh_user').value.trim() || 'root';
+  const authMode = document.querySelector('input[name="rwi_auth"]:checked')?.value || 'password';
+  const sshPassword = document.getElementById('rwi_ssh_password').value;
+  const sshKey = document.getElementById('rwi_ssh_private_key').value.trim();
+
+  if (!profileUuid) { rwToast('Выберите config profile', 'warning'); return; }
+  if (!inboundUuids.length) { rwToast('Выберите хотя бы один inbound', 'warning'); return; }
+  if (authMode === 'password' && !sshPassword) { rwToast('Укажите SSH пароль', 'warning'); return; }
+  if (authMode === 'key' && !sshKey) { rwToast('Вставьте приватный ключ', 'warning'); return; }
+
+  const btn = document.getElementById('rwNodeInstallStartBtn');
+  btn.disabled = true;
+  document.getElementById('rwNodeInstallCancelBtn').disabled = true;
+  document.getElementById('rwi_install_progress').style.display = 'block';
+  document.getElementById('rwi_install_logs').innerHTML = '';
+  _rwiLogIndex = 0;
+  document.getElementById('rwi_progress_bar').style.width = '0%';
+  document.getElementById('rwi_progress_bar').style.background = 'var(--color-brand-500)';
+
+  try {
+    const secret = rwSecretFromUrl();
+    const r = await fetch(`/${secret}/api/remnawave/nodes/install-via-ssh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host: sshHost,
+        ssh_port: sshPort,
+        ssh_username: sshUser,
+        ssh_auth_method: authMode,
+        ssh_password: authMode === 'password' ? sshPassword : '',
+        ssh_private_key: authMode === 'key' ? sshKey : '',
+        node_name: nodeName,
+        node_address: nodeAddress,
+        node_port: nodePort,
+        country_code: countryCode,
+        config_profile_uuid: profileUuid,
+        inbound_uuids: inboundUuids,
+      }),
+    });
+    const data = await r.json();
+    if (data.ok && data.task_id) {
+      _rwiTaskId = data.task_id;
+      _rwiPollTimer = setInterval(rwNodeInstallPoll, 2000);
+      rwNodeInstallPoll();
+    } else {
+      rwToast(data.error || 'Не удалось запустить', 'error');
+      btn.disabled = false;
+      document.getElementById('rwNodeInstallCancelBtn').disabled = false;
+    }
+  } catch (e) {
+    rwToast('Сеть: ' + e.message, 'error');
+    btn.disabled = false;
+    document.getElementById('rwNodeInstallCancelBtn').disabled = false;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Инициализация + автообновление                                               */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+(function rwInit() {
+  rwInitSortMode();
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const m = document.getElementById('rwRenewalModal');
+    if (m && m.classList.contains('is-open')) rwRenewalCloseModal();
+    const im = document.getElementById('rwNodeInstallModal');
+    if (im && im.classList.contains('is-open')) rwNodeInstallClose();
+  });
+
+  // Server-side данные (если есть) сразу заливаем в UI, чтобы не было «Загрузка...»
+  {% if agg %}
+  try { rwUpdateAggregates({{ (system_stats|tojson) if system_stats else 'null' }}, {{ agg|tojson }}); } catch(e) { console.error(e); }
+  {% endif %}
+  {% if nodes %}
+  try { rwUpdateNodesGrid({{ nodes|tojson }}); } catch(e) { console.error(e); }
+  {% endif %}
+  rwSetLastUpdate();
+  if (window.AdminInfo && typeof AdminInfo.init === 'function') AdminInfo.init();
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+
+  // Автообновление каждые 30 секунд
+  if (!window._rwAutoRefreshTimer) {
+    window._rwAutoRefreshTimer = setInterval(rwRefresh, 30000);
+  }
+  window.addEventListener('beforeunload', () => {
+    if (window._rwAutoRefreshTimer) {
+      clearInterval(window._rwAutoRefreshTimer);
+      window._rwAutoRefreshTimer = null;
+    }
+  });
+})();
+</script>
+{% endblock %}

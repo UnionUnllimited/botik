@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Тёмная тема через класс .dark на <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Увеличение масштаба на десктопе */
+@media (min-width: 1024px) {
+  html { font-size: 17px }
+}
+@media (min-width: 1280px) {
+  html { font-size: 17.5px }
+}

@@ -1,0 +1,733 @@
+﻿{% extends "base.html" %}
+{% from "_partials/payment_method.html" import method_chip %}
+{% block title %}Платежи — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# === Заголовок + действия === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Платежи</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">История транзакций. Смена статуса доступна из карточки клиента.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if current_user.is_admin %}
+      <form method="post" action="{{ url_for('admin.clear_pending_payments', status=status_filter, page=page, q=search_query or None) }}" onsubmit="return confirm('Очистить все canceled?')" class="inline">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="eraser" class="w-3.5 h-3.5"></i>
+          <span>Очистить canceled</span>
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {# === KPI: только админ. Считаем только успешные RUB-платежи === #}
+  {% if current_user.is_admin %}
+  <div id="statsCards" class="grid grid-cols-2 md:grid-cols-4 gap-3" title="Только успешные платежи в RUB. Сутки и месяц — календарные, по МСК; неделя — за 7 дней">
+    {# За сутки (календарные, по МСК) #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">За сутки</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ "%.0f"|format(stats.today_sum or 0) }} <span class="text-[14px] tw-text-muted2 font-normal">₽</span></div>
+      <div class="mt-1 text-[11px] tw-text-muted2">{{ stats.today_count }} платежей</div>
+    </div>
+    {# За неделю #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">За неделю</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ "%.0f"|format(stats.week_sum or 0) }} <span class="text-[14px] tw-text-muted2 font-normal">₽</span></div>
+      <div class="mt-1 text-[11px] tw-text-muted2">{{ stats.week_count }} платежей</div>
+    </div>
+    {# За месяц #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">За месяц</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ "%.0f"|format(stats.month_sum or 0) }} <span class="text-[14px] tw-text-muted2 font-normal">₽</span></div>
+      <div class="mt-1 text-[11px] tw-text-muted2">{{ stats.month_count }} платежей</div>
+    </div>
+    {# Всё время #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Всё время</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ "%.0f"|format(stats.all_sum or 0) }} <span class="text-[14px] tw-text-muted2 font-normal">₽</span></div>
+      <div class="mt-1 text-[11px] tw-text-muted2">{{ stats.all_count }} платежей</div>
+    </div>
+  </div>
+  <div class="mt-1.5 text-[11px] tw-text-muted2">Сутки и месяц — календарные, по МСК · неделя — за 7 дней · только успешные платежи в RUB</div>
+  {% endif %}
+
+  {# === Поиск + фильтр статуса === #}
+  <div class="tw-surface rounded-[var(--radius-card)] p-3">
+    <form method="get" class="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full" id="paymentsFilterForm">
+      {# Поиск по ID платежа / Telegram ID / username / email #}
+      <div class="relative w-full sm:flex-1 sm:min-w-[220px]">
+        <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 tw-text-subtle2 pointer-events-none"></i>
+        <input type="search" name="q" id="paymentsSearchInput"
+               value="{{ search_query|default('') }}"
+               placeholder="ID платежа, Telegram ID, @username, email…"
+               autocomplete="off" spellcheck="false"
+               class="tw-input tw-input-sm w-full"
+               style="padding-left: 32px; padding-right: {% if search_query %}32px{% else %}10px{% endif %};">
+        {% if search_query %}
+        <a href="{{ url_for('admin.payments', status=status_filter) }}"
+           class="absolute right-1.5 top-1/2 -translate-y-1/2 tw-btn tw-btn-ghost tw-btn-icon-sm"
+           title="Сбросить поиск"
+           style="width: 24px; height: 24px;">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <label for="status" class="text-[12.5px] font-medium tw-text-muted2 shrink-0">Статус:</label>
+        <select class="tw-select tw-input-sm flex-1 sm:flex-none" id="status" name="status" onchange="this.form.submit()" style="min-width: 0;">
+          <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Все статусы</option>
+          <option value="succeeded" {% if status_filter == 'succeeded' %}selected{% endif %}>Успешные</option>
+          <option value="processing" {% if status_filter == 'processing' %}selected{% endif %}>Обработка</option>
+          <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Ожидание</option>
+          <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Неуспешные</option>
+        </select>
+      </div>
+    </form>
+    {% if search_query %}
+    <div class="mt-2 text-[12px] tw-text-muted2 flex items-center gap-1.5">
+      <i data-lucide="filter" class="w-3 h-3"></i>
+      Поиск по: <span class="tw-chip" style="background: var(--admin-bg-soft); color: var(--admin-text-base);">{{ search_query }}</span>
+      <span class="tw-text-subtle2">·</span>
+      <span>найдено: <strong>{{ stats.all_count if status_filter == 'all' and not search_query else (payments|length) }}</strong> на этой странице</span>
+    </div>
+    {% endif %}
+  </div>
+  <script>
+    // Авто-submit поиска через 400 мс задержки после ввода (debounce)
+    (function(){
+      var inp = document.getElementById('paymentsSearchInput');
+      var form = document.getElementById('paymentsFilterForm');
+      if (!inp || !form) return;
+      var t = null;
+      inp.addEventListener('input', function(){
+        if (t) clearTimeout(t);
+        t = setTimeout(function(){ form.submit(); }, 400);
+      });
+      // Enter — мгновенный submit
+      inp.addEventListener('keydown', function(e){
+        if (e.key === 'Enter') { e.preventDefault(); if (t) clearTimeout(t); form.submit(); }
+      });
+    })();
+  </script>
+
+  {# === Десктопная таблица === #}
+  <div id="desktopTable" class="hidden md:block tw-surface rounded-[var(--radius-card)] overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="tw-tbl">
+        <thead>
+          <tr>
+            <th style="width: 200px;">ID платежа</th>
+            <th style="width: 180px;">Пользователь</th>
+            <th style="width: 110px;">Сумма</th>
+            <th style="width: 180px;">Тариф</th>
+            <th style="width: 120px;">Статус</th>
+            <th style="width: 160px;">Дата</th>
+          </tr>
+        </thead>
+        <tbody id="paymentsBody">
+          {% for p in payments %}
+          <tr>
+            {# === ID + способ оплаты === #}
+            <td>
+              {% set display_id = p.payment_id_clean or p.payment_id %}
+              <code class="payment-id-copy" data-payment-id="{{ display_id }}" title="Нажмите для копирования">
+                {% if display_id|length > 18 %}{{ display_id[:15] }}...{% else %}{{ display_id }}{% endif %}
+              </code>
+              <div class="mt-1.5">
+                {{ method_chip(p.payment_method_normalized, p.payment_method) }}
+              </div>
+            </td>
+            {# === Пользователь === #}
+            <td>
+              {% if p.telegram_id %}
+                {% set uname = users.get(p.telegram_id, p.telegram_id)|string %}
+                <a href="javascript:void(0);" data-telegram-id="{{ p.telegram_id }}" class="user-link inline-flex items-center gap-1 text-[13px] font-medium" style="color: var(--color-brand-500); text-decoration: none; cursor: pointer;" title="{{ uname }} — кликните для просмотра профиля">
+                  {{ (uname[:15] + '…') if uname|length > 15 else uname }}
+                  <i data-lucide="external-link" class="w-3 h-3"></i>
+                </a>
+                {% if users.get(p.telegram_id) %}
+                  <div class="text-[11px] tw-text-subtle2 mt-0.5">{{ p.telegram_id }}</div>
+                {% endif %}
+                {% if p.registration_source == 'site' %}
+                  <span class="tw-chip mt-1" style="background: rgba(99 102 241 / .12); color: var(--color-brand-500);" title="Клиент зарегистрирован на сайте">
+                    <i data-lucide="globe" class="w-3 h-3"></i> Сайт
+                  </span>
+                {% elif p.registration_source == 'telegram' %}
+                  <span class="tw-chip mt-1" style="background: rgba(59 130 246 / .12); color: #3b82f6;" title="Клиент зарегистрирован в Telegram">
+                    <i data-lucide="send" class="w-3 h-3"></i> TG
+                  </span>
+                {% endif %}
+              {% else %}
+                <span class="tw-text-subtle2">—</span>
+              {% endif %}
+            </td>
+            {# === Сумма === #}
+            <td>
+              <div class="text-[14px] font-semibold tw-text-base2">{{ "%.2f"|format(p.amount) }} <span class="text-[12px] tw-text-muted2 font-normal">{{ p.currency }}</span></div>
+            </td>
+            {# === Тариф === #}
+            <td>
+              {% if p.tariff_info %}
+                {% if p.tariff_info.type == 'traffic_topup' %}
+                  {% if p.tariff_info.id and traffic_topup_tariffs.get(p.tariff_info.id) %}
+                    <div class="text-[13px] tw-text-base2">{{ traffic_topup_tariffs[p.tariff_info.id].name }}</div>
+                    <div class="text-[11px] tw-text-muted2 mt-0.5">+{{ traffic_topup_tariffs[p.tariff_info.id].traffic_gb }} GB</div>
+                  {% elif p.tariff_info.id %}
+                    <div class="text-[13px] tw-text-subtle2" title="Тариф удалён (ID: {{ p.tariff_info.id }})">
+                      {% if p.tariff_info.traffic_gb %}+{{ p.tariff_info.traffic_gb }} GB{% else %}—{% endif %}
+                    </div>
+                  {% elif p.tariff_info.traffic_gb %}
+                    <div class="text-[13px] tw-text-subtle2">+{{ p.tariff_info.traffic_gb }} GB</div>
+                  {% else %}
+                    <span class="tw-text-subtle2">—</span>
+                  {% endif %}
+                {% elif p.tariff_info.type == 'device_upgrade' %}
+                  <div class="text-[13px] tw-text-base2 inline-flex items-center gap-1.5" title="Расширение лимита устройств">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+                    {{ p.tariff_info.old_limit }} → {{ p.tariff_info.new_limit }}
+                  </div>
+                  <div class="text-[11px] tw-text-muted2 mt-0.5">лимит устр.</div>
+                {% else %}
+                  {% set _t  = (tariffs.get(p.tariff_info.id) if p.tariff_info.id else None) %}
+                  {% set _li = (p.tariff_info.limit_ip   or (_t.limit_ip   if _t else 0) or 0) %}
+                  {% set _gb = ((_t.traffic_gb if _t else 0) or 0) %}
+                  {% if p.tariff_info.id and _t %}
+                    <div class="text-[13px] tw-text-base2" title="ID тарифа: {{ p.tariff_info.id }}">{{ _t.name }}</div>
+                    <div class="text-[11px] tw-text-muted2 mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0">
+                      <span>{{ p.tariff_info.days }} дн.</span>
+                      {% if _li and _li > 0 %}<span class="opacity-60">·</span><span class="inline-flex items-center gap-0.5"><i data-lucide="smartphone" class="w-3 h-3"></i>{{ _li }} устр.</span>{% endif %}
+                      {% if _gb and _gb > 0 %}<span class="opacity-60">·</span><span class="inline-flex items-center gap-0.5"><i data-lucide="database" class="w-3 h-3"></i>{{ _gb }} GB</span>{% endif %}
+                    </div>
+                  {% elif p.tariff_info.id %}
+                    <div class="text-[13px] tw-text-subtle2" title="Тариф удалён (ID: {{ p.tariff_info.id }})">
+                      {{ p.tariff_info.days }} дн.{% if _li and _li > 0 %} · {{ _li }} устр.{% endif %}
+                    </div>
+                  {% elif p.tariff_info.days %}
+                    <div class="text-[13px] tw-text-subtle2">
+                      {{ p.tariff_info.days }} дн.{% if _li and _li > 0 %} · {{ _li }} устр.{% endif %}
+                    </div>
+                  {% else %}
+                    <span class="tw-text-subtle2">—</span>
+                  {% endif %}
+                {% endif %}
+              {% else %}
+                <span class="tw-text-subtle2">—</span>
+              {% endif %}
+            </td>
+            {# === Статус === #}
+            <td>
+              {% if p.status == 'succeeded' %}
+                <span class="tw-status-badge tw-status-succeeded"><span class="dot w-1.5 h-1.5 rounded-full" style="background: currentColor"></span>Успешно</span>
+              {% elif p.status == 'processing' %}
+                <span class="tw-status-badge tw-status-processing"><span class="dot w-1.5 h-1.5 rounded-full" style="background: currentColor"></span>Обработка</span>
+              {% elif p.status == 'pending' %}
+                <span class="tw-status-badge tw-status-pending"><span class="dot w-1.5 h-1.5 rounded-full" style="background: currentColor"></span>Ожидание</span>
+              {% elif p.status == 'canceled' %}
+                <span class="tw-status-badge tw-status-canceled"><span class="dot w-1.5 h-1.5 rounded-full" style="background: currentColor"></span>Отменён</span>
+              {% else %}
+                <span class="tw-status-badge tw-status-failed"><span class="dot w-1.5 h-1.5 rounded-full" style="background: currentColor"></span>{{ p.status }}</span>
+              {% endif %}
+            </td>
+            {# === Дата === #}
+            <td>
+              <div class="text-[12.5px] tw-text-base2">{{ p.created_at|msk_datetime }}</div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">
+            <div class="text-center py-10 tw-text-subtle2">
+              <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+              <div class="text-[13px]">Платежи не найдены.</div>
+            </div>
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# === Мобильные карточки === #}
+  <div id="mobileCards" class="md:hidden flex flex-col gap-2.5">
+    {% for p in payments %}
+      <div class="tw-surface rounded-[var(--radius-card)] p-3.5">
+        {# Top: пользователь + статус #}
+        <div class="flex items-start justify-between gap-2 mb-2.5">
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider mb-1">Пользователь</div>
+            {% if p.telegram_id %}
+              {% set uname = users.get(p.telegram_id, p.telegram_id)|string %}
+              <a href="javascript:void(0);" data-telegram-id="{{ p.telegram_id }}" class="user-link inline-flex items-center gap-1 text-[13.5px] font-medium" style="color: var(--color-brand-500); cursor: pointer;">
+                {{ (uname[:18] + '…') if uname|length > 18 else uname }}
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+              </a>
+              <div class="text-[11px] tw-text-subtle2 mt-0.5">{{ p.telegram_id }}</div>
+            {% else %}
+              <span class="tw-text-subtle2">—</span>
+            {% endif %}
+          </div>
+          <div>
+            {% if p.status == 'succeeded' %}<span class="tw-status-badge tw-status-succeeded">Успешно</span>
+            {% elif p.status == 'processing' %}<span class="tw-status-badge tw-status-processing">Обработка</span>
+            {% elif p.status == 'pending' %}<span class="tw-status-badge tw-status-pending">Ожидание</span>
+            {% elif p.status == 'canceled' %}<span class="tw-status-badge tw-status-canceled">Отменён</span>
+            {% else %}<span class="tw-status-badge tw-status-failed">{{ p.status }}</span>{% endif %}
+          </div>
+        </div>
+        {# Сумма + тариф #}
+        <div class="grid grid-cols-2 gap-2 mb-2.5">
+          <div>
+            <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider mb-1">Сумма</div>
+            <div class="text-[15px] font-semibold tw-text-base2">{{ "%.2f"|format(p.amount) }} <span class="text-[12px] tw-text-muted2 font-normal">{{ p.currency }}</span></div>
+          </div>
+          <div>
+            <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider mb-1">Тариф</div>
+            <div class="text-[12.5px] tw-text-base2">
+              {% if p.tariff_info %}
+                {% if p.tariff_info.type == 'traffic_topup' %}
+                  {% if p.tariff_info.id and traffic_topup_tariffs.get(p.tariff_info.id) %}
+                    {{ traffic_topup_tariffs[p.tariff_info.id].name }}
+                    <div class="text-[10.5px] tw-text-muted2 mt-0.5">+{{ traffic_topup_tariffs[p.tariff_info.id].traffic_gb }} GB</div>
+                  {% elif p.tariff_info.traffic_gb %}
+                    +{{ p.tariff_info.traffic_gb }} GB
+                  {% else %}—{% endif %}
+                {% elif p.tariff_info.type == 'device_upgrade' %}
+                  <span class="inline-flex items-center gap-1"><i data-lucide="smartphone" class="w-3 h-3"></i>{{ p.tariff_info.old_limit }} → {{ p.tariff_info.new_limit }}</span>
+                  <div class="text-[10.5px] tw-text-muted2 mt-0.5">лимит устр.</div>
+                {% else %}
+                  {% set _t  = (tariffs.get(p.tariff_info.id) if p.tariff_info.id else None) %}
+                  {% set _li = (p.tariff_info.limit_ip   or (_t.limit_ip   if _t else 0) or 0) %}
+                  {% set _gb = ((_t.traffic_gb if _t else 0) or 0) %}
+                  {% if p.tariff_info.id and _t %}
+                    {{ _t.name }}
+                    <div class="text-[10.5px] tw-text-muted2 mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                      <span>{{ p.tariff_info.days }} дн.</span>
+                      {% if _li and _li > 0 %}<span class="opacity-60">·</span><span class="inline-flex items-center gap-0.5"><i data-lucide="smartphone" class="w-3 h-3"></i>{{ _li }} устр.</span>{% endif %}
+                      {% if _gb and _gb > 0 %}<span class="opacity-60">·</span><span class="inline-flex items-center gap-0.5"><i data-lucide="database" class="w-3 h-3"></i>{{ _gb }} GB</span>{% endif %}
+                    </div>
+                  {% elif p.tariff_info.days %}
+                    <span class="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12.5px] tw-text-base2">
+                      {{ p.tariff_info.days }} дн.
+                      {% if _li and _li > 0 %}<span class="opacity-60">·</span><span class="inline-flex items-center gap-0.5 text-[10.5px] tw-text-muted2"><i data-lucide="smartphone" class="w-3 h-3"></i>{{ _li }} устр.</span>{% endif %}
+                    </span>
+                  {% else %}—{% endif %}
+                {% endif %}
+              {% else %}<span class="tw-text-subtle2">—</span>{% endif %}
+            </div>
+          </div>
+        </div>
+        {# Дата + ID + метод #}
+        <div class="pt-2.5 space-y-1.5 text-[11.5px] border-t" style="border-color: rgb(var(--admin-border));">
+          <div class="flex items-center gap-1.5"><span class="tw-text-subtle2">Дата:</span> <span class="tw-text-muted2">{{ p.created_at|msk_datetime }}</span></div>
+          <div class="flex items-center gap-1.5">
+            <span class="tw-text-subtle2">ID:</span>
+            {% set display_id = p.payment_id_clean or p.payment_id %}
+            <code class="payment-id-copy text-[11px]" data-payment-id="{{ display_id }}" title="Нажмите для копирования">
+              {% if display_id|length > 25 %}{{ display_id[:25] }}...{% else %}{{ display_id }}{% endif %}
+            </code>
+          </div>
+          <div class="flex items-center flex-wrap gap-1.5">
+            <span class="tw-text-subtle2">Метод:</span>
+            {{ method_chip(p.payment_method_normalized, p.payment_method) }}
+            {% if p.registration_source == 'site' %}
+              <span class="tw-chip" style="background: rgba(99 102 241 / .12); color: var(--color-brand-500);" title="Сайт"><i data-lucide="globe" class="w-3 h-3"></i> Сайт</span>
+            {% elif p.registration_source == 'telegram' %}
+              <span class="tw-chip" style="background: rgba(59 130 246 / .12); color: #3b82f6;" title="Telegram"><i data-lucide="send" class="w-3 h-3"></i> TG</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="text-center py-10 tw-text-subtle2">
+        <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+        <div class="text-[13px]">Платежи не найдены.</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {# === Пагинация === #}
+  <div id="paginationContainer" class="flex justify-center pt-2">
+    {% if total_pages > 1 %}
+    <nav aria-label="Page navigation" class="tw-pagination">
+      <a class="pg-item {% if page == 1 %}disabled{% endif %}"
+         href="{{ url_for('admin.payments', page=page-1, status=status_filter, q=search_query or None) }}" aria-label="Предыдущая">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+      </a>
+      {% set ns = namespace(last_printed=0) %}
+      {% for p in range(1, total_pages + 1) %}
+        {% set is_first = (p == 1) %}
+        {% set is_last = (p == total_pages) %}
+        {% set in_window = (p >= page - 1 and p <= page + 1) %}
+        {% if is_first or is_last or in_window %}
+          {% if p > ns.last_printed + 1 %}
+            <span class="pg-item disabled">…</span>
+          {% endif %}
+          <a class="pg-item {% if p == page %}active{% endif %}"
+             href="{{ url_for('admin.payments', page=p, status=status_filter, q=search_query or None) }}">{{ p }}</a>
+          {% set ns.last_printed = p %}
+        {% endif %}
+      {% endfor %}
+      <a class="pg-item {% if page == total_pages %}disabled{% endif %}"
+         href="{{ url_for('admin.payments', page=page+1, status=status_filter, q=search_query or None) }}" aria-label="Следующая">
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </a>
+    </nav>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Гарантированная отрисовка Lucide-иконок после SSR.
+   Базовый renderLucide может не успеть к моменту первого показа
+   мобильных карточек (display:flex через md:hidden).
+   Поэтому явно вызываем createIcons() после готовности DOM,
+   а на мобиле — ещё раз через rAF на случай поздних layout shift.
+   ============================================================ */
+(function ensurePaymentsLucide(){
+  function tick() {
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      try { lucide.createIcons(); } catch (_) {}
+    }
+  }
+  function schedule() {
+    tick();
+    requestAnimationFrame(() => tick());
+    requestAnimationFrame(() => requestAnimationFrame(() => tick()));
+    try {
+      window.setTimeout(tick, 0);
+      window.setTimeout(tick, 120);
+      window.setTimeout(tick, 320);
+    } catch (_) {}
+  }
+  function boot() {
+    schedule();
+    /* когда мобильные карточки попадают в вьюпорт (первый кадр / сдвиг layout) — добиваем lucide */
+    try {
+      const mob = document.getElementById('mobileCards');
+      if (mob && typeof IntersectionObserver === 'function') {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) { if (e.isIntersecting) tick(); });
+        }, { root: null, threshold: 0.01 });
+        io.observe(mob);
+      }
+    } catch (_) {}
+    /* после полной загрузки ресурсов (sprite SVG) и при возврате из bfcache */
+    window.addEventListener('load', schedule);
+    window.addEventListener('pageshow', () => schedule());
+    /* второй resize — iOS иногда дорисовывает layout после открытия URL-бара */
+    try {
+      var n = 0;
+      window.addEventListener('resize', function () {
+        if (++n > 40) return;
+        tick();
+      });
+    } catch (_) {}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+
+/* ============================================================
+   Клик по .payment-id-copy → копирование
+   (ссылки .user-link → openUserModal обрабатываются глобально в base.html)
+   ============================================================ */
+document.addEventListener('click', function(e) {
+  const copy = e.target.closest('.payment-id-copy');
+  if (copy) {
+    e.preventDefault(); e.stopPropagation();
+    const pid = copy.getAttribute('data-payment-id');
+    if (!pid || copy.dataset.copying === 'true') return;
+    copy.dataset.copying = 'true';
+    const original = copy.textContent;
+    const reset = () => { copy.textContent = original; copy.style.color = ''; copy.dataset.copying = 'false'; };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(pid).then(() => {
+        copy.textContent = 'Скопировано!'; copy.style.color = '#10b981';
+        setTimeout(reset, 1500);
+      }).catch(() => copyFallback(pid, copy, reset));
+    } else { copyFallback(pid, copy, reset); }
+  }
+}, true);
+
+function copyFallback(text, el, resetFn) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try {
+    if (document.execCommand('copy')) {
+      el.textContent = 'Скопировано!'; el.style.color = '#10b981';
+      setTimeout(resetFn, 1500);
+    } else { alert('Не удалось скопировать. ID: ' + text); resetFn(); }
+  } catch (err) { alert('Не удалось скопировать. ID: ' + text); resetFn(); }
+  finally { document.body.removeChild(ta); }
+}
+
+/* ============================================================
+   Авто-обновление каждые 10 секунд
+   ============================================================ */
+(function() {
+  let updateInterval = null;
+  let isUpdating = false;
+  const currentPage   = {{ page }};
+  const currentStatus = '{{ status_filter }}';
+  const currentSearch = {{ (search_query or '')|tojson }};
+
+  function formatDate(s) {
+    if (!s) return '—';
+    try {
+      const date = new Date(s);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+      if (diffMins < 1) return 'только что';
+      if (diffMins < 60) return `${diffMins} мин. назад`;
+      if (diffHours < 24) return `${diffHours} ч. назад`;
+      if (diffDays < 7) return `${diffDays} дн. назад`;
+      return date.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+    } catch (e) { return s; }
+  }
+
+  function statusBadge(status) {
+    const map = {
+      succeeded:  '<span class="tw-status-badge tw-status-succeeded">Успешно</span>',
+      processing: '<span class="tw-status-badge tw-status-processing">Обработка</span>',
+      pending:    '<span class="tw-status-badge tw-status-pending">Ожидание</span>',
+      canceled:   '<span class="tw-status-badge tw-status-canceled">Отменён</span>',
+      failed:     '<span class="tw-status-badge tw-status-failed">Неуспешно</span>',
+    };
+    return map[status] || `<span class="tw-status-badge tw-status-failed">${status || '—'}</span>`;
+  }
+
+  function statusBadgeWithDot(status) {
+    const map = {
+      succeeded:  '<span class="tw-status-badge tw-status-succeeded"><span class="dot w-1.5 h-1.5 rounded-full" style="background:currentColor"></span>Успешно</span>',
+      processing: '<span class="tw-status-badge tw-status-processing"><span class="dot w-1.5 h-1.5 rounded-full" style="background:currentColor"></span>Обработка</span>',
+      pending:    '<span class="tw-status-badge tw-status-pending"><span class="dot w-1.5 h-1.5 rounded-full" style="background:currentColor"></span>Ожидание</span>',
+      canceled:   '<span class="tw-status-badge tw-status-canceled"><span class="dot w-1.5 h-1.5 rounded-full" style="background:currentColor"></span>Отменён</span>',
+      failed:     `<span class="tw-status-badge tw-status-failed"><span class="dot w-1.5 h-1.5 rounded-full" style="background:currentColor"></span>${status}</span>`,
+    };
+    return map[status] || map.failed;
+  }
+
+  function tariffDisplay(p, tariffs, traffic_topup_tariffs) {
+    const t = p.tariff_info;
+    if (!t) return '<span class="tw-text-subtle2">—</span>';
+    if (t.type === 'traffic_topup') {
+      if (t.id && traffic_topup_tariffs[t.id]) {
+        return `<div class="text-[13px] tw-text-base2">${traffic_topup_tariffs[t.id].name}</div><div class="text-[11px] tw-text-muted2 mt-0.5">+${traffic_topup_tariffs[t.id].traffic_gb} GB</div>`;
+      } else if (t.traffic_gb) {
+        return `<div class="text-[13px] tw-text-subtle2">+${t.traffic_gb} GB</div>`;
+      }
+    } else if (t.type === 'device_upgrade') {
+      const oldL = t.old_limit ?? 0, newL = t.new_limit ?? 0;
+      return `<div class="text-[13px] tw-text-base2 inline-flex items-center gap-1.5"><i data-lucide="smartphone" class="w-3.5 h-3.5"></i>${oldL} → ${newL}</div><div class="text-[11px] tw-text-muted2 mt-0.5">лимит устр.</div>`;
+    } else {
+      const tar = (t.id && tariffs[t.id]) ? tariffs[t.id] : null;
+      const days = t.days || (tar && tar.days) || 0;
+      const limitIp   = (t.limit_ip   || (tar && tar.limit_ip)   || 0) | 0;
+      const trafficGb = ((tar && tar.traffic_gb) || 0) | 0;
+      const subParts = [];
+      if (days)        subParts.push(`${days} дн.`);
+      if (limitIp > 0) subParts.push(`<span class="inline-flex items-center gap-0.5"><i data-lucide="smartphone" class="w-3 h-3"></i>${limitIp} устр.</span>`);
+      if (trafficGb > 0) subParts.push(`<span class="inline-flex items-center gap-0.5"><i data-lucide="database" class="w-3 h-3"></i>${trafficGb} GB</span>`);
+      const subLine = subParts.join('<span class="opacity-60 mx-1">·</span>');
+      if (tar) {
+        return `<div class="text-[13px] tw-text-base2">${tar.name}</div><div class="text-[11px] tw-text-muted2 mt-0.5 flex flex-wrap items-center gap-y-0">${subLine || '—'}</div>`;
+      } else if (days) {
+        return `<div class="text-[13px] tw-text-subtle2 flex flex-wrap items-center gap-y-0">${subLine}</div>`;
+      }
+    }
+    return '<span class="tw-text-subtle2">—</span>';
+  }
+
+  function methodBadge(p) {
+    if (typeof window.renderPaymentMethodBadge === 'function') {
+      return window.renderPaymentMethodBadge(p.payment_method_normalized, p.payment_method);
+    }
+    const name = p.payment_method || '—';
+    return `<span class="text-[11px] tw-text-subtle2">${name}</span>`;
+  }
+
+  function sourceBadge(p) {
+    if (p.registration_source === 'site') {
+      return '<span class="tw-chip" style="background: rgba(99 102 241 / .12); color: var(--color-brand-500);" title="Сайт"><i data-lucide="globe" class="w-3 h-3"></i> Сайт</span>';
+    }
+    if (p.registration_source === 'telegram') {
+      return '<span class="tw-chip" style="background: rgba(59 130 246 / .12); color: #3b82f6;" title="Telegram"><i data-lucide="send" class="w-3 h-3"></i> TG</span>';
+    }
+    return '';
+  }
+
+  function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function updateStats(stats) {
+    const container = document.getElementById('statsCards');
+    if (!container) return;
+    // Только успешные RUB-платежи — простой формат «N ₽ / X платежей».
+    const card = (title, count, sum) => {
+      const v = Math.round(Number(sum) || 0);
+      return `<div class="tw-surface rounded-[var(--radius-card)] p-4">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">${title}</div>
+        <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">${v} <span class="text-[14px] tw-text-muted2 font-normal">₽</span></div>
+        <div class="mt-1 text-[11px] tw-text-muted2">${count || 0} платежей</div>
+      </div>`;
+    };
+    container.innerHTML =
+      card('За сутки', stats.today_count, stats.today_sum) +
+      card('За неделю',  stats.week_count,  stats.week_sum)  +
+      card('За месяц',   stats.month_count, stats.month_sum) +
+      card('Всё время',  stats.all_count,   stats.all_sum);
+  }
+
+  function updatePayments(data) {
+    const { payments, users, tariffs, traffic_topup_tariffs, page, total_pages } = data;
+
+    /* === Мобильные карточки === */
+    const mob = document.getElementById('mobileCards');
+    if (mob) {
+      if (payments.length === 0) {
+        mob.innerHTML = '<div class="text-center py-10 tw-text-subtle2"><i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i><div class="text-[13px]">Платежи не найдены.</div></div>';
+      } else {
+        let html = '';
+        payments.forEach(p => {
+          const userRaw = users[p.telegram_id] || String(p.telegram_id || '—');
+          const userDisplay = userRaw.length > 18 ? userRaw.substring(0, 18) + '…' : userRaw;
+          const displayId = p.payment_id_clean || p.payment_id || '';
+          const truncId = displayId.length > 25 ? displayId.substring(0, 25) + '...' : displayId;
+          html += `
+            <div class="tw-surface rounded-[var(--radius-card)] p-3.5">
+              <div class="flex items-start justify-between gap-2 mb-2.5">
+                <div class="flex-1 min-w-0">
+                  <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider mb-1">Пользователь</div>
+                  ${p.telegram_id ? `<a href="javascript:void(0);" data-telegram-id="${p.telegram_id}" class="user-link inline-flex items-center gap-1 text-[13.5px] font-medium" style="color: var(--color-brand-500); cursor: pointer;">${escapeHtml(userDisplay)}<i data-lucide="external-link" class="w-3 h-3"></i></a><div class="text-[11px] tw-text-subtle2 mt-0.5">${p.telegram_id}</div>` : '<span class="tw-text-subtle2">—</span>'}
+                </div>
+                <div>${statusBadge(p.status)}</div>
+              </div>
+              <div class="grid grid-cols-2 gap-2 mb-2.5">
+                <div>
+                  <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider mb-1">Сумма</div>
+                  <div class="text-[15px] font-semibold tw-text-base2">${parseFloat(p.amount || 0).toFixed(2)} <span class="text-[12px] tw-text-muted2 font-normal">${p.currency || '₽'}</span></div>
+                </div>
+                <div>
+                  <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider mb-1">Тариф</div>
+                  <div class="text-[12.5px] tw-text-base2">${tariffDisplay(p, tariffs, traffic_topup_tariffs)}</div>
+                </div>
+              </div>
+              <div class="pt-2.5 space-y-1.5 text-[11.5px] border-t" style="border-color: rgb(var(--admin-border));">
+                <div class="flex items-center gap-1.5"><span class="tw-text-subtle2">Дата:</span> <span class="tw-text-muted2">${formatDate(p.created_at)}</span></div>
+                <div class="flex items-center gap-1.5"><span class="tw-text-subtle2">ID:</span><code class="payment-id-copy text-[11px]" data-payment-id="${escapeHtml(displayId)}" title="Нажмите для копирования">${escapeHtml(truncId)}</code></div>
+                <div class="flex items-center flex-wrap gap-1.5"><span class="tw-text-subtle2">Метод:</span>${methodBadge(p)}${sourceBadge(p)}</div>
+              </div>
+            </div>`;
+        });
+        mob.innerHTML = html;
+      }
+    }
+
+    /* === Десктопная таблица === */
+    const tbody = document.getElementById('paymentsBody');
+    if (tbody) {
+      if (payments.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6"><div class="text-center py-10 tw-text-subtle2"><i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i><div class="text-[13px]">Платежи не найдены.</div></div></td></tr>';
+      } else {
+        let html = '';
+        payments.forEach(p => {
+          const userRaw = users[p.telegram_id] || String(p.telegram_id || '—');
+          const userDisplay = userRaw.length > 15 ? userRaw.substring(0, 15) + '…' : userRaw;
+          const displayId = p.payment_id_clean || p.payment_id || '';
+          const truncId = displayId.length > 18 ? displayId.substring(0, 15) + '...' : displayId;
+          html += `<tr>
+            <td>
+              <code class="payment-id-copy" data-payment-id="${escapeHtml(displayId)}" title="Нажмите для копирования">${escapeHtml(truncId)}</code>
+              <div class="mt-1.5">${methodBadge(p)}</div>
+            </td>
+            <td>
+              ${p.telegram_id ? `<a href="javascript:void(0);" data-telegram-id="${p.telegram_id}" class="user-link inline-flex items-center gap-1 text-[13px] font-medium" style="color: var(--color-brand-500); cursor: pointer;">${escapeHtml(userDisplay)}<i data-lucide="external-link" class="w-3 h-3"></i></a>${users[p.telegram_id] ? `<div class="text-[11px] tw-text-subtle2 mt-0.5">${p.telegram_id}</div>` : ''}${sourceBadge(p) ? `<div class="mt-1">${sourceBadge(p)}</div>` : ''}` : '<span class="tw-text-subtle2">—</span>'}
+            </td>
+            <td><div class="text-[14px] font-semibold tw-text-base2">${parseFloat(p.amount || 0).toFixed(2)} <span class="text-[12px] tw-text-muted2 font-normal">${p.currency || '₽'}</span></div></td>
+            <td>${tariffDisplay(p, tariffs, traffic_topup_tariffs)}</td>
+            <td>${statusBadgeWithDot(p.status)}</td>
+            <td><div class="text-[12.5px] tw-text-base2">${formatDate(p.created_at)}</div></td>
+          </tr>`;
+        });
+        tbody.innerHTML = html;
+      }
+    }
+
+    /* === Пагинация === */
+    const pagWrap = document.getElementById('paginationContainer');
+    if (pagWrap) {
+      if (total_pages > 1) {
+        const baseUrl = '{{ url_for("admin.payments") }}';
+        let html = '<nav aria-label="Page navigation" class="tw-pagination">';
+        html += `<a class="pg-item ${page === 1 ? 'disabled' : ''}" href="${baseUrl}?page=${page-1}&status=${currentStatus}" aria-label="Предыдущая"><i data-lucide="chevron-left" class="w-4 h-4"></i></a>`;
+        let lastPrinted = 0;
+        for (let p = 1; p <= total_pages; p++) {
+          const isFirst = p === 1, isLast = p === total_pages, inWindow = p >= page - 1 && p <= page + 1;
+          if (isFirst || isLast || inWindow) {
+            if (p > lastPrinted + 1) html += '<span class="pg-item disabled">…</span>';
+            html += `<a class="pg-item ${p === page ? 'active' : ''}" href="${baseUrl}?page=${p}&status=${currentStatus}">${p}</a>`;
+            lastPrinted = p;
+          }
+        }
+        html += `<a class="pg-item ${page === total_pages ? 'disabled' : ''}" href="${baseUrl}?page=${page+1}&status=${currentStatus}" aria-label="Следующая"><i data-lucide="chevron-right" class="w-4 h-4"></i></a>`;
+        html += '</nav>';
+        pagWrap.innerHTML = html;
+      } else {
+        pagWrap.innerHTML = '';
+      }
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function showUpdateIndicator() {
+    if (window.adminToast) {
+      window.adminToast('Обновлено', 'success', { duration: 1800 });
+    }
+  }
+
+  async function loadPaymentsData() {
+    if (isUpdating) return;
+    /* Если включён поисковый запрос — авто-обновление отключено,
+       чтобы не сбрасывать результаты поиска (он не учитывается в payments_data API). */
+    if (currentSearch) return;
+    isUpdating = true;
+    try {
+      const url = `{{ url_for('admin.payments_data') }}?page=${currentPage}&status=${currentStatus}`;
+      const response = await fetch(url, {method:'GET', headers:{'X-Requested-With':'XMLHttpRequest'}, credentials:'same-origin'});
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Ошибка загрузки');
+      updateStats(data.stats);
+      updatePayments(data);
+      showUpdateIndicator();
+    } catch (err) {
+      console.error('Ошибка обновления платежей:', err);
+    } finally { isUpdating = false; }
+  }
+
+  function startAutoUpdate() {
+    if (updateInterval) clearInterval(updateInterval);
+    /* Не запускаем интервал, если активен поиск */
+    if (currentSearch) return;
+    updateInterval = setInterval(loadPaymentsData, 10000);
+  }
+  window.addEventListener('beforeunload', () => { if (updateInterval) clearInterval(updateInterval); });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(startAutoUpdate, 1000));
+  } else {
+    setTimeout(startAutoUpdate, 1000);
+  }
+})();
+</script>
+{% endblock %}

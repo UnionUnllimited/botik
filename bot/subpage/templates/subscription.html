@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="ru" class="theme-dark dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ project_name }} - Подписка</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/vendor/inter.css">
+    <link rel="stylesheet" href="/static/css/tailwind-built.css">
+    <script src="/static/telegram-web-app.js"></script>
+</head>
+<body class="bg-apple-bgLight dark:bg-[#09090B] text-black dark:text-white antialiased transition-colors duration-300 min-h-screen pb-12">
+    <div class="sub-bg-glow" aria-hidden="true"></div>
+    <div id="toast-container" class="fixed bottom-0 left-0 right-0 z-[9999] flex flex-col items-center gap-2 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pointer-events-none"></div>
+
+    <div class="relative z-[1] w-full max-w-[520px] mx-auto pt-[calc(1rem+env(safe-area-inset-top))] px-4">
+        <div class="premium-card animate-premiumIn rounded-[24px] p-3.5 mb-5">
+            <div class="flex justify-between items-start gap-3 pb-3 mb-3 border-b border-black/10 dark:border-white/10">
+                <div class="text-[22px] font-extrabold tracking-tight truncate min-w-0 flex-1 pt-0.5">Подписка</div>
+                <div class="flex items-center gap-2 shrink-0">
+                    {% if is_active %}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-apple-green/15 text-apple-green text-[11px] font-bold uppercase tracking-wide">
+                            <span class="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>Активна
+                        </span>
+                    {% else %}
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-apple-red/15 text-apple-red text-[11px] font-bold uppercase tracking-wide">Неактивна</span>
+                    {% endif %}
+                    <div class="flex items-center bg-apple-control dark:bg-apple-controlDark rounded-full p-0.5">
+                        <button onclick="setTheme('theme-light')" id="btn-light" class="w-7 h-6 flex items-center justify-center rounded-full text-[12px] transition-all duration-300">☀️</button>
+                        <button onclick="setTheme('theme-dark')" id="btn-dark" class="w-7 h-6 flex items-center justify-center rounded-full text-[12px] transition-all duration-300">🌙</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+                <div class="client-stat flex flex-col rounded-[16px] px-3 py-2">
+                    <span class="text-[11px] font-medium text-apple-gray uppercase tracking-wider mb-0.5">Пользователь</span>
+                    <span class="font-semibold truncate text-[15px]">{{ sub_details.username or '—' }}</span>
+                </div>
+                {% if sub_details.has_limit_ip_info %}
+                <div class="client-stat flex flex-col text-right rounded-[16px] px-3 py-2">
+                    <span class="text-[11px] font-medium text-apple-gray uppercase tracking-wider mb-0.5">Лимит устройств</span>
+                    <span class="font-semibold text-[15px] tabular-nums">{{ sub_details.limit_ip_display or 'Без лимита' }}</span>
+                </div>
+                {% endif %}
+
+                {% if is_active and sub_details.days_left is defined and sub_details.days_left >= 0 %}
+                    <div class="status-panel flex flex-col col-span-2 rounded-[18px] p-3.5 mt-0.5">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <span class="text-[11px] font-medium text-apple-blue/80 dark:text-apple-teal/90 uppercase tracking-wider block mb-0.5">Осталось</span>
+                                <span class="text-[18px] font-bold tabular-nums {% if sub_details.days_left <= 3 %}text-apple-orange{% endif %}">
+                                    {% if sub_details.days_left == 0 %}Менее 24 ч.
+                                    {% else %}{{ sub_details.days_left }} дн.{% endif %}
+                                </span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[11px] font-medium text-apple-blue/80 dark:text-apple-teal/90 uppercase tracking-wider block mb-0.5">Действует до</span>
+                                <span class="text-[14px] font-semibold text-black/80 dark:text-white/90">{{ sub_details.end_date_msk_str or '—' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="status-panel expired flex flex-col col-span-2 rounded-[18px] p-3.5 mt-0.5">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <span class="text-[11px] font-medium text-apple-red/80 dark:text-[#FF453A]/90 uppercase tracking-wider block mb-0.5">Осталось</span>
+                                <span class="text-[18px] font-bold tabular-nums text-apple-red">Подписка истекла</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[11px] font-medium text-apple-red/80 dark:text-[#FF453A]/90 uppercase tracking-wider block mb-0.5">Статус</span>
+                                <span class="text-[14px] font-semibold text-apple-red/90">{{ sub_details.end_date_msk_str or '—' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+
+            {% if traffic_limit_bytes > 0 %}
+            <div class="mt-4" data-used="{{ traffic_used_bytes }}" data-limit="{{ traffic_limit_bytes }}" id="traffic-block">
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-[13px] font-semibold">Использовано трафика</span>
+                    <span id="traffic-percent" class="text-[13px] font-bold text-apple-gray">0%</span>
+                </div>
+                <div class="w-full h-2 bg-apple-control dark:bg-apple-controlDark rounded-full overflow-hidden">
+                    <div id="traffic-bar" class="h-full w-0 bg-apple-blue rounded-full transition-all duration-1000 ease-out"></div>
+                </div>
+                <div class="flex justify-between mt-1.5 text-[11px] font-medium text-apple-gray">
+                    <span>{{ traffic_used }}</span>
+                    <span>{{ traffic_limit }}</span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if not is_active %}
+        <div class="inactive-alert animate-premiumIn rounded-[20px] p-4 mb-5">
+            <div class="text-[15px] font-bold text-apple-red mb-1">Подписка не активна</div>
+            <div class="text-[13px] leading-snug text-black/70 dark:text-white/75">
+                Подключение VPN временно недоступно. Продлите подписку в боте.
+            </div>
+        </div>
+        {% endif %}
+
+        <div id="connect-section" class="{% if not is_active %}connect-disabled{% endif %}">
+        <div class="premium-section animate-rowIn rounded-[24px] overflow-hidden mb-5">
+            <div class="px-4 py-3 border-b border-black/10 dark:border-white/10">
+                <p class="text-[11px] font-semibold uppercase tracking-widest text-apple-gray">Подключение</p>
+            </div>
+            <div class="cab-connect-steps">
+                <!-- Шаг 1: выбор приложения -->
+                <div class="px-4 py-4 flex gap-4">
+                    <div class="flex flex-col items-center shrink-0">
+                        <span class="w-6 h-6 rounded-full border border-black/15 dark:border-white/20 flex items-center justify-center text-[11px] font-semibold text-apple-gray">1</span>
+                        <div class="w-px flex-1 bg-black/10 dark:bg-white/10 mt-2 min-h-[24px]"></div>
+                    </div>
+                    <div class="flex-1 min-w-0 pb-1">
+                        <p class="text-[14px] font-semibold text-black dark:text-white mb-0.5">Выберите приложение</p>
+                        <p id="clientTabHint" class="text-[11px] text-apple-gray mb-3 leading-snug">Happ или INCY — активное подсвечено зелёным</p>
+
+                        <div class="app-client-tabs flex gap-2" id="clientTabBar" role="tablist" aria-label="Выбор приложения">
+                            <button type="button" onclick="switchClientTab('happ')" id="clientTab-happ" class="app-client-card" role="tab" aria-selected="false">
+                                <div class="app-client-icon-wrap">
+                                    <img src="/static/happ.svg" class="w-[22px] h-[22px] rounded-[6px]" alt="">
+                                </div>
+                                <span class="app-client-label">Happ</span>
+                            </button>
+                            <button type="button" onclick="switchClientTab('incy')" id="clientTab-incy" class="app-client-card" role="tab" aria-selected="false">
+                                <div class="app-client-icon-wrap">
+                                    <img src="/static/incy.svg" class="w-[22px] h-[22px] rounded-[6px]" alt="">
+                                </div>
+                                <span class="app-client-label">INCY</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Шаг 2: скачать клиент (платформа) -->
+                <div class="px-4 py-4 flex gap-4">
+                    <div class="flex flex-col items-center shrink-0">
+                        <span class="w-6 h-6 rounded-full border border-black/15 dark:border-white/20 flex items-center justify-center text-[11px] font-semibold text-apple-gray">2</span>
+                        <div class="w-px flex-1 bg-black/10 dark:bg-white/10 mt-2 min-h-[24px]"></div>
+                    </div>
+                    <div class="flex-1 min-w-0 pb-1">
+                        <p class="text-[14px] font-semibold text-black dark:text-white mb-0.5">Скачайте клиент</p>
+                        <p class="text-[11px] text-apple-gray mb-3 leading-snug">Выберите платформу — ниже появятся ссылки для установки</p>
+
+                        <!-- Happ -->
+                        <div id="platformSection-happ" class="platform-section hidden">
+                            <div class="app-platform-tabs flex gap-2 mb-3" role="tablist" aria-label="Платформа Happ">
+                                {% if link_ios and link_ios != '#' or link_ios_global and link_ios_global != '#' %}
+                                <button type="button" onclick="switchPlatformTab('ios')" id="platformTab-happ-ios" class="app-platform-card" role="tab" aria-selected="false">
+                                    <div class="app-platform-icon-wrap"><img src="/static/app.png" class="w-5 h-5 object-contain" alt=""></div>
+                                    <span class="app-platform-label">iOS</span>
+                                </button>
+                                {% endif %}
+                                {% if link_android and link_android != '#' or link_android_apk and link_android_apk != '#' %}
+                                <button type="button" onclick="switchPlatformTab('android')" id="platformTab-happ-android" class="app-platform-card" role="tab" aria-selected="false">
+                                    <div class="app-platform-icon-wrap"><img src="/static/play.png" class="w-5 h-5 object-contain rounded-[3px]" alt=""></div>
+                                    <span class="app-platform-label">Android</span>
+                                </button>
+                                {% endif %}
+                                {% if link_windows and link_windows != '#' or link_mac and link_mac != '#' %}
+                                <button type="button" onclick="switchPlatformTab('pc')" id="platformTab-happ-pc" class="app-platform-card" role="tab" aria-selected="false">
+                                    <div class="app-platform-icon-wrap"><img src="/static/pc.svg" class="w-5 h-5 object-contain" alt=""></div>
+                                    <span class="app-platform-label">PC</span>
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% if link_ios and link_ios != '#' or link_ios_global and link_ios_global != '#' %}
+                            <div id="appLinks-happ-ios" class="app-links-panel hidden">
+                                {% if link_ios and link_ios != '#' %}
+                                <a href="{{ link_ios }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/app.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">App Store</span><span class="app-dl-sub">🇷🇺 Россия</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                                {% if link_ios_global and link_ios_global != '#' %}
+                                <a href="{{ link_ios_global }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/app.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">App Store</span><span class="app-dl-sub">🇪🇺 Global</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if link_android and link_android != '#' or link_android_apk and link_android_apk != '#' %}
+                            <div id="appLinks-happ-android" class="app-links-panel hidden">
+                                {% if link_android and link_android != '#' %}
+                                <a href="{{ link_android }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/play.png" class="w-4 h-4 rounded-[3px]" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">Google Play</span><span class="app-dl-sub">Официальный магазин</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                                {% if link_android_apk and link_android_apk != '#' %}
+                                <a href="{{ link_android_apk }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/github.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">APK файл</span><span class="app-dl-sub">Прямая загрузка</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if link_windows and link_windows != '#' or link_mac and link_mac != '#' %}
+                            <div id="appLinks-happ-pc" class="app-links-panel hidden">
+                                {% if link_windows and link_windows != '#' %}
+                                <a href="{{ link_windows }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/happ.svg" class="w-4 h-4 rounded-[3px]" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">Windows</span><span class="app-dl-sub">Установщик .exe / .msix</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                                {% if link_mac and link_mac != '#' %}
+                                <a href="{{ link_mac }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/app.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">macOS</span><span class="app-dl-sub">Образ диска .dmg</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- INCY -->
+                        <div id="platformSection-incy" class="platform-section hidden">
+                            <div class="app-platform-tabs flex gap-2 mb-3" role="tablist" aria-label="Платформа INCY">
+                                {% if link_incy_ios and link_incy_ios != '#' %}
+                                <button type="button" onclick="switchPlatformTab('ios')" id="platformTab-incy-ios" class="app-platform-card" role="tab" aria-selected="false">
+                                    <div class="app-platform-icon-wrap"><img src="/static/app.png" class="w-5 h-5 object-contain" alt=""></div>
+                                    <span class="app-platform-label">iOS</span>
+                                </button>
+                                {% endif %}
+                                {% if link_incy_android and link_incy_android != '#' or link_incy_android_apk and link_incy_android_apk != '#' %}
+                                <button type="button" onclick="switchPlatformTab('android')" id="platformTab-incy-android" class="app-platform-card" role="tab" aria-selected="false">
+                                    <div class="app-platform-icon-wrap"><img src="/static/play.png" class="w-5 h-5 object-contain rounded-[3px]" alt=""></div>
+                                    <span class="app-platform-label">Android</span>
+                                </button>
+                                {% endif %}
+                                {% if link_incy_windows and link_incy_windows != '#' or link_incy_mac and link_incy_mac != '#' %}
+                                <button type="button" onclick="switchPlatformTab('pc')" id="platformTab-incy-pc" class="app-platform-card" role="tab" aria-selected="false">
+                                    <div class="app-platform-icon-wrap"><img src="/static/pc.svg" class="w-5 h-5 object-contain" alt=""></div>
+                                    <span class="app-platform-label">PC</span>
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% if link_incy_ios and link_incy_ios != '#' %}
+                            <div id="appLinks-incy-ios" class="app-links-panel hidden">
+                                <a href="{{ link_incy_ios }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/app.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">App Store</span><span class="app-dl-sub">INCY</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                            </div>
+                            {% endif %}
+                            {% if link_incy_android and link_incy_android != '#' or link_incy_android_apk and link_incy_android_apk != '#' %}
+                            <div id="appLinks-incy-android" class="app-links-panel hidden">
+                                {% if link_incy_android and link_incy_android != '#' %}
+                                <a href="{{ link_incy_android }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/play.png" class="w-4 h-4 rounded-[3px]" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">Google Play</span><span class="app-dl-sub">INCY</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                                {% if link_incy_android_apk and link_incy_android_apk != '#' %}
+                                <a href="{{ link_incy_android_apk }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/github.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">APK файл</span><span class="app-dl-sub">INCY · прямая загрузка</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if link_incy_windows and link_incy_windows != '#' or link_incy_mac and link_incy_mac != '#' %}
+                            <div id="appLinks-incy-pc" class="app-links-panel hidden">
+                                {% if link_incy_windows and link_incy_windows != '#' %}
+                                <a href="{{ link_incy_windows }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/incy.svg" class="w-4 h-4 rounded-[3px]" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">Windows</span><span class="app-dl-sub">INCY</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                                {% if link_incy_mac and link_incy_mac != '#' %}
+                                <a href="{{ link_incy_mac }}" target="_blank" rel="noopener" class="app-dl-btn">
+                                    <div class="app-dl-icon-wrap"><img src="/static/github.png" class="w-4 h-4" alt=""></div>
+                                    <div class="app-dl-text"><span class="app-dl-store">macOS</span><span class="app-dl-sub">INCY</span></div>
+                                    <svg class="app-dl-arrow" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Шаг 3: автодобавление -->
+                <div class="px-4 py-4 flex gap-4">
+                    <div class="flex flex-col items-center shrink-0">
+                        <span class="w-6 h-6 rounded-full border border-black/15 dark:border-white/20 flex items-center justify-center text-[11px] font-semibold text-apple-gray">3</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[14px] font-semibold text-black dark:text-white mb-0.5">Добавьте подписку в клиент</p>
+                        <p class="text-[11px] text-apple-gray mb-3 leading-snug">После установки нажмите автодобавление — подписка откроется в выбранном приложении</p>
+
+                        <button type="button" id="btnAutoAdd" onclick="triggerAutoAdd()"
+                                class="btn-autoadd w-full inline-flex items-center justify-center gap-2 text-[13px] font-semibold px-4 py-3 rounded-2xl transition-transform duration-200 active:scale-95">
+                            <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+                            <span id="btnAutoAddLabel">Автодобавление</span>
+                        </button>
+
+                        <div class="mt-3 text-center">
+                            <button type="button" id="btnToggleQr" onclick="toggleAutoAddQR()" class="qr-toggle-btn press-btn" aria-expanded="false" aria-controls="autoadd-qr-panel">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 15.75h.008v.008h-.008v-.008zM14.25 18h.008v.008h-.008V18zM17.25 15.75h.008v.008h-.008v-.008zM17.25 18h.008v.008h-.008V18zM20.25 15.75h.008v.008h-.008v-.008zM20.25 18h.008v.008h-.008V18z"/></svg>
+                                <span id="btnToggleQrLabel">Показать QR-код</span>
+                            </button>
+                        </div>
+                        <div id="autoadd-qr-panel" class="autoadd-qr-panel" aria-hidden="true">
+                            <div class="autoadd-qr-card">
+                                <div class="autoadd-qr-frame mx-auto mb-2.5">
+                                    <img src="{{ qr_code_data }}" alt="QR-код подписки" width="148" height="148">
+                                </div>
+                                <p class="text-[12px] font-semibold text-black/85 dark:text-white/90 mb-0.5">Сканируйте в приложении</p>
+                                <p class="text-[11px] text-apple-gray leading-snug px-2">Откройте Happ или INCY → добавить подписку → сканировать QR</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="premium-section animate-rowIn rounded-[20px] overflow-hidden mb-3">
+            <button type="button" onclick="openModal('modal-tv')" class="press-row relative flex items-center w-full p-3 text-left active:bg-black/5 dark:active:bg-white/5">
+                <div class="icon-capsule">
+                    <img src="/static/television.svg" alt="" class="w-[22px] h-[22px] opacity-90">
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-[15px] text-black dark:text-white">Android TV</div>
+                    <div class="text-[12px] text-apple-gray mt-0.5">Отправить подписку на Happ через веб‑импорт</div>
+                </div>
+                <div class="row-chevron shrink-0">›</div>
+            </button>
+        </div>
+
+        <div class="premium-section animate-rowIn rounded-[20px] overflow-hidden mb-5 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-widest text-apple-gray mb-3">Поделиться</p>
+            <p class="text-[13px] font-semibold text-black dark:text-white mb-0.5">Ссылка на подписку</p>
+            <p class="text-[11px] text-apple-gray mb-3 leading-snug">Отправьте на другое устройство или добавьте вручную в клиенте</p>
+
+            <div class="mb-3 rounded-2xl border border-blue-100 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-500/[0.08] px-4 py-3 relative overflow-hidden">
+                <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500/70 dark:bg-blue-400/70"></div>
+                <div class="flex items-start gap-2.5 pl-1">
+                    <svg class="w-4 h-4 text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 3.186m0-3.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-3.186l9.566-5.314m-9.566 8.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-13.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
+                    <div class="min-w-0">
+                        <p class="text-[12px] font-bold text-gray-900 dark:text-white mb-1">Как поделиться?</p>
+                        <p class="text-[11px] text-gray-600 dark:text-white/55 leading-relaxed">Скопируйте ссылку и откройте её на другом устройстве — там будет та же инструкция по подключению.</p>
+                    </div>
+                </div>
+            </div>
+            <button type="button" onclick="copyKey(this, '{{ link }}')" data-key="{{ link }}"
+                    class="copy-btn w-full text-left bg-gray-50 dark:bg-white/[0.05] border border-gray-200 dark:border-white/[0.12] rounded-2xl px-4 py-3 hover:border-gray-300 dark:hover:border-white/25 transition-all duration-200 group press-row">
+                <span class="font-mono text-[11px] text-gray-500 dark:text-white/60 group-hover:text-gray-700 dark:group-hover:text-white/80 transition-colors block truncate">{{ link[:42] }}…</span>
+            </button>
+            <p id="copy-hint" class="copy-hint-default text-[11px] mt-1.5 text-center">нажмите, чтобы скопировать ссылку подписки</p>
+        </div>
+
+        </div>
+
+        {% if support_url and support_url != '#' %}
+        <div class="premium-section animate-rowIn rounded-[20px] overflow-hidden mb-5">
+            <a href="{{ support_url }}" target="_blank" rel="noopener" class="support-link press-row relative flex items-center p-3 active:bg-black/5 dark:active:bg-white/5">
+                <div class="flex-1">
+                    <div class="font-semibold text-[15px]">Поддержка</div>
+                    <div class="text-[12px] text-apple-gray mt-0.5">Если не получается подключиться</div>
+                </div>
+                <div class="row-chevron">›</div>
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="modal-tv" class="modal-overlay fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-md z-50 flex items-end justify-center" onclick="closeModalBg(event, 'modal-tv')">
+        <div class="modal-sheet w-full max-w-[520px] premium-card rounded-t-[28px] p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-[0_-24px_60px_rgba(0,0,0,0.28)] relative border-0">
+            <button type="button" onclick="closeModal('modal-tv')" class="absolute top-4 right-4 w-[30px] h-[30px] flex items-center justify-center rounded-full bg-apple-red/15 text-apple-red hover:bg-apple-red/25 active:scale-95 transition-all z-10" aria-label="Закрыть">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <div class="flex items-center justify-center gap-2 mb-2 mt-1">
+                <div class="tv-open-icon">
+                    <img src="/static/television.svg" alt="" class="w-[20px] h-[20px] opacity-90">
+                </div>
+                <h3 class="text-[17px] font-bold text-black dark:text-white">Отправить на TV</h3>
+            </div>
+            <p class="text-[13px] text-apple-gray text-center mb-2 px-1 leading-snug">Скачайте <strong class="text-black/80 dark:text-white/90">Happ</strong> на Android TV. В приложении выберите «Веб‑импорт» и введите код с экрана телевизора.</p>
+            <p class="text-[11px] text-apple-gray/80 text-center mb-2 italic">Пример на изображении</p>
+            <img src="/static/tv.png" alt="Инструкция Happ TV" class="w-full max-w-[200px] mx-auto rounded-xl border border-black/5 dark:border-white/10 shadow-sm mb-4">
+            <input type="text" id="tv-uid" maxlength="5" placeholder="QWET5" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                   class="w-full bg-apple-control dark:bg-apple-controlDark border border-black/10 dark:border-white/10 rounded-xl px-4 py-3.5 text-center font-bold tracking-[0.22em] text-lg focus:outline-none focus:border-apple-blue transition-colors mb-2 uppercase">
+            <p id="tv-status" class="text-center text-[13px] font-medium mb-3 min-h-[1.25rem]"></p>
+            <button type="button" onclick="sendTV()" class="plain-cta press-btn w-full py-3.5 text-[15px] font-bold text-white rounded-xl">Отправить подписку</button>
+        </div>
+    </div>
+
+    <script>
+        window.SUBSCRIPTION_BASE64 = {{ subscription_base64 | tojson }};
+        const CLIENT_AUTO_ADD = {
+            happ: {{ auto_add_link | tojson }},
+            incy: {{ incy_auto_add_link | tojson }}
+        };
+        const CLIENT_LABELS = {
+            happ: 'Happ',
+            incy: 'INCY'
+        };
+        let _activeClient = 'happ';
+
+        function haptic(style = 'light') {
+            try {
+                const hf = window.Telegram?.WebApp?.HapticFeedback;
+                if (!hf) return;
+                if (['success', 'error', 'warning'].includes(style)) hf.notificationOccurred(style);
+                else if (style === 'selection') hf.selectionChanged();
+                else hf.impactOccurred(style);
+            } catch(e) {}
+        }
+
+        let _tch = 0;
+        document.addEventListener('touchstart', (e) => {
+            const now = Date.now();
+            if (now - _tch < 50) return;
+            if (e.target.closest('button, a, .app-dl-btn')) haptic('light');
+            _tch = now;
+        }, { passive: true });
+
+        let _themeTimer = null;
+        function setTheme(theme) {
+            haptic('medium');
+            const root = document.documentElement;
+            const isDark = theme === 'theme-dark';
+            clearTimeout(_themeTimer);
+            root.classList.add('theme-switching');
+            requestAnimationFrame(() => {
+                root.classList.toggle('dark', isDark);
+                localStorage.setItem('apple_sub_theme', theme);
+                document.getElementById('btn-light').className = `w-7 h-6 flex items-center justify-center rounded-full text-[12px] transition-all duration-300 ${!isDark ? 'bg-apple-cardLight shadow-sm scale-105' : 'text-apple-gray hover:text-black dark:hover:text-white'}`;
+                document.getElementById('btn-dark').className = `w-7 h-6 flex items-center justify-center rounded-full text-[12px] transition-all duration-300 ${isDark ? 'bg-apple-cardDark shadow-sm scale-105' : 'text-apple-gray hover:text-black dark:hover:text-white'}`;
+                try {
+                    const tg = window.Telegram?.WebApp;
+                    if (tg) {
+                        const color = isDark ? '#09090B' : '#F2F2F7';
+                        tg.setHeaderColor(color);
+                        tg.setBackgroundColor(color);
+                    }
+                } catch(e) {}
+                _themeTimer = setTimeout(() => root.classList.remove('theme-switching'), 520);
+            });
+        }
+        setTheme(localStorage.getItem('apple_sub_theme') || 'theme-dark');
+
+        function resetCopyHint() {
+            const hint = document.getElementById('copy-hint');
+            if (!hint) return;
+            hint.textContent = 'нажмите, чтобы скопировать ссылку подписки';
+            hint.className = 'copy-hint-default text-[11px] mt-1.5 text-center';
+        }
+
+        function showToast(text, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            container.querySelectorAll('.toast-bubble').forEach(el => el.remove());
+            const el = document.createElement('div');
+            const icon = type === 'success' ? '✓' : '!';
+            el.className = 'toast-bubble pointer-events-auto backdrop-blur-xl px-4 py-3 rounded-2xl flex items-center gap-3 text-[14px] font-bold opacity-0 transition-all duration-300';
+            el.style.transform = 'translateY(18px) scale(0.94)';
+            el.innerHTML = `<span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${type === 'success' ? 'bg-apple-green text-white' : 'bg-apple-red text-white'} text-[13px] font-black">${icon}</span><span>${text}</span>`;
+            container.appendChild(el);
+            requestAnimationFrame(() => {
+                el.style.opacity = '1';
+                el.style.transform = 'translateY(0) scale(1)';
+                haptic(type === 'success' ? 'success' : 'error');
+            });
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(14px) scale(0.96)';
+                setTimeout(() => el.remove(), 320);
+            }, 2400);
+        }
+
+        function initTraffic() {
+            const block = document.getElementById('traffic-block');
+            if (!block) return;
+            const used = parseInt(block.dataset.used || '0', 10);
+            const limit = parseInt(block.dataset.limit || '0', 10);
+            if (limit <= 0) return;
+            const percent = Math.min(100, Math.round((used / limit) * 100));
+            document.getElementById('traffic-percent').innerText = `${percent}%`;
+            const bar = document.getElementById('traffic-bar');
+            setTimeout(() => {
+                bar.style.width = `${percent}%`;
+                if (percent >= 90) bar.className = 'h-full bg-apple-red rounded-full transition-all duration-1000 ease-out';
+                else if (percent >= 75) bar.className = 'h-full bg-apple-orange rounded-full transition-all duration-1000 ease-out';
+            }, 200);
+        }
+        initTraffic();
+
+        function detectDevice() {
+            const ua = navigator.userAgent.toLowerCase();
+            if (ua.includes('iphone') || ua.includes('ipod') || ua.includes('ipad')) return 'ios';
+            if (ua.includes('mac os') || ua.includes('macintosh')) return navigator.maxTouchPoints > 1 ? 'ios' : 'macos';
+            if (ua.includes('android')) return 'android';
+            if (ua.includes('windows')) return 'windows';
+            return 'unknown';
+        }
+
+        // iOS / iPadOS / macOS — все считаем «яблочными»: iPadOS маскируется под Mac,
+        // поэтому detectDevice уже возвращает 'ios' при maxTouchPoints > 1.
+        function isAppleDevice() {
+            const d = detectDevice();
+            return d === 'ios' || d === 'macos';
+        }
+
+        // На устройствах Apple полностью скрываем Happ (заблокирован в App Store),
+        // оставляем только INCY — независимо от того, настроен ли INCY.
+        function restrictToIncyForApple() {
+            if (!isAppleDevice()) return false;
+            const happTab = document.getElementById('clientTab-happ');
+            // Инлайн-стиль, а не класс .hidden: у .app-client-card задан display:flex
+            // с той же специфичностью, и .hidden его не перебивает.
+            if (happTab) { happTab.style.display = 'none'; happTab.setAttribute('aria-hidden', 'true'); }
+            const hint = document.getElementById('clientTabHint');
+            if (hint) hint.textContent = 'На устройствах Apple используется INCY';
+            return true;
+        }
+
+        function isTelegramMiniApp() {
+            try { return !!(window.Telegram?.WebApp?.initData); } catch (e) { return false; }
+        }
+
+        function refreshTabBarLayout(bar) {
+            if (!bar) return;
+            const cards = [...bar.querySelectorAll('.app-client-card, .app-platform-card')]
+                .filter(el => el.offsetParent !== null);
+            bar.classList.toggle('tabs-single', cards.length === 1);
+            bar.classList.toggle('tabs-multi', cards.length > 1);
+        }
+
+        function refreshAllTabBarLayouts() {
+            refreshTabBarLayout(document.getElementById('clientTabBar'));
+            document.querySelectorAll('.app-platform-tabs').forEach(refreshTabBarLayout);
+        }
+
+        function switchClientTab(client) {
+            haptic('selection');
+            _activeClient = client;
+            document.querySelectorAll('.app-client-card').forEach(el => {
+                el.classList.remove('active');
+                el.setAttribute('aria-selected', 'false');
+            });
+            const btn = document.getElementById('clientTab-' + client);
+            if (btn) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
+            }
+            document.querySelectorAll('.platform-section').forEach(el => el.classList.add('hidden'));
+            const section = document.getElementById('platformSection-' + client);
+            if (section) section.classList.remove('hidden');
+            const label = document.getElementById('btnAutoAddLabel');
+            if (label) label.textContent = 'Автодобавление в ' + (CLIENT_LABELS[client] || client);
+            initPlatformTabForClient(client);
+            refreshAllTabBarLayouts();
+        }
+
+        function defaultPlatformForDevice(client, device) {
+            const section = document.getElementById('platformSection-' + client);
+            if (!section) return null;
+            const order = [];
+            if (device === 'ios' || device === 'macos') order.push('ios', 'android', 'pc');
+            else if (device === 'android') order.push('android', 'ios', 'pc');
+            else if (device === 'windows') order.push('pc', 'android', 'ios');
+            else order.push('android', 'ios', 'pc');
+            for (const p of order) {
+                if (document.getElementById('platformTab-' + client + '-' + p)) return p;
+            }
+            const first = section.querySelector('.app-platform-card');
+            return first ? first.id.replace('platformTab-' + client + '-', '') : null;
+        }
+
+        function switchPlatformTab(platform) {
+            haptic('selection');
+            const client = _activeClient;
+            const section = document.getElementById('platformSection-' + client);
+            if (!section) return;
+            section.querySelectorAll('.app-links-panel').forEach(el => el.classList.add('hidden'));
+            section.querySelectorAll('.app-platform-card').forEach(el => {
+                el.classList.remove('active');
+                el.setAttribute('aria-selected', 'false');
+            });
+            const panel = document.getElementById('appLinks-' + client + '-' + platform);
+            const btn = document.getElementById('platformTab-' + client + '-' + platform);
+            if (panel) panel.classList.remove('hidden');
+            if (btn) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
+            }
+            refreshTabBarLayout(section.querySelector('.app-platform-tabs'));
+        }
+
+        function initPlatformTabForClient(client) {
+            const platform = defaultPlatformForDevice(client, detectDevice());
+            if (platform) switchPlatformTab(platform);
+        }
+
+        function initClientTabs() {
+            const incyOnly = restrictToIncyForApple();
+            switchClientTab(incyOnly ? 'incy' : 'happ');
+            refreshAllTabBarLayouts();
+        }
+
+        function openAutoAddRedirect(url) {
+            if (!url) return;
+            try {
+                const tg = window.Telegram?.WebApp;
+                if (tg) {
+                    tg.ready?.();
+                    tg.expand?.();
+                }
+            } catch (e) {}
+            if (isTelegramMiniApp()) {
+                try {
+                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
+                    return;
+                } catch (e) {}
+            }
+            window.location.href = url;
+        }
+
+        function triggerAutoAdd() {
+            haptic('medium');
+            const url = CLIENT_AUTO_ADD[_activeClient];
+            if (!url) {
+                showToast('Ссылка автодобавления недоступна', 'error');
+                return;
+            }
+            showToast('Подтвердите открытие ' + (CLIENT_LABELS[_activeClient] || 'приложения'));
+            openAutoAddRedirect(url);
+            setTimeout(() => {
+                const hint = document.getElementById('copy-hint');
+                if (hint) {
+                    hint.textContent = 'Не открылось? Скопируйте ссылку в блоке «Поделиться»';
+                    hint.className = 'copy-hint-warn text-[11px] mt-1.5 text-center';
+                    setTimeout(resetCopyHint, 4000);
+                }
+            }, 2000);
+        }
+
+        function toggleAutoAddQR() {
+            haptic('light');
+            const panel = document.getElementById('autoadd-qr-panel');
+            const btn = document.getElementById('btnToggleQr');
+            const label = document.getElementById('btnToggleQrLabel');
+            if (!panel || !btn) return;
+            const open = !panel.classList.contains('is-open');
+            panel.classList.toggle('is-open', open);
+            panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+            btn.classList.toggle('is-open', open);
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (label) label.textContent = open ? 'Скрыть QR-код' : 'Показать QR-код';
+        }
+
+        function openModal(id) {
+            haptic('light');
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('active');
+            document.body.style.overflow = '';
+            if (id === 'modal-tv') {
+                const status = document.getElementById('tv-status');
+                const input = document.getElementById('tv-uid');
+                if (status) { status.textContent = ''; status.className = 'text-center text-[13px] font-medium mb-3 min-h-[1.25rem]'; }
+                if (input) input.value = '';
+            }
+        }
+
+        function closeModalBg(event, id) {
+            if (event.target.id === id) closeModal(id);
+        }
+
+        async function sendTV() {
+            haptic('medium');
+            const input = document.getElementById('tv-uid');
+            const status = document.getElementById('tv-status');
+            const uid = (input?.value || '').trim().toUpperCase();
+            if (!/^[A-Z0-9]{5}$/.test(uid)) {
+                if (status) {
+                    status.textContent = 'Неверный формат — нужно 5 символов';
+                    status.className = 'text-center text-[13px] font-medium mb-3 min-h-[1.25rem] text-apple-red';
+                }
+                haptic('error');
+                return;
+            }
+            if (status) {
+                status.textContent = 'Отправка…';
+                status.className = 'text-center text-[13px] font-medium mb-3 min-h-[1.25rem] text-apple-gray';
+            }
+            try {
+                const resp = await fetch('/sendtv/' + encodeURIComponent(uid), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: window.SUBSCRIPTION_BASE64 || '' }),
+                });
+                let json = null;
+                try { json = await resp.json(); } catch (_) {}
+                if (json && json.ok) {
+                    if (status) {
+                        status.textContent = 'Успешно отправлено!';
+                        status.className = 'text-center text-[13px] font-medium mb-3 min-h-[1.25rem] text-apple-green';
+                    }
+                    showToast('Подписка отправлена на TV');
+                    haptic('success');
+                    setTimeout(() => closeModal('modal-tv'), 2000);
+                } else {
+                    let msg = 'Ошибка. Проверьте код и интернет.';
+                    if (json) {
+                        const remoteErr = (json.remote && (json.remote.error || json.remote.message)) || json.error;
+                        if (remoteErr) msg = 'Ошибка: ' + String(remoteErr).slice(0, 120);
+                        else if (json.status) msg = 'Ошибка ' + json.status + '. Код истёк или неверен.';
+                    }
+                    if (status) {
+                        status.textContent = msg;
+                        status.className = 'text-center text-[13px] font-medium mb-3 min-h-[1.25rem] text-apple-red';
+                    }
+                    haptic('error');
+                }
+            } catch (e) {
+                if (status) {
+                    status.textContent = 'Ошибка сети. Попробуйте ещё раз.';
+                    status.className = 'text-center text-[13px] font-medium mb-3 min-h-[1.25rem] text-apple-red';
+                }
+                haptic('error');
+            }
+        }
+
+        function copyKey(btn, text) {
+            haptic('light');
+            const done = () => {
+                showToast('Ссылка подписки скопирована');
+                const hint = document.getElementById('copy-hint');
+                if (hint) {
+                    hint.textContent = 'Скопировано ✓ отправьте ссылку на другое устройство';
+                    hint.className = 'copy-hint-success text-[11px] mt-1.5 text-center';
+                }
+                if (btn) {
+                    if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<span class="copy-btn-success-label"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Скопировано</span>';
+                    btn.classList.add('is-copied');
+                    clearTimeout(btn._copyTimer);
+                    btn._copyTimer = setTimeout(() => {
+                        btn.innerHTML = btn.dataset.originalHtml;
+                        btn.classList.remove('is-copied');
+                        resetCopyHint();
+                    }, 2200);
+                }
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(done);
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                done();
+            }
+        }
+
+        function openExternalLink(url) {
+            if (!url || url === '#') return;
+            haptic('light');
+            try {
+                const tg = window.Telegram?.WebApp;
+                if (tg && typeof tg.openLink === 'function') {
+                    tg.openLink(url, { try_instant_view: false });
+                    return;
+                }
+            } catch(e) {}
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('a.app-dl-btn[href]');
+            if (!link) return;
+            const href = link.getAttribute('href');
+            if (!href || href.startsWith('#')) return;
+            e.preventDefault();
+            openExternalLink(href);
+            showToast('После установки вернитесь и нажмите автодобавление');
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                const tg = window.Telegram?.WebApp;
+                if (tg) {
+                    tg.ready();
+                    tg.expand();
+                }
+            } catch (e) {}
+            initClientTabs();
+        });
+    </script>
+</body>
+</html>

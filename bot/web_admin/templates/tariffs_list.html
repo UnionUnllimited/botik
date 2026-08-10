@@ -1,0 +1,355 @@
+{% extends 'base.html' %}
+{% block title %}Тарифы — {{ current_method|upper }} — {{ super() }}{% endblock %}
+
+{% set method_meta = {
+  'yookassa':  ('YooKassa',       'credit-card', '#3b82f6'),
+  'tgstar':    ('Telegram Stars', 'star',        '#a855f7'),
+  'cryptobot': ('CryptoBot',      'bitcoin',     '#f59e0b'),
+  'yoomoney':  ('YooMoney',       'wallet',      '#eab308'),
+  'platega':   ('Platega (СБП)',  'qr-code',     '#10b981'),
+  'wata':      ('Wata',           'credit-card', '#6366f1'),
+} %}
+{# Брендовые SVG из static/play/ — используются вместо Lucide-fallback там, где есть файл #}
+{% set play_icons = {
+  'yookassa':  'yookassa',
+  'tgstar':    'stars',
+  'cryptobot': 'cryptobot',
+  'yoomoney':  'yoomoney',
+  'platega':   'platega',
+  'wata':      'wata',
+} %}
+{% set m_label = method_meta.get(current_method, (current_method|title, 'tag', '#64748b'))[0] %}
+{% set m_icon  = method_meta.get(current_method, (current_method|title, 'tag', '#64748b'))[1] %}
+{% set m_color = method_meta.get(current_method, (current_method|title, 'tag', '#64748b'))[2] %}
+{% set m_play  = play_icons.get(current_method) %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 text-[12px] tw-text-muted2 mb-1">
+        <a href="{{ url_for('admin.tariffs_list') }}" class="hover:underline flex items-center gap-1">
+          <i data-lucide="arrow-left" class="w-3 h-3"></i> К линейкам
+        </a>
+      </div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        {% if m_play %}
+          <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden p-1"
+                style="background: var(--admin-bg-soft); border: 1px solid rgb(var(--admin-border));">
+            <img src="{{ url_for('admin.admin_static', filename='play/' ~ m_play ~ '.svg') }}"
+                 alt="{{ m_label }}" class="w-full h-full object-contain" loading="lazy">
+          </span>
+        {% else %}
+          <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+                style="background: {{ m_color }}1a; color: {{ m_color }};">
+            <i data-lucide="{{ m_icon }}" class="w-4 h-4"></i>
+          </span>
+        {% endif %}
+        <span>{{ m_label }}</span>
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Просмотр тарифов одного метода оплаты. Для редактирования всех методов сразу — <a href="{{ url_for('admin.tariffs_list') }}" class="underline">линейки</a>.
+      </p>
+    </div>
+
+    {# Группируем существующие тарифы по сроку — каждая группа = отдельная
+       «линейка» (1 мес, 3 мес и т.п.). Сортируем по дням возрастающе. #}
+    {% set _days_set = (tariffs or []) | map(attribute='days') | unique | list | sort %}
+
+    <div class="flex items-center gap-2 flex-wrap">
+      {% if _days_set %}
+        <div class="relative" data-tw-dropdown>
+          <button type="button"
+                  class="tw-btn tw-btn-secondary tw-btn-sm"
+                  data-tw-dropdown-toggle
+                  title="Редактирование линеек тарифов">
+            <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+            <span>Линейки</span>
+            <span class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ml-1"
+                  style="background: rgb(var(--admin-border)); color: var(--admin-text-muted);">
+              {{ _days_set|length }}
+            </span>
+            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+          </button>
+          <div class="hidden absolute right-0 mt-1 z-[100] min-w-[220px] max-sm:min-w-0 py-1 rounded-lg shadow-lg max-sm:shadow-xl"
+               style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));"
+               data-tw-dropdown-menu>
+            <div class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+                 style="color: var(--admin-text-subtle);">
+              Редактировать
+            </div>
+            {% for d in _days_set %}
+              {% set _cnt = (tariffs | selectattr('days', 'equalto', d) | list | length) %}
+              <a href="{{ url_for('admin.tariff_bulk_edit', days=d) }}"
+                 class="flex items-center justify-between gap-3 px-3 py-2 text-[13px] hover:bg-[var(--admin-bg-soft)] transition"
+                 style="color: var(--admin-text-base);">
+                <span class="flex items-center gap-2">
+                  <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                  <span>{{ d }} дн.</span>
+                </span>
+                <span class="text-[11px]" style="color: var(--admin-text-muted);">
+                  {{ _cnt }} тариф{% if _cnt % 10 == 1 and _cnt % 100 != 11 %}{% elif _cnt % 10 in [2,3,4] and _cnt // 10 % 10 != 1 %}а{% else %}ов{% endif %}
+                </span>
+              </a>
+            {% endfor %}
+            <div class="my-1 border-t" style="border-color: rgb(var(--admin-border));"></div>
+            <a href="{{ url_for('admin.tariff_bulk_create', method=current_method) }}"
+               class="flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-[var(--admin-bg-soft)] transition"
+               style="color: rgb(var(--admin-accent));">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+              <span>Новая линейка (другой срок)</span>
+            </a>
+          </div>
+        </div>
+      {% else %}
+        <a href="{{ url_for('admin.tariff_bulk_create', method=current_method) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm" title="Создать линейку тарифов">
+          <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+          <span>Создать линейку</span>
+        </a>
+      {% endif %}
+      <a href="{{ url_for('admin.tariff_add', payment_method=current_method) }}"
+         class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        <span>Добавить тариф</span>
+      </a>
+    </div>
+  </div>
+
+  {# === Hint для CryptoBot / TG Stars === #}
+  {% if current_method in ['cryptobot', 'tgstar'] %}
+  <div class="tw-card p-3.5 flex items-start gap-3" style="border-left: 3px solid {{ m_color }};">
+    <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0" style="color: {{ m_color }};"></i>
+    <div class="text-[13px] tw-text-muted2">
+      {% if current_method == 'cryptobot' %}
+        <strong class="tw-text-base2">CryptoBot:</strong> цена тарифа всегда в&nbsp;рублях. Бот создаёт фиатный инвойс <code>currency_type=fiat, fiat=RUB</code>, а CryptoBot пересчитывает в&nbsp;USDT/TON по&nbsp;своему курсу при оплате.
+      {% else %}
+        <strong class="tw-text-base2">TG Stars:</strong> цена тарифа всегда в&nbsp;рублях. При создании инвойса бот конвертирует ₽&nbsp;→&nbsp;⭐ по&nbsp;курсу <code>tgstar_rub_per_star</code> (по&nbsp;умолчанию 2&nbsp;₽ за&nbsp;1&nbsp;⭐).
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# === Tariffs grid (грудпируется по линейкам = по дням) === #}
+  {% if tariffs %}
+  {% for d in _days_set %}
+    {% set _line = tariffs | selectattr('days', 'equalto', d) | list %}
+    <div class="flex flex-wrap items-center gap-2 mt-1 mb-1">
+      <div class="flex items-center gap-2 px-2.5 py-1 rounded-lg min-w-0"
+           style="background: {{ m_color }}1a; color: {{ m_color }};">
+        <i data-lucide="calendar" class="w-3.5 h-3.5 shrink-0"></i>
+        <span class="text-[12px] font-semibold">Линейка · {{ d }} дн.</span>
+        <span class="text-[10px] font-bold opacity-70 shrink-0">({{ _line|length }})</span>
+      </div>
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <a href="{{ url_for('admin.tariff_bulk_edit', days=d) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm gap-1.5 shrink-0"
+           title="Редактировать линейку {{ d }} дн.">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+          <span>Редактировать</span>
+        </a>
+        <form method="post"
+              action="{{ url_for('admin.tariff_line_delete') }}"
+              class="inline-flex items-center m-0 shrink-0"
+              onsubmit="return confirm('Удалить всю линейку {{ d }} дн.? Будет удалено {{ _line|length }} тариф(ов). Это необратимо.');">
+          <input type="hidden" name="payment_method" value="{{ current_method }}">
+          <input type="hidden" name="days" value="{{ d }}">
+          <button type="submit"
+                  class="tw-btn tw-btn-danger tw-btn-sm gap-1.5 border border-rose-500/35"
+                  title="Удалить всю линейку {{ d }} дн.">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span>Удалить</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+    {% for tariff in _line %}
+    <div class="tw-card p-4 flex flex-col gap-3 {% if not tariff.is_active %}opacity-60{% endif %}">
+      {# Header row: name + status #}
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="text-[14px] font-semibold tw-text-base2 leading-tight">{{ tariff.name }}</div>
+          <div class="text-[11px] tw-text-subtle2 mt-0.5">ID: {{ tariff.id }}</div>
+        </div>
+        {% if tariff.is_active %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+              style="background: rgba(16,185,129,.15); color:#10b981;">
+          <span class="w-1.5 h-1.5 rounded-full" style="background:#10b981;"></span>
+          Активен
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+              style="background: rgba(100,116,139,.15); color:#64748b;">
+          <span class="w-1.5 h-1.5 rounded-full" style="background:#64748b;"></span>
+          Выключен
+        </span>
+        {% endif %}
+      </div>
+
+      {# Stats row #}
+      <div class="grid grid-cols-3 gap-2 py-2 border-y" style="border-color: rgb(var(--admin-border));">
+        <div class="text-center">
+          <div class="text-[10px] tw-text-subtle2 uppercase tracking-wider">Дней</div>
+          <div class="text-[18px] font-bold tw-text-base2 leading-none mt-1">{{ tariff.days }}</div>
+        </div>
+        <div class="text-center border-l border-r" style="border-color: rgb(var(--admin-border));">
+          <div class="text-[10px] tw-text-subtle2 uppercase tracking-wider">Цена</div>
+          <div class="text-[18px] font-bold leading-none mt-1" style="color: {{ m_color }};">
+            {{ (tariff.price|int) if tariff.price == (tariff.price|int) else "%.2f"|format(tariff.price) }}
+            <span class="text-[12px] font-normal tw-text-muted2">₽</span>
+          </div>
+        </div>
+        <div class="text-center">
+          <div class="text-[10px] tw-text-subtle2 uppercase tracking-wider">Устр.</div>
+          <div class="text-[18px] font-bold tw-text-base2 leading-none mt-1">
+            {% if (tariff.limit_ip or 0) == 0 %}∞{% else %}{{ tariff.limit_ip }}{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# Extra meta (traffic) #}
+      {% if tariff.traffic_gb and tariff.traffic_gb > 0 %}
+      <div class="flex items-center gap-2 text-[12px] tw-text-muted2">
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+        <span>+{{ tariff.traffic_gb }} GB при продлении</span>
+      </div>
+      {% endif %}
+
+      {# Description #}
+      {% if tariff.description %}
+      <div class="text-[12px] tw-text-muted2 leading-relaxed line-clamp-3">
+        {{ tariff.description|safe }}
+      </div>
+      {% endif %}
+
+      {# Actions #}
+      <div class="flex items-center gap-1.5 mt-auto pt-1">
+        <a href="{{ url_for('admin.tariff_edit', tariff_id=tariff.id) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm flex-1 justify-center" title="Редактировать">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+          <span>Изменить</span>
+        </a>
+        <form method="post" action="{{ url_for('admin.tariff_toggle', tariff_id=tariff.id) }}" class="inline-flex">
+          <button type="submit"
+                  class="tw-btn tw-btn-secondary tw-btn-sm"
+                  title="{% if tariff.is_active %}Выключить{% else %}Включить{% endif %}">
+            <i data-lucide="{% if tariff.is_active %}toggle-right{% else %}toggle-left{% endif %}" class="w-3.5 h-3.5"></i>
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('admin.tariff_delete', tariff_id=tariff.id) }}"
+              class="inline-flex"
+              onsubmit="return confirm('Удалить тариф «{{ tariff.name|e }}»? Действие необратимо.');">
+          <button type="submit"
+                  class="tw-btn tw-btn-secondary tw-btn-sm" title="Удалить"
+                  style="color:#ef4444;">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% else %}
+  {# Empty state #}
+  <div class="tw-card p-10 text-center">
+    <div class="inline-flex items-center justify-center w-14 h-14 rounded-full mb-3"
+         style="background: {{ m_color }}1a; color: {{ m_color }};">
+      <i data-lucide="tags" class="w-6 h-6"></i>
+    </div>
+    <div class="text-[16px] font-semibold tw-text-base2 mb-1">Тарифы не созданы</div>
+    <p class="text-[13px] tw-text-muted2 mb-4 max-w-md mx-auto">
+      Создайте первый тариф вручную или сгенерируйте сразу всю линейку
+      «1, 2, 3 …&nbsp;N&nbsp;устройств» c&nbsp;автоматическим расчётом цены.
+    </p>
+    <div class="flex items-center justify-center gap-2 flex-wrap">
+      <a href="{{ url_for('admin.tariff_add', payment_method=current_method) }}"
+         class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        <span>Добавить тариф</span>
+      </a>
+      <a href="{{ url_for('admin.tariff_bulk_create', method=current_method) }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        <span>Создать линейку</span>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+(() => {
+  function resetTariffDropdownMenu(menu) {
+    ['position', 'left', 'right', 'top', 'width', 'maxHeight', 'overflowY'].forEach((k) => {
+      menu.style[k] = '';
+    });
+  }
+
+  function layoutTariffDropdownForMobile(menu, toggle) {
+    const r = toggle.getBoundingClientRect();
+    const gap = 8;
+    const inset = 12;
+    menu.style.position = 'fixed';
+    menu.style.left = inset + 'px';
+    menu.style.right = inset + 'px';
+    menu.style.width = 'auto';
+    menu.style.top = Math.round(r.bottom + gap) + 'px';
+    const avail = window.innerHeight - r.bottom - gap - inset;
+    menu.style.maxHeight = Math.max(120, avail) + 'px';
+    menu.style.overflowY = 'auto';
+  }
+
+  document.querySelectorAll('[data-tw-dropdown]').forEach(root => {
+    const toggle = root.querySelector('[data-tw-dropdown-toggle]');
+    const menu   = root.querySelector('[data-tw-dropdown-menu]');
+    if (!toggle || !menu) return;
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = !menu.classList.contains('hidden');
+      document.querySelectorAll('[data-tw-dropdown-menu]').forEach(m => {
+        m.classList.add('hidden');
+        resetTariffDropdownMenu(m);
+      });
+      if (wasOpen) return;
+      menu.classList.remove('hidden');
+      if (window.matchMedia('(max-width: 639px)').matches) {
+        layoutTariffDropdownForMobile(menu, toggle);
+      } else {
+        resetTariffDropdownMenu(menu);
+      }
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('[data-tw-dropdown-menu]').forEach(m => {
+      m.classList.add('hidden');
+      resetTariffDropdownMenu(m);
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('[data-tw-dropdown-menu]').forEach(m => {
+        m.classList.add('hidden');
+        resetTariffDropdownMenu(m);
+      });
+    }
+  });
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('[data-tw-dropdown-menu]:not(.hidden)').forEach(menu => {
+      const root = menu.closest('[data-tw-dropdown]');
+      const toggle = root && root.querySelector('[data-tw-dropdown-toggle]');
+      if (!toggle) return;
+      if (window.matchMedia('(max-width: 639px)').matches) {
+        layoutTariffDropdownForMobile(menu, toggle);
+      } else {
+        resetTariffDropdownMenu(menu);
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

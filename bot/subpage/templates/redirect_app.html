@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#fff5f5" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#1C1C1E" media="(prefers-color-scheme: dark)">
+    <script src="/static/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="/static/css/redirect_app.css">
+    <title>Открытие {{ app_name or 'приложения' }}</title>
+</head>
+<body class="page-redirect">
+    <div class="container">
+        <div class="card">
+            <div id="loadingBlock">
+                <div class="spinner" aria-hidden="true"></div>
+                <h1 id="titleText">Открываем {{ app_name or 'приложение' }}…</h1>
+                <p class="loading-text" id="subtitleText">Пожалуйста, подождите</p>
+            </div>
+
+            {% if support_link and support_link != '#' %}
+            <div class="warning-box">
+                Если ничего не происходит — нажмите кнопку ниже или обратитесь в
+                <a href="{{ support_link }}" id="support-link" target="_blank" rel="noopener">поддержку</a>.
+            </div>
+            {% else %}
+            <div class="warning-box">Если приложение не открылось — нажмите кнопку ниже.</div>
+            {% endif %}
+
+            <div id="fallback">
+                <div class="actions">
+                    <button type="button" class="btn btn-primary" id="btn-open-app">
+                        Открыть {{ app_name or 'приложение' }}
+                    </button>
+                    <button type="button" class="btn btn-secondary hidden" id="btn-open-browser">
+                        Открыть во внешнем браузере
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            var target = {{ target | tojson }};
+            var appName = {{ (app_name or 'приложение') | tojson }};
+            var fallbackEl = document.getElementById('fallback');
+            var btnOpenApp = document.getElementById('btn-open-app');
+            var btnOpenBrowser = document.getElementById('btn-open-browser');
+            var loadingBlock = document.getElementById('loadingBlock');
+            var titleText = document.getElementById('titleText');
+            var subtitleText = document.getElementById('subtitleText');
+            var escapedToExternal = false;
+
+            function isCustomScheme(url) {
+                if (!url || typeof url !== 'string') return false;
+                return /^(happ|incy|v2raytun|tg|mailto):/i.test(url);
+            }
+
+            function isTelegramMiniApp() {
+                try {
+                    return !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+                } catch (e) { return false; }
+            }
+
+            function initTelegramChrome() {
+                if (!window.Telegram || !window.Telegram.WebApp) return;
+                try {
+                    var tg = window.Telegram.WebApp;
+                    tg.ready();
+                    tg.expand();
+                    var isDark = (typeof localStorage !== 'undefined' && localStorage.getItem('apple_sub_theme') === 'theme-dark') ||
+                        (localStorage.getItem('subscription_theme') === 'theme-dark') ||
+                        (tg.colorScheme === 'dark') ||
+                        (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                    if (isDark) document.documentElement.classList.add('theme-dark');
+                    var bg = isDark ? '#09090B' : '#F2F2F7';
+                    tg.setBackgroundColor(bg);
+                    tg.setHeaderColor(bg);
+                } catch (e) {}
+            }
+
+            function openDeepLink(url) {
+                if (!url) return;
+                try {
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.rel = 'noopener';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(function() { if (a.parentNode) a.parentNode.removeChild(a); }, 800);
+                } catch (e) {}
+                try {
+                    var iframe = document.createElement('iframe');
+                    iframe.style.cssText = 'display:none;width:0;height:0;border:0';
+                    iframe.src = url;
+                    document.body.appendChild(iframe);
+                    setTimeout(function() { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 2500);
+                } catch (e) {}
+            }
+
+            function openInSystemBrowser() {
+                if (!window.location.href) return false;
+                try {
+                    var tg = window.Telegram && window.Telegram.WebApp;
+                    if (tg && typeof tg.openLink === 'function') {
+                        tg.openLink(window.location.href, { try_instant_view: false });
+                        escapedToExternal = true;
+                        return true;
+                    }
+                } catch (e) {}
+                return false;
+            }
+
+            function showFallback(mode) {
+                if (fallbackEl) fallbackEl.classList.add('visible');
+                if (loadingBlock && mode === 'manual') {
+                    loadingBlock.classList.add('hidden');
+                    if (titleText) titleText.textContent = 'Откройте ' + appName;
+                    if (subtitleText) subtitleText.textContent = 'Нажмите кнопку — подписка добавится в приложение';
+                }
+                if (btnOpenBrowser && isTelegramMiniApp()) {
+                    btnOpenBrowser.classList.remove('hidden');
+                }
+            }
+
+            function tryOpenApp() {
+                if (!target) return;
+
+                if (isTelegramMiniApp() && isCustomScheme(target)) {
+                    if (openInSystemBrowser()) {
+                        if (titleText) titleText.textContent = 'Открываем браузер…';
+                        if (subtitleText) subtitleText.textContent = 'Затем приложение ' + appName + ' откроется автоматически';
+                        setTimeout(function() { showFallback('manual'); }, 1500);
+                        return;
+                    }
+                    showFallback('manual');
+                    return;
+                }
+
+                openDeepLink(target);
+                try { window.location.replace(target); } catch (e) {
+                    try { window.location.href = target; } catch (e2) {}
+                }
+            }
+
+            if (!target) {
+                if (titleText) titleText.textContent = 'Ошибка';
+                if (subtitleText) subtitleText.textContent = 'Ссылка для открытия не указана';
+                showFallback('manual');
+                return;
+            }
+
+            initTelegramChrome();
+
+            if (btnOpenApp) {
+                btnOpenApp.addEventListener('click', function() {
+                    if (isTelegramMiniApp() && isCustomScheme(target) && !escapedToExternal) {
+                        if (openInSystemBrowser()) return;
+                    }
+                    openDeepLink(target);
+                    try { window.location.href = target; } catch (e) {}
+                });
+            }
+
+            if (btnOpenBrowser) {
+                btnOpenBrowser.addEventListener('click', function() {
+                    openInSystemBrowser();
+                });
+            }
+
+            var supportLink = document.getElementById('support-link');
+            if (supportLink) {
+                supportLink.addEventListener('click', function(e) {
+                    if (!isTelegramMiniApp()) return;
+                    var href = supportLink.getAttribute('href');
+                    if (!href || href === '#') return;
+                    e.preventDefault();
+                    try {
+                        window.Telegram.WebApp.openLink(href, { try_instant_view: false });
+                    } catch (err) {
+                        window.open(href, '_blank', 'noopener,noreferrer');
+                    }
+                });
+            }
+
+            tryOpenApp();
+
+            setTimeout(function() { showFallback('manual'); }, isTelegramMiniApp() ? 800 : 1400);
+
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'visible' && !escapedToExternal) {
+                    setTimeout(function() { showFallback('manual'); }, 300);
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

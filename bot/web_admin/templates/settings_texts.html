@@ -1,0 +1,583 @@
+{% extends "base.html" %}
+{% block title %}Тексты · {{ super() }}{% endblock %}
+{% block content %}
+<div class="tw-anim px-2 sm:px-4 py-4 min-w-0 max-w-full">
+
+    <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div>
+            <h1 class="text-xl font-semibold flex items-center gap-2">
+                <i data-lucide="type" class="w-5 h-5"></i>
+                Тексты бота
+            </h1>
+            <p class="text-sm text-[color:var(--admin-text-muted)] mt-1 max-w-2xl">
+                Все сообщения, которые видит пользователь. Поддерживается HTML-разметка
+                (<code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;a&gt;</code>,
+                <code>&lt;blockquote&gt;</code> и т.д.) и переменные в фигурных скобках.
+                Тексты кнопок настраиваются отдельно в разделе
+                <a href="{{ url_for('admin.settings_buttons') }}" class="underline">Стиль кнопок</a>.
+            </p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('admin.settings_buttons') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+                <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i>
+                Стиль кнопок
+            </a>
+            <button type="button" id="expandAllBtn" class="tw-btn tw-btn-ghost tw-btn-sm">
+                <i data-lucide="chevrons-up-down" class="w-3.5 h-3.5"></i>
+                Свернуть/развернуть
+            </button>
+        </div>
+    </div>
+
+    <div class="search-bar">
+        <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--admin-text-muted)]"></i>
+            <input id="searchInput" type="search" autocomplete="off"
+                   placeholder="Поиск по ключу, описанию или содержимому…"
+                   class="tw-input tw-input-with-icon" style="padding-left: 36px;">
+        </div>
+    </div>
+
+    <div id="groupsRoot" class="space-y-3 mt-2">
+        {% for group_name, settings_list in grouped_settings.items() %}
+            {% if settings_list %}
+            <div class="grp-card" data-grp data-name="{{ group_name|e }}">
+                <div class="grp-head" data-grp-toggle>
+                    <div class="grp-title">
+                        <i data-lucide="chevron-down" class="w-4 h-4 grp-chevron text-[color:var(--admin-text-muted)]"></i>
+                        <span>{{ group_name }}</span>
+                    </div>
+                    <span class="grp-count">{{ settings_list|length }}</span>
+                </div>
+                <div class="grp-body">
+                    {% for setting in settings_list %}
+                    <div class="txt-row"
+                         data-key="{{ setting.key }}"
+                         data-search="{{ (setting.key + ' ' + (setting.description or '') + ' ' + (setting.value or ''))|lower|e }}">
+                        <div class="meta">
+                            <div class="lbl">{{ setting.key }}</div>
+                            {% if setting.description %}
+                            <div class="desc">{{ setting.description }}</div>
+                            {% endif %}
+                            {% if text_setting_variables.get(setting.key) is not none %}
+                            <div class="txt-vars-line">
+                                {% if text_setting_variables[setting.key] %}
+                                <span class="txt-vars-label">Переменные:</span>
+                                {% for v in text_setting_variables[setting.key] %}
+                                <code class="txt-var-chip" title="{{ v.label }}">{{ '{' ~ v.name ~ '}' }}</code>
+                                {% endfor %}
+                                {% else %}
+                                <span class="txt-vars-static">Статичный текст</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="preview {% if not setting.value %}empty{% endif %}"
+                             data-preview-for="{{ setting.key }}"
+                             data-value="{{ setting.value|e }}"
+                             title="Нажмите, чтобы редактировать">
+                            {% if setting.value %}{{ setting.value }}{% else %}— пусто —{% endif %}
+                        </div>
+
+                        <div class="actions">
+                            <button type="button"
+                                    class="tw-btn tw-btn-ghost tw-btn-icon-sm edit-btn"
+                                    data-key="{{ setting.key }}"
+                                    title="Редактировать">
+                                <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endfor %}
+        <div id="emptyState" class="empty-row hidden">
+            Ничего не найдено по этому запросу.
+        </div>
+    </div>
+</div>
+
+
+<!-- ── Модалка редактирования ─────────────────────────────────── -->
+<div id="editModal" class="txt-modal-backdrop" role="dialog" aria-modal="true">
+    <div class="txt-modal-box">
+        <header>
+            <div class="title-block">
+                <div class="key" id="modalKey">key</div>
+                <div class="desc" id="modalDesc"></div>
+            </div>
+            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-modal-close title="Закрыть">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </header>
+
+        <div class="body">
+            <div class="editor">
+                <div class="toolbar">
+                    <button type="button" data-fmt="b" title="Жирный (Ctrl+B)"><b>B</b></button>
+                    <button type="button" data-fmt="i" title="Курсив (Ctrl+I)"><i>I</i></button>
+                    <button type="button" data-fmt="u" title="Подчёркнутый"><u>U</u></button>
+                    <button type="button" data-fmt="s" title="Зачёркнутый"><s>S</s></button>
+                    <button type="button" data-fmt="code" title="Моноширинный">
+                        <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" data-fmt="blockquote" title="Цитата">
+                        <i data-lucide="quote" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <span class="sep"></span>
+                    <button type="button" data-fmt="link" title="Ссылка">
+                        <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                        Ссылка
+                    </button>
+                </div>
+
+                <textarea id="modalTextarea" spellcheck="true"
+                          placeholder="Текст сообщения. Поддерживается HTML и переменные {variable}."></textarea>
+
+                <div id="varsSection" class="vars-section hidden">
+                    <div id="varsTitle" class="vars-title">Доступные переменные</div>
+                    <div id="varsBlock" class="vars"></div>
+                    <div id="varsHint" class="vars-hint hidden">
+                        Кликните чип, чтобы вставить переменную в позицию курсора.
+                    </div>
+                    <div id="varsUnknown" class="vars-unknown hidden"></div>
+                </div>
+                <div id="htmlValidation" class="html-validation hidden" role="status"></div>
+            </div>
+
+            <div>
+                <div class="tg-preview">
+                    <div class="label flex items-center gap-2">
+                        <i data-lucide="message-square" class="w-3 h-3"></i>
+                        Превью (как в Telegram)
+                    </div>
+                    <div id="modalPreview" class="tg-bubble"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <div class="left">
+                <span id="modalLen">0</span> симв.
+                <span class="mx-1">·</span>
+                <span id="modalLines">1</span> строк
+            </div>
+            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-modal-close>Отмена</button>
+            <button type="button" id="modalSaveBtn" class="tw-btn tw-btn-primary tw-btn-sm">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                Сохранить
+            </button>
+        </footer>
+    </div>
+</div>
+
+<div id="toastStack" class="toast-stack"></div>
+
+
+<script>
+(function () {
+    'use strict';
+
+    const UPDATE_URL = "{{ url_for('admin.settings_texts_update') }}";
+    const TEXT_VARS = {{ text_setting_variables | tojson }};
+
+    // ── Сворачивание/разворачивание групп ─────────────────────────
+    document.querySelectorAll('[data-grp-toggle]').forEach(h => {
+        h.addEventListener('click', () => h.closest('[data-grp]').classList.toggle('open'));
+    });
+    document.getElementById('expandAllBtn')?.addEventListener('click', () => {
+        const cards = document.querySelectorAll('[data-grp]');
+        const anyClosed = [...cards].some(c => !c.classList.contains('open'));
+        cards.forEach(c => c.classList.toggle('open', anyClosed));
+    });
+
+    // ── Поиск ─────────────────────────────────────────────────────
+    const search = document.getElementById('searchInput');
+    const emptyState = document.getElementById('emptyState');
+    let searchTimer = null;
+    search?.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(applySearch, 80);
+    });
+    function applySearch() {
+        const q = (search.value || '').trim().toLowerCase();
+        let totalVisible = 0;
+        document.querySelectorAll('[data-grp]').forEach(card => {
+            let visible = 0;
+            card.querySelectorAll('.txt-row').forEach(row => {
+                const hay = row.dataset.search || '';
+                const ok = !q || hay.indexOf(q) !== -1;
+                row.style.display = ok ? '' : 'none';
+                if (ok) visible++;
+            });
+            card.style.display = visible ? '' : 'none';
+            if (q && visible) card.classList.add('open');
+            totalVisible += visible;
+        });
+        emptyState.classList.toggle('hidden', totalVisible !== 0);
+    }
+
+    // ── Открытие модалки ──────────────────────────────────────────
+    const modal = document.getElementById('editModal');
+    const modalKey = document.getElementById('modalKey');
+    const modalDesc = document.getElementById('modalDesc');
+    const modalTextarea = document.getElementById('modalTextarea');
+    const modalPreview = document.getElementById('modalPreview');
+    const modalLen = document.getElementById('modalLen');
+    const modalLines = document.getElementById('modalLines');
+    const varsBlock = document.getElementById('varsBlock');
+    const varsSection = document.getElementById('varsSection');
+    const varsTitle = document.getElementById('varsTitle');
+    const varsHint = document.getElementById('varsHint');
+    const varsUnknown = document.getElementById('varsUnknown');
+    const htmlValidation = document.getElementById('htmlValidation');
+    let currentRow = null;
+    let htmlValidationOk = true;
+
+    function openModalFor(key) {
+        const row = document.querySelector(`.txt-row[data-key="${CSS.escape(key)}"]`);
+        if (!row) return;
+        currentRow = row;
+        const preview = row.querySelector('.preview');
+        const desc = row.querySelector('.desc')?.textContent?.trim() || '';
+        modalKey.textContent = key;
+        modalDesc.textContent = desc;
+        modalDesc.style.display = desc ? '' : 'none';
+        modalTextarea.value = preview?.dataset?.value || '';
+        renderVars();
+        renderPreview();
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => modalTextarea.focus(), 50);
+    }
+
+    function closeModal() {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+        currentRow = null;
+    }
+
+    document.querySelectorAll('.edit-btn').forEach(b => {
+        b.addEventListener('click', () => openModalFor(b.dataset.key));
+    });
+    document.querySelectorAll('.preview[data-preview-for]').forEach(p => {
+        p.addEventListener('click', () => openModalFor(p.dataset.previewFor));
+    });
+    modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+    document.querySelectorAll('[data-modal-close]').forEach(b => b.addEventListener('click', closeModal));
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && modal.classList.contains('show')) {
+            e.preventDefault();
+            saveCurrent();
+        }
+    });
+
+    // ── Live-preview ──────────────────────────────────────────────
+    // Telegram поддерживает HTML, поэтому здесь рендерим как HTML,
+    // но предварительно «sanitize» — оставляем только разрешённые теги.
+    const ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','INS','S','STRIKE','DEL','CODE','PRE','BR','BLOCKQUOTE','SPAN','TG-SPOILER','A']);
+    const VOID_TAGS = new Set(['BR']);
+    const TEMPLATE_VAR_RE = /\{[^{}]+\}/g;
+    const FORMAT_PLACEHOLDER_RE = /\{[a-zA-Z_][\w]*(?::[^}]*)?\}/g;
+    const TAG_RE = /<\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9-]*)\s*([^<>]*?)\s*(\/)?\s*>/gi;
+    const HREF_RE = /href\s*=\s*(["']).*?\1/i;
+
+    function validateTelegramHtml(raw) {
+        const errors = [];
+        const text = raw || '';
+        if (!text.trim()) return { ok: true, errors };
+
+        let stripped = text.replace(FORMAT_PLACEHOLDER_RE, '');
+        stripped = stripped.replace(/\{\{/g, '').replace(/\}\}/g, '');
+        if (stripped.indexOf('{') !== -1 || stripped.indexOf('}') !== -1) {
+            errors.push(
+                'Некорректные фигурные скобки: одиночные { или } вне переменных. '
+                + 'Для символа используйте {{ или }}'
+            );
+        }
+
+        const masked = text.replace(TEMPLATE_VAR_RE, '\uFFFC');
+        const stack = [];
+        let lastPos = 0;
+        let m;
+        TAG_RE.lastIndex = 0;
+        while ((m = TAG_RE.exec(masked)) !== null) {
+            const between = masked.slice(lastPos, m.index);
+            if (between.indexOf('<') !== -1) {
+                errors.push('Некорректный символ «<» вне HTML-тега');
+            }
+            lastPos = m.index + m[0].length;
+
+            const isClose = !!m[1];
+            const tag = m[2].toLowerCase();
+            const attrs = m[3] || '';
+            const selfClose = !!m[4] || VOID_TAGS.has(tag.toUpperCase());
+
+            if (isClose) {
+                if (!stack.length) errors.push('Лишний закрывающий тег </' + tag + '>');
+                else if (stack[stack.length - 1] !== tag) {
+                    errors.push('Несовпадение тегов: открыт <' + stack[stack.length - 1] + '>, закрыт </' + tag + '>');
+                } else stack.pop();
+                continue;
+            }
+            if (selfClose) {
+                if (!ALLOWED_TAGS.has(tag.toUpperCase())) {
+                    errors.push('Неподдерживаемый тег <' + tag + '> (Telegram HTML)');
+                }
+                if (tag === 'a') errors.push('Тег <a> должен быть парным: <a href="...">...</a>');
+                continue;
+            }
+            if (!ALLOWED_TAGS.has(tag.toUpperCase())) {
+                errors.push('Неподдерживаемый тег <' + tag + '> (Telegram HTML)');
+            }
+            if (tag === 'a' && !HREF_RE.test(attrs)) {
+                errors.push('Тег <a> без корректного href="..."');
+            }
+            stack.push(tag);
+        }
+        if (masked.slice(lastPos).indexOf('<') !== -1) {
+            errors.push('Некорректный символ «<» вне HTML-тега');
+        }
+        if (stack.length) errors.push('Не закрыт тег <' + stack[stack.length - 1] + '>');
+
+        const unique = [];
+        const seen = new Set();
+        errors.forEach(err => {
+            if (!seen.has(err)) { seen.add(err); unique.push(err); }
+        });
+        return { ok: unique.length === 0, errors: unique };
+    }
+
+    function renderHtmlValidation() {
+        const result = validateTelegramHtml(modalTextarea.value || '');
+        htmlValidationOk = result.ok;
+        if (!modalTextarea.value.trim()) {
+            htmlValidation.classList.add('hidden');
+            htmlValidation.classList.remove('ok', 'err');
+            htmlValidation.innerHTML = '';
+            saveBtn.disabled = false;
+            return;
+        }
+        htmlValidation.classList.remove('hidden');
+        htmlValidation.classList.toggle('ok', result.ok);
+        htmlValidation.classList.toggle('err', !result.ok);
+        if (result.ok) {
+            htmlValidation.innerHTML = '<i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i><span>HTML синтаксис в порядке</span>';
+        } else {
+            htmlValidation.innerHTML = '<i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i><ul>'
+                + result.errors.map(e => '<li>' + e + '</li>').join('')
+                + '</ul>';
+        }
+        saveBtn.disabled = !result.ok;
+        if (window.lucide?.createIcons) lucide.createIcons();
+    }
+
+    function sanitizeHtml(raw) {
+        // Сначала — нормализуем переводы строк в <br>, чтобы превью совпадало с Telegram-выводом.
+        const html = (raw || '').replace(/\r\n?/g, '\n');
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        (function walk(node) {
+            const children = [...node.childNodes];
+            children.forEach(child => {
+                if (child.nodeType === 1) {
+                    if (!ALLOWED_TAGS.has(child.tagName)) {
+                        const text = document.createTextNode(child.textContent);
+                        node.replaceChild(text, child);
+                    } else {
+                        // Чистим атрибуты, оставляем href для <a>
+                        [...child.attributes].forEach(attr => {
+                            if (child.tagName === 'A' && attr.name === 'href') return;
+                            child.removeAttribute(attr.name);
+                        });
+                        if (child.tagName === 'A') {
+                            child.setAttribute('target', '_blank');
+                            child.setAttribute('rel', 'noopener');
+                        }
+                        walk(child);
+                    }
+                }
+            });
+        })(wrapper);
+        // Конвертируем оставшиеся \n в <br> уже после санитайза.
+        wrapper.innerHTML = wrapper.innerHTML.replace(/\n/g, '<br>');
+        return wrapper.innerHTML;
+    }
+
+    function renderPreview() {
+        const v = modalTextarea.value || '';
+        modalPreview.innerHTML = sanitizeHtml(v);
+        modalLen.textContent = v.length;
+        modalLines.textContent = v.split('\n').length;
+        renderHtmlValidation();
+    }
+
+    function renderVars() {
+        const key = modalKey.textContent || '';
+        const supported = Object.prototype.hasOwnProperty.call(TEXT_VARS, key) ? TEXT_VARS[key] : null;
+        varsBlock.innerHTML = '';
+        varsUnknown.classList.add('hidden');
+        varsUnknown.innerHTML = '';
+
+        if (supported === null) {
+            varsSection.classList.add('hidden');
+            return;
+        }
+
+        varsSection.classList.remove('hidden');
+
+        if (!supported.length) {
+            varsTitle.textContent = 'Переменные';
+            varsHint.classList.add('hidden');
+            const note = document.createElement('div');
+            note.className = 'vars-static-note';
+            note.textContent = 'Статичный текст — переменные не подставляются.';
+            varsBlock.appendChild(note);
+            return;
+        }
+
+        varsTitle.textContent = 'Доступные переменные';
+        supported.forEach(item => {
+            const chip = document.createElement('span');
+            chip.className = 'var-chip';
+            const varName = item.name || item;
+            const label = item.label || varName;
+            chip.textContent = '{' + varName + '}';
+            chip.title = label;
+            chip.addEventListener('click', () => insertAtCursor('{' + varName + '}'));
+            varsBlock.appendChild(chip);
+        });
+        varsHint.classList.remove('hidden');
+
+        // Предупреждение о переменных в тексте, которых нет в справочнике
+        const supportedNames = new Set(supported.map(v => v.name || v));
+        const inText = new Set();
+        const re = /\{([a-zA-Z_][\w]*)(?::[^}]*)?\}/g;
+        let m;
+        while ((m = re.exec(modalTextarea.value || '')) !== null) inText.add(m[1]);
+        const unknown = [...inText].filter(n => !supportedNames.has(n)).sort();
+        if (unknown.length) {
+            varsUnknown.classList.remove('hidden');
+            varsUnknown.innerHTML = '<i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>'
+                + '<span>В тексте есть неизвестные переменные: '
+                + unknown.map(n => '<code>{' + n + '}</code>').join(', ')
+                + '. Бот их не подставит — используйте только переменные из списка выше.</span>';
+            if (window.lucide?.createIcons) lucide.createIcons();
+        }
+    }
+
+    modalTextarea.addEventListener('input', () => { renderPreview(); renderVars(); });
+
+    // ── Toolbar форматирования ────────────────────────────────────
+    function wrapSelection(open, close) {
+        const ta = modalTextarea;
+        const start = ta.selectionStart, end = ta.selectionEnd;
+        const before = ta.value.slice(0, start);
+        const sel = ta.value.slice(start, end);
+        const after = ta.value.slice(end);
+        ta.value = before + open + sel + close + after;
+        const newStart = start + open.length;
+        ta.selectionStart = newStart;
+        ta.selectionEnd = newStart + sel.length;
+        ta.focus();
+        renderPreview(); renderVars();
+    }
+    function insertAtCursor(text) {
+        wrapSelection(text, '');
+    }
+    document.querySelectorAll('.toolbar [data-fmt]').forEach(b => {
+        b.addEventListener('click', () => {
+            const f = b.dataset.fmt;
+            if (f === 'link') {
+                const url = prompt('URL ссылки:', 'https://');
+                if (!url) return;
+                wrapSelection('<a href="' + url.replace(/"/g, '&quot;') + '">', '</a>');
+            } else {
+                wrapSelection('<' + f + '>', '</' + f + '>');
+            }
+        });
+    });
+    modalTextarea.addEventListener('keydown', (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        const k = e.key.toLowerCase();
+        if (k === 'b') { e.preventDefault(); wrapSelection('<b>', '</b>'); }
+        else if (k === 'i') { e.preventDefault(); wrapSelection('<i>', '</i>'); }
+    });
+
+    // ── Сохранение ────────────────────────────────────────────────
+    const saveBtn = document.getElementById('modalSaveBtn');
+    saveBtn.addEventListener('click', saveCurrent);
+
+    async function saveCurrent() {
+        if (!currentRow) return;
+        if (!htmlValidationOk) {
+            toast('error', 'Исправьте ошибки HTML перед сохранением');
+            return;
+        }
+        const key = currentRow.dataset.key;
+        const value = modalTextarea.value;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i data-lucide="loader-circle" class="w-4 h-4 animate-spin"></i> Сохранение…';
+        if (window.lucide?.createIcons) lucide.createIcons();
+        try {
+            const r = await fetch(UPDATE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, value }),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.ok) {
+                const msg = (data.messages && data.messages.length)
+                    ? data.messages.join('\n')
+                    : (data.error || ('HTTP ' + r.status));
+                throw new Error(msg);
+            }
+
+            // обновляем превью в строке
+            const preview = currentRow.querySelector('.preview');
+            preview.dataset.value = value;
+            preview.classList.toggle('empty', !value);
+            preview.textContent = value || '— пусто —';
+            currentRow.dataset.search = (
+                (currentRow.dataset.key || '') + ' ' +
+                (currentRow.querySelector('.desc')?.textContent || '') + ' ' +
+                value
+            ).toLowerCase();
+
+            toast('success', 'Сохранено');
+            closeModal();
+        } catch (e) {
+            toast('error', 'Ошибка сохранения: ' + (e.message || e));
+        } finally {
+            saveBtn.disabled = !htmlValidationOk;
+            saveBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> Сохранить';
+            if (window.lucide?.createIcons) lucide.createIcons();
+        }
+    }
+
+    // ── Toasts ────────────────────────────────────────────────────
+    const toastStack = document.getElementById('toastStack');
+    function toast(type, msg) {
+        const el = document.createElement('div');
+        el.className = 'toast-item ' + (type || '');
+        const icon = type === 'success' ? 'check-circle-2' : (type === 'error' ? 'alert-circle' : 'info');
+        el.innerHTML = '<i data-lucide="' + icon + '" class="w-4 h-4"></i><span></span>';
+        el.querySelector('span').textContent = msg;
+        toastStack.appendChild(el);
+        if (window.lucide?.createIcons) lucide.createIcons();
+        setTimeout(() => {
+            el.style.transition = 'opacity .25s, transform .25s';
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(8px)';
+            setTimeout(() => el.remove(), 260);
+        }, 2200);
+    }
+
+    if (window.lucide?.createIcons) lucide.createIcons();
+})();
+</script>
+{% endblock %}

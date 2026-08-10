@@ -1,0 +1,593 @@
+{% extends "base.html" %}
+{% block title %}Главная — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# === Заголовок === #}
+  <div class="py-1">
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Главная</h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">Сводка пользователей, подписок и состояние сервера.</p>
+  </div>
+
+  {# === Баннер: Remnawave не настроен === #}
+  {% if not remnawave_configured %}
+  <div class="rounded-[var(--radius-card)] px-4 py-3.5 flex items-start gap-3"
+       style="border:1px solid rgba(245,158,11,.4); background:rgba(245,158,11,.08);">
+    <i data-lucide="alert-triangle" class="w-5 h-5 mt-0.5 shrink-0" style="color:#f59e0b;"></i>
+    <div class="min-w-0 flex-1">
+      <div class="text-[14px] font-semibold tw-text-base2">Remnawave ещё не настроен</div>
+      <p class="text-[13px] tw-text-muted2 mt-0.5 leading-relaxed m-0">
+        Добавьте ваши данные в разделе «Remnawave · Настройки» для полноценной работы проекта.
+      </p>
+    </div>
+    <a href="{{ url_for('admin.remnawave_settings') }}"
+       class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap shrink-0 gap-1.5">
+      <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+      <span class="hidden sm:inline">Настроить</span>
+    </a>
+  </div>
+  {% endif %}
+
+  {# === Карточки клиентов (компактные, как в превью) === #}
+  <div class="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3">
+
+    {# Всего #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="flex items-center gap-2 text-[11px] tw-text-subtle2 uppercase tracking-wider">
+        <i data-lucide="users" class="w-3.5 h-3.5"></i> Всего
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ stats.total_users }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">пользователей в базе</div>
+    </div>
+
+    {# Сегодня #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="flex items-center gap-2 text-[11px] tw-text-subtle2 uppercase tracking-wider">
+        <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Сегодня
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ stats.users_today }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">регистраций за сутки</div>
+    </div>
+
+    {# Активные подписки #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="flex items-center gap-2 text-[11px] tw-text-subtle2 uppercase tracking-wider">
+        <i data-lucide="badge-check" class="w-3.5 h-3.5"></i> Подписки
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ stats.active_subs }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">
+        {% if stats.total_users and stats.total_users > 0 %}
+          {{ '%.1f' % (stats.active_subs * 100 / stats.total_users) }}% от базы
+        {% else %}
+          активных в данный момент
+        {% endif %}
+      </div>
+    </div>
+
+    {# Онлайн #}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="flex items-center gap-2 text-[11px] tw-text-subtle2 uppercase tracking-wider">
+        <span class="w-1.5 h-1.5 rounded-full inline-block" style="background:#10b981; box-shadow: 0 0 0 0 rgb(16 185 129 / .6); animation: tw-pulse-dot 2s infinite;"></span>
+        Онлайн
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2" id="online-clients-total">—</div>
+      <div class="mt-1 text-[11px] tw-text-muted2" id="online-clients-description">
+        <span id="online-clients-loading" class="inline-flex items-center gap-1">
+          <span class="w-1 h-1 rounded-full bg-current opacity-60 animate-pulse"></span>
+          <span class="w-1 h-1 rounded-full bg-current opacity-60 animate-pulse" style="animation-delay: .15s"></span>
+          <span class="w-1 h-1 rounded-full bg-current opacity-60 animate-pulse" style="animation-delay: .3s"></span>
+          загрузка
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# === Статистика сервера (1-в-1 как в tw_preview) === #}
+  <div class="tw-surface rounded-[var(--radius-card)] p-5">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Статистика сервера</h2>
+        <p class="text-[12px] tw-text-muted2 mt-0.5">Хост, на котором запущена админка. Обновление в реальном времени (SSE).</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="sys-stream-indicator" class="text-[11px] tw-text-subtle2 inline-flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full inline-block" style="background:#71717a;"></span>
+          <span>connecting</span>
+        </span>
+        <button id="refresh-system-btn" type="button" class="tw-btn tw-btn-secondary tw-btn-sm" title="Обновить статистику">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span>Обновить</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+      {# CPU #}
+      <div class="tw-surface-soft rounded-xl p-4">
+        <div class="flex items-center justify-between text-[11px] tw-text-subtle2 uppercase tracking-wider">
+          <span class="inline-flex items-center gap-1.5"><i data-lucide="cpu" class="w-3.5 h-3.5"></i>CPU</span>
+          <span id="sys-cores-label">{% if system.cores %}{{ system.cores }} cores{% else %}—{% endif %}</span>
+        </div>
+        <div class="mt-1 flex items-end gap-2">
+          <div class="text-[22px] font-semibold leading-none tw-text-base2" id="sys-cpu-value">
+            {% if system.cpu_percent is not none %}{{ system.cpu_percent }}<span class="text-[14px] tw-text-muted2 font-normal">%</span>{% else %}—{% endif %}
+          </div>
+          <div class="text-[11px] tw-text-muted2 pb-0.5">load1 <span id="sys-load1">{{ system.load1 if system.load1 is not none else '—' }}</span></div>
+        </div>
+        <div class="mt-2 h-1.5 rounded-full tw-surface-muted overflow-hidden">
+          <div id="sys-cpu-bar" class="h-full transition-all duration-500"
+               style="width: {{ system.cpu_percent if system.cpu_percent is not none else 0 }}%; background: var(--color-brand-500);"></div>
+        </div>
+        <span id="sys-cpu" class="hidden">{% if system.cpu_percent is not none %}{{ system.cpu_percent }}%{% else %}—{% endif %}</span>
+      </div>
+
+      {# ОЗУ #}
+      <div class="tw-surface-soft rounded-xl p-4">
+        <div class="flex items-center justify-between text-[11px] tw-text-subtle2 uppercase tracking-wider">
+          <span class="inline-flex items-center gap-1.5"><i data-lucide="memory-stick" class="w-3.5 h-3.5"></i>ОЗУ</span>
+          <span id="sys-mem-total-label">{% if system.mem_total_gb %}{{ system.mem_total_gb }} GB{% else %}—{% endif %}</span>
+        </div>
+        <div class="mt-1 flex items-end gap-2">
+          <div class="text-[22px] font-semibold leading-none tw-text-base2" id="sys-mem-value">
+            {% if system.mem_percent is not none %}{{ system.mem_percent }}<span class="text-[14px] tw-text-muted2 font-normal">%</span>{% else %}—{% endif %}
+          </div>
+          <div class="text-[11px] tw-text-muted2 pb-0.5" id="sys-mem-details">
+            {% if system.mem_percent is not none %}{{ system.mem_used_gb }} / {{ system.mem_total_gb }} GB{% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="mt-2 h-1.5 rounded-full tw-surface-muted overflow-hidden">
+          <div id="sys-mem-bar" class="h-full transition-all duration-500"
+               style="width: {{ system.mem_percent if system.mem_percent is not none else 0 }}%; background: #10b981;"></div>
+        </div>
+        <span id="sys-mem-percent" class="hidden">{% if system.mem_percent is not none %}{{ system.mem_percent }}%{% else %}—{% endif %}</span>
+      </div>
+
+      {# Диск #}
+      <div class="tw-surface-soft rounded-xl p-4">
+        <div class="flex items-center justify-between text-[11px] tw-text-subtle2 uppercase tracking-wider">
+          <span class="inline-flex items-center gap-1.5"><i data-lucide="hard-drive" class="w-3.5 h-3.5"></i>Диск</span>
+          <span id="sys-disk-total-label">{% if system.disk_total_gb %}{{ system.disk_total_gb }} GB{% else %}—{% endif %}</span>
+        </div>
+        <div class="mt-1 flex items-end gap-2">
+          <div class="text-[22px] font-semibold leading-none tw-text-base2" id="sys-disk-value">
+            {% if system.disk_percent is not none %}{{ system.disk_percent }}<span class="text-[14px] tw-text-muted2 font-normal">%</span>{% else %}—{% endif %}
+          </div>
+          <div class="text-[11px] tw-text-muted2 pb-0.5" id="sys-disk-details">
+            {% if system.disk_percent is not none %}{{ system.disk_used_gb }} / {{ system.disk_total_gb }} GB{% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="mt-2 h-1.5 rounded-full tw-surface-muted overflow-hidden">
+          <div id="sys-disk-bar" class="h-full transition-all duration-500"
+               style="width: {{ system.disk_percent if system.disk_percent is not none else 0 }}%; background: #f59e0b;"></div>
+        </div>
+        <span id="sys-disk-percent" class="hidden">{% if system.disk_percent is not none %}{{ system.disk_percent }}%{% else %}—{% endif %}</span>
+      </div>
+    </div>
+  </div>
+
+  {# === Аналитика пользователей (1-в-1 как tw_preview + блок «Сегодня») === #}
+  <div class="tw-surface rounded-[var(--radius-card)] p-5" id="usersAnalyticsBlock">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Аналитика пользователей</h2>
+        <p class="text-[12px] tw-text-muted2 mt-0.5">
+          Регистрации, статусы подписок и источник.
+          <span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded text-[10.5px] font-medium"
+                style="background: var(--admin-bg-soft); color: var(--admin-text-muted);"
+                title="Все периоды считаются по UTC: «Сегодня» = с 00:00 UTC, «Вчера» = предыдущие сутки UTC, «N дней» = за последние N×24 часа от UTC-сейчас.">UTC</span>
+        </p>
+      </div>
+      <div class="tw-seg" role="group" id="usersAnalyticsSeg">
+        <button type="button" data-period="today">Сегодня</button>
+        <button type="button" data-period="yesterday">Вчера</button>
+        <button type="button" data-period="7days">7 дней</button>
+        <button type="button" data-period="30days" class="active">30 дней</button>
+        <button type="button" data-period="60days">60 дней</button>
+      </div>
+    </div>
+
+    <div id="usersAnalyticsLoading" class="py-12 text-center">
+      <div class="inline-block w-8 h-8 border-3 border-current border-t-transparent rounded-full animate-spin" style="color: var(--color-brand-500);"></div>
+      <p class="mt-3 text-[13px] tw-text-muted2">Загрузка аналитики…</p>
+    </div>
+
+    <div id="usersAnalyticsContent" class="hidden">
+      {# Сводка периода: всего регистраций / в среднем / пик #}
+      <div class="grid grid-cols-3 gap-3 mt-4">
+        <div class="tw-surface-soft rounded-xl p-3 text-center">
+          <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Всего</div>
+          <div class="mt-1 text-[20px] font-semibold leading-none tw-text-base2" id="usersAnalyticsTotal">—</div>
+          <div class="mt-1 text-[10.5px] tw-text-muted2">регистраций</div>
+        </div>
+        <div class="tw-surface-soft rounded-xl p-3 text-center">
+          <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">В среднем</div>
+          <div class="mt-1 text-[20px] font-semibold leading-none tw-text-base2" id="usersAnalyticsAvg">—</div>
+          <div class="mt-1 text-[10.5px] tw-text-muted2" id="usersAnalyticsAvgUnit">в день</div>
+        </div>
+        <div class="tw-surface-soft rounded-xl p-3 text-center">
+          <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Пик</div>
+          <div class="mt-1 text-[20px] font-semibold leading-none tw-text-base2" id="usersAnalyticsPeak">—</div>
+          <div class="mt-1 text-[10.5px] tw-text-muted2" id="usersAnalyticsPeakDate">—</div>
+        </div>
+      </div>
+
+      {# Источник регистрации + Подписка (за выбранный период) #}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div class="tw-surface-soft rounded-xl p-4">
+          <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Источник регистрации</div>
+          <ul class="mt-3 space-y-2 text-[12.5px]" id="registrationSourceList">
+            <li class="text-[12px] tw-text-subtle2">—</li>
+          </ul>
+        </div>
+        <div class="tw-surface-soft rounded-xl p-4">
+          <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Подписка</div>
+          <ul class="mt-3 space-y-2 text-[12.5px]" id="subscriptionStatusList">
+            <li class="text-[12px] tw-text-subtle2">—</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="usersAnalyticsError" class="hidden mt-4 tw-card p-4 flex items-start gap-2.5" style="background: rgba(239 68 68 / .08); border-color: rgba(239 68 68 / .25); color: #ef4444;">
+      <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+      <div class="text-[13px]"><strong>Ошибка загрузки:</strong> <span id="usersAnalyticsErrorText"></span></div>
+    </div>
+
+    {# Топ-10 по трафику за сутки #}
+    <div class="tw-surface-soft rounded-xl p-4 mt-3">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider inline-flex items-center gap-1.5">
+          <i data-lucide="gauge" class="w-3.5 h-3.5"></i> Топ-10 по трафику за сутки
+        </div>
+        <span class="text-[10.5px] tw-text-muted2">клик по строке — карточка клиента · «онлайн» = активность за 10 мин</span>
+      </div>
+      <div class="mt-3 dash-traffic-list">
+        {% if top_daily_traffic %}
+          {% for it in top_daily_traffic %}
+          <div class="dash-traffic-row" role="button" tabindex="0"
+               data-uid="{{ it.telegram_id }}" title="Открыть карточку клиента">
+            <span class="dash-ondot {{ 'live' if it.online_is_live else '' }}"></span>
+            <span class="dash-traffic-rank">#{{ loop.index }}</span>
+            <div class="min-w-0">
+              <div class="dash-traffic-name" title="{{ it.name }}">{{ it.name }}</div>
+              <div class="dash-traffic-id">ID {{ it.telegram_id }}</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="dash-traffic-val">{{ it.daily_human }}</div>
+              <div class="dash-traffic-status {{ 'live' if it.online_is_live else '' }}">{{ 'Онлайн' if it.online_is_live else it.online_label }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="py-6 text-center text-[12.5px] tw-text-subtle2">Нет данных о трафике за сутки</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // ====== Онлайн клиентов ======
+  async function loadOnlineClientsTotal() {
+    const totalEl = document.getElementById('online-clients-total');
+    const descEl = document.getElementById('online-clients-description');
+    if (!totalEl || !descEl) return;
+    try {
+      const response = await fetch("{{ url_for('api.api_online_clients_total') }}");
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (data.ok) {
+        const total = data.total_online || 0;
+        totalEl.textContent = total;
+        const parts = [];
+        if (data.remnawave_available && data.remnawave_online !== null) parts.push(`Remnawave: ${data.remnawave_online}`);
+        descEl.innerHTML = parts.length > 0 ? parts.join(' · ') : 'сервисы недоступны';
+        if (parts.length === 0) totalEl.textContent = '—';
+      } else { throw new Error(data.error || 'Ошибка'); }
+    } catch (error) {
+      totalEl.textContent = '—';
+      descEl.innerHTML = 'ошибка загрузки';
+    }
+  }
+  loadOnlineClientsTotal();
+  setInterval(loadOnlineClientsTotal, 30000);
+
+  // ====== Системная статистика ======
+  function getProgressBarColor(percent) {
+    if (percent === null || percent === undefined) return '#71717a';
+    if (percent < 50) return '#10b981';
+    if (percent < 80) return '#f59e0b';
+    return '#ef4444';
+  }
+
+  function updateProgressBar(barId, percentId, percent, detailsId, detailsText, valueId) {
+    const bar = document.getElementById(barId);
+    const percentEl = document.getElementById(percentId);
+    const detailsEl = detailsId ? document.getElementById(detailsId) : null;
+    const valueEl = valueId ? document.getElementById(valueId) : null;
+    if (bar) {
+      const value = (percent !== null && percent !== undefined) ? percent : 0;
+      bar.style.width = value + '%';
+      bar.style.background = getProgressBarColor(percent);
+    }
+    const percentText = (percent !== null && percent !== undefined)
+      ? (percent.toFixed ? percent.toFixed(1) : percent) + '%'
+      : '—';
+    if (percentEl) percentEl.textContent = percentText;
+    if (valueEl) {
+      const num = (percent !== null && percent !== undefined) ? (percent.toFixed ? percent.toFixed(1) : percent) : '—';
+      valueEl.innerHTML = (percent !== null && percent !== undefined)
+        ? `${num}<span class="text-[14px] tw-text-muted2 font-normal">%</span>`
+        : '—';
+    }
+    if (detailsEl && detailsText) detailsEl.textContent = detailsText;
+  }
+
+  function setStreamIndicator(state) {
+    const ind = document.getElementById('sys-stream-indicator');
+    if (!ind) return;
+    const dot = ind.querySelector('span:first-child');
+    const txt = ind.querySelector('span:last-child');
+    if (state === 'live') {
+      if (dot) dot.style.background = '#10b981';
+      if (txt) txt.textContent = 'stream live';
+    } else if (state === 'connecting') {
+      if (dot) dot.style.background = '#f59e0b';
+      if (txt) txt.textContent = 'connecting';
+    } else {
+      if (dot) dot.style.background = '#ef4444';
+      if (txt) txt.textContent = 'offline';
+    }
+  }
+
+  async function refreshSystemStats(showAlertOnError = false) {
+    const btnSystem = document.getElementById('refresh-system-btn');
+    const orig = btnSystem ? btnSystem.innerHTML : '';
+    if (btnSystem) {
+      btnSystem.disabled = true;
+      btnSystem.innerHTML = '<span class="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></span><span class="hidden sm:inline">Обновляем…</span>';
+    }
+    try {
+      const resp = await fetch("{{ url_for('admin.api_system_stats') }}", {
+        method: 'GET',
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const d = await resp.json();
+      if (d && !d.error) applyStatsPayload(d);
+      else if (showAlertOnError) alert('Ошибка: ' + (d?.error || 'Неизвестно'));
+    } catch (e) {
+      if (showAlertOnError) alert('Ошибка при обновлении: ' + e.message);
+    } finally {
+      if (btnSystem) {
+        btnSystem.disabled = false;
+        btnSystem.innerHTML = orig;
+        if (window.adminRenderLucide) window.adminRenderLucide();
+      }
+    }
+  }
+
+  function applyStatsPayload(d) {
+    const byId = (id) => document.getElementById(id);
+    const cpuPercent = (d.cpu_percent != null) ? Math.min(Math.max(d.cpu_percent, 0), 100) : null;
+    updateProgressBar('sys-cpu-bar', 'sys-cpu', cpuPercent, null, null, 'sys-cpu-value');
+    if (byId('sys-load1')) byId('sys-load1').textContent = d.load1 ?? '—';
+    if (byId('sys-cores-label')) byId('sys-cores-label').textContent = (d.cores != null) ? `${d.cores} cores` : '—';
+    const memPercent = d.mem_percent ?? null;
+    updateProgressBar('sys-mem-bar', 'sys-mem-percent', memPercent, 'sys-mem-details',
+      memPercent !== null ? `${d.mem_used_gb} / ${d.mem_total_gb} GB` : '—', 'sys-mem-value');
+    if (byId('sys-mem-total-label') && d.mem_total_gb != null) byId('sys-mem-total-label').textContent = `${d.mem_total_gb} GB`;
+    const diskPercent = d.disk_percent ?? null;
+    updateProgressBar('sys-disk-bar', 'sys-disk-percent', diskPercent, 'sys-disk-details',
+      diskPercent !== null ? `${d.disk_used_gb} / ${d.disk_total_gb} GB` : '—', 'sys-disk-value');
+    if (byId('sys-disk-total-label') && d.disk_total_gb != null) byId('sys-disk-total-label').textContent = `${d.disk_total_gb} GB`;
+  }
+
+  const btnSystem = document.getElementById('refresh-system-btn');
+  if (btnSystem) btnSystem.addEventListener('click', () => refreshSystemStats(true));
+
+  // SSE
+  (function startSSE() {
+    if (!window.EventSource) {
+      setInterval(() => refreshSystemStats(false), 4000);
+      setStreamIndicator('connecting');
+      return;
+    }
+    setStreamIndicator('connecting');
+    let es = new EventSource("{{ url_for('admin.api_system_stats_stream') }}");
+    es.onopen = () => setStreamIndicator('live');
+    es.onmessage = function(e) {
+      try {
+        const d = JSON.parse(e.data);
+        if (d && !d.error) {
+          setStreamIndicator('live');
+          applyStatsPayload(d);
+        }
+      } catch (_) {}
+    };
+    es.onerror = function() {
+      setStreamIndicator('offline');
+      if (es.readyState === EventSource.CLOSED) {
+        es.close();
+        setTimeout(startSSE, 5000);
+      }
+    };
+    window.addEventListener('beforeunload', () => es.close());
+  })();
+
+  // Инициализация прогресс-баров (цвет по значению)
+  {% if system.cpu_percent is not none %}
+  updateProgressBar('sys-cpu-bar', 'sys-cpu', {{ system.cpu_percent }}, null, null, 'sys-cpu-value');
+  {% endif %}
+  {% if system.mem_percent is not none %}
+  updateProgressBar('sys-mem-bar', 'sys-mem-percent', {{ system.mem_percent }}, null, null, 'sys-mem-value');
+  {% endif %}
+  {% if system.disk_percent is not none %}
+  updateProgressBar('sys-disk-bar', 'sys-disk-percent', {{ system.disk_percent }}, null, null, 'sys-disk-value');
+  {% endif %}
+
+  // ====== Аналитика пользователей (без Chart.js, всё на CSS) ======
+  let currentPeriod = '30days';
+  let analyticsLoading = false;
+
+  // Палитры для списков
+  const SOURCE_COLORS = ['#6366f1', '#10b981', '#3b82f6', '#a78bfa', '#f59e0b', '#ef4444', '#71717a'];
+  const SUBSCRIPTION_COLORS = {
+    'активна': '#10b981', 'active': '#10b981',
+    'истекает': '#f59e0b', 'истекающая': '#f59e0b',
+    'завершена': '#71717a', 'неактивна': '#71717a', 'expired': '#71717a',
+    'без подписки': '#71717a',
+  };
+  function pickSubColor(label, fallback) {
+    const k = (label || '').toLowerCase().trim();
+    return SUBSCRIPTION_COLORS[k] || fallback;
+  }
+
+  function setText(id, txt) { const el = document.getElementById(id); if (el) el.textContent = txt; }
+
+  // Считаем сумму обоих datasets (Telegram + Сайт) по каждому периоду
+  function sumChartData(chartData) {
+    if (!chartData || !chartData.datasets) return { labels: [], values: [] };
+    const labels = chartData.labels || [];
+    const sums = labels.map((_, i) =>
+      chartData.datasets.reduce((acc, ds) => acc + (Number((ds.data || [])[i]) || 0), 0)
+    );
+    return { labels, values: sums };
+  }
+
+  function renderAnalyticsSummary(chartData, periodCode) {
+    const { labels, values } = sumChartData(chartData);
+    const total = values.reduce((a, b) => a + b, 0);
+
+    setText('usersAnalyticsTotal', total);
+
+    let avg = 0, avgUnit = 'в день';
+    if (periodCode === 'today')          { avg = total; avgUnit = 'сегодня'; }
+    else if (periodCode === 'yesterday') { avg = total; avgUnit = 'за вчера'; }
+    else {
+      avg = values.length ? (total / values.length) : 0; avgUnit = 'в день';
+    }
+    setText('usersAnalyticsAvg', avg < 10 ? avg.toFixed(1) : Math.round(avg));
+    setText('usersAnalyticsAvgUnit', avgUnit);
+
+    if (!values.length) {
+      setText('usersAnalyticsPeak', '0');
+      setText('usersAnalyticsPeakDate', '—');
+      return;
+    }
+    let peakIdx = 0, peakVal = values[0];
+    for (let i = 1; i < values.length; i++) {
+      if (values[i] > peakVal) { peakVal = values[i]; peakIdx = i; }
+    }
+    setText('usersAnalyticsPeak', peakVal);
+    setText('usersAnalyticsPeakDate', labels[peakIdx] || '—');
+  }
+
+  function renderList(targetId, raw, paletteOverride) {
+    const ul = document.getElementById(targetId);
+    if (!ul) return;
+    ul.innerHTML = '';
+
+    const labels = (raw && raw.labels) ? raw.labels : [];
+    const data = (raw && raw.datasets && raw.datasets[0] && raw.datasets[0].data) ? raw.datasets[0].data : [];
+    const total = data.reduce((a, b) => a + b, 0);
+
+    if (!labels.length) {
+      ul.innerHTML = '<li class="text-[12px] tw-text-subtle2">Нет данных</li>';
+      return;
+    }
+
+    labels.forEach((label, i) => {
+      const value = data[i] || 0;
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+      const color = paletteOverride === 'subscription'
+        ? pickSubColor(label, SOURCE_COLORS[i % SOURCE_COLORS.length])
+        : SOURCE_COLORS[i % SOURCE_COLORS.length];
+
+      const li = document.createElement('li');
+      li.className = 'flex items-center gap-2';
+      li.innerHTML = `
+        <span class="w-1.5 h-1.5 rounded-full inline-block" style="background:${color}"></span>
+        <span class="tw-text-base2">${label}</span>
+        <span class="ml-auto font-medium tw-text-base2">${value}${total > 0 ? ` <span class="tw-text-subtle2 font-normal">(${pct}%)</span>` : ''}</span>
+      `;
+      ul.appendChild(li);
+    });
+  }
+
+  async function loadUsersAnalytics(period) {
+    if (analyticsLoading) return;
+    analyticsLoading = true;
+    const loadingEl = document.getElementById('usersAnalyticsLoading');
+    const contentEl = document.getElementById('usersAnalyticsContent');
+    const errorEl = document.getElementById('usersAnalyticsError');
+
+    if (errorEl) errorEl.classList.add('hidden');
+    if (contentEl) contentEl.classList.add('hidden');
+    if (loadingEl) loadingEl.classList.remove('hidden');
+
+    try {
+      const response = await fetch(`{{ url_for('admin.users_analytics') }}?period=${period}`);
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Ошибка загрузки');
+
+      // Рендер секций
+      renderAnalyticsSummary(data.chart_data, period);
+      renderList('registrationSourceList', data.registration_source_stats);
+      renderList('subscriptionStatusList', data.subscription_stats, 'subscription');
+
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (contentEl) contentEl.classList.remove('hidden');
+      if (window.adminRenderLucide) window.adminRenderLucide();
+    } catch (error) {
+      if (loadingEl) loadingEl.classList.add('hidden');
+      const errTextEl = document.getElementById('usersAnalyticsErrorText');
+      if (errTextEl) errTextEl.textContent = error.message;
+      if (errorEl) errorEl.classList.remove('hidden');
+      if (window.adminRenderLucide) window.adminRenderLucide();
+    } finally {
+      analyticsLoading = false;
+    }
+  }
+
+  // Сегментный переключатель периодов
+  const seg = document.getElementById('usersAnalyticsSeg');
+  if (seg) {
+    seg.addEventListener('click', function(e) {
+      const b = e.target.closest('button[data-period]');
+      if (!b || b.classList.contains('active')) return;
+      seg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      currentPeriod = b.dataset.period;
+      loadUsersAnalytics(currentPeriod);
+    });
+  }
+
+  loadUsersAnalytics(currentPeriod);
+
+  // ====== Топ-10 по трафику за сутки → карточка клиента ======
+  const trafficList = document.querySelector('.dash-traffic-list');
+  if (trafficList) {
+    const openFromRow = (row) => {
+      if (!row) return;
+      const uid = parseInt(row.dataset.uid, 10);
+      if (uid && typeof window.openUserModal === 'function') window.openUserModal(uid);
+    };
+    trafficList.addEventListener('click', (e) => {
+      openFromRow(e.target.closest('.dash-traffic-row'));
+    });
+    trafficList.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest('.dash-traffic-row');
+      if (!row) return;
+      e.preventDefault();
+      openFromRow(row);
+    });
+  }
+});
+</script>
+
+{% endblock %}

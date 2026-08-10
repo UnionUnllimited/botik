@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Отчёты — Админ-панель{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-2 max-w-6xl">
+
+  <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2 flex-wrap">
+        <i data-lucide="clipboard-list" class="w-6 h-6 shrink-0 text-[var(--color-brand-500)]"></i>
+        Отчёты
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Аналитика по устройствам и подпискам, проверки лимитов и мониторинг запросов.
+      </p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+
+    <div class="tw-card p-5 flex flex-col h-full border-l-[3px] border-l-amber-500 hover:border-[rgb(var(--admin-border-strong))] hover:border-l-amber-500 transition-colors shadow-sm hover:shadow-md">
+      <div class="w-11 h-11 rounded-xl bg-amber-500/12 flex items-center justify-center shrink-0 mb-3">
+        <i data-lucide="shield-alert" class="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+      </div>
+      <h2 class="text-[15px] font-semibold tw-text-base2 leading-snug">Проверка лимита устройств</h2>
+      <p class="text-[13px] tw-text-muted2 mt-2 leading-relaxed flex-1">
+        Превышение лимита устройств и дубликаты HWID на разных аккаунтах по данным <span class="tw-kbd text-[11px]">devices.db</span>.
+      </p>
+      <a href="{{ url_for('admin.reports_device_limit_violations') }}" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5 mt-4 self-start">
+        <i data-lucide="scan-search" class="w-3.5 h-3.5"></i>
+        Открыть проверку
+      </a>
+    </div>
+
+    <div class="tw-card p-5 flex flex-col h-full border-l-[3px] border-l-sky-500 hover:border-[rgb(var(--admin-border-strong))] hover:border-l-sky-500 transition-colors shadow-sm hover:shadow-md">
+      <div class="w-11 h-11 rounded-xl bg-sky-500/12 flex items-center justify-center shrink-0 mb-3">
+        <i data-lucide="rss" class="w-5 h-5 text-sky-600 dark:text-sky-400"></i>
+      </div>
+      <h2 class="text-[15px] font-semibold tw-text-base2 leading-snug">Обновления подписки</h2>
+      <p class="text-[13px] tw-text-muted2 mt-2 leading-relaxed flex-1">
+        Последние запросы подписки (не браузер), автообновление и быстрый переход к клиенту по UUID.
+      </p>
+      <a href="{{ url_for('admin.reports_subscription_access') }}" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5 mt-4 self-start">
+        <i data-lucide="radio" class="w-3.5 h-3.5"></i>
+        Мониторинг
+      </a>
+    </div>
+
+    <div class="tw-card p-5 flex flex-col h-full border-l-[3px] border-l-emerald-500 hover:border-[rgb(var(--admin-border-strong))] hover:border-l-emerald-500 transition-colors shadow-sm hover:shadow-md md:col-span-2 lg:col-span-1">
+      <div class="w-11 h-11 rounded-xl bg-emerald-500/12 flex items-center justify-center shrink-0 mb-3">
+        <i data-lucide="pie-chart" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
+      </div>
+      <h2 class="text-[15px] font-semibold tw-text-base2 leading-snug">Статистика устройств</h2>
+      <p class="text-[13px] tw-text-muted2 mt-2 leading-relaxed flex-1">
+        Доли ОС и клиентских приложений (Happ, Hiddify, V2RayTun и др.) по данным парсера.
+      </p>
+      <a href="{{ url_for('admin.reports_device_stats') }}" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5 mt-4 self-start">
+        <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
+        Открыть статистику
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      try { lucide.createIcons(); } catch (_) {}
+    }
+  });
+</script>
+{% endblock %}

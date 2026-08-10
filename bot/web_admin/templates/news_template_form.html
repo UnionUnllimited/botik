@@ -1,0 +1,680 @@
+{% extends "base.html" %}
+{% block title %}{% if action == 'add' %}Новый шаблон{% else %}Редактировать шаблон{% endif %} - {{ super() }}{% endblock %}
+{% block content %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   Tools · Шаблон рассылки — форма создания/редактирования.
+   - Двухпанельный layout: слева редактор, справа sticky preview.
+   - Toolbar с HTML тегами Telegram (b/i/u/s/code/pre/blockquote/a/spoiler).
+   - Live preview в Telegram-bubble стиле.
+   - Счётчик символов (лимит 4096).
+   - Sticky footer с действиями.
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+<div class="tw-anim">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <div class="text-[12px] mb-1">
+        <a href="{{ url_for('admin.news_templates_list') }}"
+           class="inline-flex items-center gap-1 text-muted2 hover:underline" style="color: var(--admin-text-muted);">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i> К списку шаблонов
+        </a>
+      </div>
+      <h1 class="text-[22px] font-semibold tracking-tight">
+        {% if action == 'add' %}Новый шаблон{% else %}Редактирование: {{ template.title }}{% endif %}
+      </h1>
+      <p class="text-[13px] text-muted2 mt-1">
+        Telegram поддерживает HTML: <code class="font-mono text-[12px] px-1 py-px rounded"
+          style="background: var(--admin-bg-soft);">&lt;b&gt;</code>,
+        <code class="font-mono text-[12px] px-1 py-px rounded" style="background: var(--admin-bg-soft);">&lt;i&gt;</code>,
+        <code class="font-mono text-[12px] px-1 py-px rounded" style="background: var(--admin-bg-soft);">&lt;a href&gt;</code>,
+        <code class="font-mono text-[12px] px-1 py-px rounded" style="background: var(--admin-bg-soft);">&lt;blockquote&gt;</code>,
+        <code class="font-mono text-[12px] px-1 py-px rounded" style="background: var(--admin-bg-soft);">&lt;code&gt;</code>,
+        <code class="font-mono text-[12px] px-1 py-px rounded" style="background: var(--admin-bg-soft);">&lt;pre&gt;</code>,
+        спойлеры. Превью справа обновляется автоматически.
+      </p>
+    </div>
+  </div>
+
+  <form method="post" id="ntForm" class="mt-4">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+      {# ═════════ EDITOR ═════════ #}
+      <div class="lg:col-span-3 space-y-3">
+
+        {# Название #}
+        <div class="tw-card p-4">
+          <label for="title" class="block text-[12px] font-medium mb-1.5"
+                 style="color: var(--admin-text-muted);">
+            Название шаблона <span style="color:#f43f5e;">*</span>
+          </label>
+          <input type="text" class="tw-input" id="title" name="title" required
+                 maxlength="120"
+                 value="{{ template.title if template else '' }}"
+                 placeholder="Например: Обновление сервиса · апрель">
+          <div class="text-[11px] text-subtle2 mt-1.5">
+            Видно только администратору при выборе шаблона.
+          </div>
+        </div>
+
+        {# Текст #}
+        <div class="tw-card p-4">
+          <div class="flex items-end justify-between gap-2 mb-2 flex-wrap">
+            <label for="body" class="block text-[12px] font-medium"
+                   style="color: var(--admin-text-muted);">
+              Текст сообщения <span style="color:#f43f5e;">*</span>
+            </label>
+            <div class="flex items-center gap-2 text-[11px] text-subtle2">
+              <span>Лимит Telegram: 4096</span>
+              <span class="text-subtle2">·</span>
+              <span class="font-mono nt-counter" id="ntCounter">0</span>
+            </div>
+          </div>
+
+          {# Toolbar — внутри raw, чтобы Jinja не пыталась обработать {0} плейсхолдеры #}
+          <div class="flex flex-wrap gap-1.5 mb-2">
+            {% raw %}
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="b" data-snippet="<b>{0}</b>"
+                    data-placeholder="жирный текст" title="Ctrl+B">
+              <i data-lucide="bold" class="nt-tag-ico"></i> <span style="font-weight:700;">B</span>
+            </button>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="i" data-snippet="<i>{0}</i>"
+                    data-placeholder="курсив" title="Ctrl+I">
+              <i data-lucide="italic" class="nt-tag-ico"></i> <span style="font-style:italic;">I</span>
+            </button>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="u" data-snippet="<u>{0}</u>"
+                    data-placeholder="подчёркнутый" title="Ctrl+U">
+              <i data-lucide="underline" class="nt-tag-ico"></i> <span style="text-decoration:underline;">U</span>
+            </button>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="s" data-snippet="<s>{0}</s>"
+                    data-placeholder="зачёркнутый">
+              <i data-lucide="strikethrough" class="nt-tag-ico"></i> <span style="text-decoration:line-through;">S</span>
+            </button>
+            <span class="inline-block w-px h-6 self-center mx-1" style="background: rgb(var(--admin-border));"></span>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="code" data-snippet="<code>{0}</code>"
+                    data-placeholder="код">
+              <i data-lucide="code" class="nt-tag-ico"></i> Код
+            </button>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="pre" data-snippet="<pre>{0}</pre>"
+                    data-placeholder="блок кода">
+              <i data-lucide="file-code" class="nt-tag-ico"></i> Pre
+            </button>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="blockquote"
+                    data-snippet="<blockquote>{0}</blockquote>" data-placeholder="цитата">
+              <i data-lucide="quote" class="nt-tag-ico"></i> Цитата
+            </button>
+            <span class="inline-block w-px h-6 self-center mx-1" style="background: rgb(var(--admin-border));"></span>
+            <button type="button" class="nt-tag-btn" id="ntInsertLink" title="Ссылка (Ctrl+K)">
+              <i data-lucide="link" class="nt-tag-ico"></i> Ссылка
+            </button>
+            <button type="button" class="nt-tag-btn nt-tag" data-tag="spoiler"
+                    data-snippet='<span class="tg-spoiler">{0}</span>' data-placeholder="спойлер">
+              <i data-lucide="eye-off" class="nt-tag-ico"></i> Спойлер
+            </button>
+            <span class="inline-block w-px h-6 self-center mx-1" style="background: rgb(var(--admin-border));"></span>
+            <button type="button" class="nt-tag-btn" id="ntInsertEmoji" title="Вставить эмоджи">
+              <i data-lucide="smile" class="nt-tag-ico"></i> Эмоджи
+            </button>
+            {% endraw %}
+          </div>
+
+          <textarea class="nt-editor tw-scroll" id="body" name="body" rows="12"
+                    required placeholder="Введите текст новости…">{{ template.body if template else '' }}</textarea>
+          <div class="text-[11px] text-subtle2 mt-1.5 flex items-start gap-1.5">
+            <i data-lucide="info" class="w-3 h-3 mt-0.5 shrink-0"></i>
+            Выделите текст и нажмите кнопку — теги обернут выделение. Без выделения — вставится плейсхолдер.
+          </div>
+        </div>
+
+        {# Кастомная кнопка #}
+        <div class="tw-card p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="external-link" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+            <h3 class="text-[14px] font-semibold m-0">Кастомная кнопка <span class="text-subtle2 font-normal">(опционально)</span></h3>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="custom_btn_text" class="block text-[12px] font-medium mb-1.5"
+                     style="color: var(--admin-text-muted);">Текст кнопки</label>
+              <input type="text" class="tw-input" id="custom_btn_text" name="custom_btn_text"
+                     maxlength="64"
+                     value="{{ template.custom_btn_text if template and template.custom_btn_text else '' }}"
+                     placeholder="Открыть сайт">
+            </div>
+            <div>
+              <label for="custom_btn_url" class="block text-[12px] font-medium mb-1.5"
+                     style="color: var(--admin-text-muted);">Ссылка</label>
+              <input type="url" class="tw-input" id="custom_btn_url" name="custom_btn_url"
+                     value="{{ template.custom_btn_url if template and template.custom_btn_url else '' }}"
+                     placeholder="https://example.com">
+            </div>
+          </div>
+          <div class="text-[11px] text-subtle2 mt-2 flex items-start gap-1.5">
+            <i data-lucide="info" class="w-3 h-3 mt-0.5 shrink-0"></i>
+            Кнопка добавится в сообщение под текстом. Заполните оба поля — иначе кнопка не появится.
+          </div>
+        </div>
+
+        {# Медиа-аттач #}
+        <div class="tw-card p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i data-lucide="image" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+            <h3 class="text-[14px] font-semibold m-0">Медиа <span class="text-subtle2 font-normal">(опционально)</span></h3>
+          </div>
+
+          {# hidden-поля, в которые JS подставит данные после загрузки #}
+          <input type="hidden" id="media_kind"       name="media_kind"
+                 value="{{ template.media_kind if template and template.media_kind else '' }}">
+          <input type="hidden" id="media_file_id"    name="media_file_id"
+                 value="{{ template.media_file_id if template and template.media_file_id else '' }}">
+          <input type="hidden" id="media_local_path" name="media_local_path"
+                 value="{{ template.media_local_path if template and template.media_local_path else '' }}">
+          <input type="hidden" id="media_meta_json"  name="media_meta_json"
+                 value="{{ template.media_meta_json if template and template.media_meta_json else '' }}">
+
+          {# Drop-zone (показывается, когда медиа не выбрано) #}
+          <label class="nt-drop" id="ntDrop"
+                 style="{% if template and template.media_file_id %}display:none;{% endif %}">
+            <input type="file" id="ntFile" accept="image/*,video/*,.gif" />
+            <i data-lucide="upload-cloud" class="nt-drop-ico"></i>
+            <div class="nt-drop-title">Перетащите файл сюда или нажмите</div>
+            <div class="nt-drop-hint">JPG / PNG / WEBP / GIF / MP4 / MOV · до 10 МБ для фото, до 50 МБ для GIF/видео</div>
+          </label>
+          <div class="nt-progress" id="ntProgress" style="display:none;"><span></span></div>
+
+          {# Карточка превью загруженного медиа #}
+          <div class="nt-media-card" id="ntMediaCard"
+               data-preview-url="{% if template and template.media_file_id and build_preview_url %}{{ build_preview_url(template.media_local_path or '') }}{% endif %}"
+               style="{% if not template or not template.media_file_id %}display:none;{% endif %}">
+            <div class="nt-media-thumb" id="ntMediaThumb">
+              {% if template and template.media_file_id and build_preview_url %}
+                {% set _purl = build_preview_url(template.media_local_path or '') %}
+                {% if template.media_kind == 'video' %}
+                  <video src="{{ _purl }}" controls preload="metadata"></video>
+                {% else %}
+                  <img src="{{ _purl }}" alt="preview">
+                {% endif %}
+              {% endif %}
+            </div>
+            <div class="nt-media-meta">
+              <div class="min-w-0 flex items-center gap-2">
+                <span class="tw-chip" style="background: rgb(99 102 241 / .12); color: var(--color-brand-500);"
+                      id="ntMediaKindBadge">
+                  {%- if template and template.media_kind == 'photo' -%}Фото
+                  {%- elif template and template.media_kind == 'animation' -%}GIF
+                  {%- elif template and template.media_kind == 'video' -%}Видео
+                  {%- else -%}—{%- endif -%}
+                </span>
+                <span class="name" id="ntMediaName" title="">{# имя/инфо #}</span>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="info" id="ntMediaInfo"></span>
+                <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="ntMediaReplace" title="Заменить">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                </button>
+                <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="ntMediaRemove" title="Удалить">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="nt-media-warn" id="ntMediaCaptionWarn" style="display:none;">
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
+            <span>Текст превышает <b>1024 символа</b> — лимит подписи Telegram. Сообщение будет
+              отправлено в <b>двух частях</b>: сначала медиа, затем текст с кнопками.</span>
+          </div>
+
+          <div class="text-[11px] text-subtle2 mt-2 flex items-start gap-1.5">
+            <i data-lucide="info" class="w-3 h-3 mt-0.5 shrink-0"></i>
+            Один файл на сообщение. Если текст ≤ 1024 симв. — медиа уйдёт с подписью и кнопками. Иначе медиа уйдёт первым сообщением, потом текст.
+          </div>
+        </div>
+      </div>
+
+      {# ═════════ PREVIEW ═════════ #}
+      <div class="lg:col-span-2">
+        <div class="tw-card p-4 nt-preview-sticky">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <div class="flex items-center gap-2 min-w-0">
+              <i data-lucide="eye" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+              <h3 class="text-[14px] font-semibold m-0">Превью в Telegram</h3>
+            </div>
+            <span class="text-[11px] text-subtle2">обновляется на лету</span>
+          </div>
+          <div class="tg-bubble-stage">
+            <div class="tg-attach" id="ntPreviewAttach" style="display:none;"></div>
+            <div class="tg-bubble" id="ntPreviewBubble">
+              <span class="text-subtle2" style="opacity:.7;">Текст появится здесь…</span>
+              <span class="tg-bubble-time" id="ntPreviewTime">12:34</span>
+            </div>
+            <div class="tg-inline-keyboard" id="ntPreviewKbd"></div>
+          </div>
+          <div class="mt-3 text-[11.5px] text-subtle2 flex items-start gap-1.5">
+            <i data-lucide="info" class="w-3 h-3 mt-0.5 shrink-0"></i>
+            Так увидят сообщение клиенты бота.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ═════════ Sticky footer ═════════ #}
+    <div class="tw-card p-3 mt-4 flex items-center justify-between gap-2 flex-wrap"
+         style="position: sticky; bottom: 8px; z-index: 5;">
+      <a href="{{ url_for('admin.news_templates_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i> Отмена
+      </a>
+      <div class="flex items-center gap-2">
+        {% if template and template.id %}
+        <a href="{{ url_for('admin.news_template_edit', template_id=template.id) }}"
+           class="text-[12px] text-subtle2 hover:underline" title="ID шаблона">ID: {{ template.id }}</a>
+        {% endif %}
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          {% if action == 'add' %}Создать шаблон{% else %}Сохранить{% endif %}
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const TG_LIMIT = 4096;
+  const ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','S','STRIKE','DEL',
+                                 'CODE','PRE','BLOCKQUOTE','A','SPAN','BR','TG-SPOILER']);
+
+  const $  = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+
+  const body  = $('#body');
+  const title = $('#title');
+  const btnText = $('#custom_btn_text');
+  const btnUrl  = $('#custom_btn_url');
+  const previewBubble = $('#ntPreviewBubble');
+  const previewKbd    = $('#ntPreviewKbd');
+  const previewAttach = $('#ntPreviewAttach');
+  const counter = $('#ntCounter');
+
+  // ─── Media uploader ───
+  const UPLOAD_URL = '{{ url_for("admin.news_upload_media") }}';
+  const mediaKindEl = $('#media_kind');
+  const mediaFileIdEl = $('#media_file_id');
+  const mediaLocalPathEl = $('#media_local_path');
+  const mediaMetaEl = $('#media_meta_json');
+  const dropZone = $('#ntDrop');
+  const fileInput = $('#ntFile');
+  const mediaCard = $('#ntMediaCard');
+  const mediaThumb = $('#ntMediaThumb');
+  const mediaKindBadge = $('#ntMediaKindBadge');
+  const mediaName = $('#ntMediaName');
+  const mediaInfo = $('#ntMediaInfo');
+  const mediaReplaceBtn = $('#ntMediaReplace');
+  const mediaRemoveBtn = $('#ntMediaRemove');
+  const mediaCaptionWarn = $('#ntMediaCaptionWarn');
+  const progressEl = $('#ntProgress');
+  const progressBar = progressEl ? progressEl.querySelector('span') : null;
+
+  function fmtBytes(n) {
+    if (!n && n !== 0) return '';
+    if (n >= 1024*1024) return (n/(1024*1024)).toFixed(2) + ' МБ';
+    if (n >= 1024) return (n/1024).toFixed(0) + ' КБ';
+    return n + ' Б';
+  }
+
+  function setMedia(kind, fileId, previewUrl, info) {
+    mediaKindEl.value = kind || '';
+    mediaFileIdEl.value = fileId || '';
+    if (info && info.local_rel) mediaLocalPathEl.value = info.local_rel;
+    if (info) {
+      try { mediaMetaEl.value = JSON.stringify(info.meta || {}); } catch (_) { mediaMetaEl.value = ''; }
+    }
+    // Запомним preview URL — используется в renderPreview
+    mediaCard.dataset.previewUrl = previewUrl || '';
+    if (!kind || !fileId) {
+      mediaCard.style.display = 'none';
+      dropZone.style.display = '';
+      mediaThumb.innerHTML = '';
+      renderPreview();
+      return;
+    }
+    // Показываем превью
+    mediaThumb.innerHTML = '';
+    if (previewUrl) {
+      if (kind === 'video') {
+        const v = document.createElement('video');
+        v.src = previewUrl; v.controls = true; v.preload = 'metadata';
+        mediaThumb.appendChild(v);
+      } else {
+        const img = document.createElement('img');
+        img.src = previewUrl; img.alt = 'preview';
+        mediaThumb.appendChild(img);
+      }
+    }
+    // Бейдж
+    const labels = { photo: 'Фото', animation: 'GIF', video: 'Видео' };
+    if (mediaKindBadge) mediaKindBadge.textContent = labels[kind] || kind;
+    // Имя/инфо
+    if (mediaName) mediaName.textContent = (info && info.original_name) ? info.original_name : '';
+    if (mediaInfo) {
+      const parts = [];
+      if (info && info.size) parts.push(fmtBytes(info.size));
+      if (info && info.width && info.height) parts.push(info.width + '×' + info.height);
+      if (info && info.duration) parts.push(Math.round(info.duration) + ' сек');
+      mediaInfo.textContent = parts.join(' · ');
+    }
+    mediaCard.style.display = '';
+    dropZone.style.display = 'none';
+    if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+    renderPreview();
+  }
+
+  function showProgress(p) {
+    if (!progressEl || !progressBar) return;
+    if (p == null) { progressEl.style.display = 'none'; progressBar.style.width = '0'; return; }
+    progressEl.style.display = '';
+    progressBar.style.width = Math.max(0, Math.min(100, p)) + '%';
+  }
+
+  async function uploadFile(file) {
+    if (!file) return;
+    showProgress(5);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      // Используем XHR для прогресса аплоада
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', UPLOAD_URL);
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) showProgress(5 + Math.round(e.loaded / e.total * 90));
+        });
+        xhr.onload = () => {
+          showProgress(99);
+          try {
+            const j = JSON.parse(xhr.responseText || '{}');
+            if (xhr.status >= 200 && xhr.status < 300 && j.success) resolve(j);
+            else reject(j.error || ('HTTP ' + xhr.status));
+          } catch (e) { reject('Bad JSON: ' + e); }
+        };
+        xhr.onerror = () => reject('Сеть недоступна');
+        xhr.send(fd);
+      });
+      showProgress(100);
+      setTimeout(() => showProgress(null), 400);
+      // local_rel — кусок rel_path после /news_media/. Для безопасности храним полный preview_url отдельно.
+      // Но в hidden поле media_local_path кладём rel_path, который сервер сохранит. Извлечь его несложно из preview_url:
+      let localRel = '';
+      try {
+        const u = result.preview_url || '';
+        const m = u.match(/\/news_media\/(.+)$/);
+        if (m) localRel = m[1];
+      } catch (_) {}
+      const info = {
+        original_name: result.original_name || file.name,
+        size: result.size, width: result.width, height: result.height, duration: result.duration,
+        local_rel: localRel,
+        meta: { width: result.width, height: result.height, duration: result.duration, size: result.size }
+      };
+      setMedia(result.kind, result.file_id, result.preview_url, info);
+    } catch (err) {
+      showProgress(null);
+      alert('Не удалось загрузить файл:\n' + (err && err.message ? err.message : err));
+    }
+  }
+
+  // Drop / file input
+  if (dropZone && fileInput) {
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files[0]) uploadFile(fileInput.files[0]);
+    });
+    ['dragenter', 'dragover'].forEach(ev =>
+      dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add('drag-over'); }));
+    ['dragleave', 'drop'].forEach(ev =>
+      dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('drag-over'); }));
+    dropZone.addEventListener('drop', e => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) uploadFile(f);
+    });
+  }
+  if (mediaReplaceBtn) mediaReplaceBtn.addEventListener('click', () => fileInput && fileInput.click());
+  if (mediaRemoveBtn)  mediaRemoveBtn.addEventListener('click', () => setMedia('', '', '', null));
+
+  // ─── Sanitize HTML для preview ───
+  function sanitizeForPreview(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = String(html || '');
+    const walk = (node) => {
+      const kids = Array.from(node.children);
+      for (const el of kids) {
+        if (!ALLOWED_TAGS.has(el.tagName)) {
+          const textNode = document.createTextNode(el.textContent || '');
+          el.replaceWith(textNode);
+          continue;
+        }
+        for (const attr of Array.from(el.attributes)) {
+          const allowed =
+            (el.tagName === 'A' && (attr.name === 'href' || attr.name === 'target' || attr.name === 'rel')) ||
+            (el.tagName === 'SPAN' && attr.name === 'class' && /\btg-spoiler\b/.test(attr.value));
+          if (!allowed) el.removeAttribute(attr.name);
+        }
+        if (el.tagName === 'A') {
+          el.setAttribute('target', '_blank');
+          el.setAttribute('rel', 'noopener noreferrer');
+          const href = el.getAttribute('href') || '';
+          if (!/^https?:\/\//i.test(href)) el.removeAttribute('href');
+        }
+        walk(el);
+      }
+    };
+    walk(tpl.content);
+    return tpl.innerHTML;
+  }
+
+  // ─── Превью ───
+  function renderPreview() {
+    const text = body.value || '';
+    // Медиа-превью над bubble
+    if (previewAttach) {
+      const kind = mediaKindEl.value;
+      const fid  = mediaFileIdEl.value;
+      const purl = (mediaCard && mediaCard.dataset && mediaCard.dataset.previewUrl) || '';
+      previewAttach.innerHTML = '';
+      if (kind && fid) {
+        if (kind === 'video') {
+          const w = document.createElement('div');
+          w.className = 'tg-attach-video-wrap';
+          const v = document.createElement('video');
+          v.src = purl; v.muted = true; v.preload = 'metadata';
+          w.appendChild(v);
+          previewAttach.appendChild(w);
+        } else if (purl) {
+          const im = document.createElement('img');
+          im.src = purl; im.alt = '';
+          previewAttach.appendChild(im);
+        } else {
+          const ph = document.createElement('div');
+          ph.style.cssText = 'padding:24px;color:#9ca3af;font-size:12px;';
+          ph.textContent = (kind === 'video' ? '🎞 Видео' : (kind === 'animation' ? '🎬 GIF' : '🖼 Фото'));
+          previewAttach.appendChild(ph);
+        }
+        previewAttach.style.display = '';
+      } else {
+        previewAttach.style.display = 'none';
+      }
+    }
+    // Caption-warning под медиа-карточкой
+    if (mediaCaptionWarn) {
+      const hasMedia = !!(mediaKindEl.value && mediaFileIdEl.value);
+      mediaCaptionWarn.style.display = (hasMedia && (text.length > 1024)) ? '' : 'none';
+    }
+    if (!text.trim()) {
+      previewBubble.innerHTML = '<span class="text-subtle2" style="opacity:.7;">Текст появится здесь…</span>';
+    } else {
+      previewBubble.innerHTML = sanitizeForPreview(text);
+    }
+    // время — всегда последним элементом внутри пузыря (правый нижний угол)
+    const timeNow = (function(){
+      const d = new Date();
+      return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    })();
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'tg-bubble-time';
+    timeSpan.id = 'ntPreviewTime';
+    timeSpan.textContent = timeNow;
+    previewBubble.appendChild(timeSpan);
+    // Кнопка
+    previewKbd.innerHTML = '';
+    const t = (btnText.value || '').trim();
+    const u = (btnUrl.value || '').trim();
+    if (t && u && /^https?:\/\//i.test(u)) {
+      const a = document.createElement('a');
+      a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = t;
+      previewKbd.appendChild(a);
+    } else if (t || u) {
+      const fake = document.createElement('div');
+      fake.className = 'tg-fake-btn';
+      fake.style.opacity = '.6';
+      fake.textContent = t ? t : '⚠ заполните URL';
+      previewKbd.appendChild(fake);
+    }
+    // Счётчик
+    const len = text.length;
+    counter.textContent = `${len} / ${TG_LIMIT}`;
+    counter.dataset.state = len > TG_LIMIT ? 'over' : (len > TG_LIMIT * 0.9 ? 'warn' : '');
+  }
+
+  // ─── Toolbar: обернуть выделение в тег ───
+  function wrap(snippet, placeholder) {
+    if (!body) return;
+    const start = body.selectionStart;
+    const end = body.selectionEnd;
+    const sel = body.value.substring(start, end);
+    const inner = sel || (placeholder || '');
+    const inserted = snippet.replace('{0}', inner);
+    body.value = body.value.substring(0, start) + inserted + body.value.substring(end);
+    // Если было выделение — восстанавливаем выделение нового текста (без тегов)
+    if (sel) {
+      const innerStart = start + inserted.indexOf(inner);
+      body.setSelectionRange(innerStart, innerStart + inner.length);
+    } else {
+      const innerStart = start + inserted.indexOf(inner);
+      body.setSelectionRange(innerStart, innerStart + inner.length);
+    }
+    body.focus();
+    renderPreview();
+  }
+
+  $$('.nt-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const snippet = btn.dataset.snippet || '';
+      const placeholder = btn.dataset.placeholder || '';
+      wrap(snippet, placeholder);
+    });
+  });
+
+  // Ссылка
+  $('#ntInsertLink').addEventListener('click', () => {
+    const start = body.selectionStart;
+    const end = body.selectionEnd;
+    const sel = body.value.substring(start, end);
+    const url = prompt('Введите ссылку (https://…):', 'https://');
+    if (!url) return;
+    const text = sel || prompt('Текст ссылки:', 'ссылка') || 'ссылка';
+    const html = `<a href="${url}">${text}</a>`;
+    body.value = body.value.substring(0, start) + html + body.value.substring(end);
+    const innerStart = start + html.indexOf(text);
+    body.setSelectionRange(innerStart, innerStart + text.length);
+    body.focus();
+    renderPreview();
+  });
+
+  // Эмоджи (легковесно — небольшая выборка частых)
+  $('#ntInsertEmoji').addEventListener('click', (e) => {
+    const POP = ['🔔','🎉','🎁','✅','❗','⚠️','📢','📣','🚀','🔥','💎','💥','💡','🆕','🆓','🛒','💳','📱','🌐','🔁','🤝','👍','❤️','📅','⏰','📌','📝','🎯','🛡️','⚡'];
+    const existing = document.getElementById('ntEmojiPop');
+    if (existing) { existing.remove(); return; }
+    const pop = document.createElement('div');
+    pop.id = 'ntEmojiPop';
+    pop.style.cssText = `position: absolute; z-index: 100; background: var(--admin-bg-elevated);
+      border: 1px solid rgb(var(--admin-border)); border-radius: 10px; padding: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18); display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;
+      max-width: 240px;`;
+    POP.forEach(em => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = em;
+      b.style.cssText = 'width:32px;height:32px;border:0;background:transparent;border-radius:6px;cursor:pointer;font-size:18px;line-height:1;';
+      b.addEventListener('mouseenter', () => b.style.background = 'var(--admin-bg-soft)');
+      b.addEventListener('mouseleave', () => b.style.background = 'transparent');
+      b.addEventListener('click', () => {
+        const start = body.selectionStart, end = body.selectionEnd;
+        body.value = body.value.substring(0, start) + em + body.value.substring(end);
+        body.setSelectionRange(start + em.length, start + em.length);
+        body.focus();
+        renderPreview();
+        pop.remove();
+      });
+      pop.appendChild(b);
+    });
+    const rect = e.currentTarget.getBoundingClientRect();
+    pop.style.top = `${rect.bottom + window.scrollY + 4}px`;
+    pop.style.left = `${rect.left + window.scrollX}px`;
+    document.body.appendChild(pop);
+    const close = (ev) => { if (!pop.contains(ev.target) && ev.target !== e.currentTarget) { pop.remove(); document.removeEventListener('mousedown', close); } };
+    setTimeout(() => document.addEventListener('mousedown', close), 50);
+  });
+
+  // ─── Hotkeys ───
+  body.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'b') { e.preventDefault(); wrap('<b>{0}</b>', 'жирный текст'); }
+    else if (k === 'i') { e.preventDefault(); wrap('<i>{0}</i>', 'курсив'); }
+    else if (k === 'u') { e.preventDefault(); wrap('<u>{0}</u>', 'подчёркнутый'); }
+    else if (k === 'k') { e.preventDefault(); document.getElementById('ntInsertLink').click(); }
+  });
+
+  // ─── Подписки ───
+  body.addEventListener('input', renderPreview);
+  btnText.addEventListener('input', renderPreview);
+  btnUrl.addEventListener('input', renderPreview);
+  renderPreview();
+  // тикаем время раз в 30 сек, чтобы оно не зависало
+  setInterval(renderPreview, 30000);
+
+  // ─── Form validation на submit ───
+  document.getElementById('ntForm').addEventListener('submit', (e) => {
+    if ((body.value || '').length > TG_LIMIT) {
+      e.preventDefault();
+      alert(`Текст превышает лимит Telegram (${TG_LIMIT} символов). Текущая длина: ${body.value.length}.`);
+      body.focus();
+      return;
+    }
+    const t = (btnText.value || '').trim();
+    const u = (btnUrl.value || '').trim();
+    if (u && !/^https?:\/\//i.test(u)) {
+      e.preventDefault();
+      alert('Ссылка для кнопки должна начинаться с http:// или https://');
+      btnUrl.focus();
+      return;
+    }
+    if ((t && !u) || (!t && u)) {
+      // Непарные значения — предупреждение, но не блокируем сохранение
+      // (так шаблон совместим со старой схемой данных).
+      const ok = confirm('Заполнено только одно поле кастомной кнопки — кнопка не появится в сообщении. Сохранить так?');
+      if (!ok) {
+        e.preventDefault();
+        (t ? btnUrl : btnText).focus();
+        return;
+      }
+    }
+  });
+})();
+</script>
+
+{% endblock %}

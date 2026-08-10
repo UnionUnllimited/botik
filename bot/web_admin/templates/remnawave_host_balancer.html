@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Балансировка хостов — Remnawave — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4" id="rwHbRoot"
+     data-secret-path="{{ ('/' + admin_secret_path) if admin_secret_path else '' }}"
+     data-dedup-mode="{{ dedup_mode }}"
+     data-online-threshold="{{ online_threshold }}">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Балансировка хостов</h1>
+      <p class="text-[13px] text-muted2 mt-1">Пулы имён для текстовой подписки: один ключ на группу, несколько серверов в Remnawave.</p>
+    </div>
+    <a href="{{ url_for('admin.remnawave_settings') }}" class="tw-btn tw-btn-secondary tw-btn-sm gap-1.5">
+      <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+      Настройки dedup
+    </a>
+  </div>
+
+  {% with active='balancer' %}
+  {% include 'remnawave_subnav.html' %}
+  {% endwith %}
+
+  <div class="rw-hb-meta-bar">
+    <span>Режим: <strong id="rwHbModeLabel">{{ dedup_mode }}</strong></span>
+    {% if dedup_mode == 'online' %}
+    <span>Порог online: <strong>{{ online_threshold }}</strong></span>
+    {% endif %}
+    <span id="rwHbStatsLabel">Загрузка…</span>
+  </div>
+
+  <div class="tw-surface rounded-[var(--radius-card)] p-4">
+    <div class="rw-hb-filters">
+      <div class="rw-hb-field">
+        <label class="tw-label" for="rwHbFilterSquad">Сквад</label>
+        <select id="rwHbFilterSquad" class="tw-select w-full">
+          <option value="">— все сквады —</option>
+        </select>
+      </div>
+      <div class="rw-hb-field">
+        <label class="tw-label" for="rwHbFilterPlatform">Платформа</label>
+        <select id="rwHbFilterPlatform" class="tw-select w-full">
+          <option value="all">Все</option>
+          <option value="none">Без тега [PC/MOBILE]</option>
+          <option value="pc">[PC]</option>
+          <option value="mobile">[MOBILE]</option>
+          <option value="router">[ROUTER]</option>
+          <option value="tv">[TV]</option>
+        </select>
+      </div>
+      <div class="rw-hb-field">
+        <label class="tw-label" for="rwHbFilterView">Показ</label>
+        <select id="rwHbFilterView" class="tw-select w-full">
+          <option value="all">Пулы и одиночные</option>
+          <option value="pools">Только пулы балансировки</option>
+          <option value="singles">Только одиночные</option>
+        </select>
+      </div>
+      <div class="rw-hb-field" style="flex:0 0 auto; max-width:none;">
+        <label class="tw-label">&nbsp;</label>
+        <button type="button" id="rwHbRefreshBtn" class="tw-btn tw-btn-secondary tw-btn-sm gap-1.5 w-full">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          Обновить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="rwHbError" class="tw-flash-wrap tw-flash-danger" style="display:none;">
+    <i data-lucide="alert-triangle" class="w-4 h-4 tw-flash-icon"></i>
+    <div class="tw-flash-body" id="rwHbErrorText"></div>
+  </div>
+
+  <div id="rwHbLoading" class="tw-surface rounded-[var(--radius-card)] p-8 text-center text-muted2">
+    <i data-lucide="loader-2" class="w-8 h-8 mx-auto mb-2 animate-spin"></i>
+    Загрузка хостов…
+  </div>
+
+  <div id="rwHbPools" class="space-y-4" style="display:none;"></div>
+  <div id="rwHbSingles" class="space-y-4" style="display:none;"></div>
+</div>
+
+{# Modal: добавить сервер в пул #}
+<div id="rwHbAddModal" class="tw-modal fixed inset-0 z-[200] items-center justify-center p-4 bg-black/50" aria-hidden="true">
+  <div class="tw-card w-full max-w-lg p-0 overflow-hidden rw-hb-modal">
+    <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center justify-between">
+      <h3 class="text-[14px] font-semibold">Добавить сервер в пул</h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-rw-hb-close><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-4">
+      <input type="hidden" id="rwHbAddPoolUuid">
+      <input type="hidden" id="rwHbAddPoolRemarks">
+      <input type="hidden" id="rwHbAddPoolCanonical">
+
+      <div class="tw-seg rw-hb-mode-seg mb-3 w-full" id="rwHbAddModeSeg">
+        <button type="button" class="active" data-mode="new">Свой endpoint</button>
+        <button type="button" data-mode="from_node">Из ноды</button>
+        <button type="button" data-mode="duplicate">Дубликат хоста</button>
+      </div>
+
+      <p class="text-[12px] text-muted2 mb-3">
+        Имя в пуле: <strong id="rwHbAddNameHint" class="text-[var(--admin-text-base)]">—</strong>
+      </p>
+
+      <div id="rwHbAddNewBlock">
+        <p class="text-[11.5px] text-muted2 mb-3">Inbound и transport — как у шаблона пула. Address — то, что увидит клиент в подписке (не адрес ноды).</p>
+        <div class="rw-hb-field">
+          <label for="rwHbAddAddress">Address в подписке</label>
+          <input type="text" id="rwHbAddAddress" class="tw-input" placeholder="vpn.example.com или 1.2.3.4">
+        </div>
+        <div class="rw-hb-field">
+          <label for="rwHbAddPort">Port inbound</label>
+          <input type="number" id="rwHbAddPort" class="tw-input" min="1" max="65535">
+        </div>
+      </div>
+
+      <div id="rwHbAddFromNodeBlock" style="display:none;">
+        <p class="text-[11.5px] text-muted2 mb-3">Inbound и transport — из шаблона пула. Address подставляется с выбранной ноды (можно заменить на домен).</p>
+        <div class="rw-hb-field">
+          <label for="rwHbAddFromNode">Нода</label>
+          <select id="rwHbAddFromNode" class="tw-select w-full">
+            <option value="">— выберите ноду —</option>
+          </select>
+        </div>
+        <div class="rw-hb-field">
+          <label for="rwHbAddNodeAddress">Address в подписке</label>
+          <input type="text" id="rwHbAddNodeAddress" class="tw-input" placeholder="подставится IP/домен ноды">
+        </div>
+        <div class="rw-hb-field">
+          <label for="rwHbAddNodePort">Port inbound</label>
+          <input type="number" id="rwHbAddNodePort" class="tw-input" min="1" max="65535">
+        </div>
+      </div>
+
+      <div id="rwHbAddDupBlock" style="display:none;">
+        <p class="text-[11.5px] text-muted2 mb-3">Скопировать существующий хост целиком; в подписке будет имя пула с новым номером.</p>
+        <div class="rw-hb-field">
+          <label for="rwHbAddSourceHost">Исходный хост</label>
+          <select id="rwHbAddSourceHost" class="tw-select w-full">
+            <option value="">— выберите хост —</option>
+          </select>
+        </div>
+        <div class="rw-hb-field">
+          <label for="rwHbAddDupAddress">Address</label>
+          <input type="text" id="rwHbAddDupAddress" class="tw-input" placeholder="как у исходного">
+        </div>
+        <div class="rw-hb-field">
+          <label for="rwHbAddDupPort">Port</label>
+          <input type="number" id="rwHbAddDupPort" class="tw-input" min="1" max="65535">
+        </div>
+      </div>
+
+      <div id="rwHbAddNodeBindBlock" class="rw-hb-field">
+        <label for="rwHbAddNodeMode">Привязка ноды (режим online)</label>
+        <select id="rwHbAddNodeMode" class="tw-select w-full mb-2">
+          <option value="inherit">Как у источника</option>
+          <option value="pick">Выбрать ноду</option>
+          <option value="none">Не привязана</option>
+        </select>
+        <select id="rwHbAddNode" class="tw-select w-full" style="display:none;">
+          <option value="">— выберите ноду —</option>
+        </select>
+        <p id="rwHbAddNodeHint" class="text-[11px] text-muted2 mt-1.5 m-0"></p>
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t border-[rgb(var(--admin-border))] flex justify-end gap-2">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-rw-hb-close>Отмена</button>
+      <button type="button" id="rwHbAddSubmit" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        Создать
+      </button>
+    </div>
+  </div>
+</div>
+
+{# Modal: редактировать member #}
+<div id="rwHbEditModal" class="tw-modal fixed inset-0 z-[200] items-center justify-center p-4 bg-black/50" aria-hidden="true">
+  <div class="tw-card w-full max-w-md p-0 overflow-hidden rw-hb-modal">
+    <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center justify-between">
+      <h3 class="text-[14px] font-semibold">Редактировать сервер</h3>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-rw-hb-close><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-4">
+      <input type="hidden" id="rwHbEditUuid">
+      <div class="rw-hb-field">
+        <label>Имя в Remnawave (remark)</label>
+        <input type="text" id="rwHbEditRemark" class="tw-input" maxlength="40" disabled>
+      </div>
+      <div class="rw-hb-field">
+        <label for="rwHbEditAddress">Address</label>
+        <input type="text" id="rwHbEditAddress" class="tw-input">
+      </div>
+      <div class="rw-hb-field">
+        <label for="rwHbEditPort">Port</label>
+        <input type="number" id="rwHbEditPort" class="tw-input" min="1" max="65535">
+      </div>
+      <div class="rw-hb-field">
+        <label for="rwHbEditNode">Привязка ноды</label>
+        <select id="rwHbEditNode" class="tw-select w-full">
+          <option value="">— не привязана —</option>
+        </select>
+      </div>
+      <label class="flex items-center gap-2 text-[12px] mt-2">
+        <input type="checkbox" id="rwHbEditDisabled" class="tw-checkbox">
+        Отключён (isDisabled)
+      </label>
+    </div>
+    <div class="px-4 py-3 border-t border-[rgb(var(--admin-border))] flex justify-end gap-2">
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-rw-hb-close>Отмена</button>
+      <button type="button" id="rwHbEditSubmit" class="tw-btn tw-btn-primary tw-btn-sm">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('admin.admin_static', filename='js/rw_host_balancer.js') }}?v={{ pwa_cache_version }}"></script>
+{% endblock %}

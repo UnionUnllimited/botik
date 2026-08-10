@@ -1,0 +1,1023 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap');
+
+        /* --- Основная тема в стиле Apple iOS --- */
+        :root, .theme-light {
+            --bg-color: #F2F2F7;
+            --card-bg: #FFFFFF;
+            --accent-color: #007AFF;
+            --green-color: #34C759;
+            --text-primary: #000000;
+            --text-secondary: #636366;
+            --separator-color: #C6C6C8;
+            --control-bg: #E5E5EA;
+            --tab-bar-bg: rgba(248, 249, 250, 0.85);
+            --modal-overlay: rgba(0,0,0,0.4);
+            
+            /* Система теней */
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
+            --shadow-xl: 0 20px 25px rgba(0,0,0,0.1), 0 10px 10px rgba(0,0,0,0.04);
+            
+            /* Easing функции */
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .theme-dark {
+            --bg-color: #000000;
+            --card-bg: #1C1C1E;
+            --accent-color: #0A84FF;
+            --green-color: #30D158;
+            --text-primary: #FFFFFF;
+            --text-secondary: #98989D;
+            --separator-color: #38383A;
+            --control-bg: #2C2C2E;
+            --tab-bar-bg: rgba(28, 28, 30, 0.85);
+            --modal-overlay: rgba(0,0,0,0.6);
+            
+            /* Система теней для темной темы */
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.5), 0 4px 6px rgba(0,0,0,0.4);
+            --shadow-xl: 0 20px 25px rgba(0,0,0,0.6), 0 10px 10px rgba(0,0,0,0.5);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overscroll-behavior-y: none;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 520px;
+            margin: 0 auto;
+            /* ИЗМЕНЕНО: Добавлен безопасный отступ сверху для режима fullscreen */
+            padding: calc(1.5rem + env(safe-area-inset-top)) 0.8rem 1.5rem 0.8rem;
+        }
+
+        h1 {
+            font-size: clamp(1.75rem, 8vw, 2rem);
+            font-weight: 700;
+            margin: 0 0 1.5rem 0.5rem;
+        }
+
+        h2 { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; margin: 2rem 0 0.5rem 1rem; }
+        h2:first-of-type { margin-top: 1.5rem; }
+
+        /* --- Карточка с основной информацией --- */
+        .info-card {
+            background: var(--card-bg);
+            border-radius: 14px;
+            padding: 1rem;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid rgba(0,0,0,0.05);
+            transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+        }
+        
+        .info-card:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-xl);
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--separator-color); }
+        
+        .card-header .project-name {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 1.5rem;
+            font-weight: 400;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+            line-height: 1.3;
+        }
+        .status-badge { font-size: 0.72rem; padding: 0.22em 0.6em; border-radius: 99px; font-weight: 600; }
+        
+        .status-badge.active {
+            background: linear-gradient(135deg, #34C759 0%, #30D158 100%);
+            color: white;
+            box-shadow: 
+                0 0 20px rgba(52, 199, 89, 0.4),
+                0 0 40px rgba(52, 199, 89, 0.2),
+                0 2px 8px rgba(52, 199, 89, 0.3);
+        }
+        .status-badge.expired { background-color: #FFF0F0; color: #D92D20; }
+        .theme-dark .status-badge.expired { background-color: #3A1F1F; color: #FF453A; }
+        
+        /* Переключатель темы - новый анимированный */
+        .theme-toggle {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .theme-switcher-grid {
+            display: grid;
+            grid-template-columns: repeat(54, 1px);
+            grid-template-rows: repeat(24, 1px);
+            gap: 0;
+            position: relative;
+            background-color: #0dbdf6;
+            border-radius: 49px;
+            border: 1px solid var(--text-primary);
+            cursor: pointer;
+            transition: background-color 0.8s ease, border-color 0.8s ease;
+            appearance: none;
+            padding: 0;
+            width: 54px;
+            height: 24px;
+            flex-shrink: 0;
+            margin: 0;
+            outline: none;
+            box-shadow: none;
+        }
+        
+        .theme-switcher-grid:focus {
+            outline: none;
+            box-shadow: none;
+        }
+        
+        .theme-switcher-grid:active {
+            transform: scale(0.95);
+        }
+        
+        .theme-switcher-grid.night-theme {
+            background-color: #272a30;
+            border-color: var(--text-primary);
+        }
+        
+        .sun {
+            background-color: #fabc1c;
+            grid-column: 3 / 23;
+            grid-row: 2 / 22;
+            border-radius: 50%;
+            transition: grid-column 0.8s ease, background-color 0.8s ease;
+            height: 20px;
+            width: 20px;
+            align-self: center;
+            justify-self: center;
+        }
+        
+        .theme-switcher-grid.night-theme .sun {
+            grid-column: 33 / 53;
+            grid-row: 2 / 22;
+            background-color: #fffdf2;
+            align-self: center;
+            justify-self: center;
+        }
+        
+        .moon-overlay {
+            position: absolute;
+            border-radius: 50%;
+            transition: left 0.8s ease, background-color 0.8s ease, top 0.8s ease;
+            z-index: 1;
+            background-color: #0dbdf6;
+            display: none;
+        }
+        
+        .theme-switcher-grid.night-theme .moon-overlay {
+            display: block;
+            left: calc(28 / 54 * 100%);
+            top: 50%;
+            width: 18px;
+            height: 18px;
+            background-color: #272a30;
+            transform: translateY(-50%);
+        }
+        
+        .cloud-ball {
+            background-color: #fffdf2;
+            border-radius: 50%;
+            width: 9px;
+            height: 9px;
+            position: absolute;
+            transition: all 0.8s ease;
+            z-index: 2;
+        }
+        
+        #ball1 {
+            top: calc((8 / 24) * 100%);
+            left: calc((12 / 54) * 100%);
+        }
+        
+        #ball2 {
+            top: calc((8 / 24) * 100%);
+            left: calc((17 / 54) * 100%);
+        }
+        
+        #ball3 {
+            top: calc((8 / 24) * 100%);
+            left: calc((22 / 54) * 100%);
+        }
+        
+        #ball4 {
+            top: calc((6 / 24) * 100%);
+            left: calc((17 / 54) * 100%);
+        }
+        
+        .theme-switcher-grid.night-theme #ball1 {
+            top: calc((16 / 24) * 100%);
+            left: calc((16 / 54) * 100%);
+            width: 2px;
+            height: 2px;
+        }
+        
+        .theme-switcher-grid.night-theme #ball2 {
+            top: calc((3 / 24) * 100%);
+            left: calc((22 / 54) * 100%);
+            width: 2px;
+            height: 2px;
+        }
+        
+        .theme-switcher-grid.night-theme #ball3 {
+            top: calc((10 / 24) * 100%);
+            left: calc((29 / 54) * 100%);
+            width: 2px;
+            height: 2px;
+        }
+        
+        .theme-switcher-grid.night-theme #ball4 {
+            top: calc((5 / 24) * 100%);
+            left: calc((34 / 54) * 100%);
+            width: 2px;
+            height: 2px;
+        }
+        
+        .star {
+            background-color: #fffdf2;
+            width: 1px;
+            height: 1px;
+            position: absolute;
+            opacity: 0;
+            transition: opacity 0.8s ease;
+        }
+        
+        #star1 {
+            top: calc((7 / 24) * 100%);
+            left: calc((10 / 54) * 100%);
+            border-radius: 50%;
+        }
+        
+        #star2 {
+            top: calc((9 / 24) * 100%);
+            left: calc((16 / 54) * 100%);
+            border-radius: 50%;
+        }
+        
+        #star3 {
+            top: calc((13 / 24) * 100%);
+            left: calc((23 / 54) * 100%);
+            border-radius: 50%;
+        }
+        
+        #star4 {
+            top: calc((18 / 24) * 100%);
+            left: calc((29 / 54) * 100%);
+            border-radius: 50%;
+        }
+        
+        .theme-switcher-grid.night-theme #star1,
+        .theme-switcher-grid.night-theme #star2,
+        .theme-switcher-grid.night-theme #star3,
+        .theme-switcher-grid.night-theme #star4 {
+            opacity: 1;
+        }
+        
+        .card-details { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 0.8rem 1.5rem; 
+            position: relative;
+        }
+        .detail-item { display: flex; align-items: center; gap: 0.5rem; }
+        /* Лёгкая подцветка блока с информацией о пользователе */
+        .info-card .card-details {
+            background: linear-gradient(
+                135deg,
+                rgba(0, 122, 255, 0.08) 0%,
+                rgba(0, 122, 255, 0.02) 50%,
+                rgba(0, 122, 255, 0.00) 100%
+            );
+            border: 1px solid rgba(0,122,255,0.10);
+            border-radius: 12px;
+            padding: 0.75rem;
+            margin-top: 0.25rem;
+        }
+        
+        
+        /* Тени для кнопок в темной теме */
+        .theme-dark .btn-step.next {
+            box-shadow: 0 4px 12px rgba(10, 132, 255, 0.5), 0 2px 4px rgba(10, 132, 255, 0.3);
+        }
+        .theme-dark .btn-step.next:active {
+            box-shadow: 0 2px 6px rgba(10, 132, 255, 0.4), 0 1px 2px rgba(10, 132, 255, 0.25);
+        }
+        .theme-dark .btn-cta {
+            box-shadow: 0 4px 12px rgba(10, 132, 255, 0.5), 0 2px 4px rgba(10, 132, 255, 0.3);
+        }
+        .theme-dark .btn-cta:active {
+            box-shadow: 0 2px 6px rgba(10, 132, 255, 0.4), 0 1px 2px rgba(10, 132, 255, 0.25);
+        }
+        .theme-dark .info-card .card-details {
+            background: linear-gradient(
+                135deg,
+                rgba(10, 132, 255, 0.2) 0%,
+                rgba(10, 132, 255, 0.08) 50%,
+                rgba(10, 132, 255, 0.02) 100%
+            );
+            border: 1px solid rgba(10,132,255,0.20);
+        }
+        
+        .detail-emoji { font-size: 1.2rem; width: 1.25rem; text-align: center; }
+        .detail-info { display: flex; flex-direction: column; gap: 0.2rem; }
+        .detail-label { font-size: 0.7rem; color: var(--text-secondary); }
+        .detail-value { 
+            font-size: 0.85rem; 
+            font-weight: 600; 
+            overflow-wrap: break-word;
+            transition: opacity 0.2s var(--ease-out);
+        }
+
+        /* --- Группа списков (стиль настроек iOS) --- */
+        .list-group {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            margin: 0;
+            padding: 0;
+            box-shadow: var(--shadow-md);
+            overflow: hidden; 
+        }
+        .list-item {
+            display: flex;
+            align-items: center;
+            padding: 0.8rem 1rem;
+            text-decoration: none;
+            color: var(--text-primary);
+            position: relative;
+            cursor: pointer;
+            border-radius: 10px;
+            margin: 0 0.25rem;
+            transition: all 0.2s var(--ease-out);
+        }
+        .list-item:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+        .list-item:active {
+            transform: scale(0.98);
+            background-color: var(--control-bg);
+        }
+        .list-item:not(:last-child)::after { 
+            content: ''; 
+            position: absolute; 
+            bottom: 0; 
+            left: 3.25rem; 
+            right: 0; 
+            height: 0.5px; 
+            opacity: 0.5;
+            background: linear-gradient(
+                to right,
+                transparent 0%,
+                var(--separator-color) 20%,
+                var(--separator-color) 80%,
+                transparent 100%
+            );
+        }
+        
+        /* Стиль для кнопки "Выбрать тариф" внутри карточки */
+        .card-details .list-item:hover {
+            background-color: var(--control-bg);
+        }
+        
+        .list-item .icon {
+            width: 1.5rem;
+            height: 1.5rem;
+            margin-right: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        .list-item .text { font-weight: 500; flex: 1; }
+        .list-item .right-content { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
+        .list-item .chevron { color: var(--separator-color); }
+
+        .action-list-group .list-item { padding: 0.85rem 1rem; }
+        .action-list-group .text { font-size: 0.95rem; font-weight: 600; }
+        
+        .copy-button.copied .text {
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+        
+
+        
+
+        /* --- Модальное окно (шторка) --- */
+        .modal-sheet-overlay { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            background: var(--modal-overlay); 
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            display: flex; 
+            justify-content: center; 
+            align-items: flex-end; 
+            z-index: 1000; 
+            opacity: 0; 
+            visibility: hidden; 
+            transition: opacity 0.3s var(--ease-out); 
+        }
+        .modal-sheet-overlay.active { opacity: 1; visibility: visible; }
+        .modal-sheet { 
+            background: var(--bg-color); 
+            width: 100%; 
+            max-width: 520px; 
+            max-height: 90vh; 
+            padding: 0.75rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); 
+            border-radius: 16px 16px 0 0; 
+            transform: translateY(100%); 
+            transition: transform 0.3s var(--ease-spring); 
+            display: flex; 
+            flex-direction: column; 
+            box-shadow: var(--shadow-xl); 
+        }
+        .modal-sheet-overlay.active .modal-sheet { transform: translateY(0); }
+        .modal-sheet-overlay.dragging .modal-sheet { transition: none; }
+        .modal-header { text-align: center; padding-bottom: 0.5rem; position: relative; }
+        .modal-header .drag-handle { width: 36px; height: 5px; background-color: var(--separator-color); border-radius: 2.5px; margin: 0 auto 0.75rem; }
+        .modal-header h3 { margin: 0; font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .modal-header h3 img, .modal-header h3 .icon { height: 1.5rem; width: 1.5rem; }
+        .modal-body { overflow-y: auto; flex: 1; }
+        .step-panel { display: none; }
+        .step-panel.active { display: block; }
+        
+        .segmented-control { display: flex; background-color: var(--control-bg); border-radius: 9px; padding: 3px; margin: 1rem 0; }
+        .segmented-control button { flex: 1; border: none; background: transparent; padding: 0.5rem; border-radius: 7px; font-weight: 600; font-size: 0.85rem; cursor: pointer; color: var(--text-primary); transition: all 0.2s ease-in-out; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .segmented-control button.active { background: var(--card-bg); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .segmented-control .app-icon { height: 1rem; width: 1rem; }
+        .app-content-panel { display: none; }
+        .app-content-panel.active { display: block; }
+
+        .modal-footer { margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; }
+        .btn-step { background: transparent; border: none; font-weight: 600; padding: 0.75rem 1rem; border-radius: 12px; cursor: pointer; color: var(--accent-color); font-size: 1rem; transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease; }
+        .btn-step.next { 
+            background-color: var(--accent-color); 
+            color: white; 
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35), 0 2px 4px rgba(0, 122, 255, 0.2);
+        }
+        .btn-step.next:active {
+            box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3), 0 1px 2px rgba(0, 122, 255, 0.15);
+        }
+        .btn-step:disabled { color: var(--separator-color); background-color: transparent; }
+
+        /* --- Стили для модальных окон с фичами --- */
+        .feature-description p, .modal-body p { color: var(--text-secondary); line-height: 1.5; margin: 0 0 1rem 0; }
+        .btn-cta { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 0.75rem; 
+            text-decoration: none; 
+            width: 100%; 
+            margin-top: 1.5rem; 
+            padding: 0.85rem 1rem; 
+            background-color: var(--accent-color); 
+            color: white; 
+            font-weight: 600; 
+            font-size: 1rem; 
+            border-radius: 12px; 
+            transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35), 0 2px 4px rgba(0, 122, 255, 0.2);
+        }
+        .btn-cta:active { 
+            transform: scale(0.98); 
+            background-color: #0056b3; 
+            box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3), 0 1px 2px rgba(0, 122, 255, 0.15);
+        }
+        .btn-cta svg { width: 1.25rem; height: 1.25rem; }
+        .guide-image { width: 100%; max-width: 300px; border-radius: 12px; border: 1px solid var(--separator-color); margin: 1rem auto; display: block; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        /* Меньше картинка в модалке "Установка на ПК" */
+        #pc-guide-modal .guide-image { max-width: 220px; }
+
+        
+        /* --- Модальное окно с предупреждением --- */
+        .modal-alert-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--modal-overlay); display: flex; justify-content: center; align-items: center; z-index: 2000; opacity: 0; visibility: hidden; transition: opacity 0.3s ease; }
+        .modal-alert-overlay.active { opacity: 1; visibility: visible; }
+        .modal-alert-box { background: var(--card-bg); width: 90%; max-width: 320px; padding: 1.5rem; border-radius: 16px; text-align: center; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); box-shadow: 0 5px 25px rgba(0,0,0,0.1); }
+        .modal-alert-overlay.active .modal-alert-box { transform: scale(1); }
+        .modal-alert-box h3 { margin: 0.75rem 0 0.5rem 0; font-size: 1.2rem; font-weight: 600; }
+        .modal-alert-box p { margin: 0 0 1.25rem 0; color: var(--text-secondary); font-size: 0.95rem; line-height: 1.4; }
+        .modal-alert-box small { color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.5rem; display: block; }
+        .countdown-bar { width: 100%; height: 6px; background-color: var(--control-bg); border-radius: 3px; overflow: hidden; margin-bottom: 0.75rem; }
+        .countdown-progress { width: 100%; height: 100%; background-color: var(--accent-color); border-radius: 3px; }
+    
+        /* Анимация появления элементов */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* Staggered анимация для элементов */
+        .animate-in {
+            opacity: 0;
+            animation: fadeInUp 0.6s var(--ease-out) forwards;
+        }
+        
+        .animate-in:nth-child(1) { animation-delay: 0.05s; }
+        .animate-in:nth-child(2) { animation-delay: 0.1s; }
+        .animate-in:nth-child(3) { animation-delay: 0.15s; }
+        .animate-in:nth-child(4) { animation-delay: 0.2s; }
+        .animate-in:nth-child(5) { animation-delay: 0.25s; }
+        
+        .info-card { animation: fadeInUp 0.5s var(--ease-out) forwards; }
+        .list-group { animation: fadeInUp 0.5s var(--ease-out) 0.1s forwards; opacity: 0; }
+        h2 { animation: fadeInUp 0.4s var(--ease-out) 0.05s forwards; opacity: 0; }
+        
+        /* Улучшение отображения чисел */
+        .detail-value {
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: "tnum";
+        }
+        
+        /* --- Блок "Осталось дней" --- */
+        .days-info-container {
+            margin-top: 0.75rem;
+            padding: 0.75rem;
+            background: linear-gradient(
+                135deg,
+                rgba(0, 122, 255, 0.08) 0%,
+                rgba(0, 122, 255, 0.02) 50%,
+                rgba(0, 122, 255, 0.00) 100%
+            );
+            border: 1px solid rgba(0,122,255,0.10);
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .days-info-content {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .days-info-icon {
+            font-size: 1.5rem;
+        }
+        
+        .days-info-text {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+        
+        .days-info-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        
+        .days-info-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--green-color);
+        }
+        
+        .days-info-value.warning {
+            color: #FF9500;
+        }
+        
+        .days-info-value.critical {
+            color: #FF3B30;
+            animation: pulse-critical 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse-critical {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .days-info-end-date {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-align: right;
+        }
+        
+        .theme-dark .days-info-container {
+            background: linear-gradient(
+                135deg,
+                rgba(10, 132, 255, 0.2) 0%,
+                rgba(10, 132, 255, 0.08) 50%,
+                rgba(10, 132, 255, 0.02) 100%
+            );
+            border: 1px solid rgba(10,132,255,0.20);
+        }
+        
+        /* Стили для истёкшей подписки */
+        .days-info-container.expired {
+            background: linear-gradient(
+                135deg,
+                rgba(255, 59, 48, 0.1) 0%,
+                rgba(255, 59, 48, 0.05) 50%,
+                rgba(255, 59, 48, 0.00) 100%
+            );
+            border: 1px solid rgba(255, 59, 48, 0.2);
+        }
+        
+        .theme-dark .days-info-container.expired {
+            background: linear-gradient(
+                135deg,
+                rgba(255, 69, 58, 0.2) 0%,
+                rgba(255, 69, 58, 0.08) 50%,
+                rgba(255, 69, 58, 0.02) 100%
+            );
+            border: 1px solid rgba(255, 69, 58, 0.25);
+        }
+        
+        .days-info-value.expired-text {
+            color: #FF3B30;
+            font-size: 1rem;
+        }
+        
+        .theme-dark .days-info-value.expired-text {
+            color: #FF453A;
+        }
+        
+        /* Предупреждение о скором окончании */
+        .expiry-warning {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 0.75rem;
+            margin-top: 0.75rem;
+            background: linear-gradient(135deg, rgba(255, 149, 0, 0.15) 0%, rgba(255, 59, 48, 0.1) 100%);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #FF9500;
+            animation: fadeInUp 0.4s var(--ease-out) 0.3s forwards;
+            opacity: 0;
+        }
+        
+        .expiry-warning.critical {
+            background: linear-gradient(135deg, rgba(255, 59, 48, 0.15) 0%, rgba(255, 59, 48, 0.1) 100%);
+            border-color: rgba(255, 59, 48, 0.3);
+            color: #FF3B30;
+        }
+        
+        .theme-dark .expiry-warning {
+            background: linear-gradient(135deg, rgba(255, 149, 0, 0.2) 0%, rgba(255, 59, 48, 0.15) 100%);
+            color: #FF9F0A;
+        }
+        
+        .theme-dark .expiry-warning.critical {
+            background: linear-gradient(135deg, rgba(255, 69, 58, 0.2) 0%, rgba(255, 69, 58, 0.15) 100%);
+            color: #FF453A;
+        }
+
+
+        /* --- Умные уведомления (Toasts) --- */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .toast {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: var(--text-primary);
+            padding: 12px 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(-20px) scale(0.95);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: auto;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .theme-dark .toast {
+            background: rgba(30, 30, 32, 0.95);
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        .toast-icon {
+            font-size: 1.2rem;
+        }
+
+        .toast.success { border-left: 4px solid var(--green-color); }
+        .toast.error { border-left: 4px solid #FF3B30; }
+        .toast.info { border-left: 4px solid var(--accent-color); }
+
+        /* --- Skeleton Loading --- */
+        .skeleton {
+            background: linear-gradient(90deg, 
+                var(--control-bg) 25%, 
+                var(--card-bg) 50%, 
+                var(--control-bg) 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite;
+            border-radius: 6px;
+            color: transparent !important;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* --- Бейдж "Ваше устройство" --- */
+        .device-badge {
+            background: var(--green-color);
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-left: 8px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 6px rgba(52, 199, 89, 0.3);
+            animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .list-item.recommended {
+            border: 2px solid var(--green-color);
+            background: rgba(52, 199, 89, 0.05);
+        }
+        
+        .theme-dark .list-item.recommended {
+            background: rgba(48, 209, 88, 0.1);
+        }
+
+        /* --- Конфетти Canvas --- */
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* --- Интерактивный туториал --- */
+        .tutorial-overlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: linear-gradient(180deg, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.55) 30%, rgba(0,0,0,0.08) 65%, rgba(0,0,0,0) 100%) !important;
+            z-index: 99999 !important;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .tutorial-overlay.active {
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+
+        .tutorial-content {
+            text-align: center;
+            color: white;
+            padding: 12px 18px;
+            max-width: min(520px, 90%);
+            width: min(520px, 90%);
+            position: fixed;
+            top: clamp(16px, 7vh, 60px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100000;
+            background: rgba(0, 0, 0, 0.75);
+            border-radius: 14px;
+            backdrop-filter: blur(4px);
+            pointer-events: none;
+        }
+
+        .tutorial-text {
+            font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace !important;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+            min-height: 2.2em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff !important;
+            text-shadow: 
+                1px 1px 0px rgba(0,0,0,0.9),
+                0 0 4px rgba(0,0,0,0.75);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+            text-transform: uppercase;
+            line-height: 1.35;
+        }
+        
+        /* Эффект курсора для печатающей машинки */
+        .tutorial-text::after {
+            content: '|';
+            animation: blink 1s infinite;
+            margin-left: 2px;
+            color: white;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        /* Убираем курсор когда текст полностью напечатан */
+        .tutorial-text.completed::after {
+            display: none;
+        }
+        
+        .tutorial-arrow {
+            font-size: 4rem !important;
+            margin-bottom: 20px !important;
+            animation: bounce 1.5s infinite !important;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            line-height: 1 !important;
+            color: white !important;
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
+            40% {transform: translateY(-10px);}
+            60% {transform: translateY(-5px);}
+        }
+
+        .tutorial-btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            color: white;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            pointer-events: auto;
+        }
+        
+        .tutorial-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-1px);
+        }
+        
+        .tutorial-btn:active {
+            transform: translateY(0);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Подсветка элементов во время туториала */
+        .tutorial-highlight {
+            position: relative;
+            z-index: 10002 !important;
+            border-radius: 16px;
+            padding: 10px;
+            background:
+                linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+                linear-gradient(120deg, #00d2ff, #7f5dff, #ff6ec7) border-box;
+            border: 3px solid transparent;
+            box-shadow:
+                0 20px 35px rgba(0, 0, 0, 0.35),
+                0 0 25px rgba(0, 178, 255, 0.45),
+                inset 0 0 8px rgba(255, 255, 255, 0.05);
+            animation: tutorialHighlightPulse 2.2s ease-in-out infinite;
+        }
+
+        @keyframes tutorialHighlightPulse {
+            0% {
+                box-shadow:
+                    0 20px 35px rgba(0, 0, 0, 0.35),
+                    0 0 25px rgba(0, 178, 255, 0.45),
+                    inset 0 0 8px rgba(255, 255, 255, 0.05);
+                transform: scale(1);
+            }
+            50% {
+                box-shadow:
+                    0 24px 42px rgba(0, 0, 0, 0.4),
+                    0 0 32px rgba(255, 110, 199, 0.5),
+                    inset 0 0 10px rgba(255, 255, 255, 0.12);
+                transform: scale(1.01);
+            }
+            100% {
+                box-shadow:
+                    0 20px 35px rgba(0, 0, 0, 0.35),
+                    0 0 25px rgba(0, 178, 255, 0.45),
+                    inset 0 0 8px rgba(255, 255, 255, 0.05);
+                transform: scale(1);
+            }
+        }
+        
+        /* Блокируем все клики внутри модалки во время туториала */
+        .tutorial-overlay.active ~ *,
+        .tutorial-overlay.active ~ * * {
+            pointer-events: none !important;
+        }
+        
+        /* Разрешаем клики только для подсвеченных элементов */
+        .tutorial-highlight,
+        .tutorial-highlight * {
+            pointer-events: auto !important;
+        }
+
+        /* --- QR toggle --- */
+        .manual-qr-toggle {
+            display: flex;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .manual-qr-toggle button {
+            border: 1px dashed var(--accent-color);
+            background: transparent;
+            color: var(--accent-color);
+            font-weight: 600;
+            border-radius: 999px;
+            padding: 0.35rem 1.1rem;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .manual-qr-toggle button:hover {
+            background: rgba(0, 0, 0, 0.04);
+            transform: translateY(-1px);
+        }
+
+        .manual-qr-block {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .manual-qr-block.active {
+            display: block;
+            opacity: 1;
+        }

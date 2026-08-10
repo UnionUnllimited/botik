@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Задачи - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-1">
+
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="list-checks" class="w-6 h-6 text-[var(--color-brand-500)] shrink-0"></i>
+        Задачи
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">Фоновые рассылки новостей.</p>
+    </div>
+    <button type="button" class="tw-btn tw-btn-danger tw-btn-sm shrink-0" id="cleanup-tasks-btn">
+      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+      Очистить старые (7+ дней)
+    </button>
+  </div>
+
+  {# — Новости — #}
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden">
+    <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+      <i data-lucide="megaphone" class="w-4 h-4 text-[var(--color-brand-500)]"></i>
+      <h2 class="text-[15px] font-semibold tw-text-base2">Отправка новостей</h2>
+    </div>
+    <div class="p-4">
+      {% if news_tasks %}
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {% for task in news_tasks %}
+        <div class="tw-card p-4 flex flex-col gap-3">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex items-center gap-2">
+              <i data-lucide="megaphone" class="w-4 h-4 shrink-0 text-[var(--color-brand-500)]"></i>
+              <span class="text-[11px] tw-text-subtle2 uppercase font-semibold tracking-wide shrink-0">ID</span>
+              <code class="text-[11px] truncate block">{{ task.task_id[:20] }}{% if task.task_id|length > 20 %}…{% endif %}</code>
+            </div>
+            {% if task.status == 'running' %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">Выполняется</span>
+            {% elif task.status == 'completed' %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">Завершена</span>
+            {% elif task.status == 'failed' %}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25">Ошибка</span>
+            {% endif %}
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-[13px]">
+            <div>
+              <div class="text-[11px] tw-text-subtle2 mb-0.5">Пользователей</div>
+              <div class="font-semibold tabular-nums">{{ task.user_count or 0 }}</div>
+            </div>
+            <div>
+              <div class="text-[11px] tw-text-subtle2 mb-0.5">Успешно</div>
+              <span class="inline-flex rounded-md px-2 py-0.5 text-[12px] font-semibold bg-emerald-500/12 text-emerald-700 dark:text-emerald-400">{{ task.success_count or 0 }}</span>
+            </div>
+          </div>
+          {% if task.news_text %}
+          <div class="rounded-lg border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.35)] px-2.5 py-2 max-h-[5rem] overflow-hidden">
+            <div class="text-[10px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-1">Текст новости</div>
+            <p class="text-[12px] tw-text-base2 whitespace-pre-wrap break-words leading-snug">{{ task.news_text }}</p>
+          </div>
+          {% else %}
+          <p class="text-[11px] tw-text-muted2 italic">Текст новости не сохранён в этой записи</p>
+          {% endif %}
+          <div class="border-t border-[rgb(var(--admin-border))] pt-3 mt-auto flex items-end justify-between gap-2">
+            <div class="text-[11px] tw-text-muted2 space-y-0.5">
+              <div>{{ task.created_at|msk_datetime }}</div>
+              {% if task.completed_at %}<div>Завершена: {{ task.completed_at|msk_datetime }}</div>{% endif %}
+            </div>
+            <a href="{{ url_for('admin.task_details', task_id=task.task_id) }}" class="tw-btn tw-btn-secondary tw-btn-sm shrink-0">
+              <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+              Детали
+            </a>
+          </div>
+          {% if task.failed_count and task.failed_count > 0 %}
+          <div class="text-[11px] inline-flex rounded-md px-2 py-1 font-medium bg-rose-500/12 text-rose-700 dark:text-rose-300 w-fit">Ошибок: {{ task.failed_count }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="rounded-[var(--radius-card)] border border-dashed border-[rgb(var(--admin-border))] py-12 px-4 text-center">
+        <div class="text-3xl mb-2 opacity-40">📢</div>
+        <p class="text-[13px] tw-text-muted2">Нет задач отправки новостей</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.adminRenderLucide) window.adminRenderLucide();
+
+  const cleanupBtn = document.getElementById('cleanup-tasks-btn');
+  if (!cleanupBtn) return;
+
+  cleanupBtn.addEventListener('click', async function() {
+    if (!confirm('Удалить все завершённые задачи старше 7 дней?')) return;
+
+    cleanupBtn.disabled = true;
+    const spin = '<span class="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1 align-middle"></span>';
+    const orig = cleanupBtn.innerHTML;
+    cleanupBtn.innerHTML = spin + ' Очистка…';
+
+    try {
+      const response = await fetch('{{ url_for("admin.cleanup_old_tasks") }}', {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await response.json();
+
+      if (data.ok) {
+        if (window.adminToast) window.adminToast(data.message || 'Готово', 'success');
+        else alert(data.message || 'Готово');
+        setTimeout(function() { location.reload(); }, 900);
+      } else {
+        if (window.adminToast) window.adminToast(data.error || 'Ошибка', 'error');
+        else alert(data.error || 'Ошибка');
+        cleanupBtn.disabled = false;
+        cleanupBtn.innerHTML = orig;
+        if (window.adminRenderLucide) window.adminRenderLucide();
+      }
+    } catch (error) {
+      if (window.adminToast) window.adminToast(String(error.message || error), 'error');
+      else alert(error.message || error);
+      cleanupBtn.disabled = false;
+      cleanupBtn.innerHTML = orig;
+      if (window.adminRenderLucide) window.adminRenderLucide();
+    }
+  });
+});
+</script>
+{% endblock %}

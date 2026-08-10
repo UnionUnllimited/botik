@@ -1,0 +1,897 @@
+{% extends "base.html" %}
+{% block title %}Основные настройки - {{ super() }}{% endblock %}
+
+{# Строка одной настройки (используется внутри вкладки; category задаёт контекст для 🔗 Ссылки и 🔒 Безопасность). #}
+{% macro gen_setting_row(setting, category) %}
+{# Один ряд с тумблером — описание уже в .sp-toggle-hint; иначе дублируется ключ и текст #}
+{% set gen_is_toggle_row = setting.key.startswith('show_') or setting.key in ['bot_protection_enabled','channel_subscription_enabled','bot_rate_limit_enabled','bot_maintenance_enabled','yookassa_sbp_only','remnawave_enabled','remnawave_auto_traffic_renewal_enabled','traffic_renewal_enabled','remnawave_webhook_enabled'] %}
+<div class="gen-field mb-5 pb-5 border-b border-[rgb(var(--admin-border))]/35 last:border-0 last:pb-0 last:mb-0"
+     {% if setting.key in ['bot_protection_enabled', 'channel_subscription_enabled', 'channel_subscription_username', 'channel_subscription_message'] %}style="display: none;"{% endif %}>
+
+  {% if category == '🔗 Ссылки' %}
+    {% if setting.key == 'bot_channel_link' %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}">Канал Telegram</label>
+      <div class="hint mb-2">Главное меню бота — кнопка «Наш канал» (если поле не пустое). Текст на кнопке: <a href="{{ url_for('admin.settings_buttons') }}" class="underline underline-offset-2 decoration-[rgb(var(--admin-accent))]/50 hover:text-[rgb(var(--admin-accent))]">Стиль кнопок</a>.</div>
+      <span class="lbl-key text-[11px]">{{ setting.key }}</span>
+    {% elif setting.key == 'bot_custom_url' %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}">Дополнительная ссылка в меню</label>
+      <div class="hint mb-2">Главное меню бота — кнопка «КастомURL». Подпись кнопки: <a href="{{ url_for('admin.settings_buttons') }}" class="underline underline-offset-2 decoration-[rgb(var(--admin-accent))]/50 hover:text-[rgb(var(--admin-accent))]">Стиль кнопок</a>.</div>
+      <span class="lbl-key text-[11px]">{{ setting.key }}</span>
+    {% elif setting.key == 'web_user_agreement_link' %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}">Пользовательское соглашение</label>
+      <div class="hint mb-2">Раздел «О сервисе» в боте — кнопка перехода по этой ссылке. Подпись кнопки: <a href="{{ url_for('admin.settings_buttons') }}" class="underline underline-offset-2 decoration-[rgb(var(--admin-accent))]/50 hover:text-[rgb(var(--admin-accent))]">Стиль кнопок</a>. Удобно оформить текст на <a href="https://telegra.ph/" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2">telegra.ph</a>.</div>
+      <span class="lbl-key text-[11px]">{{ setting.key }}</span>
+    {% elif setting.key == 'web_privacy_policy_link' %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}">Политика конфиденциальности</label>
+      <div class="hint mb-2">Раздел «О сервисе» — кнопка политики. Подпись: <a href="{{ url_for('admin.settings_buttons') }}" class="underline underline-offset-2 decoration-[rgb(var(--admin-accent))]/50 hover:text-[rgb(var(--admin-accent))]">Стиль кнопок</a>.</div>
+      <span class="lbl-key text-[11px]">{{ setting.key }}</span>
+    {% elif setting.key == 'support_link' %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}">Поддержка (основная ссылка)</label>
+      <div class="hint mb-2">Экран поддержки в боте — основная кнопка (например t.me/username поддержки). Подпись: <a href="{{ url_for('admin.settings_buttons') }}" class="underline underline-offset-2 decoration-[rgb(var(--admin-accent))]/50 hover:text-[rgb(var(--admin-accent))]">Стиль кнопок</a>.</div>
+      <span class="lbl-key text-[11px]">{{ setting.key }}</span>
+    {% elif setting.key == 'support_custom_link' %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}">Поддержка (дополнительная ссылка)</label>
+      <div class="hint mb-2">Экран поддержки — вторая кнопка (кастомная ссылка). Подпись: <a href="{{ url_for('admin.settings_buttons') }}" class="underline underline-offset-2 decoration-[rgb(var(--admin-accent))]/50 hover:text-[rgb(var(--admin-accent))]">Стиль кнопок</a>.</div>
+      <span class="lbl-key text-[11px]">{{ setting.key }}</span>
+    {% else %}
+      <label class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1" for="{{ setting.key }}"><code class="text-[12px]">{{ setting.key }}</code></label>
+      <p class="hint mb-2">{{ setting.description }}</p>
+    {% endif %}
+  {% elif not gen_is_toggle_row %}
+    <label for="{{ setting.key }}" class="block text-[13px] font-semibold text-[var(--admin-text-base)] mb-1 inline-flex flex-wrap items-center gap-2">
+      <code class="text-[12px] font-mono text-[var(--admin-text-muted)]">{{ setting.key }}</code>
+      {% if setting.key in ['bot_token', 'admin_ids', 'connect_page_url', 'sub_page_url'] %}
+        <span class="text-[11px] font-semibold text-red-600 dark:text-red-400">⚠️ Важная настройка</span>
+      {% endif %}
+    </label>
+    <p class="hint mb-2">{{ setting.description }}</p>
+  {% endif %}
+
+  {% if setting.key == 'admin_secret_path' %}
+    <div class="text-[12px] mb-2">
+      <a href="https://docs.3xstore.ru/useful.html#secret-path" target="_blank" rel="noopener noreferrer" class="text-[rgb(var(--admin-accent))] hover:underline">Как изменить секретный путь?</a>
+    </div>
+  {% endif %}
+
+  {% if setting.key == 'admin_web_password' %}
+    <div class="flex gap-2 flex-wrap items-stretch">
+      <input type="password" class="sp-input flex-1 min-w-[200px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" autocomplete="new-password" data-lpignore="true">
+      <button class="gen-icon-btn shrink-0" type="button" onclick="togglePasswordVisibility('{{ setting.key }}')" aria-label="Показать пароль">
+        <i data-lucide="eye" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">
+      При смене пароля будет сгенерирован новый <code class="text-[11px]">web_admin_secret_key</code> — все сессии вылогинятся.
+    </div>
+  {% elif setting.key == 'remnawave_api_token' %}
+    <div class="flex gap-2 flex-wrap items-stretch">
+      <input type="password" class="sp-input flex-1 min-w-[200px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="API токен" autocomplete="new-password" data-lpignore="true">
+      <button class="gen-icon-btn shrink-0" type="button" onclick="togglePasswordVisibility('{{ setting.key }}')" aria-label="Показать">
+        <i data-lucide="eye" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <p class="hint mt-1">Токен хранится как секрет.</p>
+  {% elif setting.key == 'remnawave_webhook_secret' %}
+    <div class="flex gap-2 flex-wrap items-stretch">
+      <input type="password" class="sp-input flex-1 min-w-[200px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="Секрет вебхуков" autocomplete="new-password" data-lpignore="true">
+      <button class="gen-icon-btn shrink-0" type="button" onclick="togglePasswordVisibility('{{ setting.key }}')" aria-label="Показать">
+        <i data-lucide="eye" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">
+      Должен совпадать с ключом в Remnawave (<code class="text-[11px]">nano /opt/remnawave/.env</code>).
+    </div>
+  {% elif setting.key == 'wata_access_token' %}
+    <div class="flex gap-2 flex-wrap items-stretch">
+      <input type="password" class="sp-input flex-1 min-w-[200px] font-mono text-[13px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="Bearer JWT из ЛК Wata (терминал)" autocomplete="new-password" data-lpignore="true">
+      <button class="gen-icon-btn shrink-0" type="button" onclick="togglePasswordVisibility('{{ setting.key }}')" aria-label="Показать">
+        <i data-lucide="eye" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-border))] bg-[var(--admin-bg-soft)] px-3 py-2">
+      Альтернатива: переменная окружения <code class="text-[11px]">WATA_ACCESS_TOKEN</code> на процессе бота. Пустое поле при сохранении не стирает сохранённый токен.
+    </div>
+  {% elif setting.key == 'wata_terminal_public_id' %}
+    <input type="text" class="sp-input font-mono text-[13px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="UUID терминала (Public ID)" autocomplete="off" spellcheck="false" data-lpignore="true">
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-border))] bg-[var(--admin-bg-soft)] px-3 py-2">
+      Для платёжной формы Wata / виджета. Альтернатива: <code class="text-[11px]">WATA_TERMINAL_PUBLIC_ID</code> в окружении.
+    </div>
+  {% elif setting.key == 'admin_ids' %}
+    <textarea class="sp-textarea" id="{{ setting.key }}" name="{{ setting.key }}" rows="3" placeholder="ID через запятую">{{ setting.value }}</textarea>
+    <div class="hint mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+      Telegram ID администраторов бота через запятую.
+    </div>
+  {% elif setting.key == 'bot_token' %}
+    <div class="flex gap-2 flex-wrap items-stretch">
+      <input type="password" class="sp-input flex-1 min-w-[200px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="Токен от @BotFather" autocomplete="new-password" data-lpignore="true">
+      <button class="gen-icon-btn shrink-0" type="button" onclick="togglePasswordVisibility('{{ setting.key }}')" aria-label="Показать">
+        <i data-lucide="eye" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="hint mt-2 rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2">
+      Критично для работы сервиса. <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="underline font-medium">@BotFather</a>
+    </div>
+  {% elif setting.key == 'telegram_proxy_url' %}
+    <input type="text" class="sp-input font-mono text-[13px]" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="http://127.0.0.1:8080 или socks5://127.0.0.1:1080" autocomplete="off" spellcheck="false" data-lpignore="true">
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-border))] bg-[var(--admin-bg-soft)] px-3 py-2">
+      Исходящий прокси для запросов к Telegram Bot API (бот и веб-админка). Форматы: <code class="text-[11px]">http://</code>, <code class="text-[11px]">https://</code>, <code class="text-[11px]">socks5://</code>. Учётные данные можно указать в URL. Пусто — прямое подключение; при необходимости задайте резерв через переменную окружения <code class="text-[11px]">TELEGRAM_PROXY_URL</code> на процессе бота.
+    </div>
+  {% elif setting.key == 'connect_page_url' %}
+    <input type="text" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="https://example.com" autocomplete="off">
+    <div class="hint mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+      Домен бота — ссылки на подключение и API.
+    </div>
+  {% elif setting.key == 'sub_page_url' %}
+    <input type="text" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" placeholder="https://example.com" autocomplete="off">
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">
+      Без отдельного subpage можно продублировать домен из <code class="text-[11px]">connect_page_url</code>.
+    </div>
+  {% elif setting.key == 'bot_maintenance_message' %}
+    <textarea class="sp-textarea" id="{{ setting.key }}" name="{{ setting.key }}" rows="3" placeholder="Сообщение клиентам при техработах">{{ setting.value }}</textarea>
+    <div class="hint mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+      Показывается при нажатии кнопок (всплывающее окно) и при текстовых сообщениях. Админы из <code class="text-[11px]">admin_ids</code> не ограничиваются.
+    </div>
+  {% elif setting.key.startswith('show_') or setting.key in ['bot_protection_enabled','channel_subscription_enabled','bot_rate_limit_enabled','bot_maintenance_enabled','yookassa_sbp_only','remnawave_enabled','remnawave_auto_traffic_renewal_enabled','traffic_renewal_enabled','remnawave_webhook_enabled'] %}
+    <div class="sp-toggle-row">
+      <label class="tw-switch" title="{{ setting.description }}">
+        <input type="checkbox" id="{{ setting.key }}" name="{{ setting.key }}" value="1" {% if setting.value == '1' %}checked{% endif %}>
+        <span class="track"></span>
+        <span class="thumb"></span>
+      </label>
+      <div class="sp-toggle-text">
+        <span class="sp-toggle-title" onclick="document.getElementById('{{ setting.key }}').click()">
+          <code class="text-[11px] font-mono text-[var(--admin-text-muted)]">{{ setting.key }}</code>
+          <span class="gen-switch-status text-[11px] font-medium text-[var(--admin-text-muted)] tabular-nums">{% if setting.value == '1' %}Включено{% else %}Выключено{% endif %}</span>
+        </span>
+        <div class="sp-toggle-hint">{{ setting.description }}</div>
+      </div>
+    </div>
+    {% if setting.key == 'remnawave_auto_traffic_renewal_enabled' %}
+      <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">
+        При продлении подписки Remnawave сбрасывает учёт трафика до нуля (при лимите по умолчанию &gt; 0).
+      </div>
+    {% elif setting.key == 'bot_maintenance_enabled' %}
+      <div class="hint mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+        При включении клиенты увидят заглушку на любую кнопку и сообщение. Применяется сразу после сохранения (без рестарта бота).
+      </div>
+    {% endif %}
+  {% else %}
+    {% if setting.key == 'trial_days' %}
+      <input type="number" min="1" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}">
+    {% elif setting.key == 'free_renewal_days' %}
+      <input type="number" min="1" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}">
+    {% elif setting.key == 'partner_min_withdraw_rub' %}
+      <input type="number" min="1" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}">
+    {% elif setting.key in ['trial_limit_ip','partner_percent_rub','remnawave_default_traffic_limit_gb','ref_bonus_on_join_days','ref_bonus_on_payment_days'] %}
+      <input type="number" min="0" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}">
+    {% else %}
+      <input type="text" class="sp-input" id="{{ setting.key }}" name="{{ setting.key }}" value="{{ setting.value }}" {% if category == '🔗 Ссылки' %}placeholder="https://…" autocomplete="off"{% endif %}>
+    {% endif %}
+  {% endif %}
+
+  {% if setting.key == 'ref_bonus_on_join_days' %}
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">При <strong>0</strong> бонус за первое подключение приглашённого не начисляется (вебхук <code>user.first_connected</code>).</div>
+  {% elif setting.key == 'ref_bonus_on_payment_days' %}
+    <div class="hint mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">Для работы нужно значение <strong>&gt; 0</strong>.</div>
+  {% elif setting.key == 'partner_percent_rub' %}
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">Индивидуальный % в карточке пользователя перекрывает это значение.</div>
+  {% elif setting.key == 'partner_min_withdraw_rub' %}
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">Порог для кнопки «Запросить вывод» в партнёрке (минимум 1 ₽).</div>
+  {% elif setting.key == 'trial_days' %}
+    <div class="hint mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">Минимум <strong>1</strong> день для пробного периода.</div>
+  {% elif setting.key == 'free_renewal_days' %}
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">Продление по бесплатной кнопке из новостей админки.</div>
+  {% elif setting.key == 'remnawave_default_traffic_limit_gb' %}
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">При регистрации и миграции в Remnawave.</div>
+  {% elif setting.key == 'remnawave_traffic_exhausted_squad_uuid' %}
+    <div class="hint mt-2 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">
+      Squad при вебхуке NO LIMIT / исчерпании трафика; несколько UUID через запятую. Пусто — только уведомление.
+    </div>
+  {% endif %}
+
+  {% if setting.key == 'web_2ip_token' %}
+    <div class="text-[12px] mt-2">
+      <a href="https://2ip.ru/api-token/" target="_blank" rel="noopener noreferrer" class="text-[rgb(var(--admin-accent))] hover:underline">Получить токен 2ip</a>
+    </div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="tw-anim gen-settings space-y-4">
+  <div class="min-w-0 pt-2">
+    <h1 class="text-[22px] font-semibold tracking-tight flex items-center gap-2.5 flex-wrap">
+      <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg shrink-0 bg-[rgb(var(--admin-accent))]/15 text-[rgb(var(--admin-accent))]">
+        <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+      </span>
+      Основные настройки
+    </h1>
+    <p class="text-[13px] tw-text-muted2 mt-1 leading-relaxed max-w-3xl">
+      Домены, токены, оплата и безопасность. Секретные поля не подставляются менеджером паролей до клика в поле.
+    </p>
+  </div>
+
+  <form method="post" id="gen-settings-form" class="space-y-3" autocomplete="off">
+    <div class="gen-save-toolbar">
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+        Сохранить все настройки
+      </button>
+    </div>
+
+    <div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-hidden="true">
+      <input type="text" name="gen_honey_user" tabindex="-1" autocomplete="username">
+      <input type="password" name="gen_honey_pass" tabindex="-1" autocomplete="current-password">
+    </div>
+
+    <input type="hidden" name="registration_protection_method" id="registration_protection_method_hidden" value="{{ registration_protection_method }}">
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const select = document.getElementById('registration_protection_method');
+        const hidden = document.getElementById('registration_protection_method_hidden');
+        if (select && hidden) {
+          select.addEventListener('change', function() { hidden.value = this.value; });
+          hidden.value = select.value;
+        }
+      });
+    </script>
+
+    {% set tix = namespace(i=0) %}
+    <div class="sp-tabs-wrap">
+    <div class="sp-tabs">
+      {% for category, settings in grouped_settings.items() %}
+        {% if settings %}
+          <div class="sp-tab {% if tix.i == 0 %}active{% endif %}" role="button" tabindex="0" data-tab="g{{ tix.i }}">{{ category }}</div>
+          {% set tix.i = tix.i + 1 %}
+        {% endif %}
+      {% endfor %}
+      {% if current_user.is_admin %}
+        <div class="sp-tab" role="button" tabindex="0" data-tab="moderator">👤 Модератор</div>
+      {% endif %}
+    </div>
+    </div>
+
+    {% set pix = namespace(i=0) %}
+    {% for category, settings in grouped_settings.items() %}
+      {% if settings %}
+        <div class="sp-pane sp-card {% if pix.i == 0 %}active{% endif %}" data-pane="g{{ pix.i }}">
+          <div class="sp-card-head">{{ category }}</div>
+          <div class="sp-card-body space-y-1">
+            {% if category == '🔒 Безопасность' %}
+              <div class="hint mb-4 rounded-lg border border-[rgb(var(--admin-accent))]/25 bg-[rgb(var(--admin-accent))]/08 px-3 py-2">
+                Тексты капчи и сообщений защиты от ботов (<code class="text-[11px]">bot_protection_*_text</code>) редактируются в
+                <a href="{{ url_for('admin.settings_texts') }}" class="underline font-medium text-[rgb(var(--admin-accent))]">Тексты → Защита от ботов</a>.
+              </div>
+
+              {# ── IP-whitelist для веб-админки ─────────────────────────── #}
+              <div class="ipw-card{% if ipw_enabled %} is-on{% else %} is-off{% endif %}" id="ipwCard">
+                <div class="ipw-head">
+                  <div class="ipw-icon"><i data-lucide="shield-check" class="w-4 h-4"></i></div>
+                  <div class="ipw-info">
+                    <div class="ipw-title">Whitelist IP веб-админки</div>
+                    <div class="ipw-sub">Доступ к админке разрешён только с указанных адресов. Loopback (127.0.0.1, ::1) разрешён всегда.</div>
+                  </div>
+                  <span class="ipw-status">{% if ipw_enabled %}Включено{% else %}Выключено{% endif %}</span>
+                  <label class="tw-switch ipw-master" title="Включить/выключить whitelist">
+                    <input type="checkbox" id="admin_ip_whitelist_enabled" name="admin_ip_whitelist_enabled" value="1"
+                           {% if ipw_enabled %}checked{% endif %} data-ipw-master>
+                    <span class="track"></span>
+                    <span class="thumb"></span>
+                  </label>
+                </div>
+                <div class="ipw-body">
+                  <div class="ipw-current">
+                    <span class="ipw-current-label">Ваш IP сейчас</span>
+                    <code class="ipw-current-ip" id="ipwCurrentIp">{{ ipw_client_ip or '—' }}</code>
+                    {% if ipw_client_ip %}
+                    <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm ipw-add-my"
+                            onclick="ipwAddMyIp()" title="Добавить мой IP в правила">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i> Добавить мой IP
+                    </button>
+                    {% endif %}
+                  </div>
+
+                  <label class="block text-[12px] font-semibold mt-3 mb-1" for="admin_ip_whitelist">
+                    <code class="text-[11px] font-mono text-[var(--admin-text-muted)]">admin_ip_whitelist</code>
+                    <span class="text-[11px] font-normal text-[var(--admin-text-muted)] ml-2">IP/CIDR через запятую</span>
+                  </label>
+                  <textarea id="admin_ip_whitelist" name="admin_ip_whitelist"
+                            class="sp-textarea ipw-textarea font-mono"
+                            rows="3"
+                            placeholder="1.2.3.4, 5.6.7.0/24, 2001:db8::/32"
+                            spellcheck="false">{{ ipw_raw }}</textarea>
+
+                  {% if ipw_rules %}
+                  <div class="ipw-rules">
+                    {% for r in ipw_rules %}
+                      <span class="ipw-rule">
+                        <i data-lucide="check" class="w-3 h-3"></i>
+                        <code>{{ r }}</code>
+                      </span>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+
+                  <div class="hint mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                    Если случайно отрезали себе доступ — сбросьте через SQL:
+                    <code class="text-[11px] block mt-1">sqlite3 vpn_bot.db "UPDATE settings SET value='0' WHERE key='admin_ip_whitelist_enabled'"</code>
+                  </div>
+                </div>
+              </div>
+
+              <script>
+              (function(){
+                function syncIpwCard() {
+                  var card = document.getElementById('ipwCard');
+                  if (!card) return;
+                  var input = card.querySelector('input[data-ipw-master]');
+                  if (!input) return;
+                  var on = !!input.checked;
+                  card.classList.toggle('is-on', on);
+                  card.classList.toggle('is-off', !on);
+                  var st = card.querySelector('.ipw-status');
+                  if (st) st.textContent = on ? 'Включено' : 'Выключено';
+                }
+                document.addEventListener('DOMContentLoaded', function(){
+                  var input = document.querySelector('#ipwCard input[data-ipw-master]');
+                  if (input) input.addEventListener('change', syncIpwCard);
+                  syncIpwCard();
+                });
+                window.ipwAddMyIp = function() {
+                  var ip = document.getElementById('ipwCurrentIp');
+                  var ta = document.getElementById('admin_ip_whitelist');
+                  if (!ip || !ta) return;
+                  var raw = (ip.textContent || '').trim();
+                  if (!raw || raw === '—') return;
+                  // Нормализуем в /32 или /128
+                  var withMask = raw + (raw.indexOf(':') >= 0 ? '/128' : '/32');
+                  var existing = (ta.value || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+                  if (existing.indexOf(raw) !== -1 || existing.indexOf(withMask) !== -1) {
+                    ta.focus();
+                    return;
+                  }
+                  existing.push(withMask);
+                  ta.value = existing.join(', ');
+                  ta.focus();
+                };
+              })();
+              </script>
+
+              <div class="mb-6 pb-6 border-b border-[rgb(var(--admin-border))]/35">
+                <label for="registration_protection_method" class="block text-[13px] font-semibold mb-1">
+                  <code class="text-[12px] text-[var(--admin-text-muted)]">registration_protection_method</code>
+                  <span class="text-[11px] font-semibold text-[rgb(var(--admin-accent))] ml-2">Метод при регистрации</span>
+                </label>
+                <p class="hint mb-2">Выбор одного сценария для новых пользователей.</p>
+                <select class="sp-select max-w-md" id="registration_protection_method" name="registration_protection_method">
+                  <option value="bot_protection" {% if registration_protection_method == 'bot_protection' %}selected{% endif %}>🤖 Защита от ботов</option>
+                  <option value="channel_subscription" {% if registration_protection_method == 'channel_subscription' %}selected{% endif %}>📢 Подписка на канал</option>
+                  <option value="none" {% if registration_protection_method == 'none' %}selected{% endif %}>🚫 Без защиты</option>
+                </select>
+                <div class="hint mt-3 rounded-lg border border-[rgb(var(--admin-border))] bg-[var(--admin-bg-soft)] px-3 py-2 space-y-1">
+                  <div><strong>Защита от ботов</strong> — простая задача перед пробным периодом.</div>
+                  <div><strong>Подписка на канал</strong> — проверка членства в канале.</div>
+                  <div><strong>Без защиты</strong> — пробный период сразу.</div>
+                </div>
+              </div>
+              <div class="mb-6 pb-6 border-b border-[rgb(var(--admin-border))]/35" id="channel_username_field" style="{% if registration_protection_method != 'channel_subscription' %}display: none;{% endif %}">
+                <label class="block text-[13px] font-semibold mb-1" for="channel_subscription_username"><code class="text-[12px] text-[var(--admin-text-muted)]">channel_subscription_username</code></label>
+                <p class="hint mb-2">{{ channel_subscription_username_desc }}</p>
+                <input type="text" class="sp-input max-w-xl" id="channel_subscription_username" name="channel_subscription_username" value="{{ channel_subscription_username }}" placeholder="@channel или -1001234567890" autocomplete="off">
+                <p class="hint mt-2">Бот должен быть администратором канала.</p>
+              </div>
+              <div class="mb-2" id="channel_message_field" style="{% if registration_protection_method != 'channel_subscription' %}display: none;{% endif %}">
+                <label class="block text-[13px] font-semibold mb-1" for="channel_subscription_message"><code class="text-[12px] text-[var(--admin-text-muted)]">channel_subscription_message</code></label>
+                <p class="hint mb-2">{{ channel_subscription_message_desc }}</p>
+                <textarea class="sp-textarea max-w-3xl" id="channel_subscription_message" name="channel_subscription_message" rows="3">{{ channel_subscription_message }}</textarea>
+              </div>
+              <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                  var regSel = document.getElementById('registration_protection_method');
+                  if (!regSel) return;
+                  regSel.addEventListener('change', function() {
+                    var method = this.value;
+                    var u = document.getElementById('channel_username_field');
+                    var m = document.getElementById('channel_message_field');
+                    var show = method === 'channel_subscription';
+                    if (u) u.style.display = show ? 'block' : 'none';
+                    if (m) m.style.display = show ? 'block' : 'none';
+                  });
+                });
+              </script>
+            {% endif %}
+
+            {% if category == '💳 Методы оплаты' %}
+              {# Порядок платёжных систем — превью как в боте / кабинете #}
+              <input type="hidden" name="payment_methods_order" id="paymentMethodsOrder"
+                     value='{{ payment_methods_order_json|e }}'>
+              <div class="pay-order-editor menu-layout-grid mb-5 max-w-4xl">
+                <div class="menu-layout-preview-col">
+                  <div class="tg-preview">
+                    <div class="tg-preview-top">
+                      <i data-lucide="smartphone" class="w-4 h-4"></i>
+                      <span>Предпросмотр · Способы оплаты</span>
+                    </div>
+                    <div class="tg-preview-chat">
+                      <div class="tg-preview-bubble">💳 <b>Выберите способ оплаты</b><br><span style="font-size:11px;opacity:.8">Продление · докупка ГБ · расширение лимита</span></div>
+                    </div>
+                    <div id="payOrderKeyboard" class="tg-preview-kbd pay-order-kbd" aria-label="Порядок платёжных методов"></div>
+                  </div>
+                </div>
+                <div class="menu-layout-aside">
+                  <p class="menu-layout-aside-title">Как редактировать</p>
+                  <ul class="menu-layout-tips">
+                    <li><i data-lucide="grip-vertical"></i><span>Перетащите способ оплаты, чтобы изменить порядок в боте и кабинете</span></li>
+                    <li><i data-lucide="chevrons-up-down"></i><span>Стрелки слева — переместить выше или ниже</span></li>
+                    <li><i data-lucide="globe"></i><span>Метка «только бот» — не показывается на сайте (Stars, CryptoBot и т.д.)</span></li>
+                    <li><i data-lucide="power"></i><span>Приглушённые кнопки — провайдер выключен или не настроен</span></li>
+                  </ul>
+                  <div id="payOrderSelectionPanel" class="menu-layout-selection">
+                    <div class="menu-layout-selection-name" id="payOrderSelName">—</div>
+                    <div class="menu-layout-selection-key" id="payOrderSelKey">—</div>
+                    <div class="menu-layout-selection-actions">
+                      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-pay-order-act="up">↑ Выше</button>
+                      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-pay-order-act="down">↓ Ниже</button>
+                    </div>
+                  </div>
+                  <button type="button" id="payOrderResetBtn" class="tw-btn tw-btn-ghost tw-btn-sm mt-3">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    Сбросить порядок
+                  </button>
+                </div>
+              </div>
+              {# Группы платёжных провайдеров: иконка + master-тумблер в head, поля внутри. #}
+              <div class="pay-list">
+                {% for grp in payment_groups %}
+                  <div class="pay-card{% if grp.master and grp.master.value == '1' %} is-on{% else %} is-off{% endif %}" data-pay-card data-pay-id="{{ grp.id }}">
+                    <div class="pay-card-head">
+                      <div class="pay-card-icon">
+                        <img src="{{ url_for('admin.admin_static', filename=grp.icon) }}?v={{ pwa_cache_version }}"
+                             alt="" loading="lazy" decoding="async">
+                      </div>
+                      <div class="pay-card-info">
+                        <div class="pay-card-title">{{ grp.name }}</div>
+                        {% if grp.sub %}<div class="pay-card-sub">{{ grp.sub }}</div>{% endif %}
+                      </div>
+                      <span class="pay-card-status">{% if grp.master and grp.master.value == '1' %}Включено{% else %}Выключено{% endif %}</span>
+                      {% if grp.master %}
+                      <label class="tw-switch pay-card-master" title="{{ grp.master.description }}">
+                        <input type="checkbox"
+                               id="{{ grp.master.key }}"
+                               name="{{ grp.master.key }}"
+                               value="1"
+                               {% if grp.master.value == '1' %}checked{% endif %}
+                               data-pay-master>
+                        <span class="track"></span>
+                        <span class="thumb"></span>
+                      </label>
+                      {% endif %}
+                    </div>
+                    {% if grp.fields or grp.webhook_path %}
+                    <div class="pay-card-body space-y-1">
+                      {% if grp.webhook_path %}
+                        <div class="pay-webhook" data-pay-webhook-row>
+                          <span class="pay-webhook-label">Webhook URL</span>
+                          {% if grp.webhook_url %}
+                            <code class="pay-webhook-url" data-pay-webhook-url>{{ grp.webhook_url }}</code>
+                            <button type="button" class="gen-icon-btn pay-webhook-copy"
+                                    onclick="genCopyWebhook(this)" title="Скопировать"
+                                    aria-label="Скопировать webhook URL">
+                              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                          {% else %}
+                            <code class="pay-webhook-url pay-webhook-url--placeholder">
+                              &lt;connect_page_url&gt;{{ grp.webhook_path }}
+                            </code>
+                            <span class="pay-webhook-warn" title="Заполните connect_page_url, чтобы получить полный URL">
+                              <i data-lucide="triangle-alert" class="w-3.5 h-3.5"></i>
+                            </span>
+                          {% endif %}
+                        </div>
+                      {% endif %}
+                      {% for s in grp.fields %}
+                        {{ gen_setting_row(s, category) }}
+                      {% endfor %}
+                    </div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+
+                {% if payment_other %}
+                  <div class="pay-card pay-card--other" data-pay-card data-pay-id="other">
+                    <div class="pay-card-head">
+                      <div class="pay-card-icon pay-card-icon--lucide">
+                        <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+                      </div>
+                      <div class="pay-card-info">
+                        <div class="pay-card-title">Другое</div>
+                        <div class="pay-card-sub">Промокод, ручной перевод и доп. ссылки</div>
+                      </div>
+                    </div>
+                    <div class="pay-card-body space-y-1">
+                      {% for s in payment_other %}
+                        {{ gen_setting_row(s, category) }}
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+
+                {% if payment_leftover %}
+                  <div class="pay-card pay-card--other" data-pay-card data-pay-id="leftover">
+                    <div class="pay-card-head">
+                      <div class="pay-card-icon pay-card-icon--lucide">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                      </div>
+                      <div class="pay-card-info">
+                        <div class="pay-card-title">Прочие настройки оплаты</div>
+                      </div>
+                    </div>
+                    <div class="pay-card-body space-y-1">
+                      {% for s in payment_leftover %}
+                        {{ gen_setting_row(s, category) }}
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+              </div>
+            {% else %}
+              {% for setting in settings %}
+                {{ gen_setting_row(setting, category) }}
+              {% endfor %}
+            {% endif %}
+          </div>
+        </div>
+        {% set pix.i = pix.i + 1 %}
+      {% endif %}
+    {% endfor %}
+
+    {% if current_user.is_admin %}
+    <div class="sp-pane sp-card" data-pane="moderator">
+      <div class="sp-card-head">👤 Доступ модератора</div>
+      <div class="sp-card-body space-y-5">
+        <p class="hint">Пароль и список разделов. Модератор не видит «Настройки» и панели серверов.</p>
+        <div>
+          <label class="block text-[13px] font-semibold mb-2" for="moderator_web_password">Пароль модератора</label>
+          <div class="flex gap-2 flex-wrap items-stretch max-w-xl">
+            <input type="password" class="sp-input flex-1 min-w-[200px]" id="moderator_web_password" name="moderator_web_password" value="{{ moderator_web_password }}" placeholder="Пусто — вход модератора отключён" autocomplete="new-password" data-lpignore="true">
+            <button class="gen-icon-btn shrink-0" type="button" onclick="togglePasswordVisibility('moderator_web_password')" aria-label="Показать пароль">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+        <div>
+          <span class="block text-[13px] font-semibold mb-2">Разделы</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+            {% for sid, label in [('dashboard', 'Главная'), ('users', 'Клиенты'), ('payments', 'Платежи'), ('analytics', 'Аналитика'), ('bonuses', 'Приглашения'), ('tariffs', 'Тарифы'), ('tools', 'Инструменты'), ('updates', 'Обновления')] %}
+            <div class="sp-toggle-row">
+              <label class="tw-switch">
+                <input type="checkbox" id="moderator_section_{{ sid }}" name="moderator_section_{{ sid }}" value="1" {% if sid in moderator_sections %}checked{% endif %}>
+                <span class="track"></span>
+                <span class="thumb"></span>
+              </label>
+              <div class="sp-toggle-text">
+                <label for="moderator_section_{{ sid }}" class="sp-toggle-title">{{ label }}</label>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </form>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var root = document.querySelector('.gen-settings');
+  if (!root) return;
+
+  function bindHorizontalTabScroll(el) {
+    if (!el || el.dataset.tabWheelBound === '1') return;
+    el.dataset.tabWheelBound = '1';
+    el.addEventListener('wheel', function(e) {
+      if (el.scrollWidth <= el.clientWidth + 1) return;
+      var dx = e.deltaX;
+      var dy = e.deltaY;
+      if (Math.abs(dx) < Math.abs(dy)) dx = dy;
+      if (!dx) return;
+      var prev = el.scrollLeft;
+      el.scrollLeft += dx;
+      if (el.scrollLeft !== prev) e.preventDefault();
+    }, { passive: false });
+  }
+
+  var tabsBar = root.querySelector('.sp-tabs');
+  bindHorizontalTabScroll(tabsBar);
+
+  root.querySelectorAll('.sp-tab').forEach(function(t) {
+    t.addEventListener('click', function() {
+      root.querySelectorAll('.sp-tab').forEach(function(x) { x.classList.remove('active'); });
+      root.querySelectorAll('.sp-pane').forEach(function(x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      try {
+        t.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+      } catch (_) { t.scrollIntoView(false); }
+      var pane = root.querySelector('.sp-pane[data-pane="' + t.dataset.tab + '"]');
+      if (pane) pane.classList.add('active');
+      if (window.lucide) lucide.createIcons();
+    });
+    t.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.click(); }
+    });
+  });
+
+  root.querySelectorAll('.tw-switch input[type="checkbox"]').forEach(function(sw) {
+    sw.addEventListener('change', function() {
+      var row = this.closest('.sp-toggle-row');
+      var st = row && row.querySelector('.gen-switch-status');
+      if (st) st.textContent = this.checked ? 'Включено' : 'Выключено';
+      this.value = this.checked ? '1' : '0';
+    });
+  });
+
+  // ── Карточки платёжных провайдеров: master-тумблер ↔ статус карточки ──
+  root.querySelectorAll('.pay-card[data-pay-card]').forEach(function(card) {
+    var master = card.querySelector('input[data-pay-master]');
+    if (!master) return;
+    function syncCard() {
+      var on = master.checked;
+      card.classList.toggle('is-on', on);
+      card.classList.toggle('is-off', !on);
+      var st = card.querySelector('.pay-card-status');
+      if (st) st.textContent = on ? 'Включено' : 'Выключено';
+    }
+    master.addEventListener('change', syncCard);
+    syncCard();
+  });
+
+  var form = document.getElementById('gen-settings-form');
+  if (form) {
+    form.querySelectorAll('input[type="password"]').forEach(function(inp) {
+      inp.setAttribute('readonly', 'readonly');
+      inp.addEventListener('focus', function unlock() {
+        inp.removeAttribute('readonly');
+        inp.removeEventListener('focus', unlock);
+      });
+    });
+  }
+
+  if (window.lucide) lucide.createIcons();
+});
+
+function genCopyWebhook(btn) {
+  if (!btn) return;
+  var row = btn.closest('.pay-webhook');
+  var u = row && row.querySelector('[data-pay-webhook-url]');
+  if (!u) return;
+  var text = (u.textContent || '').trim();
+  if (!text) return;
+  function flash() {
+    btn.classList.add('is-copied');
+    var orig = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i>';
+    if (window.lucide) try { lucide.createIcons(); } catch(_) {}
+    setTimeout(function() {
+      btn.innerHTML = orig;
+      btn.classList.remove('is-copied');
+      if (window.lucide) try { lucide.createIcons(); } catch(_) {}
+    }, 1200);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(flash).catch(function() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        flash();
+      } catch (_) {}
+    });
+  } else {
+    try {
+      var ta2 = document.createElement('textarea');
+      ta2.value = text; ta2.style.position = 'fixed'; ta2.style.opacity = '0';
+      document.body.appendChild(ta2); ta2.select();
+      document.execCommand('copy'); document.body.removeChild(ta2);
+      flash();
+    } catch (_) {}
+  }
+}
+
+function togglePasswordVisibility(inputId) {
+  var input = document.getElementById(inputId);
+  if (!input) return;
+  var btn = input.closest('.flex')?.querySelector('button.gen-icon-btn');
+  if (!btn) return;
+  var reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  var iconName = reveal ? 'eye-off' : 'eye';
+  btn.innerHTML = '';
+  var ic = document.createElement('i');
+  ic.setAttribute('data-lucide', iconName);
+  ic.className = 'w-4 h-4';
+  btn.appendChild(ic);
+  if (window.lucide) lucide.createIcons();
+}
+
+(function initPayOrderEditor() {
+  var kb = document.getElementById('payOrderKeyboard');
+  var hidden = document.getElementById('paymentMethodsOrder');
+  if (!kb || !hidden) return;
+
+  var payOrderMeta = {{ payment_order_meta|tojson }};
+  var payOrderState = {{ payment_methods_order|tojson }};
+  var payOrderDefault = {{ default_payment_methods_order|tojson }};
+  if (!Array.isArray(payOrderState)) {
+    try { payOrderState = JSON.parse(payOrderState); } catch (e) { payOrderState = []; }
+  }
+  if (!Array.isArray(payOrderState) || !payOrderState.length) {
+    payOrderState = (Array.isArray(payOrderDefault) ? payOrderDefault : []).slice();
+  }
+  var payOrderSelected = null;
+  var payDragId = null;
+  var staticBase = (function() {
+    var sample = {{ url_for('admin.admin_static', filename='play/yookassa.svg')|tojson }};
+    return sample.replace(/play\/yookassa\.svg(\?.*)?$/, '');
+  })();
+  var cacheVer = {{ pwa_cache_version|tojson }};
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function syncHidden() {
+    hidden.value = JSON.stringify(payOrderState);
+  }
+
+  function isMethodEnabled(id) {
+    var card = document.querySelector('.pay-card[data-pay-id="' + id + '"]');
+    if (card) return card.classList.contains('is-on');
+    if (id === 'promo') {
+      var p = document.querySelector('input[name="show_payment_promo_code"]');
+      return p ? p.checked : (payOrderMeta[id] && payOrderMeta[id].enabled);
+    }
+    if (id === 'manual') {
+      var m = document.querySelector('input[name="show_payment_manual"]');
+      return m ? m.checked : (payOrderMeta[id] && payOrderMeta[id].enabled);
+    }
+    return payOrderMeta[id] ? payOrderMeta[id].enabled : true;
+  }
+
+  function selectPayMethod(id) {
+    payOrderSelected = id;
+    var meta = payOrderMeta[id] || {};
+    var panel = document.getElementById('payOrderSelectionPanel');
+    document.getElementById('payOrderSelName').textContent = meta.label || id;
+    document.getElementById('payOrderSelKey').textContent = id;
+    if (panel) panel.classList.add('is-visible');
+    kb.querySelectorAll('.tg-kbd-btn').forEach(function(b) {
+      b.classList.toggle('is-selected', b.dataset.payId === id);
+    });
+  }
+
+  function clearPaySelection() {
+    payOrderSelected = null;
+    var panel = document.getElementById('payOrderSelectionPanel');
+    if (panel) panel.classList.remove('is-visible');
+    kb.querySelectorAll('.tg-kbd-btn').forEach(function(b) { b.classList.remove('is-selected'); });
+  }
+
+  function movePayMethod(id, dir) {
+    var idx = payOrderState.indexOf(id);
+    if (idx < 0) return;
+    var target = idx + dir;
+    if (target < 0 || target >= payOrderState.length) return;
+    var tmp = payOrderState[idx];
+    payOrderState[idx] = payOrderState[target];
+    payOrderState[target] = tmp;
+    renderPayOrder();
+    selectPayMethod(id);
+    syncHidden();
+  }
+
+  function renderPayOrder() {
+    kb.innerHTML = '';
+    payOrderState.forEach(function(id, idx) {
+      var meta = payOrderMeta[id] || { id: id, text: id, label: id };
+      var enabled = isMethodEnabled(id);
+      var rowEl = document.createElement('div');
+      rowEl.className = 'tg-kbd-row pay-order-row';
+      rowEl.dataset.payRow = String(idx);
+
+      var tools = document.createElement('div');
+      tools.className = 'tg-kbd-row-tools';
+      tools.innerHTML =
+        '<button type="button" class="tg-kbd-row-tool pay-order-up" title="Выше"' + (idx === 0 ? ' disabled' : '') + '><i data-lucide="chevron-up" class="w-3 h-3"></i></button>' +
+        '<button type="button" class="tg-kbd-row-tool pay-order-down" title="Ниже"' + (idx === payOrderState.length - 1 ? ' disabled' : '') + '><i data-lucide="chevron-down" class="w-3 h-3"></i></button>';
+      tools.querySelector('.pay-order-up').addEventListener('click', function(e) { e.stopPropagation(); movePayMethod(id, -1); });
+      tools.querySelector('.pay-order-down').addEventListener('click', function(e) { e.stopPropagation(); movePayMethod(id, 1); });
+
+      var inner = document.createElement('div');
+      inner.className = 'tg-kbd-row-inner pay-order-row-inner';
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      var styleCls = meta.style ? ' tg-kbd-btn--' + meta.style : '';
+      btn.className = 'tg-kbd-btn tg-kbd-btn--pay' + styleCls + (enabled ? '' : ' is-disabled-preview') + (payOrderSelected === id ? ' is-selected' : '');
+      btn.dataset.payId = id;
+      btn.draggable = true;
+      btn.title = meta.label || id;
+
+      var innerHtml = '';
+      if (meta.icon) {
+        innerHtml += '<img src="' + staticBase + meta.icon + '?v=' + encodeURIComponent(cacheVer) + '" alt="" class="tg-kbd-pay-icon" loading="lazy">';
+      }
+      innerHtml += '<span class="tg-kbd-btn-label">' + escHtml(meta.text || meta.label) + '</span>';
+      if (meta.bot_only) innerHtml += '<span class="tg-kbd-btn-badge">только бот</span>';
+      if (!enabled) innerHtml += '<span class="tg-kbd-btn-badge tg-kbd-btn-badge--off">выключено</span>';
+      btn.innerHTML = innerHtml;
+
+      btn.addEventListener('click', function(e) { e.stopPropagation(); selectPayMethod(id); });
+      btn.addEventListener('dragstart', function(e) {
+        payDragId = id;
+        btn.classList.add('is-dragging');
+        if (e.dataTransfer) { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; }
+      });
+      btn.addEventListener('dragend', function() {
+        payDragId = null;
+        btn.classList.remove('is-dragging');
+        kb.querySelectorAll('.pay-order-row').forEach(function(r) { r.classList.remove('is-drop-target'); });
+      });
+
+      inner.appendChild(btn);
+      inner.addEventListener('dragover', function(e) { e.preventDefault(); rowEl.classList.add('is-drop-target'); });
+      inner.addEventListener('dragleave', function() { rowEl.classList.remove('is-drop-target'); });
+      inner.addEventListener('drop', function(e) {
+        e.preventDefault();
+        rowEl.classList.remove('is-drop-target');
+        var dragId = payDragId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+        if (!dragId || dragId === id) return;
+        var fromIdx = payOrderState.indexOf(dragId);
+        var toIdx = payOrderState.indexOf(id);
+        if (fromIdx < 0 || toIdx < 0) return;
+        payOrderState.splice(fromIdx, 1);
+        payOrderState.splice(toIdx, 0, dragId);
+        renderPayOrder();
+        selectPayMethod(dragId);
+        syncHidden();
+      });
+
+      rowEl.appendChild(inner);
+      rowEl.appendChild(tools);
+      kb.appendChild(rowEl);
+    });
+
+    if (window.lucide) try { lucide.createIcons(); } catch(_) {}
+  }
+
+  document.getElementById('payOrderResetBtn')?.addEventListener('click', function() {
+    if (!confirm('Сбросить порядок платёжных систем к дефолту?')) return;
+    payOrderState = payOrderDefault.slice();
+    clearPaySelection();
+    renderPayOrder();
+    syncHidden();
+  });
+
+  document.getElementById('payOrderSelectionPanel')?.addEventListener('click', function(e) {
+    var act = e.target.closest('[data-pay-order-act]');
+    if (!act || !payOrderSelected) return;
+    movePayMethod(payOrderSelected, act.dataset.payOrderAct === 'up' ? -1 : 1);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.pay-order-editor')) return;
+    if (!e.target.closest('.tg-kbd-btn') && !e.target.closest('#payOrderSelectionPanel')) clearPaySelection();
+  });
+
+  document.querySelectorAll('input[data-pay-master], input[name="show_payment_promo_code"], input[name="show_payment_manual"]').forEach(function(inp) {
+    inp.addEventListener('change', function() { renderPayOrder(); });
+  });
+
+  renderPayOrder();
+  syncHidden();
+})();
+</script>
+{% endblock %}

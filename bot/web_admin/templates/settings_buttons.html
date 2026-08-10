@@ -1,0 +1,686 @@
+{% extends "base.html" %}
+{% block title %}Стиль кнопок · {{ super() }}{% endblock %}
+{% block content %}
+<div class="tw-anim px-2 sm:px-4 py-4 min-w-0 max-w-full">
+
+    <div class="flex items-start justify-between gap-3 mb-4 flex-wrap">
+        <div>
+            <h1 class="text-xl font-semibold flex items-center gap-2">
+                <i data-lucide="mouse-pointer-click" class="w-5 h-5"></i>
+                Стиль и тексты кнопок
+            </h1>
+            <p class="text-sm text-[color:var(--admin-text-muted)] mt-1">
+                Текст, цвет, premium-эмодзи и режим открытия (URL / WebApp) inline-кнопок бота.
+                Полный список текстов также доступен в разделе
+                <a href="{{ url_for('admin.settings_texts') }}" class="underline">Тексты</a>.
+            </p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="button" id="resetAllBtn" class="tw-btn tw-btn-secondary tw-btn-sm" title="Сбросить ВСЕ к дефолтам реестра (и тексты тоже)">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                Сбросить всё
+            </button>
+            <button type="button" id="expandAllBtn" class="tw-btn tw-btn-ghost tw-btn-sm">
+                <i data-lucide="chevrons-up-down" class="w-3.5 h-3.5"></i>
+                Свернуть/развернуть
+            </button>
+        </div>
+    </div>
+
+    <div class="grp-card mb-3" id="mainMenuLayoutCard">
+        <div class="grp-head">
+            <div class="grp-title" data-grp-toggle>
+                <i data-lucide="chevron-down" class="w-4 h-4 grp-chevron text-[color:var(--admin-text-muted)]"></i>
+                <span>Раскладка главного меню</span>
+            </div>
+            <div class="grp-meta">
+                <button type="button" id="layoutResetBtn" class="tw-btn tw-btn-ghost tw-btn-sm">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    Сбросить
+                </button>
+            </div>
+        </div>
+        <div class="grp-body menu-layout-body">
+            <div class="menu-layout-grid">
+                <div class="menu-layout-preview-col">
+                    <div class="tg-preview">
+                        <div class="tg-preview-top">
+                            <i data-lucide="smartphone" class="w-4 h-4"></i>
+                            <span>Предпросмотр клавиатуры</span>
+                        </div>
+                        <div class="tg-preview-chat">
+                            <div class="tg-preview-bubble">Главное меню бота — перетащите кнопки или используйте панель справа</div>
+                        </div>
+                        <div id="layoutKeyboard" class="tg-preview-kbd" aria-label="Раскладка главного меню"></div>
+                    </div>
+                </div>
+                <div class="menu-layout-aside">
+                    <p class="menu-layout-aside-title">Как редактировать</p>
+                    <ul class="menu-layout-tips">
+                        <li><i data-lucide="grip-vertical"></i><span>Перетащите кнопку в другой ряд или поменяйте порядок внутри ряда</span></li>
+                        <li><i data-lucide="rows-2"></i><span>Стрелки слева от ряда — переместить всю строку выше или ниже</span></li>
+                        <li><i data-lucide="mouse-pointer-click"></i><span>Клик по кнопке — панель действий: в свой ряд, объединить с соседней</span></li>
+                        <li><i data-lucide="eye-off"></i><span>Метка «условно» — кнопка показывается только при выполнении условий (Remnawave, URL и т.д.)</span></li>
+                    </ul>
+                    <div id="layoutSelectionPanel" class="menu-layout-selection">
+                        <div class="menu-layout-selection-name" id="layoutSelName">—</div>
+                        <div class="menu-layout-selection-key" id="layoutSelKey">—</div>
+                        <div class="menu-layout-selection-actions">
+                            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-layout-act="btn-up">↑ Выше</button>
+                            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-layout-act="btn-down">↓ Ниже</button>
+                            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-layout-act="btn-left">← Влево</button>
+                            <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" data-layout-act="btn-right">→ Вправо</button>
+                            <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" data-layout-act="btn-own-row">Отдельный ряд</button>
+                            <button type="button" class="tw-btn tw-btn-ghost tw-btn-sm" data-layout-act="btn-merge-next">+ След. ряд</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="space-y-3 max-w-6xl">
+            {% for grp in groups %}
+            <div class="grp-card {% if grp.toggle_key and not grp.enabled %}disabled{% endif %}"
+                 data-grp="{{ grp.id }}"
+                 {% if grp.toggle_key %}data-grp-toggle-key="{{ grp.toggle_key }}"{% endif %}>
+                <div class="grp-head">
+                    <div class="grp-title" data-grp-toggle>
+                        <i data-lucide="chevron-down" class="w-4 h-4 grp-chevron text-[color:var(--admin-text-muted)]"></i>
+                        <span>{{ grp.title }}</span>
+                        <span class="grp-count">{{ grp.buttons|length }}</span>
+                    </div>
+                    <div class="grp-meta">
+                        {% if grp.toggle_key %}
+                        <span class="text-[11px] text-[color:var(--admin-text-muted)]" data-grp-state-label>
+                            {{ 'Включено' if grp.enabled else 'Выключено' }}
+                        </span>
+                        <label class="tw-switch" title="Показать/скрыть всю группу в боте">
+                            <input type="checkbox" data-grp-enabled {% if grp.enabled %}checked{% endif %}>
+                            <span class="track"></span>
+                            <span class="thumb"></span>
+                        </label>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="grp-body">
+                    {% for it in grp.buttons %}
+                    <div class="btn-row {% if it.has_toggle and not it.enabled %}btn-disabled{% endif %}"
+                         data-key="{{ it.key }}"
+                         data-default-text="{{ it.default_text }}"
+                         data-default-style="{{ it.default_style }}"
+                         data-default-icon="{{ it.default_icon }}"
+                         data-default-kind="{{ it.default_kind }}"
+                         data-kind-aware="{{ '1' if it.kind_aware else '0' }}"
+                         data-has-toggle="{{ '1' if it.has_toggle else '0' }}">
+
+                        <div class="btn-name">
+                            <div class="lbl">{{ it.label }}</div>
+                            <div class="key">{{ it.key }}</div>
+                            {% if it.has_toggle %}
+                            <div class="btn-toggle">
+                                <label class="tw-switch" title="Показать/скрыть эту кнопку в боте">
+                                    <input type="checkbox" data-btn-enabled {% if it.enabled %}checked{% endif %}>
+                                    <span class="track"></span>
+                                    <span class="thumb"></span>
+                                </label>
+                                <span data-btn-state-label>{{ 'Видно' if it.enabled else 'Скрыто' }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="btn-text-block">
+                            <label for="text_{{ it.key }}">Текст</label>
+                            <input type="text" id="text_{{ it.key }}" class="tw-input tw-input-sm" data-text
+                                   maxlength="96" value="{{ it.text }}" placeholder="{{ it.default_text }}">
+                        </div>
+
+                        <div class="stack">
+                            <label>Стиль</label>
+                            <div class="seg" data-style-seg>
+                                <button type="button" data-style="">—</button>
+                                <button type="button" data-style="primary">primary</button>
+                                <button type="button" data-style="success">success</button>
+                                <button type="button" data-style="danger">danger</button>
+                            </div>
+                            {% if it.kind_aware %}
+                            <label class="mt-1">Открывать как</label>
+                            <div class="seg" data-kind-seg>
+                                <button type="button" data-kind="url">URL</button>
+                                <button type="button" data-kind="webapp">WebApp</button>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="stack">
+                            <label>icon_custom_emoji_id</label>
+                            <input type="text" class="tw-input tw-input-sm" data-icon
+                                   placeholder="только цифры"
+                                   inputmode="numeric" pattern="\d*"
+                                   value="{{ it.icon }}">
+                        </div>
+
+                        <div class="row-actions">
+                            <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm"
+                                    data-row-reset title="Сбросить эту кнопку к дефолтам">
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+    </div>
+
+    <div class="save-bar">
+        <div class="stats">
+            Изменений в очереди: <b id="dirtyCount">0</b>
+        </div>
+        <button type="button" id="saveBtn" class="tw-btn tw-btn-primary" disabled>
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+            Сохранить
+        </button>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    const SAVE_URL  = "{{ url_for('admin.settings_buttons_save') }}";
+    const RESET_URL = "{{ url_for('admin.settings_buttons_reset') }}";
+
+    function $(sel, root) { return (root || document).querySelector(sel); }
+    function $$(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+    // Состояние кнопок: { key: { text, style, icon, kind, dirty } }
+    const state = {};
+    const initial = {};
+    // Состояние тумблеров групп: { gid: { enabled, dirty } }
+    const groupState = {};
+    const groupInitial = {};
+
+    // ── Редактор раскладки главного меню ─────────────────────────────────
+    const layoutButtonMeta = {{ layout_button_meta|tojson }};
+    let layoutInitial = {{ main_menu_layout|tojson }};
+    let layoutState = JSON.parse(JSON.stringify(layoutInitial));
+    let layoutDirty = false;
+    const layoutDefault = {{ default_main_menu_layout|tojson }};
+    let layoutSelected = null; // { row, col, key }
+    let dragKey = null;
+
+    function escHtml(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function getButtonDisplay(key) {
+        if (state[key]) {
+            return { text: state[key].text || layoutButtonMeta[key]?.text || key, style: state[key].style || layoutButtonMeta[key]?.style || '' };
+        }
+        const m = layoutButtonMeta[key];
+        return m ? { text: m.text || key, style: m.style || '' } : { text: key, style: '' };
+    }
+
+    function syncLayoutFromState() {
+        layoutState = JSON.parse(JSON.stringify(layoutInitial));
+    }
+
+    function serializeLayout() {
+        return JSON.parse(JSON.stringify(layoutState));
+    }
+
+    function markLayoutDirty() {
+        layoutDirty = JSON.stringify(layoutState) !== JSON.stringify(layoutInitial);
+        updateDirtyCounter();
+    }
+
+    function findButtonPos(key) {
+        for (let r = 0; r < layoutState.length; r++) {
+            const c = layoutState[r].indexOf(key);
+            if (c >= 0) return { row: r, col: c };
+        }
+        return null;
+    }
+
+    function selectLayoutButton(row, col, key) {
+        layoutSelected = { row, col, key };
+        const panel = $('#layoutSelectionPanel');
+        const meta = layoutButtonMeta[key] || {};
+        $('#layoutSelName').textContent = meta.label || key;
+        $('#layoutSelKey').textContent = key;
+        panel?.classList.add('is-visible');
+        $$('.tg-kbd-btn').forEach(b => b.classList.toggle('is-selected', b.dataset.key === key));
+    }
+
+    function clearLayoutSelection() {
+        layoutSelected = null;
+        $('#layoutSelectionPanel')?.classList.remove('is-visible');
+        $$('.tg-kbd-btn').forEach(b => b.classList.remove('is-selected'));
+    }
+
+    function moveRow(rowIdx, dir) {
+        const target = rowIdx + dir;
+        if (target < 0 || target >= layoutState.length) return;
+        const tmp = layoutState[rowIdx];
+        layoutState[rowIdx] = layoutState[target];
+        layoutState[target] = tmp;
+        renderLayout();
+        markLayoutDirty();
+    }
+
+    function moveButton(key, action) {
+        const pos = findButtonPos(key);
+        if (!pos) return;
+        const { row, col } = pos;
+        const rowArr = layoutState[row];
+
+        if (action === 'btn-up' && row > 0) {
+            layoutState[row].splice(col, 1);
+            layoutState[row - 1].push(key);
+        } else if (action === 'btn-down' && row < layoutState.length - 1) {
+            layoutState[row].splice(col, 1);
+            layoutState[row + 1].unshift(key);
+        } else if (action === 'btn-left' && col > 0) {
+            [rowArr[col - 1], rowArr[col]] = [rowArr[col], rowArr[col - 1]];
+        } else if (action === 'btn-right' && col < rowArr.length - 1) {
+            [rowArr[col], rowArr[col + 1]] = [rowArr[col + 1], rowArr[col]];
+        } else if (action === 'btn-own-row') {
+            if (rowArr.length <= 1) return;
+            rowArr.splice(col, 1);
+            layoutState.splice(row + 1, 0, [key]);
+        } else if (action === 'btn-merge-next' && row < layoutState.length - 1) {
+            if (layoutState[row + 1].length >= 2) return;
+            rowArr.splice(col, 1);
+            layoutState[row + 1].unshift(key);
+        } else return;
+
+        layoutState = layoutState.filter(r => r.length > 0);
+        normalizeLayoutRows();
+        renderLayout();
+        const np = findButtonPos(key);
+        if (np) selectLayoutButton(np.row, np.col, key);
+        markLayoutDirty();
+    }
+
+    function normalizeLayoutRows() {
+        const out = [];
+        layoutState.forEach(row => {
+            if (row.length <= 2) {
+                if (row.length) out.push(row.slice());
+            } else {
+                for (let i = 0; i < row.length; i += 2) out.push(row.slice(i, i + 2));
+            }
+        });
+        layoutState = out;
+    }
+
+    function dropButtonOnRow(key, targetRow, targetCol) {
+        const from = findButtonPos(key);
+        if (!from) return;
+        layoutState[from.row].splice(from.col, 1);
+        layoutState = layoutState.filter(r => r.length > 0);
+        if (targetRow < 0) targetRow = 0;
+        if (targetRow >= layoutState.length) {
+            layoutState.push([key]);
+        } else {
+            const row = layoutState[targetRow];
+            if (targetCol == null || targetCol >= row.length) row.push(key);
+            else row.splice(targetCol, 0, key);
+        }
+        normalizeLayoutRows();
+        renderLayout();
+        const np = findButtonPos(key);
+        if (np) selectLayoutButton(np.row, np.col, key);
+        markLayoutDirty();
+    }
+
+    function renderLayout() {
+        const kb = $('#layoutKeyboard');
+        if (!kb) return;
+        kb.innerHTML = '';
+        layoutState.forEach((row, rowIdx) => {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'tg-kbd-row';
+            rowEl.dataset.rowIdx = String(rowIdx);
+
+            const tools = document.createElement('div');
+            tools.className = 'tg-kbd-row-tools';
+            tools.innerHTML = `
+                <button type="button" class="tg-kbd-row-tool layout-row-up" title="Ряд выше" ${rowIdx === 0 ? 'disabled' : ''}><i data-lucide="chevron-up" class="w-3 h-3"></i></button>
+                <button type="button" class="tg-kbd-row-tool layout-row-down" title="Ряд ниже" ${rowIdx === layoutState.length - 1 ? 'disabled' : ''}><i data-lucide="chevron-down" class="w-3 h-3"></i></button>`;
+            tools.querySelector('.layout-row-up')?.addEventListener('click', (e) => { e.stopPropagation(); moveRow(rowIdx, -1); });
+            tools.querySelector('.layout-row-down')?.addEventListener('click', (e) => { e.stopPropagation(); moveRow(rowIdx, 1); });
+
+            const inner = document.createElement('div');
+            inner.className = 'tg-kbd-row-inner';
+            inner.dataset.dropRow = String(rowIdx);
+
+            row.forEach((key, colIdx) => {
+                const disp = getButtonDisplay(key);
+                const meta = layoutButtonMeta[key] || {};
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'tg-kbd-btn' + (disp.style ? ` tg-kbd-btn--${disp.style}` : '');
+                btn.dataset.key = key;
+                btn.draggable = true;
+                btn.title = meta.label || key;
+                if (layoutSelected && layoutSelected.key === key) btn.classList.add('is-selected');
+                let html = `<span class="tg-kbd-btn-label">${escHtml(disp.text)}</span>`;
+                if (meta.conditional) html += `<span class="tg-kbd-btn-badge">условно</span>`;
+                btn.innerHTML = html;
+
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectLayoutButton(rowIdx, colIdx, key);
+                });
+                btn.addEventListener('dragstart', (e) => {
+                    dragKey = key;
+                    btn.classList.add('is-dragging');
+                    e.dataTransfer?.setData('text/plain', key);
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                btn.addEventListener('dragend', () => {
+                    dragKey = null;
+                    btn.classList.remove('is-dragging');
+                    $$('.tg-kbd-row').forEach(r => r.classList.remove('is-drop-target'));
+                });
+                inner.appendChild(btn);
+            });
+
+            inner.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                rowEl.classList.add('is-drop-target');
+            });
+            inner.addEventListener('dragleave', () => rowEl.classList.remove('is-drop-target'));
+            inner.addEventListener('drop', (e) => {
+                e.preventDefault();
+                rowEl.classList.remove('is-drop-target');
+                const key = dragKey || e.dataTransfer?.getData('text/plain');
+                if (!key) return;
+                dropButtonOnRow(key, rowIdx, null);
+            });
+
+            rowEl.appendChild(inner);
+            rowEl.appendChild(tools);
+            kb.appendChild(rowEl);
+        });
+
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function refreshLayoutButtonLabels() {
+        $$('.tg-kbd-btn').forEach(btn => {
+            const key = btn.dataset.key;
+            if (!key) return;
+            const disp = getButtonDisplay(key);
+            btn.className = 'tg-kbd-btn' + (disp.style ? ` tg-kbd-btn--${disp.style}` : '');
+            if (layoutSelected && layoutSelected.key === key) btn.classList.add('is-selected');
+            const meta = layoutButtonMeta[key] || {};
+            let html = `<span class="tg-kbd-btn-label">${escHtml(disp.text)}</span>`;
+            if (meta.conditional) html += `<span class="tg-kbd-btn-badge">условно</span>`;
+            btn.innerHTML = html;
+        });
+    }
+
+    function initLayoutEditor() {
+        renderLayout();
+
+        $('#layoutResetBtn')?.addEventListener('click', () => {
+            if (!confirm('Сбросить раскладку главного меню к дефолту?')) return;
+            layoutState = JSON.parse(JSON.stringify(layoutDefault));
+            clearLayoutSelection();
+            renderLayout();
+            markLayoutDirty();
+        });
+
+        $('#layoutSelectionPanel')?.addEventListener('click', (e) => {
+            const act = e.target.closest('[data-layout-act]')?.dataset.layoutAct;
+            if (!act || !layoutSelected) return;
+            moveButton(layoutSelected.key, act);
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#mainMenuLayoutCard')) return;
+            if (!e.target.closest('.tg-kbd-btn') && !e.target.closest('#layoutSelectionPanel')) {
+                clearLayoutSelection();
+            }
+        });
+    }
+
+    function init() {
+        initLayoutEditor();
+        // Кнопки
+        $$('.btn-row').forEach(row => {
+            const key = row.dataset.key;
+            const styleSeg = row.querySelector('[data-style-seg]');
+            const kindSeg = row.querySelector('[data-kind-seg]');
+            const textInput = row.querySelector('[data-text]');
+            const iconInput = row.querySelector('[data-icon]');
+            const toggleInput = row.querySelector('[data-btn-enabled]');
+
+            const serverStyle = row.dataset.serverStyle ?? '';
+            const serverKind = row.dataset.serverKind ?? (row.dataset.defaultKind || '');
+            const initialEnabled = toggleInput ? toggleInput.checked : true;
+
+            if (toggleInput) {
+                toggleInput.addEventListener('change', () => {
+                    state[key].enabled = toggleInput.checked;
+                    state[key].dirty = isDirty(key);
+                    row.classList.toggle('btn-disabled', !toggleInput.checked);
+                    const lbl = row.querySelector('[data-btn-state-label]');
+                    if (lbl) lbl.textContent = toggleInput.checked ? 'Видно' : 'Скрыто';
+                    updateDirtyCounter();
+                });
+            }
+
+            // Ставим активную в seg для style
+            $$('button', styleSeg).forEach(b => {
+                if (b.dataset.style === serverStyle) b.classList.add('active');
+                b.addEventListener('click', () => {
+                    $$('button', styleSeg).forEach(x => x.classList.remove('active'));
+                    b.classList.add('active');
+                    onChanged(key, row);
+                });
+            });
+            if (kindSeg) {
+                $$('button', kindSeg).forEach(b => {
+                    if (b.dataset.kind === serverKind) b.classList.add('active');
+                    b.addEventListener('click', () => {
+                        $$('button', kindSeg).forEach(x => x.classList.remove('active'));
+                        b.classList.add('active');
+                        onChanged(key, row);
+                    });
+                });
+            }
+            textInput.addEventListener('input', () => onChanged(key, row));
+            iconInput.addEventListener('input', () => {
+                iconInput.value = iconInput.value.replace(/[^0-9]/g, '');
+                onChanged(key, row);
+            });
+            row.querySelector('[data-row-reset]').addEventListener('click', async () => {
+                if (!confirm('Сбросить эту кнопку к значениям по умолчанию?')) return;
+                try {
+                    const r = await fetch(RESET_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    });
+                    const j = await r.json();
+                    if (!j.ok) throw new Error(j.error || 'reset failed');
+                    location.reload();
+                } catch (e) { alert('Ошибка: ' + e.message); }
+            });
+
+            initial[key] = {
+                text: textInput.value,
+                style: serverStyle,
+                icon: iconInput.value.trim(),
+                kind: kindSeg ? serverKind : '',
+                enabled: initialEnabled,
+            };
+            state[key] = { ...initial[key], dirty: false };
+        });
+
+        // Тумблеры групп
+        $$('[data-grp-enabled]').forEach(input => {
+            const card = input.closest('.grp-card');
+            const gid = card.dataset.grp;
+            groupInitial[gid] = { enabled: input.checked };
+            groupState[gid] = { enabled: input.checked, dirty: false };
+            input.addEventListener('change', () => {
+                groupState[gid].enabled = input.checked;
+                groupState[gid].dirty = input.checked !== groupInitial[gid].enabled;
+                card.classList.toggle('disabled', !input.checked);
+                const lbl = card.querySelector('[data-grp-state-label]');
+                if (lbl) lbl.textContent = input.checked ? 'Включено' : 'Выключено';
+                updateDirtyCounter();
+            });
+        });
+
+        // Аккордеон
+        $$('[data-grp-toggle]').forEach(h => {
+            h.addEventListener('click', (e) => {
+                // не разворачиваем когда нажимаем на тумблер
+                if (e.target.closest('.tw-switch')) return;
+                h.closest('.grp-card').classList.toggle('open');
+            });
+        });
+        $('#expandAllBtn').addEventListener('click', () => {
+            const cards = $$('.grp-card');
+            const allOpen = cards.every(c => c.classList.contains('open'));
+            cards.forEach(c => c.classList.toggle('open', !allOpen));
+        });
+
+        $('#resetAllBtn').addEventListener('click', async () => {
+            if (!confirm('Сбросить ВСЕ тексты, стили и эмодзи к дефолтам?')) return;
+            try {
+                const r = await fetch(RESET_URL, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+                });
+                const j = await r.json();
+                if (!j.ok) throw new Error(j.error || 'reset failed');
+                location.reload();
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        });
+
+        $('#saveBtn').addEventListener('click', save);
+
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function onChanged(key, row) {
+        const text = row.querySelector('[data-text]').value;
+        const style = row.querySelector('[data-style-seg] button.active')?.dataset.style ?? '';
+        const icon = row.querySelector('[data-icon]').value.trim();
+        const kindSeg = row.querySelector('[data-kind-seg]');
+        const kind = kindSeg ? (kindSeg.querySelector('button.active')?.dataset.kind ?? '') : '';
+        state[key].text = text;
+        state[key].style = style;
+        state[key].icon = icon;
+        state[key].kind = kind;
+        state[key].dirty = isDirty(key);
+        updateDirtyCounter();
+        if (layoutButtonMeta[key]) refreshLayoutButtonLabels();
+    }
+
+    function isDirty(key) {
+        const s = state[key], i = initial[key];
+        return (s.text !== i.text)
+            || (s.style !== i.style)
+            || (s.icon !== i.icon)
+            || (s.kind !== i.kind)
+            || (s.enabled !== i.enabled);
+    }
+
+    function updateDirtyCounter() {
+        const n = Object.values(state).filter(s => s.dirty).length
+                + Object.values(groupState).filter(s => s.dirty).length
+                + (layoutDirty ? 1 : 0);
+        $('#dirtyCount').textContent = String(n);
+        $('#saveBtn').disabled = n === 0;
+    }
+
+    async function save() {
+        const items = Object.entries(state)
+            .filter(([_, v]) => v.dirty)
+            .map(([key, v]) => {
+                const item = { key, text: v.text, style: v.style, icon: v.icon };
+                const row = document.querySelector(`.btn-row[data-key="${CSS.escape(key)}"]`);
+                if (row && row.dataset.kindAware === '1') item.kind = v.kind;
+                if (row && row.dataset.hasToggle === '1') item.enabled = v.enabled;
+                return item;
+            });
+        const groups = {};
+        Object.entries(groupState).forEach(([gid, v]) => {
+            if (v.dirty) groups[gid] = v.enabled;
+        });
+        if (!items.length && !Object.keys(groups).length && !layoutDirty) return;
+
+        const btn = $('#saveBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Сохраняю…';
+        if (window.lucide) lucide.createIcons();
+        try {
+            const body = { items, groups };
+            if (layoutDirty) body.layout = serializeLayout();
+            const r = await fetch(SAVE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const j = await r.json();
+            if (!j.ok) throw new Error(j.error || 'save failed');
+            items.forEach(it => {
+                initial[it.key] = {
+                    text: it.text ?? initial[it.key].text,
+                    style: it.style ?? initial[it.key].style,
+                    icon: it.icon ?? initial[it.key].icon,
+                    kind: it.kind ?? initial[it.key].kind,
+                    enabled: ('enabled' in it) ? it.enabled : initial[it.key].enabled,
+                };
+                state[it.key].dirty = false;
+            });
+            Object.keys(groups).forEach(gid => {
+                groupInitial[gid] = { enabled: groups[gid] };
+                groupState[gid].dirty = false;
+            });
+            if (layoutDirty) {
+                layoutInitial = serializeLayout();
+                layoutState = JSON.parse(JSON.stringify(layoutInitial));
+                layoutDirty = false;
+                clearLayoutSelection();
+            }
+            updateDirtyCounter();
+            btn.innerHTML = '<i data-lucide="check-check" class="w-3.5 h-3.5"></i> Сохранено';
+            setTimeout(() => {
+                btn.innerHTML = '<i data-lucide="save" class="w-3.5 h-3.5"></i> Сохранить';
+                if (window.lucide) lucide.createIcons();
+            }, 1500);
+        } catch (e) {
+            alert('Ошибка сохранения: ' + e.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="save" class="w-3.5 h-3.5"></i> Сохранить';
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+
+    // Передадим сервер-сайд значения (style/kind) в data-server-* перед init()
+    {% for grp in groups %}{% for it in grp.buttons %}
+    {
+        const _r = document.querySelector('.btn-row[data-key="{{ it.key }}"]');
+        if (_r) {
+            _r.dataset.serverStyle = "{{ it.style }}";
+            {% if it.kind_aware %}_r.dataset.serverKind = "{{ it.kind }}";{% endif %}
+        }
+    }
+    {% endfor %}{% endfor %}
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+{% endblock %}

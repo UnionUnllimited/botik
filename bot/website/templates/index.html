@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}{{ project_name }}{% endblock %}
+
+{% block content %}
+
+<!-- Hero -->
+<section class="relative overflow-hidden -mt-14">
+
+  <!-- Фон светлой темы -->
+  <div aria-hidden="true" class="pointer-events-none absolute inset-0 dark:opacity-0 transition-opacity duration-500">
+    <!-- Базовый цвет страницы — очень лёгкий холодный белый -->
+    <div class="absolute inset-0" style="background:#fafbff"></div>
+    <!-- Фиолетово-синее свечение сверху по центру (как у Linear) -->
+    <div class="absolute" style="top:-120px;left:50%;transform:translateX(-50%);width:800px;height:500px;border-radius:50%;background:radial-gradient(ellipse,rgba(139,92,246,.12) 0%,rgba(99,102,241,.08) 40%,transparent 70%)"></div>
+    <!-- Голубой акцент справа -->
+    <div class="absolute" style="top:-40px;right:-80px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(59,130,246,.1) 0%,transparent 65%)"></div>
+    <!-- Изумрудный акцент слева -->
+    <div class="absolute" style="top:80px;left:-60px;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,.08) 0%,transparent 65%)"></div>
+    <!-- Горизонтальная линия-разделитель снизу -->
+    <div class="absolute bottom-0 left-0 right-0 h-px" style="background:linear-gradient(to right,transparent,rgba(99,102,241,.15),transparent)"></div>
+    <!-- Fade снизу -->
+    <div class="absolute bottom-0 left-0 right-0 h-32" style="background:linear-gradient(to top,#fafbff,transparent)"></div>
+  </div>
+
+  <!-- Фон тёмной темы -->
+  <div aria-hidden="true" class="pointer-events-none absolute inset-0 opacity-0 dark:opacity-100 transition-opacity duration-500">
+    <div class="absolute -top-32 -right-10 w-[650px] h-[650px] rounded-full bg-indigo-500 blur-[120px] opacity-20"></div>
+    <div class="absolute top-10 -left-10 w-[450px] h-[500px] rounded-full bg-emerald-500 blur-[110px] opacity-10"></div>
+    <div class="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black to-transparent"></div>
+  </div>
+
+  <!-- Декоративное свечение за телефоном (desktop) -->
+  <div class="phone-glow" aria-hidden="true"></div>
+
+  <div class="relative max-w-[980px] mx-auto px-5 sm:px-8 pt-24 pb-16 sm:pt-32 sm:pb-24" style="min-height:540px">
+
+    <!-- Телефон — рендерится первым, поэтому текст (ниже в DOM) всегда поверх -->
+    <div class="hero-phone-outer" aria-hidden="true">
+      <div class="hero-phone-float">
+        <img id="hero-phone-0" src="/static/p1.png" alt="" class="hero-phone" style="opacity:1;transform:translateY(0)">
+        <img id="hero-phone-1" src="/static/p2.png" alt="" class="hero-phone" style="opacity:0;transform:translateY(20px)">
+        <img id="hero-phone-2" src="/static/p3.png" alt="" class="hero-phone" style="opacity:0;transform:translateY(20px)">
+      </div>
+    </div>
+
+    <!-- Текст (левая часть) — поверх телефона по DOM-порядку -->
+    <div class="relative max-w-[500px]">
+      <div class="inline-flex items-center gap-2 mb-8">
+        <span class="relative flex h-3 w-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+        </span>
+        <span class="text-[12px] font-medium tracking-widest uppercase text-black/40 dark:text-white/40">Доступно прямо сейчас</span>
+      </div>
+
+      <h1 class="text-[36px] sm:text-[52px] font-bold tracking-tight leading-[1.1] text-black dark:text-white mb-7">
+        Быстрый доступ<br>
+        к&nbsp;<span id="hero-word" class="inline-block text-transparent bg-clip-text" style="background-image:linear-gradient(135deg,#6366f1,#8b5cf6)">безопасному интернету</span>
+      </h1>
+
+      <p class="text-[15px] sm:text-[17px] text-black/50 dark:text-white/50 leading-relaxed mb-12 font-light">
+        Регистрация по email, различные методы оплаты.<br class="hidden sm:block"> Подписка активируется за минуту.
+      </p>
+
+      <a href="/auth" class="inline-flex items-center gap-2.5 bg-black dark:bg-white text-white dark:text-black text-[15px] font-semibold px-7 py-3.5 rounded-full hover:opacity-80 active:scale-[0.98] transition-all duration-200">
+        Начать
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+      </a>
+    </div>
+
+  </div>
+</section>
+
+<!-- Divider -->
+<div class="border-t border-black/[0.06] dark:border-white/[0.06]"></div>
+
+<!-- Features -->
+<section class="max-w-[980px] mx-auto px-5 sm:px-8 py-20 sm:py-28">
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-12 sm:gap-8">
+      <div class="card-appear" style="animation-delay:0.05s">
+        <div class="mb-3 text-black/30 dark:text-white/30">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
+        </div>
+        <h3 class="text-[15px] font-semibold text-black dark:text-white mb-1.5">Вход по email</h3>
+        <p class="text-[13px] text-black/50 dark:text-white/50 leading-relaxed">Просто email и код из письма. Никаких лишних шагов.</p>
+      </div>
+      <div class="card-appear" style="animation-delay:0.12s">
+        <div class="mb-3 text-black/30 dark:text-white/30">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+        </div>
+        <h3 class="text-[15px] font-semibold text-black dark:text-white mb-1.5">Быстрая активация</h3>
+        <p class="text-[13px] text-black/50 dark:text-white/50 leading-relaxed">Подписка активируется за минуту после оплаты.</p>
+      </div>
+      <div class="card-appear" style="animation-delay:0.19s">
+        <div class="mb-3 text-black/30 dark:text-white/30">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 8.25h3m-3 0a.75.75 0 000 1.5h3a.75.75 0 000-1.5"/></svg>
+        </div>
+        <h3 class="text-[15px] font-semibold text-black dark:text-white mb-1.5">Все устройства</h3>
+        <p class="text-[13px] text-black/50 dark:text-white/50 leading-relaxed">iOS, Android и Windows в одной подписке.</p>
+      </div>
+      <div class="card-appear" style="animation-delay:0.26s">
+        <div class="mb-3 text-black/30 dark:text-white/30">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+        </div>
+        <h3 class="text-[15px] font-semibold text-black dark:text-white mb-1.5">Надёжно</h3>
+        <p class="text-[13px] text-black/50 dark:text-white/50 leading-relaxed">Современное шифрование. Ваши данные защищены.</p>
+      </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* Hero phone — floating overlay */
+.hero-phone-outer{
+  position:absolute;
+  right:-10px;
+  top:50%;
+  transform:translateY(-50%);
+  width:200px;
+  opacity:.22;
+  pointer-events:none;
+}
+.hero-phone-float{
+  position:relative;
+  width:200px;
+  height:410px;
+  animation:heroFloat 5s ease-in-out infinite;
+  filter:drop-shadow(0 20px 40px rgba(0,0,0,.28)) drop-shadow(0 4px 12px rgba(99,102,241,.2));
+}
+@media(min-width:1024px){
+  .hero-phone-outer{
+    display:block!important;
+    right:-30px;
+    width:260px;
+    opacity:.78;
+    pointer-events:auto;
+    z-index:20;
+  }
+  .hero-phone-float{
+    width:260px;
+    height:530px;
+    filter:
+      drop-shadow(0 40px 80px rgba(0,0,0,.32))
+      drop-shadow(0 12px 32px rgba(0,0,0,.18))
+      drop-shadow(0 0 48px rgba(99,102,241,.22))
+      drop-shadow(0 0 96px rgba(139,92,246,.12));
+  }
+}
+@keyframes heroFloat{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-14px)}
+}
+.hero-phone{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+  transition:opacity .6s cubic-bezier(.4,0,.2,1),transform .6s cubic-bezier(.4,0,.2,1);
+}
+/* Декоративное свечение за телефоном */
+.phone-glow{
+  display:none;
+  position:absolute;
+  right:-80px;top:50%;
+  transform:translateY(-50%);
+  width:500px;height:600px;
+  border-radius:50%;
+  pointer-events:none;
+  z-index:1;
+}
+@media(min-width:1024px){
+  .phone-glow{
+    display:block;
+    background:radial-gradient(ellipse at 55% 50%,
+      rgba(139,92,246,.18) 0%,
+      rgba(99,102,241,.12) 30%,
+      rgba(59,130,246,.06) 55%,
+      transparent 72%);
+  }
+  .dark .phone-glow{
+    background:radial-gradient(ellipse at 55% 50%,
+      rgba(139,92,246,.32) 0%,
+      rgba(99,102,241,.2) 30%,
+      rgba(59,130,246,.08) 55%,
+      transparent 72%);
+  }
+}
+/* Hero word */
+#hero-word{
+  transition:opacity .4s ease,transform .4s ease;
+  display:inline-block;
+  background-clip:text;-webkit-background-clip:text;color:transparent;
+}
+</style>
+<script>
+(function() {
+  if (window._heroInterval) { clearInterval(window._heroInterval); window._heroInterval = null; }
+
+  var slides = [
+    { text: 'безопасному интернету', grad: 'linear-gradient(135deg,#6366f1,#8b5cf6)', phone: 0 },
+    { text: 'Gemini, ChatGPT и ИИ',  grad: 'linear-gradient(135deg,#0ea5e9,#6366f1)', phone: 1 },
+    { text: 'YouTube без рекламы',    grad: 'linear-gradient(135deg,#ef4444,#f97316)', phone: 2 },
+  ];
+
+  var idx = 0;
+  var el = document.getElementById('hero-word');
+  var phones = [0,1,2].map(function(i){ return document.getElementById('hero-phone-'+i); });
+  if (!el) return;
+
+  el.style.backgroundImage = slides[0].grad;
+
+  function showPhone(i) {
+    phones.forEach(function(p, n) {
+      if (!p) return;
+      p.style.opacity = (n === i) ? '1' : '0';
+      p.style.transform = (n === i) ? 'translateY(0)' : 'translateY(20px)';
+    });
+  }
+
+  window._heroInterval = setInterval(function() {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-10px)';
+    setTimeout(function() {
+      idx = (idx + 1) % slides.length;
+      var s = slides[idx];
+      el.textContent = s.text;
+      el.style.backgroundImage = s.grad;
+      el.style.transition = 'none';
+      el.style.transform = 'translateY(10px)';
+      el.style.opacity = '0';
+      showPhone(s.phone);
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          el.style.transition = 'opacity .45s ease,transform .45s ease';
+          el.style.opacity = '1';
+          el.style.transform = 'translateY(0)';
+        });
+      });
+    }, 360);
+  }, 3800);
+})();
+</script>
+{% endblock %}

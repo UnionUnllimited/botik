@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+{% block title %}Тарифы — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="tags" class="w-5 h-5"></i> Тарифы
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Просмотр по методам оплаты. Основной режим — <a href="{{ url_for('admin.tariffs_list') }}" class="underline">единые линейки</a>. Все цены в&nbsp;<strong>RUB&nbsp;₽</strong>.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <a href="{{ url_for('admin.tariffs_list') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Единые линейки">
+        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Линейки</span>
+      </a>
+      <a href="{{ url_for('admin.device_limits_settings') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Расширение лимита устройств">
+        <i data-lucide="smartphone-charging" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Расширение лимита</span>
+      </a>
+      <a href="{{ url_for('admin.traffic_topup_tariffs_list') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Тарифы докупки трафика">
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Докупка трафика</span>
+      </a>
+      <a href="{{ url_for('admin.promo_list') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Промокоды">
+        <i data-lucide="ticket-percent" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Промокоды</span>
+      </a>
+    </div>
+  </div>
+
+  {# === Methods grid === #}
+  {%
+    set methods = [
+      ('yookassa',  'YooKassa',       'credit-card',       '#3b82f6'),
+      ('tgstar',    'Telegram Stars', 'star',              '#a855f7'),
+      ('cryptobot', 'CryptoBot',      'bitcoin',           '#f59e0b'),
+      ('yoomoney',  'YooMoney',       'wallet',            '#eab308'),
+      ('platega',   'Platega (СБП)',  'qr-code',           '#10b981'),
+      ('wata',      'Wata',           'credit-card',       '#6366f1'),
+    ]
+  %}
+  {# Брендовые SVG из static/play/ — приоритет над Lucide-fallback #}
+  {% set play_icons = {
+    'yookassa':  'yookassa',
+    'tgstar':    'stars',
+    'cryptobot': 'cryptobot',
+    'yoomoney':  'yoomoney',
+    'platega':   'platega',
+    'wata':      'wata',
+  } %}
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    {% for slug, label, icon, color in methods %}
+    {% set play_file = play_icons.get(slug) %}
+    <div class="tw-card p-4 flex flex-col gap-3" style="border-left: 3px solid {{ color }};">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          {% if play_file %}
+            <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden p-1"
+                  style="background: var(--admin-bg-soft); border: 1px solid rgb(var(--admin-border));">
+              <img src="{{ url_for('admin.admin_static', filename='play/' ~ play_file ~ '.svg') }}"
+                   alt="{{ label }}" class="w-full h-full object-contain" loading="lazy">
+            </span>
+          {% else %}
+            <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+                  style="background: {{ color }}1a; color: {{ color }};">
+              <i data-lucide="{{ icon }}" class="w-4 h-4"></i>
+            </span>
+          {% endif %}
+          <div class="min-w-0">
+            <div class="text-[14px] font-semibold tw-text-base2 truncate">{{ label }}</div>
+            <div class="text-[11px] tw-text-subtle2">{{ slug }}</div>
+          </div>
+        </div>
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+              style="background: {{ color }}1a; color: {{ color }};">
+          {{ counts.get(slug, 0) }} {{ 'тариф' if counts.get(slug, 0) == 1 else 'тарифов' }}
+        </span>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mt-1">
+        <a href="{{ url_for('admin.tariffs_list', method=slug) }}"
+           class="tw-btn tw-btn-primary tw-btn-sm flex-1 justify-center min-w-[100px]">
+          <i data-lucide="list" class="w-3.5 h-3.5"></i>
+          <span>Открыть</span>
+        </a>
+        <a href="{{ url_for('admin.tariff_add', payment_method=slug) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm" title="Добавить один тариф">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        </a>
+        {% if counts.get(slug, 0) > 0 %}
+        <a href="{{ url_for('admin.tariff_bulk_edit', method=slug) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm" title="Редактировать всю линейку">
+          <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        </a>
+        {% else %}
+        <a href="{{ url_for('admin.tariff_bulk_create', method=slug) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm" title="Создать линейку">
+          <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# === Hint === #}
+  <div class="tw-card p-4">
+    <div class="flex items-start gap-3">
+      <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0" style="color:#3b82f6;"></i>
+      <div class="text-[13px] tw-text-muted2 space-y-1">
+        <p><strong class="tw-text-base2">Линейка тарифов</strong> — массовое создание/редактирование набора тарифов «1, 2, 3, … N устройств» с автоматическим расчётом цены и описаний по шаблонам.</p>
+        <p>Цены тарифов <strong>CryptoBot</strong> и <strong>TG&nbsp;Stars</strong> хранятся в&nbsp;рублях. Бот сам конвертирует: CryptoBot создаёт фиатный инвойс, TG&nbsp;Stars пересчитывает по курсу из настроек платежей.</p>
+      </div>
+    </div>
+  </div>
+
+  {% if current_user.is_admin %}
+  <div class="tw-card p-4 border" style="border-color: rgb(239 68 68 / .35); background: rgb(239 68 68 / .05);">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="min-w-0">
+        <div class="text-[13px] font-semibold text-red-600 dark:text-red-400 flex items-center gap-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+          Опасная зона
+        </div>
+        <p class="text-[12px] tw-text-muted2 mt-1">
+          Удалить <strong class="tw-text-base2">все {{ total_tariffs|default(0) }} тарифов продления</strong>
+          (все методы оплаты и линейки). Действие необратимо — в боте и на сайте не останется планов для покупки/продления.
+        </p>
+      </div>
+      <button type="button"
+              class="tw-btn tw-btn-danger tw-btn-sm shrink-0"
+              id="tariffsDeleteAllBtn"
+              {% if not total_tariffs %}disabled title="Тарифов нет"{% endif %}>
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        <span>Удалить все тарифы</span>
+      </button>
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('admin.tariff_delete_all') }}" id="tariffsDeleteAllForm" class="hidden"></form>
+  <script>
+  (function () {
+    var btn = document.getElementById('tariffsDeleteAllBtn');
+    var form = document.getElementById('tariffsDeleteAllForm');
+    if (!btn || !form) return;
+    btn.addEventListener('click', function () {
+      var n = {{ total_tariffs|default(0) }};
+      if (!n) return;
+      var ok = confirm(
+        'Удалить ВСЕ ' + n + ' тарифов продления?\n\n'
+        + 'Все методы оплаты и линейки будут очищены. '
+        + 'Клиенты не смогут купить или продлить подписку, пока не создадите тарифы заново.\n\n'
+        + 'Действие необратимо.'
+      );
+      if (!ok) return;
+      form.submit();
+    });
+  })();
+  </script>
+  {% endif %}
+
+</div>
+{% endblock %}

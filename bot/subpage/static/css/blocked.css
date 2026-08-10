@@ -1,0 +1,86 @@
+/* Страница blocked.html — отдельно от tailwind-built.css */
+body.page-blocked,
+body.page-blocked * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body.page-blocked {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: #f5f5f5;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  padding: 20px;
+}
+
+body.page-blocked .container {
+  text-align: center;
+  max-width: 500px;
+}
+
+body.page-blocked .icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  display: block;
+}
+
+body.page-blocked h1 {
+  font-size: 24px;
+  margin-bottom: 12px;
+  font-weight: 500;
+  color: #333;
+}
+
+body.page-blocked p {
+  font-size: 16px;
+  margin-bottom: 24px;
+  color: #666;
+  line-height: 1.5;
+}
+
+body.page-blocked .message {
+  font-size: 16px;
+  font-weight: 400;
+  margin-bottom: 24px;
+  color: #666;
+  line-height: 1.5;
+}
+
+body.page-blocked .support-link {
+  margin-top: 24px;
+}
+
+body.page-blocked .support-link a {
+  display: inline-block;
+  padding: 10px 24px;
+  background: #333;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 400;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+body.page-blocked .support-link a:hover {
+  background: #555;
+}
+
+@media (max-width: 600px) {
+  body.page-blocked .icon {
+    font-size: 48px;
+  }
+
+  body.page-blocked h1 {
+    font-size: 20px;
+  }
+
+  body.page-blocked p {
+    font-size: 14px;
+  }
+}

@@ -1,0 +1,241 @@
+{% extends 'base.html' %}
+{% block title %}Тарифы продления — {{ super() }}{% endblock %}
+
+{% set play_icons = {
+  'yookassa': 'yookassa', 'tgstar': 'stars', 'cryptobot': 'cryptobot',
+  'yoomoney': 'yoomoney', 'platega': 'platega', 'wata': 'wata',
+} %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="tags" class="w-5 h-5"></i> Тарифы продления
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Единые линейки по сроку — при сохранении дублируются <strong>во все {{ all_methods_count }} методов</strong> оплаты. Цены в&nbsp;<strong>RUB&nbsp;₽</strong>.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <a href="{{ url_for('admin.tariff_bulk_create') }}"
+         class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        <span>Новая линейка</span>
+      </a>
+      <a href="{{ url_for('admin.device_limits_settings') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Расширение лимита устройств">
+        <i data-lucide="smartphone-charging" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Расширение лимита</span>
+      </a>
+      <a href="{{ url_for('admin.traffic_topup_tariffs_list') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Тарифы докупки трафика">
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Докупка трафика</span>
+      </a>
+      <a href="{{ url_for('admin.tariffs_list', view='methods') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Просмотр по методам оплаты">
+        <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">По методам</span>
+      </a>
+    </div>
+  </div>
+
+  {% if empty_methods %}
+  <div class="tw-card p-4" style="border-left: 3px solid #f59e0b;">
+    <div class="flex items-start gap-3">
+      <i data-lucide="alert-circle" class="w-4 h-4 mt-0.5 shrink-0" style="color:#f59e0b;"></i>
+      <div class="min-w-0 flex-1 space-y-2">
+        <div class="text-[13px] font-semibold tw-text-base2">Методы без тарифов</div>
+        <p class="text-[12px] tw-text-muted2">
+          Скопируйте линейки кнопкой ниже или отредактируйте любую линейку — сохранение создаст строки во все методы.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          {% for item in empty_methods %}
+          <form method="post" action="{{ url_for('admin.tariff_sync_method') }}" class="inline-flex m-0"
+                onsubmit="return confirm('Скопировать все тарифы в {{ item.label }}?');">
+            <input type="hidden" name="target_method" value="{{ item.slug }}">
+            <input type="hidden" name="source_method" value="{{ reference_method }}">
+            <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm gap-1.5">
+              {% if play_icons.get(item.slug) %}
+              <img src="{{ url_for('admin.admin_static', filename='play/' ~ play_icons[item.slug] ~ '.svg') }}"
+                   alt="" class="w-3.5 h-3.5 object-contain" loading="lazy">
+              {% endif %}
+              <span>{{ item.label }}</span>
+              <span class="text-[10px] opacity-70">· 0 → {{ item.ref_count }}</span>
+            </button>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if lines %}
+  <div class="space-y-3">
+    {% for line in lines %}
+    <div class="tw-card overflow-hidden">
+      <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3"
+           style="border-color: rgb(var(--admin-border));">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="inline-flex items-center justify-center w-10 h-10 rounded-xl shrink-0 font-bold text-[15px]"
+               style="background: rgb(var(--admin-accent) / .12); color: rgb(var(--admin-accent));">
+            {{ line.days }}
+          </div>
+          <div class="min-w-0">
+            <div class="text-[15px] font-semibold tw-text-base2">Линейка · {{ line.days }} дн.</div>
+            <div class="text-[12px] tw-text-muted2 mt-0.5">
+              {{ line.slot_count }} тариф{% if line.slot_count % 10 == 1 and line.slot_count % 100 != 11 %}{% elif line.slot_count % 10 in [2,3,4] and line.slot_count // 10 % 10 != 1 %}а{% else %}ов{% endif %}
+              · {{ line.price_min|int }}–{{ line.price_max|int }} ₽
+              · {{ line.total_rows }} строк в БД
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          {% if line.all_synced %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                style="background: rgba(16,185,129,.12); color:#10b981;">
+            <i data-lucide="check-circle" class="w-3 h-3"></i>
+            {{ line.all_methods_count }}/{{ line.all_methods_count }} методов
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                style="background: rgba(245,158,11,.12); color:#d97706;">
+            <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+            {{ line.methods_count }}/{{ line.all_methods_count }} методов
+          </span>
+          {% endif %}
+          <a href="{{ url_for('admin.tariff_bulk_edit', days=line.days) }}"
+             class="tw-btn tw-btn-primary tw-btn-sm">
+            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+            <span>Редактировать</span>
+          </a>
+          <form method="post" action="{{ url_for('admin.tariff_line_delete') }}" class="inline-flex m-0"
+                onsubmit="return confirm('Удалить линейку {{ line.days }} дн. во ВСЕХ методах оплаты? Будет удалено {{ line.total_rows }} строк. Это необратимо.');">
+            <input type="hidden" name="days" value="{{ line.days }}">
+            <input type="hidden" name="all_methods" value="1">
+            <button type="submit" class="tw-btn tw-btn-danger tw-btn-sm">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="px-4 py-3">
+        {% if line.methods_missing or line.price_mismatch_methods %}
+        <div class="text-[11px] tw-text-muted2 mb-2 flex flex-wrap gap-x-3 gap-y-1">
+          {% if line.methods_missing %}
+          <span><strong class="tw-text-base2">Нет линейки:</strong>
+            {% for m in line.methods_missing %}{{ method_labels.get(m, m) }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </span>
+          {% endif %}
+          {% if line.price_mismatch_methods %}
+          <span><strong class="tw-text-base2">Разные цены:</strong>
+            {% for m in line.price_mismatch_methods %}{{ method_labels.get(m, m) }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="overflow-x-auto -mx-1">
+          <table class="w-full text-[12px]" style="border-collapse: collapse;">
+            <thead>
+              <tr class="text-left" style="color: var(--admin-text-subtle);">
+                <th class="px-2 py-1.5 font-semibold">Устройств</th>
+                <th class="px-2 py-1.5 font-semibold">Цена</th>
+                <th class="px-2 py-1.5 font-semibold hidden sm:table-cell">GB</th>
+                <th class="px-2 py-1.5 font-semibold hidden md:table-cell">Название</th>
+                <th class="px-2 py-1.5 font-semibold text-center">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for slot in line.slots %}
+              <tr style="border-top: 1px solid rgb(var(--admin-border) / .5);">
+                <td class="px-2 py-2 font-semibold tw-text-base2">{{ slot.limit_ip }}</td>
+                <td class="px-2 py-2">{{ slot.price|int }} ₽</td>
+                <td class="px-2 py-2 hidden sm:table-cell">{{ slot.traffic_gb }} GB</td>
+                <td class="px-2 py-2 hidden md:table-cell truncate max-w-[280px] tw-text-muted2">{{ slot.name }}</td>
+                <td class="px-2 py-2 text-center">
+                  {% if slot.is_active %}
+                  <span class="text-[10px] font-bold" style="color:#10b981;">ON</span>
+                  {% else %}
+                  <span class="text-[10px] font-bold tw-text-subtle2">OFF</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="tw-card p-8 text-center">
+    <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
+         style="background: rgb(var(--admin-border) / .25);">
+      <i data-lucide="layers" class="w-7 h-7 tw-text-muted2"></i>
+    </div>
+    <div class="text-[15px] font-semibold tw-text-base2 mb-1">Тарифов продления пока нет</div>
+    <p class="text-[13px] tw-text-muted2 mb-4 max-w-md mx-auto">
+      Создайте первую линейку — сетку «1, 2, 3 … N устройств» с ценами. Она сразу появится во всех {{ all_methods_count }} методах оплаты.
+    </p>
+    <a href="{{ url_for('admin.tariff_bulk_create') }}" class="tw-btn tw-btn-primary tw-btn-sm">
+      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+      Создать линейку
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="tw-card p-4">
+    <div class="flex items-start gap-3">
+      <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0" style="color:#3b82f6;"></i>
+      <div class="text-[13px] tw-text-muted2 space-y-1">
+        <p>Цены <strong>CryptoBot</strong> и <strong>TG&nbsp;Stars</strong> хранятся в рублях — бот конвертирует при оплате.</p>
+        <p>Всего в БД: <strong class="tw-text-base2">{{ total_tariffs }}</strong> строк
+          ({{ all_methods_count }} методов оплаты).</p>
+      </div>
+    </div>
+  </div>
+
+  {% if current_user.is_admin %}
+  <div class="tw-card p-4 border" style="border-color: rgb(239 68 68 / .35); background: rgb(239 68 68 / .05);">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="min-w-0">
+        <div class="text-[13px] font-semibold text-red-600 dark:text-red-400 flex items-center gap-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+          Опасная зона
+        </div>
+        <p class="text-[12px] tw-text-muted2 mt-1">
+          Удалить <strong class="tw-text-base2">все {{ total_tariffs }} тарифов продления</strong>
+          (все методы и линейки). Действие необратимо.
+        </p>
+      </div>
+      <button type="button" class="tw-btn tw-btn-danger tw-btn-sm shrink-0"
+              id="tariffsDeleteAllBtn" {% if not total_tariffs %}disabled{% endif %}>
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        <span>Удалить все тарифы</span>
+      </button>
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('admin.tariff_delete_all') }}" id="tariffsDeleteAllForm" class="hidden"></form>
+  <script>
+  (function () {
+    var btn = document.getElementById('tariffsDeleteAllBtn');
+    var form = document.getElementById('tariffsDeleteAllForm');
+    if (!btn || !form) return;
+    btn.addEventListener('click', function () {
+      var n = {{ total_tariffs|default(0) }};
+      if (!n) return;
+      if (!confirm('Удалить ВСЕ ' + n + ' тарифов продления?\n\nДействие необратимо.')) return;
+      form.submit();
+    });
+  })();
+  </script>
+  {% endif %}
+
+</div>
+{% endblock %}

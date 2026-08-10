@@ -1,0 +1,182 @@
+/* Страница redirect_app.html — отдельно от tailwind-built.css */
+body.page-redirect,
+body.page-redirect * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --bg: #F2F2F7;
+  --text: #111;
+  --text-muted: #8E8E93;
+  --card: rgba(255,255,255,0.92);
+  --border: rgba(0,0,0,0.08);
+  --btn: #16a34a;
+  --btn-hover: #15803d;
+  --btn-secondary: #0A84FF;
+  --btn-secondary-hover: #007AFF;
+  --warning-bg: rgba(255,159,10,0.12);
+  --warning-border: rgba(255,159,10,0.28);
+  --warning-text: #c2410c;
+}
+
+html.theme-dark {
+  --bg: #09090B;
+  --text: #fff;
+  --text-muted: #98989D;
+  --card: rgba(28,28,30,0.92);
+  --border: rgba(255,255,255,0.1);
+  --btn: #22c55e;
+  --btn-hover: #16a34a;
+  --btn-text: #052e16;
+  --btn-secondary: #0A84FF;
+  --btn-secondary-hover: #409CFF;
+  --warning-bg: rgba(255,159,10,0.14);
+  --warning-border: rgba(255,159,10,0.32);
+  --warning-text: #fb923c;
+}
+
+body.page-redirect {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top));
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
+
+body.page-redirect .container {
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+}
+
+body.page-redirect .card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px 20px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+}
+
+html.theme-dark body.page-redirect .card {
+  box-shadow: 0 16px 48px rgba(0,0,0,0.35);
+}
+
+body.page-redirect .app-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  margin: 0 auto 16px;
+  background: rgba(48,209,88,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+}
+
+body.page-redirect h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+
+body.page-redirect .loading-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 20px;
+}
+
+body.page-redirect .warning-box {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--warning-text);
+}
+
+body.page-redirect .warning-box a {
+  color: inherit;
+  font-weight: 600;
+}
+
+body.page-redirect .actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.page-redirect .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 18px;
+  border: none;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .15s ease, opacity .15s ease;
+}
+
+body.page-redirect .btn:active {
+  transform: scale(0.98);
+}
+
+body.page-redirect .btn-primary {
+  background: var(--btn);
+  color: var(--btn-text, #fff);
+}
+
+body.page-redirect .btn-secondary {
+  background: rgba(10,132,255,0.12);
+  color: var(--btn-secondary);
+  border: 1px solid rgba(10,132,255,0.2);
+}
+
+html.theme-dark body.page-redirect .btn-secondary {
+  color: #5AC8FA;
+}
+
+body.page-redirect #fallback {
+  display: none;
+}
+
+body.page-redirect #fallback.visible {
+  display: block;
+}
+
+body.page-redirect .spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 14px;
+  border: 3px solid rgba(10,132,255,0.15);
+  border-top-color: #0A84FF;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+body.page-redirect .hidden {
+  display: none !important;
+}

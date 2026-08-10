@@ -1,0 +1,665 @@
+{% extends "base.html" %}
+{% block title %}Массовые действия - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-1">
+
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="layers" class="w-6 h-6 text-rose-500 shrink-0"></i>
+        Массовые действия
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Операции над группами клиентов: удаление давно истёкших, компенсация активным подпискам,
+        повторная выдача по failed-платежам и очистка базы устройств.
+      </p>
+    </div>
+  </div>
+
+  <div class="rounded-[var(--radius-card)] border border-rose-500/35 bg-rose-500/[0.07] p-4">
+    <div class="flex gap-3 items-start">
+      <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0 text-rose-500 mt-0.5"></i>
+      <div class="min-w-0">
+        <p class="text-[13px] font-semibold text-rose-600 dark:text-rose-400 mb-2">Внимание</p>
+        <ul class="list-disc pl-5 space-y-1.5 text-[13px] text-rose-600 dark:text-rose-400 leading-relaxed">
+          <li>Удаление необратимо: клиент исчезнет из БД и Remnawave (как кнопка «Удалить» в разделе «Клиенты»).</li>
+          <li>Компенсация продлевает только дни у клиентов с активной подпиской, без уведомлений в Telegram.</li>
+          <li>«Пустые UUID» — записи без клиента в Remnawave; удаляются только из БД бота.</li>
+          <li>«Failed-платежи» — повторная выдача подписки или докупки GB по оплаченным, но не выполненным платежам (без лимита устройств).</li>
+          <li>«Очистка устройств» — полное удаление всех записей из <code class="tw-kbd">devices.db</code>; необратимо.</li>
+          <li>Доступно только администратору.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+    {# — Удаление истёкших — #}
+    <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden">
+      <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+        <i data-lucide="trash-2" class="w-4 h-4 text-rose-500"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Удаление истёкших</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        <p class="text-[13px] tw-text-muted2 leading-relaxed m-0">
+          Удаляет клиентов, у которых подписка истекла и не продлевалась не менее указанного числа дней.
+        </p>
+        <div>
+          <label for="expiredDays" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Дней после истечения (мин. {{ min_expired_days }})
+          </label>
+          <input type="number" id="expiredDays" class="tw-input w-full max-w-[200px]"
+                 min="{{ min_expired_days }}" max="{{ max_expired_days }}" value="{{ min_expired_days }}">
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="countExpiredBtn">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+            Подсчитать
+          </button>
+          <div class="text-[13px] tw-text-muted2">
+            Найдено: <span id="expiredCount" class="font-semibold tabular-nums tw-text-base2">—</span>
+          </div>
+        </div>
+        <button type="button" class="tw-btn tw-btn-danger" id="startDeleteBtn" disabled>
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          Удалить клиентов
+        </button>
+      </div>
+    </div>
+
+    {# — Компенсация — #}
+    <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden">
+      <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+        <i data-lucide="calendar-plus" class="w-4 h-4 text-[var(--color-brand-500)]"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Компенсация</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        <p class="text-[13px] tw-text-muted2 leading-relaxed m-0">
+          Массовое продление дней у активных клиентов. Список загружается один раз,
+          обработка пакетами по {{ compensate_batch_size }} параллельно —
+          ошибки и отсутствие в Remnawave не останавливают остальных.
+        </p>
+        <div>
+          <label for="compensateDays" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            Дней к добавлению
+          </label>
+          <input type="number" id="compensateDays" class="tw-input w-full max-w-[200px]"
+                 min="{{ min_compensate_days }}" max="{{ max_compensate_days }}" value="3">
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="countActiveBtn">
+            <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+            Подсчитать активных
+          </button>
+          <div class="text-[13px] tw-text-muted2">
+            Активных: <span id="activeCount" class="font-semibold tabular-nums tw-text-base2">—</span>
+          </div>
+        </div>
+        <button type="button" class="tw-btn tw-btn-primary" id="startCompensateBtn" disabled>
+          <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+          Продлить всем
+        </button>
+      </div>
+    </div>
+
+    {# — Удаление пустых UUID — #}
+    <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden">
+      <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+        <i data-lucide="user-x" class="w-4 h-4 text-amber-500"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Удаление пустых UUID</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        <p class="text-[13px] tw-text-muted2 leading-relaxed m-0">
+          Удаляет «осиротевшие» записи клиентов без привязки к&nbsp;Remnawave
+          (пустой <code>xui_client_uuid</code>). В&nbsp;Remnawave удалять нечего —
+          чистятся только записи в&nbsp;БД бота.
+        </p>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="countEmptyUuidBtn">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+            Подсчитать
+          </button>
+          <div class="text-[13px] tw-text-muted2">
+            Найдено: <span id="emptyUuidCount" class="font-semibold tabular-nums tw-text-base2">—</span>
+          </div>
+        </div>
+        <button type="button" class="tw-btn tw-btn-danger" id="startDeleteEmptyUuidBtn" disabled>
+          <i data-lucide="user-x" class="w-4 h-4"></i>
+          Удалить пустые
+        </button>
+      </div>
+    </div>
+
+    {# — Повтор failed-платежей — #}
+    <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden lg:col-span-2">
+      <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+        <i data-lucide="rotate-ccw" class="w-4 h-4 text-amber-500"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Обработать failed-платежи</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        <p class="text-[13px] tw-text-muted2 leading-relaxed m-0">
+          Ищет платежи со статусом «Неуспешно» (оплата прошла, выдача не выполнилась) и повторно
+          выдаёт <strong>продление подписки</strong> или <strong>докупку GB</strong> по данным из metadata платежа.
+          Лимит устройств не обрабатывается.
+        </p>
+        <div class="rounded-md border border-amber-500/35 bg-amber-500/[0.08] px-3 py-2.5 flex gap-2.5 items-start">
+          <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5"></i>
+          <p class="text-[12px] text-amber-800 dark:text-amber-300 leading-relaxed m-0">
+            Если вы уже вручную продлили клиента или добавили трафик, а платёж остался failed —
+            повторная обработка <strong>начислит ещё раз</strong>. Перед запуском проверьте список failed-платежей.
+            Клиентам уведомления не отправляются.
+          </p>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="countFailedPaymentsBtn">
+            <i data-lucide="receipt" class="w-3.5 h-3.5"></i>
+            Подсчитать
+          </button>
+          <div class="text-[13px] tw-text-muted2">
+            Failed (подписка / GB): <span id="failedPaymentsCount" class="font-semibold tabular-nums tw-text-base2">—</span>
+          </div>
+        </div>
+        <button type="button" class="tw-btn tw-btn-primary" id="startRetryFailedBtn" disabled>
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+          Обработать failed
+        </button>
+      </div>
+    </div>
+
+    {# — Очистка devices.db — #}
+    <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden lg:col-span-2 border border-rose-500/25">
+      <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+        <i data-lucide="smartphone" class="w-4 h-4 text-rose-500"></i>
+        <h2 class="text-[15px] font-semibold tw-text-base2">Очистка устройств клиентов</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        <p class="text-[13px] tw-text-muted2 leading-relaxed m-0">
+          Полностью очищает базу <code class="tw-kbd">devices.db</code> (таблица привязок HWID/OS к подпискам).
+          Используется для лимита устройств, отчётов о нарушителях и раздела «Мои устройства».
+        </p>
+        <div class="rounded-md border border-rose-500/40 bg-rose-500/[0.08] px-3 py-2.5 flex gap-2.5 items-start">
+          <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5"></i>
+          <div class="text-[12px] text-rose-800 dark:text-rose-300 leading-relaxed m-0 space-y-1.5">
+            <p class="m-0 font-semibold">Все устройства, привязанные к клиентам, исчезнут из базы.</p>
+            <p class="m-0">
+              Список начнёт формироваться заново при следующих подключениях клиентов к VPN.
+              Лимиты устройств временно «обнулятся», пока клиенты снова не зайдут в подписку.
+            </p>
+            <p class="m-0">
+              Делайте очистку <strong>только если знаете, зачем она вам нужна</strong> — действие необратимо.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="countDevicesBtn">
+            <i data-lucide="database" class="w-3.5 h-3.5"></i>
+            Подсчитать записи
+          </button>
+          <div class="text-[13px] tw-text-muted2">
+            Записей в devices.db: <span id="devicesCount" class="font-semibold tabular-nums tw-text-base2">—</span>
+          </div>
+        </div>
+        <button type="button" class="tw-btn tw-btn-danger" id="startClearDevicesBtn" disabled>
+          <i data-lucide="eraser" class="w-4 h-4"></i>
+          Очистить devices.db
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{# — Модалка прогресса (компактная, по центру) — #}
+<div class="rvk-backdrop" id="bulkModalBackdrop" aria-hidden="true"></div>
+<div class="rvk-dialog" id="bulkModalDialog" role="dialog" aria-modal="true" aria-labelledby="bulkModalTitle"
+     style="width: min(400px, 92vw);">
+  <div class="rvk-head py-3 px-4">
+    <h3 id="bulkModalTitle" class="text-[14px] font-semibold tw-text-base2 m-0 flex-1 min-w-0 truncate">Выполнение…</h3>
+    <button type="button" id="bulkModalCloseBtn" class="tw-btn tw-btn-secondary tw-btn-sm shrink-0" disabled>
+      <i data-lucide="x" class="w-3.5 h-3.5"></i>
+    </button>
+  </div>
+  <div class="px-4 py-3 space-y-3">
+    <p id="bulkModalDesc" class="text-[12px] tw-text-muted2 m-0 leading-snug"></p>
+    <div>
+      <div class="flex items-center justify-between gap-2 mb-1.5">
+        <span class="text-[11px] font-semibold tw-text-base2">Прогресс</span>
+        <span id="bulkProgressPct" class="text-[12px] font-semibold text-[var(--color-brand-500)] tabular-nums">0%</span>
+      </div>
+      <div class="h-1.5 rounded-full overflow-hidden" style="background: rgb(var(--admin-border) / .45);">
+        <div id="bulkProgressBar" class="h-full rounded-full transition-[width] duration-300 ease-out"
+             style="width: 0%; background: var(--color-brand-500);"></div>
+      </div>
+    </div>
+    <div class="grid grid-cols-3 gap-1.5 text-center text-[12px]">
+      <div class="rounded-md border border-[rgb(var(--admin-border))] px-1.5 py-1.5">
+        <div class="text-[9px] uppercase tracking-wide tw-text-subtle2">Всего</div>
+        <div id="bulkStatTotal" class="text-[14px] font-semibold tabular-nums leading-tight">0</div>
+      </div>
+      <div class="rounded-md border border-[rgb(var(--admin-border))] px-1.5 py-1.5">
+        <div class="text-[9px] uppercase tracking-wide tw-text-subtle2">Успешно</div>
+        <div id="bulkStatSuccess" class="text-[14px] font-semibold tabular-nums text-emerald-600 leading-tight">0</div>
+      </div>
+      <div class="rounded-md border border-[rgb(var(--admin-border))] px-1.5 py-1.5">
+        <div class="text-[9px] uppercase tracking-wide tw-text-subtle2">Ошибок</div>
+        <div id="bulkStatFailed" class="text-[14px] font-semibold tabular-nums text-rose-500 leading-tight">0</div>
+      </div>
+    </div>
+    <div id="bulkCurrentId" class="text-[11px] tw-text-muted2 font-mono truncate hidden"></div>
+    <div id="bulkResultBox" class="hidden rounded-md border border-[rgb(var(--admin-border))] bg-[rgb(var(--admin-bg-soft)/.35)] p-2 max-h-28 overflow-y-auto text-[11px] font-mono whitespace-pre-wrap leading-snug"></div>
+  </div>
+  <div class="px-4 py-2.5 border-t border-[rgb(var(--admin-border))] flex justify-end">
+    <button type="button" id="bulkModalDoneBtn" class="tw-btn tw-btn-primary tw-btn-sm hidden">
+      Готово
+    </button>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.adminRenderLucide) window.adminRenderLucide();
+
+  const MIN_EXPIRED = {{ min_expired_days }};
+  const MAX_EXPIRED = {{ max_expired_days }};
+  const MIN_COMP = {{ min_compensate_days }};
+  const MAX_COMP = {{ max_compensate_days }};
+  const BATCH_SIZE = {{ compensate_batch_size }};
+
+  const expiredDays = document.getElementById('expiredDays');
+  const compensateDays = document.getElementById('compensateDays');
+  const expiredCountEl = document.getElementById('expiredCount');
+  const activeCountEl = document.getElementById('activeCount');
+  const startDeleteBtn = document.getElementById('startDeleteBtn');
+  const startCompensateBtn = document.getElementById('startCompensateBtn');
+  const emptyUuidCountEl = document.getElementById('emptyUuidCount');
+  const startDeleteEmptyUuidBtn = document.getElementById('startDeleteEmptyUuidBtn');
+  const failedPaymentsCountEl = document.getElementById('failedPaymentsCount');
+  const startRetryFailedBtn = document.getElementById('startRetryFailedBtn');
+  const devicesCountEl = document.getElementById('devicesCount');
+  const startClearDevicesBtn = document.getElementById('startClearDevicesBtn');
+  let devicesCountLoaded = false;
+
+  const backdrop = document.getElementById('bulkModalBackdrop');
+  const dialog = document.getElementById('bulkModalDialog');
+  const modalTitle = document.getElementById('bulkModalTitle');
+  const modalDesc = document.getElementById('bulkModalDesc');
+  const progressBar = document.getElementById('bulkProgressBar');
+  const progressPct = document.getElementById('bulkProgressPct');
+  const statTotal = document.getElementById('bulkStatTotal');
+  const statSuccess = document.getElementById('bulkStatSuccess');
+  const statFailed = document.getElementById('bulkStatFailed');
+  const currentIdEl = document.getElementById('bulkCurrentId');
+  const resultBox = document.getElementById('bulkResultBox');
+  const closeBtn = document.getElementById('bulkModalCloseBtn');
+  const doneBtn = document.getElementById('bulkModalDoneBtn');
+
+  let inFlight = false;
+  let statusPollTimer = null;
+
+  function applyProgress(payload) {
+    const total = payload.total || 0;
+    const processed = payload.processed || 0;
+    const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+    progressBar.style.width = pct + '%';
+    progressPct.textContent = pct + '%';
+    statTotal.textContent = String(total);
+    statSuccess.textContent = String(payload.success || 0);
+    statFailed.textContent = String(payload.failed || 0);
+    if (payload.current_id) {
+      currentIdEl.classList.remove('hidden');
+      currentIdEl.textContent = 'Текущий ID: ' + payload.current_id;
+    }
+  }
+
+  function stopStatusPoll() {
+    if (statusPollTimer) {
+      clearInterval(statusPollTimer);
+      statusPollTimer = null;
+    }
+  }
+
+  function startStatusPoll() {
+    stopStatusPoll();
+    statusPollTimer = setInterval(async function() {
+      try {
+        const res = await fetch('{{ url_for("admin.bulk_ops_status") }}');
+        const data = await res.json();
+        if (!data.ok) return;
+        if (data.progress) {
+          applyProgress(data.progress);
+        }
+        if (!data.running && inFlight) {
+          stopStatusPoll();
+          inFlight = false;
+          closeBtn.disabled = false;
+          doneBtn.classList.remove('hidden');
+          if (data.progress) {
+            applyProgress(data.progress);
+            progressBar.style.width = '100%';
+            progressPct.textContent = '100%';
+            toast(
+              'Готово. Успешно: ' + (data.progress.success || 0) +
+              (data.progress.failed ? ', ошибок: ' + data.progress.failed : ''),
+              data.progress.failed ? 'warning' : 'success'
+            );
+          } else {
+            toast('Операция завершена в фоне', 'success');
+          }
+        }
+      } catch (_) {}
+    }, 3000);
+  }
+
+  function toast(msg, type) {
+    if (window.adminToast) window.adminToast(msg, type || 'info');
+    else alert(msg);
+  }
+
+  function openModal(title, desc) {
+    modalTitle.textContent = title;
+    modalDesc.textContent = desc;
+    progressBar.style.width = '0%';
+    progressPct.textContent = '0%';
+    statTotal.textContent = '0';
+    statSuccess.textContent = '0';
+    statFailed.textContent = '0';
+    currentIdEl.classList.add('hidden');
+    currentIdEl.textContent = '';
+    resultBox.classList.add('hidden');
+    resultBox.textContent = '';
+    closeBtn.disabled = true;
+    doneBtn.classList.add('hidden');
+    backdrop.classList.add('is-open');
+    dialog.classList.add('is-open');
+    backdrop.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    if (window.adminRenderLucide) window.adminRenderLucide();
+  }
+
+  function closeModal() {
+    if (inFlight) return;
+    stopStatusPoll();
+    backdrop.classList.remove('is-open');
+    dialog.classList.remove('is-open');
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  closeBtn.addEventListener('click', closeModal);
+  doneBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function() {
+    if (!inFlight) closeModal();
+  });
+
+  function parseDays(input, min, max) {
+    const n = parseInt(input.value, 10);
+    if (!Number.isFinite(n) || n < min || n > max) return null;
+    return n;
+  }
+
+  async function fetchCountExpired() {
+    const days = parseDays(expiredDays, MIN_EXPIRED, MAX_EXPIRED);
+    if (days === null) {
+      toast('Укажите дни от ' + MIN_EXPIRED + ' до ' + MAX_EXPIRED, 'error');
+      return;
+    }
+    const res = await fetch('{{ url_for("admin.bulk_count_expired") }}?days=' + days);
+    const data = await res.json();
+    if (!data.ok) {
+      toast(data.error || 'Ошибка подсчёта', 'error');
+      return;
+    }
+    expiredCountEl.textContent = String(data.count);
+    startDeleteBtn.disabled = data.count <= 0;
+  }
+
+  async function fetchCountActive() {
+    const res = await fetch('{{ url_for("admin.bulk_count_active") }}');
+    const data = await res.json();
+    if (!data.ok) {
+      toast(data.error || 'Ошибка подсчёта', 'error');
+      return;
+    }
+    activeCountEl.textContent = String(data.count);
+    startCompensateBtn.disabled = data.count <= 0;
+  }
+
+  async function fetchCountEmptyUuid() {
+    const res = await fetch('{{ url_for("admin.bulk_count_empty_uuid") }}');
+    const data = await res.json();
+    if (!data.ok) {
+      toast(data.error || 'Ошибка подсчёта', 'error');
+      return;
+    }
+    emptyUuidCountEl.textContent = String(data.count);
+    startDeleteEmptyUuidBtn.disabled = data.count <= 0;
+  }
+
+  async function fetchCountFailedPayments() {
+    const res = await fetch('{{ url_for("admin.bulk_count_failed_payments") }}');
+    const data = await res.json();
+    if (!data.ok) {
+      toast(data.error || 'Ошибка подсчёта', 'error');
+      return;
+    }
+    failedPaymentsCountEl.textContent = String(data.count);
+    startRetryFailedBtn.disabled = data.count <= 0;
+  }
+
+  document.getElementById('countExpiredBtn').addEventListener('click', fetchCountExpired);
+  document.getElementById('countActiveBtn').addEventListener('click', fetchCountActive);
+  document.getElementById('countEmptyUuidBtn').addEventListener('click', fetchCountEmptyUuid);
+  document.getElementById('countFailedPaymentsBtn').addEventListener('click', fetchCountFailedPayments);
+  document.getElementById('countDevicesBtn').addEventListener('click', fetchCountDevices);
+
+  async function fetchCountDevices() {
+    const res = await fetch('{{ url_for("admin.bulk_count_devices") }}');
+    const data = await res.json();
+    if (!data.ok) {
+      devicesCountLoaded = false;
+      startClearDevicesBtn.disabled = true;
+      devicesCountEl.textContent = '—';
+      toast(data.error || 'Ошибка подсчёта', 'error');
+      return;
+    }
+    devicesCountLoaded = true;
+    devicesCountEl.textContent = String(data.count);
+    startClearDevicesBtn.disabled = false;
+  }
+
+  expiredDays.addEventListener('change', function() {
+    expiredCountEl.textContent = '—';
+    startDeleteBtn.disabled = true;
+  });
+  compensateDays.addEventListener('change', function() {
+    startCompensateBtn.disabled = parseInt(activeCountEl.textContent, 10) <= 0;
+  });
+
+  async function runSse(url, body, title, desc) {
+    openModal(title, desc);
+    inFlight = true;
+    startStatusPoll();
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || ('HTTP ' + res.status));
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const chunk of parts) {
+          const line = chunk.split('\n').find(l => l.startsWith('data: '));
+          if (!line) continue;
+          let payload;
+          try { payload = JSON.parse(line.slice(6)); } catch (_) { continue; }
+
+          if (payload.type === 'progress') {
+            applyProgress(payload);
+          } else if (payload.type === 'complete') {
+            stopStatusPoll();
+            const total = payload.total || 0;
+            progressBar.style.width = '100%';
+            progressPct.textContent = '100%';
+            statTotal.textContent = String(total);
+            statSuccess.textContent = String(payload.success || 0);
+            statFailed.textContent = String(payload.failed || 0);
+            let msg = 'Готово. Успешно: ' + (payload.success || 0);
+            if (payload.failed) msg += ', ошибок: ' + payload.failed;
+            if (payload.not_in_remnawave) msg += ', нет в Remnawave: ' + payload.not_in_remnawave;
+            if (payload.db_locked) msg += ', блокировок БД: ' + payload.db_locked;
+            if (payload.cancelled) msg += ' (прервано)';
+            if (payload.errors && payload.errors.length) {
+              resultBox.classList.remove('hidden');
+              resultBox.textContent = payload.errors.join('\n');
+            }
+            toast(msg, payload.failed ? 'warning' : 'success');
+          } else if (payload.type === 'error') {
+            throw new Error(payload.message || 'Ошибка');
+          }
+        }
+      }
+    } catch (e) {
+      if (inFlight) {
+        toast('Соединение прервано — операция продолжается в фоне', 'warning');
+        modalDesc.textContent = desc + ' (прогресс обновляется автоматически)';
+      } else {
+        toast(String(e.message || e), 'error');
+        resultBox.classList.remove('hidden');
+        resultBox.textContent = String(e.message || e);
+      }
+    } finally {
+      if (!statusPollTimer) {
+        inFlight = false;
+        closeBtn.disabled = false;
+        doneBtn.classList.remove('hidden');
+      }
+    }
+  }
+
+  startDeleteBtn.addEventListener('click', async function() {
+    const days = parseDays(expiredDays, MIN_EXPIRED, MAX_EXPIRED);
+    const cnt = parseInt(expiredCountEl.textContent, 10) || 0;
+    if (days === null || cnt <= 0) {
+      toast('Сначала подсчитайте клиентов', 'warning');
+      return;
+    }
+    if (!confirm('Удалить ' + cnt + ' клиент(ов), истёкших более ' + days + ' дн. назад?\n\nДействие необратимо.')) return;
+    await runSse(
+      '{{ url_for("admin.bulk_delete_expired_stream") }}',
+      { days: days },
+      'Удаление истёкших',
+      'Удаляем клиентов из БД и Remnawave…'
+    );
+    await fetchCountExpired();
+  });
+
+  startCompensateBtn.addEventListener('click', async function() {
+    const days = parseDays(compensateDays, MIN_COMP, MAX_COMP);
+    const cnt = parseInt(activeCountEl.textContent, 10) || 0;
+    if (days === null || cnt <= 0) {
+      toast('Сначала подсчитайте активных клиентов', 'warning');
+      return;
+    }
+    if (!confirm(
+      'Продлить подписку на ' + days + ' дн. для ' + cnt + ' активных клиентов?\n\n' +
+      'Пакеты по ' + BATCH_SIZE + ', параллельная обработка. Нет в Remnawave — пропуск. Telegram не уведомляется.'
+    )) return;
+    await runSse(
+      '{{ url_for("admin.bulk_compensate_stream") }}',
+      { days: days },
+      'Компенсация',
+      'Загружаем список активных и продлеваем подписки…'
+    );
+    await fetchCountActive();
+  });
+
+  startDeleteEmptyUuidBtn.addEventListener('click', async function() {
+    const cnt = parseInt(emptyUuidCountEl.textContent, 10) || 0;
+    if (cnt <= 0) {
+      toast('Сначала подсчитайте клиентов', 'warning');
+      return;
+    }
+    if (!confirm('Удалить ' + cnt + ' клиент(ов) с пустым UUID?\n\nЗаписи будут удалены из БД бота. Действие необратимо.')) return;
+    await runSse(
+      '{{ url_for("admin.bulk_delete_empty_uuid_stream") }}',
+      {},
+      'Удаление пустых UUID',
+      'Удаляем осиротевшие записи из БД…'
+    );
+    await fetchCountEmptyUuid();
+  });
+
+  startRetryFailedBtn.addEventListener('click', async function() {
+    const cnt = parseInt(failedPaymentsCountEl.textContent, 10) || 0;
+    if (cnt <= 0) {
+      toast('Сначала подсчитайте failed-платежи', 'warning');
+      return;
+    }
+    if (!confirm(
+      'Обработать ' + cnt + ' failed-платеж(ей)?\n\n' +
+      'Будет повторно выдана подписка или докупка GB по metadata каждого платежа.\n\n' +
+      'ВНИМАНИЕ: если вы уже вручную продлили клиента или добавили трафик, ' +
+      'а платёж остался failed — начисление произойдёт повторно.\n\n' +
+      'Клиентам уведомления не отправляются.'
+    )) return;
+    await runSse(
+      '{{ url_for("admin.bulk_retry_failed_payments_stream") }}',
+      {},
+      'Обработка failed-платежей',
+      'Повторная выдача подписки / докупки GB…'
+    );
+    await fetchCountFailedPayments();
+  });
+
+  startClearDevicesBtn.addEventListener('click', async function() {
+    if (!devicesCountLoaded) {
+      toast('Сначала подсчитайте записи в devices.db', 'warning');
+      return;
+    }
+    const cnt = devicesCountEl.textContent;
+    if (!confirm(
+      'ОЧИСТКА DEVICES.DB\n\n' +
+      'Будут удалены все записи устройств (' + cnt + ').\n\n' +
+      'Все устройства, привязанные к клиентам, исчезнут из базы и начнут формироваться заново при следующих подключениях.\n\n' +
+      'Делайте очистку только если знаете, зачем она вам нужна.\n\n' +
+      'Продолжить?'
+    )) return;
+    if (!confirm('Последнее предупреждение: очистить devices.db? Действие необратимо.')) return;
+
+    startClearDevicesBtn.disabled = true;
+    try {
+      const res = await fetch('{{ url_for("admin.bulk_clear_devices") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        throw new Error(data.error || ('HTTP ' + res.status));
+      }
+      toast('Готово. Удалено записей: ' + (data.success || 0), 'success');
+      devicesCountEl.textContent = '0';
+    } catch (e) {
+      toast(String(e.message || e), 'error');
+      startClearDevicesBtn.disabled = false;
+    }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,736 @@
+{% extends 'base.html' %}
+{% block title %}Партнёр {{ partner.telegram_id }} — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4"
+     id="partnerRoot"
+     data-partner-id="{{ partner.telegram_id }}"
+     data-set-percent-url="{{ url_for('api.api_set_partner_percent', telegram_id=partner.telegram_id) }}">
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        <a href="{{ url_for('admin.partners_list') }}"
+           class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="К списку партнёров">
+          <i data-lucide="chevron-left" class="w-4 h-4"></i>
+        </a>
+        <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 truncate">
+          {{ (partner.real_username or partner.username) or partner.telegram_id }}
+        </h1>
+      </div>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        ID: <code data-copy="{{ partner.telegram_id }}" title="Скопировать">{{ partner.telegram_id }}</code>
+        {% if partner.partner_ref_code %}
+        · код: <code data-copy="{{ partner.partner_ref_code }}" title="Скопировать">{{ partner.partner_ref_code }}</code>
+        {% endif %}
+        {% if partner.email %}
+        · {{ partner.email }}
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('admin.partner_accruals_export_csv', telegram_id=partner.telegram_id) }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Экспорт начислений в CSV">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+        <span>CSV</span>
+      </a>
+      {% endif %}
+      <button type="button"
+              class="tw-btn tw-btn-secondary tw-btn-sm"
+              onclick="window.openUserModal({{ partner.telegram_id }}); return false;"
+              title="Открыть карточку клиента">
+        <i data-lucide="user" class="w-3.5 h-3.5"></i>
+        <span>Профиль</span>
+      </button>
+    </div>
+  </div>
+
+  {# === KPI === #}
+  <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="wallet" class="w-3.5 h-3.5"></i> Баланс
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none {% if (partner.balance or 0) > 0 %}text-amber-500{% else %}tw-text-base2{% endif %}">
+        {{ "%.2f"|format(partner.balance or 0) }} ₽
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2">к выплате</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="banknote" class="w-3.5 h-3.5"></i> Всего выплачено
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none text-rose-500">
+        {{ "%.2f"|format(partner_finance.total_paid_out_rub if partner_finance else 0) }} ₽
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2">сумма всех списаний (bonus &lt; 0)</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="hand-coins" class="w-3.5 h-3.5"></i> Ручные начисления
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none text-amber-500">
+        {{ "%.2f"|format(partner_finance.manual_credit_rub if partner_finance else 0) }} ₽
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2">корректировки «+» админом</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="users" class="w-3.5 h-3.5"></i> Приглашено
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ referrals_total or 0 }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">через метод <code>partner</code></div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="credit-card" class="w-3.5 h-3.5"></i> Платежей
+      </div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ payments_count or 0 }}</div>
+      <div class="mt-1 text-[11px] tw-text-muted2">успешных от рефералов</div>
+    </div>
+
+    <div class="tw-card p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider flex items-center gap-1.5">
+        <i data-lucide="percent" class="w-3.5 h-3.5"></i> Процент
+      </div>
+      <div id="pctView" class="mt-1 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="text-[22px] font-semibold leading-none tw-text-base2" id="pctValueLabel">
+            {% if partner.partner_percent_rub != '' and partner.partner_percent_rub is not none %}
+              {{ "%.1f"|format(partner.partner_percent_rub|float) }}%
+            {% else %}
+              {{ "%.1f"|format(global_pct) }}%
+            {% endif %}
+          </div>
+        </div>
+        <button type="button" id="pctEditBtn"
+                class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Изменить">
+          <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <div id="pctEdit" class="mt-1 hidden">
+        <div class="flex items-center gap-1.5">
+          <input type="number" id="pctInput" class="tw-input"
+                 step="0.1" min="0" max="100"
+                 placeholder="0–100"
+                 value="{% if partner.partner_percent_rub != '' and partner.partner_percent_rub is not none %}{{ partner.partner_percent_rub }}{% endif %}"
+                 style="height: 32px; font-size: 13px;">
+          <button type="button" id="pctSaveBtn" class="tw-btn tw-btn-primary tw-btn-icon-sm" title="Сохранить">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          </button>
+          <button type="button" id="pctCancelBtn" class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Отмена">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+        <button type="button" id="pctResetBtn"
+                class="text-[11px] tw-text-muted2 mt-1 hover:underline">
+          Сбросить (использовать глобальные {{ "%.1f"|format(global_pct) }}%)
+        </button>
+      </div>
+      <div class="mt-1 text-[11px] tw-text-muted2" id="pctHint">
+        {% if partner.partner_percent_rub != '' and partner.partner_percent_rub is not none %}
+          индивидуальный
+        {% else %}
+          из глобальных настроек
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# === Партнёрские ссылки (Telegram + сайт, как в «Продвижении») === #}
+  {% if partner.partner_ref_code %}
+  <div class="tw-card p-3 sm:p-4 space-y-2">
+    <div class="text-[12px] tw-text-muted2 mb-1 flex items-center gap-2">
+      <i data-lucide="link-2" class="w-3.5 h-3.5"></i>
+      <span>Партнёрские ссылки</span>
+    </div>
+    {% if partner_link %}
+    <div class="flex items-center gap-2">
+      <i data-lucide="bot" class="w-4 h-4 tw-text-muted2 shrink-0" title="Telegram"></i>
+      <code class="text-[12px] flex-1 min-w-0 truncate px-2 py-1.5 rounded"
+            style="background: rgb(var(--admin-bg-soft));"
+            title="{{ partner_link }}">{{ partner_link }}</code>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm shrink-0"
+              data-copy="{{ partner_link }}" title="Скопировать">
+        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+      </button>
+    </div>
+    {% else %}
+    <div class="text-[12px]" style="color: #f59e0b;">
+      <i data-lucide="alert-triangle" class="w-3 h-3 inline-block"></i>
+      Не задан <code>bot_username</code> в настройках — ссылка в Telegram недоступна.
+    </div>
+    {% endif %}
+    {% if partner_site_link %}
+    <div class="flex items-center gap-2">
+      <i data-lucide="globe" class="w-4 h-4 tw-text-muted2 shrink-0" title="Сайт"></i>
+      <code class="text-[12px] flex-1 min-w-0 truncate px-2 py-1.5 rounded"
+            style="background: rgb(var(--admin-bg-soft));"
+            title="{{ partner_site_link }}">{{ partner_site_link }}</code>
+      <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm shrink-0"
+              data-copy="{{ partner_site_link }}" title="Скопировать">
+        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+      </button>
+    </div>
+    {% else %}
+    <div class="text-[11px] tw-text-muted2">
+      <i data-lucide="info" class="w-3 h-3 inline-block"></i>
+      Чтобы появилась ссылка на сайт — задайте <code>SITE_URL</code> в .env или <code>website_url</code> в настройках (как в разделе «Продвижение»).
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# === Sparkline + Корректировка === #}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    {# Sparkline #}
+    <div class="tw-card p-4 lg:col-span-2">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="flex items-center gap-2">
+          <i data-lucide="bar-chart-3" class="w-4 h-4 tw-text-muted2"></i>
+          <h3 class="text-[14px] font-semibold tw-text-base2">Динамика начислений (30 дней)</h3>
+        </div>
+        <div class="text-[11px] tw-text-subtle2">UTC, по дням</div>
+      </div>
+      <div id="sparkChart" class="spark-wrap" data-days='{{ chart_days|tojson }}'></div>
+    </div>
+
+    {# Корректировка баланса #}
+    <div class="tw-card p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="pencil-line" class="w-4 h-4 tw-text-muted2"></i>
+        <h3 class="text-[14px] font-semibold tw-text-base2">Корректировка баланса</h3>
+      </div>
+      <form method="post" id="adjustForm" class="space-y-2">
+        <input type="hidden" name="action" value="adjust_balance">
+        <div class="flex items-center gap-1.5">
+          <input type="number" step="0.01" name="amount" id="adjustAmount"
+                 class="tw-input flex-1" placeholder="0.00 (или −50)" inputmode="decimal" required>
+          <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-pct-delta="-50" title="-50">
+            <span class="text-[12px] font-semibold">−50</span>
+          </button>
+          <button type="button" class="tw-btn tw-btn-ghost tw-btn-icon-sm" data-pct-delta="50" title="+50">
+            <span class="text-[12px] font-semibold">+50</span>
+          </button>
+        </div>
+        <input type="text" name="comment" class="tw-input"
+               placeholder="Комментарий (например, выплата по СБП)" maxlength="200">
+        <div class="flex items-center justify-between gap-2">
+          <div class="text-[11px] tw-text-muted2">
+            <i data-lucide="info" class="w-3 h-3 inline-block"></i>
+            «−» уменьшает (выплата), «+» увеличивает.
+          </div>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+            <span>Применить</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# === История начислений === #}
+  <div class="tw-card">
+    <div class="p-3 sm:p-4 flex items-center justify-between gap-2 flex-wrap border-b"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="flex items-center gap-2">
+        <i data-lucide="list-checks" class="w-4 h-4 tw-text-muted2"></i>
+        <h3 class="text-[14px] font-semibold tw-text-base2">История начислений</h3>
+        <span class="text-[11px] tw-text-subtle2">{{ accruals_total or 0 }}</span>
+      </div>
+    </div>
+
+    <form method="get" action="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id) }}"
+          id="accFilterForm"
+          class="p-3 sm:p-4 flex flex-col gap-2 border-b"
+          style="border-color: rgb(var(--admin-border));">
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+        {# Тип сегментед — кнопки обновляют hidden и сабмитят форму #}
+        <div class="acc-seg" role="tablist" aria-label="Тип">
+          {% set acc_views = [
+            ('all',    'list',     'Все'),
+            ('auto',   'sparkles', 'Авто'),
+            ('manual', 'pencil',   'Админ'),
+          ] %}
+          {% for vid, vicon, vlabel in acc_views %}
+          <button type="button"
+                  data-acc-view="{{ vid }}"
+                  class="{% if acc_type == vid %}active{% endif %}" title="{{ vlabel }}">
+            <i data-lucide="{{ vicon }}" class="w-3 h-3 shrink-0"></i>
+            <span>{{ vlabel }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="acc_type" id="accTypeInput" value="{{ acc_type }}">
+
+        <input type="date" name="date_from" value="{{ date_from }}"
+               class="tw-input" style="height: 34px;" title="С даты">
+        <input type="date" name="date_to" value="{{ date_to }}"
+               class="tw-input" style="height: 34px;" title="По дату">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="filter" class="w-3.5 h-3.5"></i>
+          <span>Применить</span>
+        </button>
+        {% if date_from or date_to or acc_type != 'all' %}
+        <a href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id) }}"
+           class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i><span>Сброс</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+
+    {# Desktop таблица #}
+    <div class="hidden md:block overflow-x-auto tw-scroll">
+      <table class="tw-tbl">
+        <thead>
+          <tr>
+            <th>Дата (МСК)</th>
+            <th>Тип</th>
+            <th>Плательщик</th>
+            <th class="text-end">Bonus</th>
+            <th class="text-center">%</th>
+            <th>Payment ID</th>
+            <th>Комментарий</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not accruals %}
+          <tr>
+            <td colspan="7" class="text-center py-10 tw-text-muted2">
+              <div class="flex flex-col items-center gap-1.5">
+                <i data-lucide="inbox" class="w-6 h-6 tw-text-subtle2"></i>
+                <div class="text-[13px]">Нет записей</div>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+          {% for a in accruals %}
+          <tr>
+            <td><span class="text-[12px] tw-text-base2">{{ a.created_msk }}</span></td>
+            <td>
+              {% if a.kind == 'auto' %}
+              <span class="tw-chip" style="background: rgb(16 185 129 / .14); color: #10b981;">
+                <i data-lucide="sparkles" class="w-3 h-3"></i> Авто
+              </span>
+              {% elif a.kind == 'manual' %}
+              {% if (a.bonus or 0) < 0 %}
+              <span class="tw-chip" style="background: rgb(99 102 241 / .14); color: #6366f1;">
+                <i data-lucide="banknote" class="w-3 h-3"></i> Выплата
+              </span>
+              {% else %}
+              <span class="tw-chip" style="background: rgb(245 158 11 / .14); color: #f59e0b;">
+                <i data-lucide="pencil" class="w-3 h-3"></i> Админ
+              </span>
+              {% endif %}
+              {% else %}
+              <span class="tw-text-subtle2 text-[11px]">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if (a.payer_id or 0) > 0 %}
+              <button type="button" class="text-left hover:opacity-80 transition-opacity"
+                      onclick="window.openUserModal({{ a.payer_id }}); return false;">
+                <code class="text-[11px]">{{ a.payer_id }}</code>
+              </button>
+              {% else %}
+              <span class="tw-text-subtle2 text-[11px]">—</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% set b = a.bonus|float if a.bonus is not none else 0 %}
+              <span class="font-semibold {% if b > 0 %}text-emerald-500{% elif b < 0 %}text-rose-500{% else %}tw-text-muted2{% endif %}">
+                {% if b > 0 %}+{% endif %}{{ "%.2f"|format(b) }} ₽
+              </span>
+            </td>
+            <td class="text-center">
+              {% if (a.percent or 0) > 0 %}
+              <span class="text-[12px] tw-text-muted2">{{ a.percent }}%</span>
+              {% else %}
+              <span class="tw-text-subtle2">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if a.payment_id and a.payment_id != 'MANUAL_ADJUST' %}
+              <code class="text-[11px]">{{ a.payment_id }}</code>
+              {% else %}
+              <span class="tw-text-subtle2 text-[11px]">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if a.comment %}
+              <span class="text-[12px] tw-text-base2 truncate inline-block max-w-[260px]" title="{{ a.comment }}">{{ a.comment }}</span>
+              {% else %}
+              <span class="tw-text-subtle2 text-[11px]">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Mobile: карточки #}
+    <div class="md:hidden p-3 space-y-2">
+      {% if not accruals %}
+      <div class="text-center py-10 tw-text-muted2">
+        <i data-lucide="inbox" class="w-6 h-6 mx-auto mb-1.5 tw-text-subtle2"></i>
+        <div class="text-[13px]">Нет записей</div>
+      </div>
+      {% endif %}
+      {% for a in accruals %}
+      <div class="tw-card p-3">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-[11px] tw-text-muted2">{{ a.created_msk }}</div>
+            <div class="mt-0.5">
+              {% if a.kind == 'auto' %}
+              <span class="tw-chip" style="background: rgb(16 185 129 / .14); color: #10b981;">
+                <i data-lucide="sparkles" class="w-3 h-3"></i> Авто
+              </span>
+              {% elif a.kind == 'manual' %}
+                {% if (a.bonus or 0) < 0 %}
+                <span class="tw-chip" style="background: rgb(99 102 241 / .14); color: #6366f1;">
+                  <i data-lucide="banknote" class="w-3 h-3"></i> Выплата
+                </span>
+                {% else %}
+                <span class="tw-chip" style="background: rgb(245 158 11 / .14); color: #f59e0b;">
+                  <i data-lucide="pencil" class="w-3 h-3"></i> Админ
+                </span>
+                {% endif %}
+              {% endif %}
+              {% if (a.payer_id or 0) > 0 %}
+              · <code class="text-[11px]">{{ a.payer_id }}</code>
+              {% endif %}
+            </div>
+          </div>
+          {% set b = a.bonus|float if a.bonus is not none else 0 %}
+          <div class="text-end shrink-0 font-semibold {% if b > 0 %}text-emerald-500{% elif b < 0 %}text-rose-500{% else %}tw-text-muted2{% endif %}">
+            {% if b > 0 %}+{% endif %}{{ "%.2f"|format(b) }} ₽
+          </div>
+        </div>
+        {% if a.comment %}
+        <div class="mt-1 text-[12px] tw-text-base2">{{ a.comment }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Pagination accruals #}
+    {% if accruals_total_pages > 1 %}
+    <div class="p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2 border-t"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="text-[12px] tw-text-muted2">
+        Страница <span class="font-semibold tw-text-base2">{{ accruals_page }}</span> из
+        <span class="font-semibold tw-text-base2">{{ accruals_total_pages }}</span>
+      </div>
+      {% set qs_acc = {'acc_type': acc_type} %}
+      {% if date_from %}{% set _ = qs_acc.update({'date_from': date_from}) %}{% endif %}
+      {% if date_to %}{% set _ = qs_acc.update({'date_to': date_to}) %}{% endif %}
+      <nav class="tw-pagination">
+        <a class="pg-item {% if accruals_page == 1 %}disabled{% endif %}"
+           href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id, accruals_page=accruals_page-1, **qs_acc) if accruals_page > 1 else '#' }}">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set ns = namespace(last=0) %}
+        {% for p in range(1, accruals_total_pages + 1) %}
+          {% set near = (p == 1 or p == accruals_total_pages or (p >= accruals_page - 1 and p <= accruals_page + 1)) %}
+          {% if near %}
+            {% if ns.last and p - ns.last > 1 %}
+              <span class="pg-item disabled">…</span>
+            {% endif %}
+            <a class="pg-item {% if p == accruals_page %}active{% endif %}"
+               href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id, accruals_page=p, **qs_acc) }}">{{ p }}</a>
+            {% set ns.last = p %}
+          {% endif %}
+        {% endfor %}
+        <a class="pg-item {% if accruals_page == accruals_total_pages %}disabled{% endif %}"
+           href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id, accruals_page=accruals_page+1, **qs_acc) if accruals_page < accruals_total_pages else '#' }}">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+
+  {# === Приглашённые === #}
+  <div class="tw-card">
+    <div class="p-3 sm:p-4 flex items-center gap-2 border-b"
+         style="border-color: rgb(var(--admin-border));">
+      <i data-lucide="user-plus" class="w-4 h-4 tw-text-muted2"></i>
+      <h3 class="text-[14px] font-semibold tw-text-base2">Приглашённые</h3>
+      <span class="text-[11px] tw-text-subtle2">{{ referrals_total or 0 }}</span>
+    </div>
+
+    <div class="hidden md:block overflow-x-auto tw-scroll">
+      <table class="tw-tbl">
+        <thead>
+          <tr>
+            <th>Пользователь</th>
+            <th>Дата приглашения</th>
+            <th>Подписка</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if not referrals %}
+          <tr>
+            <td colspan="3" class="text-center py-10 tw-text-muted2">
+              <div class="flex flex-col items-center gap-1.5">
+                <i data-lucide="users" class="w-6 h-6 tw-text-subtle2"></i>
+                <div class="text-[13px]">Никто не приглашён</div>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+          {% for r in referrals %}
+          <tr>
+            <td>
+              <button type="button" class="text-left hover:opacity-80 transition-opacity"
+                      onclick="window.openUserModal({{ r.telegram_id }}); return false;">
+                <div class="text-[13px] font-medium tw-text-base2 truncate">
+                  {{ (r.real_username or r.username) or 'N/A' }}
+                </div>
+                <div class="text-[11px] tw-text-muted2">ID: <code class="text-[11px]">{{ r.telegram_id }}</code></div>
+              </button>
+            </td>
+            <td><span class="text-[12px] tw-text-base2">{{ r.created_msk }}</span></td>
+            <td>
+              {% if r.sub_status == 'active' %}
+              <span class="tw-status-badge tw-status-succeeded"><i data-lucide="check" class="w-3 h-3"></i> Активна</span>
+              {% elif r.sub_status == 'expired' %}
+              <span class="tw-status-badge tw-status-failed"><i data-lucide="clock-alert" class="w-3 h-3"></i> Истекла</span>
+              {% else %}
+              <span class="tw-status-badge tw-status-canceled"><i data-lucide="minus" class="w-3 h-3"></i> Нет</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Mobile referrals cards #}
+    <div class="md:hidden p-3 space-y-2">
+      {% if not referrals %}
+      <div class="text-center py-10 tw-text-muted2">
+        <i data-lucide="users" class="w-6 h-6 mx-auto mb-1.5 tw-text-subtle2"></i>
+        <div class="text-[13px]">Никто не приглашён</div>
+      </div>
+      {% endif %}
+      {% for r in referrals %}
+      <button type="button" class="tw-card p-3 w-full text-left hover:opacity-95 transition-opacity"
+              onclick="window.openUserModal({{ r.telegram_id }}); return false;">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-[13.5px] font-semibold tw-text-base2 truncate">
+              {{ (r.real_username or r.username) or 'N/A' }}
+            </div>
+            <div class="text-[11px] tw-text-muted2">
+              ID: <code class="text-[11px]">{{ r.telegram_id }}</code> · {{ r.created_msk }}
+            </div>
+          </div>
+          {% if r.sub_status == 'active' %}
+          <span class="tw-status-badge tw-status-succeeded"><i data-lucide="check" class="w-3 h-3"></i></span>
+          {% elif r.sub_status == 'expired' %}
+          <span class="tw-status-badge tw-status-failed"><i data-lucide="clock-alert" class="w-3 h-3"></i></span>
+          {% else %}
+          <span class="tw-status-badge tw-status-canceled"><i data-lucide="minus" class="w-3 h-3"></i></span>
+          {% endif %}
+        </div>
+      </button>
+      {% endfor %}
+    </div>
+
+    {# Pagination referrals #}
+    {% if referrals_total_pages and referrals_total_pages > 1 %}
+    <div class="p-3 sm:p-4 flex items-center justify-between gap-2 border-t"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="text-[12px] tw-text-muted2">
+        Страница <span class="font-semibold tw-text-base2">{{ referrals_page }}</span> из
+        <span class="font-semibold tw-text-base2">{{ referrals_total_pages }}</span>
+      </div>
+      <nav class="tw-pagination">
+        <a class="pg-item {% if referrals_page == 1 %}disabled{% endif %}"
+           href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id, ref_page=referrals_page-1) if referrals_page > 1 else '#' }}">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set ns = namespace(last=0) %}
+        {% for p in range(1, referrals_total_pages + 1) %}
+          {% set near = (p == 1 or p == referrals_total_pages or (p >= referrals_page - 1 and p <= referrals_page + 1)) %}
+          {% if near %}
+            {% if ns.last and p - ns.last > 1 %}
+              <span class="pg-item disabled">…</span>
+            {% endif %}
+            <a class="pg-item {% if p == referrals_page %}active{% endif %}"
+               href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id, ref_page=p) }}">{{ p }}</a>
+            {% set ns.last = p %}
+          {% endif %}
+        {% endfor %}
+        <a class="pg-item {% if referrals_page == referrals_total_pages %}disabled{% endif %}"
+           href="{{ url_for('admin.partner_details', telegram_id=partner.telegram_id, ref_page=referrals_page+1) if referrals_page < referrals_total_pages else '#' }}">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function() {
+  const root = document.getElementById('partnerRoot');
+  if (!root) return;
+
+  // ===== Click-to-copy =====
+  document.addEventListener('click', function(e) {
+    const t = e.target.closest('[data-copy]');
+    if (!t) return;
+    const val = t.getAttribute('data-copy');
+    if (!val) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(val).then(function() {
+        if (window.adminToast) window.adminToast('Скопировано', 'success');
+      }).catch(function() {});
+    }
+  });
+
+  // ===== Сегментед фильтр истории =====
+  document.querySelectorAll('[data-acc-view]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const v = btn.getAttribute('data-acc-view');
+      const inp = document.getElementById('accTypeInput');
+      const form = document.getElementById('accFilterForm');
+      if (inp) inp.value = v;
+      if (form) form.submit();
+    });
+  });
+
+  // ===== Корректировка баланса: шорткаты =====
+  const adjAmount = document.getElementById('adjustAmount');
+  document.querySelectorAll('[data-pct-delta]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (!adjAmount) return;
+      const cur = parseFloat(adjAmount.value || '0') || 0;
+      const d = parseFloat(btn.getAttribute('data-pct-delta') || '0') || 0;
+      adjAmount.value = (cur + d).toFixed(2);
+      adjAmount.focus();
+    });
+  });
+
+  // ===== Inline-редактор процента =====
+  const pctView = document.getElementById('pctView');
+  const pctEdit = document.getElementById('pctEdit');
+  const pctInput = document.getElementById('pctInput');
+  const pctSaveBtn = document.getElementById('pctSaveBtn');
+  const pctCancelBtn = document.getElementById('pctCancelBtn');
+  const pctEditBtn = document.getElementById('pctEditBtn');
+  const pctResetBtn = document.getElementById('pctResetBtn');
+  const pctValueLabel = document.getElementById('pctValueLabel');
+  const pctHint = document.getElementById('pctHint');
+  const setPercentUrl = root.dataset.setPercentUrl;
+
+  function showEdit(show) {
+    if (show) {
+      pctView.classList.add('hidden');
+      pctEdit.classList.remove('hidden');
+      try { pctInput.focus(); pctInput.select(); } catch (_) {}
+    } else {
+      pctView.classList.remove('hidden');
+      pctEdit.classList.add('hidden');
+    }
+  }
+
+  if (pctEditBtn) pctEditBtn.addEventListener('click', function() { showEdit(true); });
+  if (pctCancelBtn) pctCancelBtn.addEventListener('click', function() { showEdit(false); });
+
+  async function savePercent(value) {
+    try {
+      const res = await fetch(setPercentUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ percent: value })
+      });
+      const data = await res.json().catch(function() { return {}; });
+      if (!res.ok || !data.ok) {
+        if (window.adminToast) window.adminToast(data.message || 'Ошибка сохранения', 'error');
+        return;
+      }
+      if (value === null) {
+        const globalPct = parseFloat('{{ "%.1f"|format(global_pct) }}');
+        pctValueLabel.textContent = globalPct.toFixed(1) + '%';
+        pctHint.textContent = 'из глобальных настроек';
+        if (pctInput) pctInput.value = '';
+      } else {
+        const v = parseFloat(value);
+        pctValueLabel.textContent = v.toFixed(1) + '%';
+        pctHint.textContent = 'индивидуальный';
+        if (pctInput) pctInput.value = v;
+      }
+      showEdit(false);
+      if (window.adminToast) window.adminToast('Процент обновлён', 'success');
+    } catch (err) {
+      if (window.adminToast) window.adminToast('Сетевая ошибка', 'error');
+    }
+  }
+
+  if (pctSaveBtn) pctSaveBtn.addEventListener('click', function() {
+    if (!pctInput) return;
+    const raw = (pctInput.value || '').trim();
+    if (raw === '') { savePercent(null); return; }
+    const v = parseFloat(raw);
+    if (isNaN(v) || v < 0 || v > 100) {
+      if (window.adminToast) window.adminToast('Процент должен быть от 0 до 100', 'error');
+      return;
+    }
+    savePercent(v);
+  });
+  if (pctResetBtn) pctResetBtn.addEventListener('click', function() { savePercent(null); });
+
+  if (pctInput) pctInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); pctSaveBtn.click(); }
+    if (e.key === 'Escape') { e.preventDefault(); showEdit(false); }
+  });
+
+  // ===== Sparkline =====
+  const chartEl = document.getElementById('sparkChart');
+  if (chartEl) {
+    let days = [];
+    try { days = JSON.parse(chartEl.dataset.days || '[]'); } catch (_) {}
+    if (Array.isArray(days) && days.length) {
+      const absVals = days.map(function(d) { return Math.abs(parseFloat(d.value || 0)); });
+      const maxAbs = Math.max.apply(null, absVals.concat([1]));
+      const frag = document.createDocumentFragment();
+      days.forEach(function(d) {
+        const v = parseFloat(d.value || 0);
+        const bar = document.createElement('div');
+        bar.className = 'spark-bar';
+        if (v === 0) bar.classList.add('is-zero');
+        else if (v < 0) bar.classList.add('is-neg');
+        const ratio = Math.abs(v) / maxAbs;
+        const h = Math.max(2, Math.round(ratio * 86));
+        bar.style.height = h + 'px';
+        const tip = d.date + ': ' + (v > 0 ? '+' : '') + v.toFixed(2) + ' ₽';
+        bar.title = tip;
+        frag.appendChild(bar);
+      });
+      chartEl.innerHTML = '';
+      chartEl.appendChild(frag);
+    } else {
+      chartEl.innerHTML = '<div class="text-[12px] tw-text-subtle2 py-6 text-center w-full">Нет данных за 30 дней</div>';
+    }
+  }
+
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    try { window.lucide.createIcons(); } catch (_) {}
+  }
+})();
+</script>
+{% endblock %}

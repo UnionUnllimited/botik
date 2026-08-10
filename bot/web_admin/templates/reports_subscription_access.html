@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Обновления подписки — Отчёты{% endblock %}
+
+{% block extra_head %}
+{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 pt-2" id="saRoot">
+
+  <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2 flex-wrap">
+        <i data-lucide="rss" class="w-6 h-6 shrink-0 text-[var(--color-brand-500)]"></i>
+        Обновления подписки
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Запросы к подписке (без браузерных обращений). Автообновление каждые 5 с; при скрытой вкладке пауза.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 shrink-0">
+      <span id="saStatusBadge" class="tw-chip bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true"></span>
+        Живое обновление
+      </span>
+      <select id="saLimit" class="tw-select !w-auto min-w-[72px] max-h-[34px]" title="Число строк в таблице">
+        <option value="30" selected>30</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button type="button" id="saPauseBtn" class="tw-btn tw-btn-secondary tw-btn-sm" aria-pressed="false" title="Приостановить автообновление">
+        <i data-lucide="pause" class="w-3.5 h-3.5 sa-ico-running"></i>
+        <i data-lucide="play" class="w-3.5 h-3.5 sa-ico-paused hidden"></i>
+        <span class="sa-label-running">Пауза</span>
+        <span class="sa-label-paused hidden">Возобновить</span>
+      </button>
+      <button type="button" id="saRefreshBtn" class="tw-btn tw-btn-secondary tw-btn-sm" title="Обновить сейчас">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        Сейчас
+      </button>
+      <a href="{{ url_for('admin.reports_index') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+        Отчёты
+      </a>
+    </div>
+  </div>
+
+  <p class="text-[11.5px] tw-text-subtle2 -mt-1">Показатели считаются по текущей выборке (не по всей БД).</p>
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+    <div class="tw-card p-3 sm:p-4">
+      <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2">Записей в таблице</div>
+      <div class="text-[clamp(1.1rem,3vw,1.5rem)] font-bold tabular-nums tw-text-base2 mt-1" id="saTotalCount">—</div>
+    </div>
+    <div class="tw-card p-3 sm:p-4">
+      <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2">Последнее событие</div>
+      <div class="text-[13px] font-semibold text-emerald-600 dark:text-emerald-400 mt-1 leading-snug" id="saLastUpdate">—</div>
+    </div>
+    <div class="tw-card p-3 sm:p-4">
+      <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2">Уникальных UUID</div>
+      <div class="text-[clamp(1.1rem,3vw,1.5rem)] font-bold tabular-nums text-sky-600 dark:text-sky-400 mt-1" id="saUniqueUuid">—</div>
+    </div>
+    <div class="tw-card p-3 sm:p-4">
+      <div class="text-[10px] uppercase tracking-wider font-semibold tw-text-subtle2">Уникальных HWID</div>
+      <div class="text-[clamp(1.1rem,3vw,1.5rem)] font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-1" id="saUniqueHwid">—</div>
+    </div>
+  </div>
+
+  {# Десктоп #}
+  <div class="tw-card overflow-hidden hidden lg:block">
+    <div class="px-4 py-3 border-b border-[rgb(var(--admin-border))] flex items-center gap-2">
+      <i data-lucide="list" class="w-4 h-4 tw-text-muted2 shrink-0"></i>
+      <h2 class="text-[13px] font-semibold tw-text-base2">Последние обновления</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="tw-tbl" id="saTable">
+        <thead>
+          <tr>
+            <th>UUID</th>
+            <th>IP</th>
+            <th>Устройство</th>
+            <th>ОС</th>
+            <th>User-Agent</th>
+            <th>Время</th>
+            <th>Метод</th>
+            <th>Статус</th>
+            <th>Размер</th>
+          </tr>
+        </thead>
+        <tbody id="saTableBody">
+          <tr>
+            <td colspan="9" class="text-center py-10 tw-text-muted2">
+              <span class="inline-block w-8 h-8 border-2 border-[rgb(var(--admin-border))] border-t-[var(--color-brand-500)] rounded-full animate-spin align-middle" aria-hidden="true"></span>
+              <span class="sa-sr-only">Загрузка</span>
+              <span class="block mt-2 text-[13px]">Загрузка…</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Мобильные карточки #}
+  <div class="lg:hidden space-y-3" id="saCards">
+    <div class="tw-card p-6 text-center tw-text-muted2">
+      <span class="inline-block w-8 h-8 border-2 border-[rgb(var(--admin-border))] border-t-[var(--color-brand-500)] rounded-full animate-spin" aria-hidden="true"></span>
+      <p class="mt-2 text-[13px]">Загрузка…</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const SA_API = {{ url_for('admin.api_subscription_access') | tojson }};
+
+  let pollTimer = null;
+  let isFetching = false;
+  let pausedManual = false;
+  let pausedHidden = false;
+  /** @type {boolean|null} null — ещё не было успешного опроса */
+  let lastPollOk = null;
+  let lastPollErr = '';
+
+  function saIcons() {
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      try { lucide.createIcons(); } catch (_) {}
+    }
+  }
+
+  function esc(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function escAttr(s) {
+    return esc(s).replace(/'/g, '&#39;');
+  }
+
+  function truncateUa(ua, maxLen) {
+    if (!ua || ua === '—' || typeof ua !== 'string') return ua || '—';
+    return ua.length <= maxLen ? ua : ua.substring(0, maxLen) + '…';
+  }
+
+  function statusPill(code) {
+    const n = parseInt(code, 10);
+    if (Number.isNaN(n)) {
+      return '<span class="tw-kbd text-[11px]">' + esc(code) + '</span>';
+    }
+    if (n >= 200 && n < 300) {
+      return '<span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">' + n + '</span>';
+    }
+    if (n >= 400) {
+      return '<span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums bg-rose-500/15 text-rose-700 dark:text-rose-300">' + n + '</span>';
+    }
+    return '<span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums bg-sky-500/15 text-sky-700 dark:text-sky-300">' + n + '</span>';
+  }
+
+  function renderStatusBadge() {
+    const el = document.getElementById('saStatusBadge');
+    if (!el) return;
+
+    if (pausedManual) {
+      el.className = 'tw-chip bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/25';
+      el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>' + esc('Ручная пауза');
+      return;
+    }
+    if (pausedHidden) {
+      el.className = 'tw-chip bg-[rgb(var(--admin-border)/0.2)] tw-text-muted2 border border-[rgb(var(--admin-border))]';
+      el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-current opacity-50" aria-hidden="true"></span>' + esc('Вкладка в фоне');
+      return;
+    }
+    if (lastPollOk === false) {
+      el.className = 'tw-chip bg-rose-500/12 text-rose-600 dark:text-rose-400 border border-rose-500/25';
+      el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-500" aria-hidden="true"></span>' + esc(lastPollErr || 'Ошибка');
+      return;
+    }
+    el.className = 'tw-chip bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25';
+    el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true"></span>' + esc(lastPollOk === null ? 'Загрузка…' : 'Живое обновление');
+  }
+
+  function updatePauseUi() {
+    const btn = document.getElementById('saPauseBtn');
+    btn.setAttribute('aria-pressed', pausedManual ? 'true' : 'false');
+    btn.title = pausedManual ? 'Включить автообновление каждые 5 с' : 'Приостановить автообновление';
+    btn.querySelector('.sa-ico-running').classList.toggle('hidden', pausedManual);
+    btn.querySelector('.sa-ico-paused').classList.toggle('hidden', !pausedManual);
+    btn.querySelector('.sa-label-running').classList.toggle('hidden', pausedManual);
+    btn.querySelector('.sa-label-paused').classList.toggle('hidden', !pausedManual);
+    renderStatusBadge();
+    saIcons();
+  }
+
+  function schedulePoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    if (pausedManual || pausedHidden) return;
+    pollTimer = setInterval(fetchRecords, 5000);
+  }
+
+  function getLimit() {
+    const sel = document.getElementById('saLimit');
+    return sel ? parseInt(sel.value, 10) || 30 : 30;
+  }
+
+  function rowDesktop(record) {
+    const uaShort = truncateUa(record.user_agent, 24);
+    const uuidAttr = escAttr(record.uuid);
+    return (
+      '<tr class="hover:bg-[var(--admin-bg-soft)]">' +
+      '<td><button type="button" class="sa-uuid font-mono text-[12px] text-[var(--color-brand-500)] hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" data-sa-uuid="' + uuidAttr + '" title="Открыть клиента">' + esc(record.uuid) + '</button></td>' +
+      '<td><span class="tw-kbd text-[11px]">' + esc(record.ip_address) + '</span></td>' +
+      '<td><div class="font-medium tw-text-base2">' + esc(record.hwid) + '</div>' +
+      (record.model !== '—' ? '<div class="text-[11px] tw-text-muted2">' + esc(record.model) + '</div>' : '') + '</td>' +
+      '<td><div>' + esc(record.os) + '</div>' +
+      (record.os_version !== '—' ? '<div class="text-[11px] tw-text-muted2">' + esc(record.os_version) + '</div>' : '') + '</td>' +
+      '<td><span class="tw-kbd text-[11px] max-w-[140px] inline-block truncate align-bottom" title="' + escAttr(record.user_agent || '—') + '">' + esc(uaShort) + '</span></td>' +
+      '<td><div class="tw-text-base2">' + esc(record.access_time) + '</div><div class="text-[11px] tw-text-muted2">' + esc(record.time_ago) + '</div></td>' +
+      '<td><span class="tw-kbd text-[11px]">' + esc(record.method) + '</span></td>' +
+      '<td>' + statusPill(record.status_code) + '</td>' +
+      '<td><span class="tw-kbd text-[11px]">' + esc(record.response_size) + '</span></td>' +
+      '</tr>'
+    );
+  }
+
+  function cardMobile(record) {
+    const uaShort = truncateUa(record.user_agent, 28);
+    const uuidAttr = escAttr(record.uuid);
+    return (
+      '<div class="tw-card p-4 space-y-2 text-[13px]">' +
+      '<div class="flex justify-between items-center gap-2 border-b border-[rgb(var(--admin-border))] pb-2">' +
+      '<span class="text-[11px] tw-text-muted2">' + esc(record.time_ago) + '</span>' +
+      statusPill(record.status_code) + '</div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">UUID</span>' +
+      '<button type="button" class="sa-uuid font-mono text-[12px] text-[var(--color-brand-500)] hover:underline text-left bg-transparent border-0 p-0 cursor-pointer min-w-0 break-all" data-sa-uuid="' + uuidAttr + '">' + esc(record.uuid) + '</button></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">IP</span><span class="tw-kbd text-[11px]">' + esc(record.ip_address) + '</span></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">HWID</span><span class="tw-kbd text-[11px] break-all">' + esc(record.hwid) + '</span></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">Устройство</span><span class="tw-text-base2 break-words">' + esc(record.model) + '</span></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">ОС</span><span class="tw-text-base2">' + esc(record.os) + ' ' + (record.os_version !== '—' ? esc(record.os_version) : '') + '</span></div>' +
+      '<div class="flex gap-2 align-start"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">UA</span>' +
+      '<span class="tw-kbd text-[11px] break-all" title="' + escAttr(record.user_agent || '—') + '">' + esc(uaShort) + '</span></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">Время</span><span class="tw-text-base2">' + esc(record.access_time) + '</span></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">Метод</span><span class="tw-kbd text-[11px]">' + esc(record.method) + '</span></div>' +
+      '<div class="flex gap-2"><span class="text-[11px] font-semibold tw-text-subtle2 w-24 shrink-0">Размер</span><span class="tw-kbd text-[11px]">' + esc(record.response_size) + '</span></div>' +
+      '</div>'
+    );
+  }
+
+  function updateStats(records) {
+    document.getElementById('saTotalCount').textContent = records.length;
+    if (!records.length) {
+      document.getElementById('saLastUpdate').textContent = '—';
+      document.getElementById('saUniqueUuid').textContent = '—';
+      document.getElementById('saUniqueHwid').textContent = '—';
+      return;
+    }
+    document.getElementById('saLastUpdate').textContent = records[0].time_ago || '—';
+    document.getElementById('saUniqueUuid').textContent = new Set(records.map(r => r.uuid)).size;
+    document.getElementById('saUniqueHwid').textContent = new Set(records.filter(r => r.hwid !== '—').map(r => r.hwid)).size;
+  }
+
+  function renderTable(records) {
+    const tbody = document.getElementById('saTableBody');
+    const cards = document.getElementById('saCards');
+    if (!records || !records.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center py-10 tw-text-muted2">Нет данных</td></tr>';
+      cards.innerHTML = '<div class="tw-card p-8 text-center tw-text-muted2 text-[13px]">Нет данных</div>';
+      return;
+    }
+    tbody.innerHTML = records.map(rowDesktop).join('');
+    cards.innerHTML = records.map(cardMobile).join('');
+    saIcons();
+  }
+
+  async function fetchRecords(force) {
+    if (isFetching) return;
+    if (!force && (pausedManual || pausedHidden)) return;
+
+    isFetching = true;
+    const btn = document.getElementById('saRefreshBtn');
+    if (btn) btn.disabled = true;
+
+    try {
+      const lim = getLimit();
+      const url = SA_API + (SA_API.indexOf('?') >= 0 ? '&' : '?') + 'limit=' + encodeURIComponent(lim);
+      const response = await fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+
+      if (data.success) {
+        const rec = data.records || [];
+        renderTable(rec);
+        updateStats(rec);
+        lastPollOk = true;
+        lastPollErr = '';
+        renderStatusBadge();
+      } else {
+        throw new Error(data.error || 'Ошибка ответа');
+      }
+    } catch (err) {
+      console.error('[subscription-access]', err);
+      lastPollOk = false;
+      lastPollErr = err.message || 'Ошибка';
+      renderStatusBadge();
+      document.getElementById('saTableBody').innerHTML =
+        '<tr><td colspan="9" class="text-center py-10 text-rose-600 dark:text-rose-400 text-[13px]">' + esc(err.message || 'Ошибка загрузки') + '</td></tr>';
+      document.getElementById('saCards').innerHTML =
+        '<div class="tw-card p-8 text-center text-rose-600 dark:text-rose-400 text-[13px]">' + esc(err.message || 'Ошибка загрузки') + '</div>';
+    } finally {
+      isFetching = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function openUserByUuid(uuid) {
+    if (!uuid || uuid === '—') return;
+    try {
+      const secretPath = typeof SECRET_PATH !== 'undefined' ? SECRET_PATH : '';
+      const response = await fetch(secretPath + '/api/users/by-uuid/' + encodeURIComponent(uuid), { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (data.ok && data.telegram_id) {
+        if (typeof window.openUserModal === 'function') {
+          window.openUserModal(parseInt(data.telegram_id, 10));
+        } else {
+          window.location.href = secretPath + '/users/' + data.telegram_id;
+        }
+      } else {
+        alert('Пользователь с таким UUID не найден');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка при загрузке информации о пользователе');
+    }
+  }
+
+  document.getElementById('saRoot').addEventListener('click', function (e) {
+    const b = e.target.closest('.sa-uuid[data-sa-uuid]');
+    if (b && b.dataset.saUuid) openUserByUuid(b.dataset.saUuid);
+  });
+
+  document.getElementById('saPauseBtn').addEventListener('click', function () {
+    pausedManual = !pausedManual;
+    updatePauseUi();
+    schedulePoll();
+    if (!pausedManual) fetchRecords(true);
+  });
+
+  document.getElementById('saRefreshBtn').addEventListener('click', function () {
+    fetchRecords(true);
+  });
+
+  document.getElementById('saLimit').addEventListener('change', function () {
+    fetchRecords(true);
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    pausedHidden = document.hidden;
+    renderStatusBadge();
+    schedulePoll();
+    if (!pausedHidden && !pausedManual) fetchRecords(true);
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    updatePauseUi();
+    fetchRecords(true).then(schedulePoll);
+    saIcons();
+  });
+
+  window.addEventListener('beforeunload', function () {
+    if (pollTimer) clearInterval(pollTimer);
+  });
+})();
+</script>
+{% endblock %}

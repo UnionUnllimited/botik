@@ -1,0 +1,610 @@
+{% extends "base.html" %}
+{% block title %}Сервисы - {{ super() }}{% endblock %}
+{% block content %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   Tools · Сервисы (systemd) — TailwindCSS, единый стиль с 3X-UI/Платежи.
+   - сводные плашки сверху;
+   - карточка сервиса с пульсирующей status-icon;
+   - действия start/stop/restart как иконки + кнопка «Журнал»;
+   - модалка с journalctl;
+   - тосты вместо alert.
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+<div class="tw-anim">
+
+  {# ───── Header ───── #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-2">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight">Сервисы</h1>
+      <p class="text-[13px] text-muted2 mt-1">
+        Управление systemd-сервисами проекта: бот, веб-админка, подписки, сайт, аналитика.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" id="svcRefreshBtn" class="tw-btn tw-btn-secondary tw-btn-sm" title="Обновить статусы">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Обновить
+      </button>
+      <button type="button" id="svcRestartAllBtn" class="tw-btn tw-btn-primary tw-btn-sm" title="Перезапустить все сервисы">
+        <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> Перезапустить все
+      </button>
+    </div>
+  </div>
+
+  {# ───── Сводка ───── #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: var(--admin-bg-soft);">
+        <i data-lucide="boxes" class="w-4 h-4" style="color: var(--admin-text-muted);"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Всего</div>
+        <div class="text-[20px] font-semibold leading-tight" id="svcAggTotal">{{ services|length }}</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(16 185 129 / .12);">
+        <i data-lucide="check-circle-2" class="w-4 h-4" style="color: #10b981;"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Активны</div>
+        <div class="text-[20px] font-semibold leading-tight text-emerald-500" id="svcAggActive">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(244 63 94 / .12);">
+        <i data-lucide="circle-x" class="w-4 h-4" style="color: #f43f5e;"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Остановлены</div>
+        <div class="text-[20px] font-semibold leading-tight" id="svcAggStopped" style="color: #f43f5e;">0</div>
+      </div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] px-4 py-3 flex items-center gap-3" title="Суммарное потребление RAM активными сервисами">
+      <div class="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style="background: rgb(99 102 241 / .12);">
+        <i data-lucide="memory-stick" class="w-4 h-4" style="color: var(--color-brand-500);"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-[11px] text-subtle2 uppercase tracking-wider">Потребление</div>
+        <div class="text-[20px] font-semibold leading-tight truncate" id="svcAggUsage">—</div>
+      </div>
+    </div>
+  </div>
+
+  {# ───── Сетка карточек сервисов ───── #}
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-5" id="svcGrid">
+    {% for unit, meta in services.items() %}
+    <div class="tw-card p-3.5 svc-card flex flex-col"
+         data-unit="{{ unit }}"
+         data-accent="{{ meta.accent }}"
+         data-icon="{{ meta.icon }}">
+      {# header #}
+      <div class="flex items-start gap-2 min-w-0">
+        <div class="svc-status-icon shrink-0 w-9 h-9 rounded-[8px] flex items-center justify-center"
+             data-status="loading" title="Загружаю…"
+             style="background: {{ meta.accent }}26; color: {{ meta.accent }};">
+          <i data-lucide="{{ meta.icon }}" class="w-4 h-4"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <h3 class="font-semibold tracking-tight truncate text-[14px] flex-1 min-w-0"
+                style="color: var(--admin-text-base);" title="{{ unit }}">{{ meta.label }}</h3>
+            <span class="tw-status-badge tw-status-canceled" data-status-badge>—</span>
+          </div>
+          <div class="text-[11px] text-subtle2 mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <code class="font-mono text-[10.5px] px-1 py-px rounded" style="background: var(--admin-bg-soft); color: var(--admin-text-muted);">{{ unit }}</code>
+            <span class="text-subtle2">·</span>
+            <span data-uptime style="color: var(--admin-text-muted);">—</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-[12.5px] text-muted2 mt-2 mb-0 line-clamp-2">{{ meta.desc }}</p>
+
+      {# Ресурсы (показываются только когда сервис активен) #}
+      <div class="mt-3 grid grid-cols-2 gap-2" data-resources style="display: none;">
+        <div class="rounded-[8px] px-2.5 py-1.5 flex items-center gap-2"
+             style="background: var(--admin-bg-soft);">
+          <i data-lucide="cpu" class="w-3.5 h-3.5" style="color: var(--admin-text-muted);"></i>
+          <div class="min-w-0">
+            <div class="text-[10px] text-subtle2 uppercase tracking-wider leading-none">CPU</div>
+            <div class="text-[12.5px] font-semibold leading-tight" data-cpu>—</div>
+          </div>
+        </div>
+        <div class="rounded-[8px] px-2.5 py-1.5 flex items-center gap-2"
+             style="background: var(--admin-bg-soft);">
+          <i data-lucide="memory-stick" class="w-3.5 h-3.5" style="color: var(--admin-text-muted);"></i>
+          <div class="min-w-0">
+            <div class="text-[10px] text-subtle2 uppercase tracking-wider leading-none">RAM</div>
+            <div class="text-[12.5px] font-semibold leading-tight" data-memory>—</div>
+          </div>
+        </div>
+      </div>
+
+      {# Сообщение «не установлен» #}
+      <div class="mt-3 rounded-[8px] px-2.5 py-1.5 text-[12px] flex items-center gap-1.5"
+           data-not-installed style="display: none; background: rgb(245 158 11 / .1); color: #f59e0b;">
+        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+        <span>systemd unit не найден на этом хосте</span>
+      </div>
+
+      {# подвал — действия #}
+      <div class="mt-auto pt-3 border-t flex items-center gap-2"
+           style="border-color: rgb(var(--admin-border));">
+        <button type="button"
+                class="tw-btn tw-btn-secondary tw-btn-sm flex-1 svc-btn-log"
+                data-unit="{{ unit }}" title="Открыть журнал systemd">
+          <i data-lucide="scroll-text" class="w-3.5 h-3.5"></i> Журнал
+        </button>
+        <button type="button"
+                class="tw-btn tw-btn-secondary tw-btn-icon-sm shrink-0 svc-btn-restart"
+                data-unit="{{ unit }}" title="Перезапустить">
+          <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+        </button>
+        <button type="button"
+                class="tw-btn tw-btn-secondary tw-btn-icon-sm shrink-0 svc-btn-start"
+                data-unit="{{ unit }}" title="Запустить" style="color:#10b981;">
+          <i data-lucide="play" class="w-3.5 h-3.5"></i>
+        </button>
+        <button type="button"
+                class="tw-btn tw-btn-icon-sm shrink-0 svc-btn-danger-ghost svc-btn-stop"
+                data-unit="{{ unit }}" title="Остановить">
+          <i data-lucide="square" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ───── Подсказка ───── #}
+  <div class="mt-5 rounded-[10px] px-3 py-2.5 flex items-start gap-2 text-[12.5px]"
+       style="background: var(--admin-bg-soft); color: var(--admin-text-muted); border: 1px solid rgb(var(--admin-border));">
+    <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5" style="color: var(--color-brand-500);"></i>
+    <div>
+      Действия выполняются через <code class="tw-kbd">sudo systemctl</code>. Перезапуск
+      <strong>VPN WebAdmin</strong> разорвёт текущее соединение — страница автоматически перезагрузится.
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   Модалка: журнал systemd
+   ═══════════════════════════════════════════════════════════════════════════ #}
+<div id="svcLogModal" class="tw-modal" role="dialog" aria-hidden="true"
+     style="position: fixed; inset: 0; z-index: 99999; padding: 16px;">
+  <div class="tw-modal-backdrop" data-svc-close
+       style="position: absolute; inset: 0; background: rgba(15,17,23,.55); backdrop-filter: blur(6px);"></div>
+  <div class="tw-modal-panel relative flex flex-col min-w-0 min-h-0"
+       style="background: var(--admin-bg-elevated); border: 1px solid rgb(var(--admin-border));
+              border-radius: 14px; width: min(900px, 100%); max-width: 100%; max-height: 86vh; overflow: hidden;
+              box-shadow: 0 24px 64px rgba(0,0,0,.32);">
+    <div class="px-4 py-3 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="flex items-center gap-2 min-w-0">
+        <i data-lucide="scroll-text" class="w-4 h-4 shrink-0" style="color: var(--color-brand-500);"></i>
+        <h3 class="font-semibold text-[15px] truncate min-w-0 flex-1" id="svcLogTitle">Журнал сервиса</h3>
+      </div>
+      {# На узком экране панель на всю ширину + wrap — чтобы крестик не уезжал за край модалки #}
+      <div class="flex flex-wrap items-center gap-2 justify-stretch sm:justify-end sm:shrink-0 w-full sm:w-auto">
+        <label class="svc-log-toggle min-w-0" title="Показывать только строки с ошибками">
+          <input type="checkbox" id="svcLogOnlyErrors">
+          <span>Только ошибки</span>
+          <span id="svcLogErrCount" class="hidden" style="background: rgb(244 63 94 / .15); color: #f43f5e; font-weight: 600; padding: 1px 7px; border-radius: 999px; font-size: 11px;">0</span>
+        </label>
+        <select id="svcLogLines" class="tw-input shrink-0" style="height: 32px; padding: 0 8px; font-size: 12px; width: auto;">
+          <option value="100">100 строк</option>
+          <option value="200" selected>200 строк</option>
+          <option value="500">500 строк</option>
+          <option value="1000">1000 строк</option>
+        </select>
+        <div class="flex items-center gap-2 ml-auto shrink-0">
+          <button type="button" id="svcLogReload" class="tw-btn tw-btn-secondary tw-btn-icon-sm" title="Обновить">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          </button>
+          <button type="button" data-svc-close class="tw-btn tw-btn-ghost tw-btn-icon-sm" title="Закрыть">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="p-4 flex-1 overflow-hidden flex flex-col gap-2">
+      <div id="svcLogStatus" class="text-[12px] text-muted2 flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background: var(--admin-text-subtle);"></span>
+        Загружаю…
+      </div>
+      <pre class="svc-log tw-scroll" id="svcLogBody"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ───────── helpers ─────────
+  const API_BASE = '{{ url_for("admin.api_services_status") }}'.replace('/status', '');
+  let _refreshTimer = null;
+
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+  function fmtUptime(secs) {
+    secs = Number(secs) || 0;
+    if (secs < 60)    return secs + ' сек';
+    if (secs < 3600)  return Math.floor(secs / 60) + ' мин';
+    if (secs < 86400) {
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      return m ? `${h} ч ${m} мин` : `${h} ч`;
+    }
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    return h ? `${d} д ${h} ч` : `${d} д`;
+  }
+
+  function fmtMem(mb) {
+    mb = Number(mb) || 0;
+    if (mb < 1024) return mb.toFixed(0) + ' МБ';
+    return (mb / 1024).toFixed(2) + ' ГБ';
+  }
+
+  // ───────── toast ─────────
+  function showToast(message, type) {
+    type = type || 'success';
+    if (window.adminToast) {
+      window.adminToast(message, type);
+      return;
+    }
+    // Fallback (на случай, если base.html не подгружен): минимальная плашка снизу
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position: fixed; bottom: 16px; right: 16px; z-index: 999999;
+      padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      color: #fff; box-shadow: 0 12px 32px rgba(0,0,0,.28);
+      background: ${type === 'error' ? '#dc2626' : type === 'info' ? '#2563eb' : '#059669'};
+    `;
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), type === 'error' ? 4500 : 2800);
+  }
+
+  // ───────── render ─────────
+  function statusToBadge(active, status, installed) {
+    if (installed === false || status === 'not-found') return { cls: 'tw-status-canceled',  text: 'Не установлен' };
+    if (active)                                        return { cls: 'tw-status-succeeded', text: 'Активен' };
+    if (status === 'failed')                           return { cls: 'tw-status-failed',    text: 'Сбой' };
+    if (status === 'activating')                       return { cls: 'tw-status-pending',   text: 'Запуск…' };
+    if (status === 'deactivating')                     return { cls: 'tw-status-processing',text: 'Остановка…' };
+    if (status === 'inactive')                         return { cls: 'tw-status-canceled',  text: 'Остановлен' };
+    return { cls: 'tw-status-canceled', text: status || '—' };
+  }
+
+  function statusToIconState(active, status, installed) {
+    if (installed === false || status === 'not-found') return 'not-found';
+    if (active) return 'active';
+    if (status === 'activating')   return 'activating';
+    if (status === 'deactivating') return 'deactivating';
+    if (status === 'failed')       return 'failed';
+    return 'inactive';
+  }
+
+  function renderCard(unit, info) {
+    const card = document.querySelector(`.svc-card[data-unit="${unit}"]`);
+    if (!card) return;
+    const badge = $('[data-status-badge]', card);
+    const upEl  = $('[data-uptime]', card);
+    const resEl = $('[data-resources]', card);
+    const cpuEl = $('[data-cpu]', card);
+    const memEl = $('[data-memory]', card);
+    const naEl  = $('[data-not-installed]', card);
+    const iconWrap = $('.svc-status-icon', card);
+
+    const b = statusToBadge(info.active, info.status, info.installed);
+    badge.className = 'tw-status-badge ' + b.cls;
+    badge.textContent = b.text;
+
+    const st = statusToIconState(info.active, info.status, info.installed);
+    iconWrap.dataset.status = st;
+    iconWrap.title = b.text;
+    // Сбрасываем индивидуальный accent у активной иконки и кладём «статусный» цвет;
+    // у неактивной возвращаем пастельный accent сервиса.
+    if (st === 'active' || st === 'activating' || st === 'deactivating' || st === 'failed') {
+      iconWrap.style.background = '';
+      iconWrap.style.color = '';
+    } else if (st === 'not-found') {
+      iconWrap.style.background = '';
+      iconWrap.style.color = '';
+    } else {
+      // inactive — оставляем пастельный accent
+      const accent = card.dataset.accent || '#64748b';
+      iconWrap.style.background = accent + '1f';
+      iconWrap.style.color = accent;
+    }
+
+    // Кнопки: блокируем "недоступные" действия
+    const allBtns = $all('.svc-btn-start, .svc-btn-stop, .svc-btn-restart, .svc-btn-log', card);
+    if (info.installed === false) {
+      allBtns.forEach(b => { b.disabled = true; b.style.opacity = '.5'; });
+      naEl.style.display = '';
+      resEl.style.display = 'none';
+      upEl.textContent = '—';
+      return;
+    }
+    naEl.style.display = 'none';
+    allBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+
+    // Кнопки start/stop логично «прятать»: если активен — start серый, stop активен; и наоборот
+    const startBtn = $('.svc-btn-start', card);
+    const stopBtn  = $('.svc-btn-stop', card);
+    if (startBtn) startBtn.disabled = info.active;
+    if (stopBtn)  stopBtn.disabled  = !info.active;
+    if (startBtn) startBtn.style.opacity = startBtn.disabled ? '.4' : '';
+    if (stopBtn)  stopBtn.style.opacity  = stopBtn.disabled  ? '.4' : '';
+
+    // uptime
+    if (info.active && info.uptime_seconds != null) {
+      upEl.innerHTML = `<i data-lucide="timer" class="inline-block w-3 h-3 mr-0.5" style="vertical-align:-2px"></i>uptime ${fmtUptime(info.uptime_seconds)}`;
+    } else if (info.active) {
+      upEl.textContent = 'активен';
+    } else {
+      upEl.textContent = '—';
+    }
+
+    // ресурсы
+    if (info.active && (info.cpu_percent != null || info.memory_mb != null)) {
+      resEl.style.display = '';
+      cpuEl.textContent = info.cpu_percent != null ? info.cpu_percent.toFixed(1) + '%' : '—';
+      memEl.textContent = info.memory_mb   != null ? fmtMem(info.memory_mb)            : '—';
+    } else {
+      resEl.style.display = 'none';
+    }
+  }
+
+  function renderAggregate(data) {
+    let total = 0, active = 0, stopped = 0, mem = 0;
+    let hasUsage = false;
+    for (const [unit, info] of Object.entries(data)) {
+      total += 1;
+      if (info.installed === false) continue;
+      if (info.active) {
+        active += 1;
+        if (info.memory_mb != null) { mem += info.memory_mb; hasUsage = true; }
+      } else {
+        stopped += 1;
+      }
+    }
+    $('#svcAggTotal').textContent   = total;
+    $('#svcAggActive').textContent  = active;
+    $('#svcAggStopped').textContent = stopped;
+    $('#svcAggUsage').textContent   = hasUsage ? fmtMem(mem) : '—';
+  }
+
+  // ───────── data fetch ─────────
+  async function refreshAll() {
+    try {
+      const r = await fetch('{{ url_for("admin.api_services_status") }}', { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      for (const [unit, info] of Object.entries(data)) renderCard(unit, info);
+      renderAggregate(data);
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    } catch (e) {
+      console.warn('refresh failed', e);
+    }
+  }
+
+  // ───────── actions ─────────
+  async function runAction(unit, action) {
+    if (unit === 'vpn-webadmin.service' && action === 'restart') {
+      if (!confirm('Перезапуск веб-админки разорвёт текущее соединение. Продолжить?')) return;
+    }
+    if (action === 'stop' && !confirm(`Остановить сервис ${unit}?`)) return;
+
+    const card = document.querySelector(`.svc-card[data-unit="${unit}"]`);
+    if (card) card.classList.add('is-busy');
+
+    try {
+      const r = await fetch(`${API_BASE}/${encodeURIComponent(unit)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+      });
+      const data = await r.json();
+      if (data.success) {
+        const verb = action === 'start' ? 'запущен' : action === 'stop' ? 'остановлен' : 'перезапускается';
+        showToast(`${unit}: ${verb}`, 'success');
+        if (data.delayed) {
+          showToast('Веб-админка перезапустится, страница обновится через 2 сек', 'info');
+          setTimeout(() => window.location.reload(), 2500);
+          return;
+        }
+        // Лёгкая задержка чтобы systemd успел обновить статус
+        setTimeout(refreshAll, 600);
+      } else {
+        showToast('Ошибка: ' + (data.error || 'неизвестная ошибка'), 'error');
+      }
+    } catch (e) {
+      showToast('Ошибка: ' + e.message, 'error');
+    } finally {
+      if (card) card.classList.remove('is-busy');
+    }
+  }
+
+  async function restartAll() {
+    if (!confirm('Перезапустить ВСЕ установленные сервисы? Веб-админка будет перезапущена в самом конце.')) return;
+    const btn = $('#svcRestartAllBtn');
+    btn.disabled = true;
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Перезапуск…';
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+    try {
+      const r = await fetch(`${API_BASE}/restart-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+      });
+      const data = await r.json();
+      const okCnt = (data.restarted || []).filter(x => x.ok).length;
+      const failCnt = (data.restarted || []).filter(x => !x.ok).length;
+      if (failCnt === 0) {
+        showToast(`Перезапущено сервисов: ${okCnt}. Админка обновится автоматически.`, 'success');
+      } else {
+        showToast(`Перезапущено: ${okCnt}, ошибок: ${failCnt}`, 'error');
+      }
+      setTimeout(refreshAll, 1500);
+      // если в списке есть vpn-webadmin (deferred) — перезагружаем страницу
+      if ((data.restarted || []).some(x => x.deferred)) {
+        setTimeout(() => window.location.reload(), 3500);
+      }
+    } catch (e) {
+      showToast('Ошибка: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+  }
+
+  // ───────── log modal ─────────
+  let _logUnit = null;
+
+  function openLog(unit) {
+    _logUnit = unit;
+    const m = $('#svcLogModal');
+    m.classList.add('is-open');
+    m.style.setProperty('display', 'flex', 'important');
+    document.body.style.overflow = 'hidden';
+    $('#svcLogTitle').textContent = 'Журнал · ' + unit;
+    fetchLog();
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+  }
+
+  function closeLog() {
+    const m = $('#svcLogModal');
+    m.classList.remove('is-open');
+    m.style.setProperty('display', 'none', 'important');
+    document.body.style.overflow = '';
+    _logUnit = null;
+  }
+
+  // Маркеры уровней логов (regex по строке)
+  const LOG_LEVEL_RE = {
+    error: /\b(?:ERR(?:OR)?|CRITICAL|FATAL|EMERG(?:ENCY)?|ALERT|FAIL(?:ED|URE)?|EXCEPTION|TRACEBACK|PANIC|SEGFAULT|DENIED|REFUSED|UNREACHABLE)\b|\bcore dumped\b|\bstack trace\b/i,
+    warn:  /\b(?:WARN(?:ING)?|DEPRECAT|RETRY)\b/i,
+    info:  /\b(?:INFO|NOTICE|STARTED|STOPPED|LISTENING|BIND)\b/i,
+    debug: /\b(?:DEBUG|TRACE|VERBOSE)\b/i,
+  };
+  // false-positives (упоминания "no errors", "0 errors")
+  const NEGATE_ERROR_RE = /\b(?:no\s+errors?|0\s+errors?|without\s+errors?|errors?:\s*0)\b/i;
+
+  function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function classifyLogLine(line) {
+    if (LOG_LEVEL_RE.error.test(line) && !NEGATE_ERROR_RE.test(line)) return 'is-error';
+    if (LOG_LEVEL_RE.warn.test(line))  return 'is-warn';
+    if (LOG_LEVEL_RE.debug.test(line)) return 'is-debug';
+    if (LOG_LEVEL_RE.info.test(line))  return 'is-info';
+    return '';
+  }
+
+  function renderLogHtml(text) {
+    const lines = text.split(/\r?\n/);
+    let errCount = 0;
+    const out = lines.map(ln => {
+      const cls = classifyLogLine(ln);
+      if (cls === 'is-error') errCount++;
+      return `<span class="svc-log-line${cls ? ' ' + cls : ''}">${escHtml(ln)}</span>`;
+    });
+    return { html: out.join('\n'), errCount };
+  }
+
+  async function fetchLog() {
+    if (!_logUnit) return;
+    const lines  = $('#svcLogLines').value || '200';
+    const status = $('#svcLogStatus');
+    const body   = $('#svcLogBody');
+    const errBadge = $('#svcLogErrCount');
+    status.style.display = '';
+    status.innerHTML = '<span class="w-3 h-3 rounded-full inline-block animate-pulse" style="background: var(--admin-text-subtle);"></span>Загружаю…';
+    body.innerHTML = '';
+    if (errBadge) { errBadge.classList.add('hidden'); errBadge.textContent = '0'; }
+    try {
+      const r = await fetch(`${API_BASE}/${encodeURIComponent(_logUnit)}/log?lines=${encodeURIComponent(lines)}`, {
+        credentials: 'same-origin',
+      });
+      const data = await r.json();
+      if (!data.success) {
+        status.style.color = '#f43f5e';
+        status.textContent = 'Ошибка: ' + (data.error || 'не удалось получить лог');
+        return;
+      }
+      status.style.color = '';
+      const raw = (data.log || '').replace(/\s+$/, '');
+      if (!raw) {
+        body.textContent = '(журнал пуст)';
+        status.textContent = `Последние ${data.lines} строк`;
+        return;
+      }
+      const { html, errCount } = renderLogHtml(raw);
+      body.innerHTML = html;
+      status.textContent = `Последние ${data.lines} строк${errCount ? ` · найдено ошибок: ${errCount}` : ''}`;
+      if (errBadge && errCount > 0) {
+        errBadge.textContent = errCount;
+        errBadge.classList.remove('hidden');
+      }
+      requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+    } catch (e) {
+      status.style.color = '#f43f5e';
+      status.textContent = 'Ошибка: ' + e.message;
+    }
+  }
+
+  // ───────── wire-up ─────────
+  document.addEventListener('DOMContentLoaded', function() {
+    // переносим модалку в body чтобы избежать issue с containing block
+    const modal = $('#svcLogModal');
+    if (modal && modal.parentElement !== document.body) document.body.appendChild(modal);
+
+    // делегирование действий
+    document.body.addEventListener('click', function(e) {
+      const startBtn   = e.target.closest('.svc-btn-start');
+      const stopBtn    = e.target.closest('.svc-btn-stop');
+      const restartBtn = e.target.closest('.svc-btn-restart');
+      const logBtn     = e.target.closest('.svc-btn-log');
+      const closeBtn   = e.target.closest('[data-svc-close]');
+
+      if (startBtn)   { runAction(startBtn.dataset.unit,   'start');   return; }
+      if (stopBtn)    { runAction(stopBtn.dataset.unit,    'stop');    return; }
+      if (restartBtn) { runAction(restartBtn.dataset.unit, 'restart'); return; }
+      if (logBtn)     { openLog(logBtn.dataset.unit);                  return; }
+      if (closeBtn)   { closeLog();                                    return; }
+    });
+
+    $('#svcRefreshBtn').addEventListener('click', refreshAll);
+    $('#svcRestartAllBtn').addEventListener('click', restartAll);
+    $('#svcLogReload').addEventListener('click', fetchLog);
+    $('#svcLogLines').addEventListener('change', fetchLog);
+    const onlyErr = $('#svcLogOnlyErrors');
+    if (onlyErr) {
+      onlyErr.addEventListener('change', () => {
+        $('#svcLogBody').classList.toggle('only-errors', onlyErr.checked);
+      });
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && $('#svcLogModal').classList.contains('is-open')) closeLog();
+    });
+
+    // первый fetch + автообновление каждые 10 сек (но НЕ когда открыт лог-модал)
+    refreshAll();
+    _refreshTimer = setInterval(() => {
+      if (!$('#svcLogModal').classList.contains('is-open')) refreshAll();
+    }, 10000);
+  });
+})();
+</script>
+{% endblock %}

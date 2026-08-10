@@ -1,0 +1,367 @@
+{% extends 'base.html' %}
+{% block title %}Шаблоны инбаундов — {{ super() }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/selection/active-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/foldcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/foldgutter.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/brace-fold.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/fold/foldgutter.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4" id="ibRoot">
+
+  {# === Header === #}
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
+              style="background: rgba(168,85,247,.15); color:#a855f7;">
+          <i data-lucide="braces" class="w-4 h-4"></i>
+        </span>
+        <span>Шаблоны инбаундов</span>
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        JSON-шаблоны, которые применяются при автоматической установке&nbsp;3X-UI через&nbsp;SSH. Изменения подхватываются при&nbsp;следующей установке сервера.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="ibCount" class="text-[12px] tw-text-subtle2">{{ templates_data|length }} шаблон(ов)</span>
+    </div>
+  </div>
+
+  {# === Info banner === #}
+  <div class="tw-card p-3.5 flex items-start gap-3" style="border-left: 3px solid #3b82f6;">
+    <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0" style="color:#3b82f6;"></i>
+    <div class="text-[13px] tw-text-muted2 space-y-1">
+      <p>Кнопка <strong class="tw-text-base2">«Сгенерировать ключи Reality»</strong> создаёт новую пару <code>privateKey</code>&nbsp;/&nbsp;<code>publicKey</code> и автоматически вставляет её в&nbsp;<code>streamSettings.realitySettings</code>.</p>
+      <p><strong class="tw-text-base2">«Сбросить»</strong> возвращает шаблон к&nbsp;дефолту из&nbsp;файла. <strong class="tw-text-base2">«Форматировать»</strong> приводит JSON к&nbsp;человекочитаемому виду (2&nbsp;пробела на отступ).</p>
+    </div>
+  </div>
+
+  {# === Tabs === #}
+  {% if templates_data %}
+  <div class="tw-card p-2 sticky" style="top: 8px; z-index: 5;">
+    <div class="tab-nav" id="tabNav">
+      {% for inbound_type, td in templates_data.items() %}
+      <button type="button" class="tab-btn{% if loop.first %} is-active{% endif %}"
+              data-tab="{{ inbound_type }}">
+        <span class="tb-dot {% if td.error %}err{% else %}ok{% endif %}"
+              title="{{ 'Ошибка загрузки' if td.error else 'OK' }}"></span>
+        <span>{{ td.name }}</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# === Panes === #}
+  {% for inbound_type, td in templates_data.items() %}
+  <div class="tab-pane{% if loop.first %} is-active{% endif %}" data-pane="{{ inbound_type }}">
+    <div class="tw-card overflow-hidden">
+
+      {# Header inside pane #}
+      <div class="px-4 py-3 border-b flex items-start justify-between gap-3 flex-wrap"
+           style="border-color: rgb(var(--admin-border));">
+        <div class="min-w-0 flex-1">
+          <h3 class="text-[14px] font-semibold tw-text-base2 flex items-center gap-2">
+            <i data-lucide="file-code-2" class="w-4 h-4"></i>
+            {{ td.name }}
+            <code class="text-[11px] font-normal px-1.5 py-0.5 rounded"
+                  style="background: rgb(var(--admin-border) / .35); color: var(--admin-text-muted);">
+              {{ inbound_type }}
+            </code>
+          </h3>
+          {% if td.description %}
+          <div class="text-[12px] tw-text-muted2 mt-1">{{ td.description }}</div>
+          {% endif %}
+          {% if td.error %}
+          <div class="mt-2 text-[12px] flex items-center gap-1.5"
+               style="color:#ef4444;">
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+            {{ td.error }}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm"
+                  onclick="ibFormat('{{ inbound_type }}')" title="Отформатировать JSON">
+            <i data-lucide="code-2" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Формат</span>
+          </button>
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm"
+                  onclick="ibFullscreen('{{ inbound_type }}', this)" title="Полный экран">
+            <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Fullscreen</span>
+          </button>
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm"
+                  style="color:#a855f7;"
+                  onclick="ibGenReality('{{ inbound_type }}', this)">
+            <i data-lucide="key-round" class="w-3.5 h-3.5"></i>
+            <span>Reality-ключи</span>
+          </button>
+          <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm"
+                  style="color:#f59e0b;"
+                  onclick="ibReset('{{ inbound_type }}', '{{ td.name|e }}')">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Сброс</span>
+          </button>
+        </div>
+      </div>
+
+      {# Form #}
+      <form method="post" id="form_{{ inbound_type }}"
+            onsubmit="return ibValidate('{{ inbound_type }}')">
+        <input type="hidden" name="inbound_type" value="{{ inbound_type }}">
+        <input type="hidden" name="action" value="save" id="action_{{ inbound_type }}">
+
+        <div class="p-4">
+          <textarea id="template_json_{{ inbound_type }}"
+                    name="template_json" rows="20"
+                    required>{{ td.json }}</textarea>
+        </div>
+
+        <div class="px-4 py-3 border-t flex items-center justify-between gap-2 flex-wrap"
+             style="border-color: rgb(var(--admin-border)); background: var(--admin-bg-soft);">
+          <div class="text-[11.5px] tw-text-subtle2 flex items-center gap-2 flex-wrap">
+            <span id="status_{{ inbound_type }}" class="inline-flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full" style="background:#10b981;"></span>
+              <span>JSON валиден</span>
+            </span>
+            <span class="opacity-50">·</span>
+            <span>Ctrl+S — сохранить</span>
+          </div>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+            <span>Сохранить</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% else %}
+  <div class="tw-card p-10 text-center">
+    <div class="inline-flex items-center justify-center w-14 h-14 rounded-full mb-3"
+         style="background: rgba(168,85,247,.15); color:#a855f7;">
+      <i data-lucide="braces" class="w-6 h-6"></i>
+    </div>
+    <div class="text-[16px] font-semibold tw-text-base2 mb-1">Шаблоны не найдены</div>
+    <p class="text-[13px] tw-text-muted2 max-w-md mx-auto">
+      Файлы шаблонов отсутствуют либо не удалось их прочитать. Проверьте каталог
+      <code>web_admin/inbound_templates/</code>.
+    </p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var editors = {};
+
+    /* ── tabs ── */
+    function activateTab(key) {
+        document.querySelectorAll('.tab-btn').forEach(function (b) {
+            b.classList.toggle('is-active', b.dataset.tab === key);
+        });
+        document.querySelectorAll('.tab-pane').forEach(function (p) {
+            p.classList.toggle('is-active', p.dataset.pane === key);
+        });
+        // CodeMirror needs refresh after being shown
+        if (editors[key]) setTimeout(function () { editors[key].refresh(); }, 50);
+        try { history.replaceState(null, '', '#' + key); } catch (e) {}
+    }
+
+    /* ── toast ── */
+    window.ibToast = function (message, type) {
+        var el = document.createElement('div');
+        el.className = 'ib-toast ' + (type || 'info');
+        el.textContent = message;
+        document.body.appendChild(el);
+        setTimeout(function () { el.style.opacity = '0'; el.style.transition = 'opacity .25s'; }, 2400);
+        setTimeout(function () { el.remove(); }, 2700);
+    };
+
+    /* ── status indicator ── */
+    function setStatus(key, ok, msg) {
+        var el = document.getElementById('status_' + key);
+        if (!el) return;
+        var color = ok ? '#10b981' : '#ef4444';
+        el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full" style="background:' + color + ';"></span>' +
+                       '<span style="color:' + color + ';">' + (msg || (ok ? 'JSON валиден' : 'Невалидный JSON')) + '</span>';
+        // обновим точку в табе
+        var btn = document.querySelector('.tab-btn[data-tab="' + key + '"] .tb-dot');
+        if (btn) {
+            btn.classList.toggle('ok', !!ok);
+            btn.classList.toggle('err', !ok);
+        }
+    }
+
+    /* ── public API ── */
+    window.ibFormat = function (key) {
+        var ed = editors[key]; if (!ed) return;
+        try {
+            var parsed = JSON.parse(ed.getValue());
+            ed.setValue(JSON.stringify(parsed, null, 2));
+            window.ibToast('JSON отформатирован', 'success');
+            setStatus(key, true);
+        } catch (e) {
+            window.ibToast('Ошибка форматирования: ' + e.message, 'error');
+            setStatus(key, false, 'Невалидный JSON');
+        }
+    };
+
+    window.ibValidate = function (key) {
+        var ed = editors[key]; if (!ed) return true;
+        try {
+            JSON.parse(ed.getValue());
+            document.getElementById('template_json_' + key).value = ed.getValue();
+            return true;
+        } catch (e) {
+            window.ibToast('Ошибка валидации: ' + e.message, 'error');
+            setStatus(key, false, 'Невалидный JSON');
+            return false;
+        }
+    };
+
+    window.ibReset = function (key, name) {
+        if (!confirm('Сбросить шаблон «' + name + '» к дефолтному значению из файла?\n\nВсе ваши изменения будут потеряны.')) return;
+        document.getElementById('action_' + key).value = 'reset';
+        document.getElementById('form_' + key).submit();
+    };
+
+    window.ibFullscreen = function (key, btn) {
+        var ed = editors[key]; if (!ed) return;
+        var wrap = ed.getWrapperElement();
+        var on = wrap.classList.toggle('cm-fullscreen');
+        document.body.style.overflow = on ? 'hidden' : '';
+        if (btn) {
+            btn.querySelector('[data-lucide]').setAttribute('data-lucide', on ? 'minimize-2' : 'maximize-2');
+            if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+        }
+        setTimeout(function () { ed.refresh(); }, 50);
+    };
+
+    window.ibGenReality = async function (key, btn) {
+        var ed = editors[key];
+        if (!ed) { window.ibToast('Редактор не найден', 'error'); return; }
+
+        var orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5" style="animation:spin 1s linear infinite;"></i><span>Генерация…</span>';
+        if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+
+        try {
+            var resp = await fetch('{{ url_for("admin.api_generate_reality_keys") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            var data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Ошибка генерации');
+
+            var tpl;
+            try { tpl = JSON.parse(ed.getValue()); }
+            catch (e) {
+                window.ibToast('Невалидный JSON — сначала исправьте шаблон', 'error');
+                setStatus(key, false);
+                return;
+            }
+            if (!tpl.streamSettings || !tpl.streamSettings.realitySettings) {
+                window.ibToast('В шаблоне нет streamSettings.realitySettings', 'error');
+                return;
+            }
+            tpl.streamSettings.realitySettings.privateKey = data.privateKey;
+            if (!tpl.streamSettings.realitySettings.settings) tpl.streamSettings.realitySettings.settings = {};
+            tpl.streamSettings.realitySettings.settings.publicKey = data.publicKey;
+
+            ed.setValue(JSON.stringify(tpl, null, 2));
+            window.ibToast('Reality-ключи вставлены', 'success');
+            setStatus(key, true);
+        } catch (err) {
+            console.error(err);
+            window.ibToast('Ошибка: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+            if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+        }
+    };
+
+    /* ── init ── */
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.tab-btn').forEach(function (b) {
+            b.addEventListener('click', function () { activateTab(b.dataset.tab); });
+        });
+
+        {% for inbound_type in templates_data.keys() %}
+        (function () {
+            var key = '{{ inbound_type }}';
+            var ta  = document.getElementById('template_json_' + key);
+            if (!ta) return;
+            var ed = CodeMirror.fromTextArea(ta, {
+                lineNumbers: true,
+                mode: 'application/json',
+                theme: 'monokai',
+                indentUnit: 2,
+                indentWithTabs: false,
+                matchBrackets: true,
+                autoCloseBrackets: true,
+                styleActiveLine: true,
+                lineWrapping: true,
+                foldGutter: true,
+                gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter']
+            });
+            editors[key] = ed;
+
+            // Live validation
+            var t = null;
+            ed.on('change', function () {
+                clearTimeout(t);
+                t = setTimeout(function () {
+                    try { JSON.parse(ed.getValue()); setStatus(key, true); }
+                    catch (e) { setStatus(key, false, 'Ошибка: ' + e.message.substring(0, 60)); }
+                }, 250);
+            });
+
+            // Ctrl+S
+            ed.setOption('extraKeys', {
+                'Ctrl-S': function () {
+                    if (window.ibValidate(key)) document.getElementById('form_' + key).submit();
+                },
+                'Cmd-S': function () {
+                    if (window.ibValidate(key)) document.getElementById('form_' + key).submit();
+                }
+            });
+        })();
+        {% endfor %}
+
+        // ESC to exit fullscreen
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'Escape') return;
+            var fs = document.querySelector('.CodeMirror.cm-fullscreen');
+            if (fs) {
+                fs.classList.remove('cm-fullscreen');
+                document.body.style.overflow = '';
+                Object.keys(editors).forEach(function (k) { editors[k].refresh(); });
+            }
+        });
+
+        // Open tab from hash, if any
+        var hash = (location.hash || '').replace('#', '');
+        if (hash && document.querySelector('.tab-btn[data-tab="' + hash + '"]')) {
+            activateTab(hash);
+        }
+    });
+})();
+</script>
+{% endblock %}
