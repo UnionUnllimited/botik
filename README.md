@@ -102,7 +102,7 @@ NGINX_ADMIN_DOMAIN=admin.<домен>
 ### 4. Первый запуск без TLS
 
 ```bash
-docker compose up -d --build postgres redis api bot worker
+docker compose up -d --build postgres redis api worker
 docker compose ps
 ```
 
@@ -184,11 +184,10 @@ curl -fsS https://<домен>/readyz               # database:true, redis:true
 curl -fsS https://<домен>/ | head -5           # витрина: <!DOCTYPE html>
 curl -o /dev/null -w '%{http_code}\n' https://<домен>/login    # 200
 curl -o /dev/null -w '%{http_code}\n' https://<домен>/cabinet  # 303 → /login
-docker compose exec bot python -c "import asyncio;from bot.loader import create_bot;print(asyncio.run(create_bot().get_me()))"
-docker compose logs bot | grep webhook_set     # вебхук установлен
 ```
 
-В Telegram: `/start` у бота — должно прийти приветствие и главное меню.
+Бот в этот стек больше не входит: он поставлен отдельным процессом на хосте.
+Порядок установки — в `docs/state.md`, раздел о смене основы.
 
 ### 7. Бэкапы
 
