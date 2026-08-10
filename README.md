@@ -181,6 +181,62 @@ vbotrouters.titanvps.click {
 Правку применяет `docker exec -w /etc/caddy caddy caddy reload` в контейнере
 прокси; перезапускать наш стек ради этого не нужно.
 
+### 5в. Публикация админки бота
+
+Админка стороннего бота — отдельный процесс на хосте: systemd-юнит
+`vpn-webadmin.service`, `hypercorn` на порту 8181. Себя она отдаёт не в корне,
+а по секретному пути из своей базы (`settings.admin_secret_path`, по умолчанию
+`admin123`), поэтому с нашими `/admin`, `/webhooks` и `/api` не пересекается
+и живёт на том же домене.
+
+Узнать путь:
+
+```bash
+sqlite3 /root/bot/*.db "SELECT value FROM settings WHERE key='admin_secret_path';"
+```
+
+**Caddy живёт в контейнере, и `127.0.0.1` для него — он сам.** Юнит по умолчанию
+слушает только петлю, до неё прокси не достучится. Поэтому меняем в
+`/etc/systemd/system/vpn-webadmin.service` привязку на все интерфейсы:
+
+```
+ExecStart=/root/bot/web_admin/venv/bin/hypercorn web_admin.run:app -w 1 --bind 0.0.0.0:8181 --keep-alive 30
+```
+
+и сразу закрываем порт снаружи, иначе админка окажется доступна по IP в обход
+прокси и без TLS:
+
+```bash
+ufw deny 8181/tcp && systemctl daemon-reload && systemctl restart vpn-webadmin
+```
+
+Адрес, по которому контейнер Caddy видит хост, — шлюз его сети:
+
+```bash
+docker inspect $(docker ps --filter name=caddy -q | head -1) --format '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}'
+```
+
+Дальше блок в `Caddyfile` — секретный путь и его API уходят боту, наши пути нам:
+
+```caddyfile
+vbotrouters.titanvps.click {
+    handle /admin123* { reverse_proxy ШЛЮЗ:8181 }
+    handle { reverse_proxy router-shop-api:8000 }
+}
+```
+
+`handle` берёт первый совпавший блок, поэтому порядок важен: сначала путь бота,
+потом всё остальное нам. Применить: `docker exec -w /etc/caddy caddy caddy reload`.
+
+Проверка — 200 или редирект на форму входа, но не 502:
+
+```bash
+curl -o /dev/null -w '%{http_code}
+' https://vbotrouters.titanvps.click/admin123/
+```
+
+502 значит, что Caddy не достучался до 8181: проверьте привязку юнита и шлюз.
+
 ### 6. Проверка
 
 ```bash
