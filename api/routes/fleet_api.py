@@ -31,7 +31,7 @@ from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import Device
-from core.services import activation, router_shell
+from core.services import activation, panel_ticket, router_shell
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
 from core.services.frp import RouterApi
@@ -265,6 +265,32 @@ async def unbind_router(device_id: int, session: AsyncSession = Depends(get_tran
         session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
     )
     return {"ok": True}
+
+
+@router.post("/routers/{device_id}/panel-ticket", dependencies=[Depends(require_token)])
+async def panel_ticket_for(
+    device_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Разовая ссылка на веб-панель роутера.
+
+    Саму панель отдаём мы: туннель держит наш контейнер `frpc`, и проксировать
+    её из их процесса физически нечем. Переносится не прокси, а вход — по этой
+    ссылке оператор попадает на панель без входа в нашу админку.
+    """
+    device = await _device_or_404(session, device_id)
+    if not device.frp_visitor_port:
+        await routers_service.ensure_frp_binding(session, device)
+    if not device.frp_visitor_port:
+        return {"ok": False, "error": "Туннель к роутеру не выделен."}
+
+    ticket = await panel_ticket.issue(
+        device_id=device.id, port=device.frp_visitor_port, mac=device.mac
+    )
+    routers_service.add_event(
+        session, device_id=device.id, mac=device.mac, level="info", message="Открыта веб-панель"
+    )
+    base = settings.api.admin_base_url.rstrip("/")
+    return {"ok": True, "url": f"{base}/panel/open?ticket={ticket}"}
 
 
 FORBIDDEN_COMMANDS = ("mkfs", "firstboot", "rm -rf /", "> /dev/mtd", "dd if=", "sysupgrade")

@@ -31,9 +31,12 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Каталог для конфига visitor-туннелей: docker переносит владельца из образа
-# в пустой том, иначе воркер не сможет туда писать от пользователя app.
-RUN mkdir -p /frpc && chown app:app /frpc
+# Каталоги под тома: docker переносит владельца из образа в пустой том. Если
+# каталога в образе нет, точку монтирования создаёт он сам — от root, и процесс
+# под пользователем app писать туда уже не может.
+#   /frpc      — конфиг visitor-туннелей, его пишет воркер
+#   /app/media — картинки товаров, их пишет админка каталога
+RUN mkdir -p /frpc /app/media && chown app:app /frpc /app/media
 
 WORKDIR /app
 COPY --chown=app:app . .

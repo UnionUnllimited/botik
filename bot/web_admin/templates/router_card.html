@@ -15,11 +15,21 @@
       </p>
     </div>
     {% if not fleet_error %}
-    <form method="post" action="{{ url_for('admin.router_poll', device_id=device_id) }}">
-      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Опросить сейчас</span>
-      </button>
-    </form>
+    <div class="flex items-center gap-2 flex-wrap">
+      {# Панель отдаёт основное приложение: туннель к роутеру держит его контейнер.
+         Кнопка получает разовую ссылку и открывает панель в соседней вкладке. #}
+      <form method="post" target="_blank"
+            action="{{ url_for('admin.router_panel', device_id=device_id) }}">
+        <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>Открыть панель</span>
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('admin.router_poll', device_id=device_id) }}">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Опросить сейчас</span>
+        </button>
+      </form>
+    </div>
     {% endif %}
   </div>
 

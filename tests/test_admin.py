@@ -234,14 +234,22 @@ class TestDashboardWidgets:
 class TestRouterAccess:
     """Панель роутера и консоль закрыты так же плотно, как остальная админка."""
 
-    @pytest.mark.parametrize(
-        "path",
-        ["/admin/console/1", "/cgi-bin/luci/", "/luci-static/style.css", "/ubus", "/luci/admin"],
-    )
-    def test_requires_login(self, client, path):
-        response = client.get(path, follow_redirects=False)
+    def test_console_requires_login(self, client):
+        response = client.get("/admin/console/1", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == "/admin/login"
+
+    @pytest.mark.parametrize(
+        "path", ["/cgi-bin/luci/", "/luci-static/style.css", "/ubus", "/luci/admin"]
+    )
+    def test_panel_is_closed_without_a_ticket(self, client, path):
+        """Пути панели корневые, и войти в неё можно двумя способами: сессией
+        нашей админки или билетом из админки бота. Без обоих ничего не
+        проксируется, но и на нашу форму входа не отправляем: приходят сюда
+        из чужой админки, и делать там человеку нечего."""
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 409
+        assert "Панель закрыта" in response.text
 
     def test_console_is_not_for_support(self):
         """Консоль работает под root на устройстве клиента — не для всех ролей."""

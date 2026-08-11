@@ -143,6 +143,21 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         await flash(error or ok_message, "danger" if error else "success")
         return redirect(url_for("admin.router_card", device_id=device_id))
 
+    @admin_bp_instance.route("/routers/<int:device_id>/panel", methods=["POST"])
+    async def router_panel(device_id: int):
+        """Веб-панель роутера.
+
+        Проксирует её основное приложение и будет проксировать дальше: туннель
+        держит его контейнер `frpc`, и до роутера отсюда не дотянуться никак.
+        Переехал вход — оно выдаёт разовую ссылку, а мы отправляем по ней браузер.
+        Вход в его админку для этого не нужен.
+        """
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/panel-ticket", {})
+        if error:
+            await flash(error, "danger")
+            return redirect(url_for("admin.router_card", device_id=device_id))
+        return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
+
     @admin_bp_instance.route("/routers/<int:device_id>/poll", methods=["POST"])
     async def router_poll(device_id: int):
         return await _act(device_id, "/poll", {}, "Показания обновлены.")
