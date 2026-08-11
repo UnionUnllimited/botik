@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Заказ {{ order.number }} — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 max-w-4xl">
+
+  <div>
+    <p class="text-[13px] tw-text-muted2 mb-1">
+      <a href="{{ url_for('admin.orders_shop') }}">← Заказы</a>
+    </p>
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 font-mono">{{ order.number }}</h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">
+      {{ status_titles.get(order.status, order.status) }}
+      {% if order.paid_at %} · оплачен{% endif %}
+      {% if order.shipped_at %} · отправлен{% endif %}
+    </p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <div class="tw-card p-5 space-y-2 text-[13px]">
+      <div class="font-semibold tw-text-base2">Покупатель</div>
+      <div>{{ order.customer or '—' }}</div>
+      <div class="tw-text-muted2">{{ order.phone or '' }}</div>
+      <div class="tw-text-muted2">{{ order.city or '' }}</div>
+      {% if order.comment %}
+      <div class="pt-2 tw-text-muted2">Комментарий: {{ order.comment }}</div>
+      {% endif %}
+    </div>
+
+    <div class="tw-card p-5 space-y-2 text-[13px]">
+      <div class="font-semibold tw-text-base2">Состав</div>
+      {% for item in order.items %}
+      <div class="flex justify-between gap-3">
+        <span>{{ item.title }}</span><span>{{ item.total }} ₽</span>
+      </div>
+      {% endfor %}
+      {% if order.discount and order.discount != '0.00' %}
+      <div class="flex justify-between gap-3 tw-text-muted2">
+        <span>Скидка</span><span>−{{ order.discount }} ₽</span>
+      </div>
+      {% endif %}
+      <div class="flex justify-between gap-3 tw-text-muted2">
+        <span>Доставка</span><span>{{ order.delivery_price }} ₽</span>
+      </div>
+      <div class="flex justify-between gap-3 font-semibold tw-text-base2 pt-2 border-t"
+           style="border-color: rgb(var(--admin-border));">
+        <span>Итого</span><span>{{ order.total }} ₽</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Состояние заказа</div>
+    {% if next_statuses %}
+    <form method="post" action="{{ url_for('admin.order_shop_status', order_id=order.id) }}"
+          class="space-y-3">
+      <div class="flex items-center gap-2 flex-wrap">
+        <select name="status" class="tw-select" style="min-width:180px">
+          {% for item in next_statuses %}
+          <option value="{{ item }}">{{ status_titles.get(item, item) }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="reason" placeholder="Причина (для отмены и возврата)"
+               class="tw-input" style="min-width:260px">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Перевести</span>
+        </button>
+      </div>
+      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+        <input type="checkbox" name="notify" checked class="w-4 h-4 cursor-pointer">
+        <span class="text-[13px] tw-text-base2">Сообщить клиенту в бот</span>
+      </label>
+    </form>
+    {% else %}
+    <div class="text-[13px] tw-text-muted2">
+      Из этого состояния переходов больше нет.
+      {% if order.cancel_reason %} Причина: {{ order.cancel_reason }}{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Доставка</div>
+    <div class="text-[13px] tw-text-muted2">
+      {{ delivery.summary or '—' }}
+      {% if delivery.recipient %}<br>Получатель: {{ delivery.recipient }}, {{ delivery.phone }}{% endif %}
+      {% if delivery.address %}<br>Адрес: {{ delivery.address }}{% endif %}
+    </div>
+    {% if delivery.method %}
+    <form method="post" action="{{ url_for('admin.order_shop_shipping', order_id=order.id) }}"
+          class="flex items-center gap-2 flex-wrap">
+      <input type="text" name="tracking_number" value="{{ delivery.tracking_number }}"
+             placeholder="Трек-номер" class="tw-input" style="min-width:260px">
+      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+      </button>
+      {% if delivery.tracking_url %}
+      <a href="{{ delivery.tracking_url }}" target="_blank" rel="noopener"
+         class="text-[13px]">отследить →</a>
+      {% endif %}
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Роутер</div>
+    {% if devices %}
+    <div class="text-[13px]">
+      {% for item in devices %}
+      <div><span class="font-mono">{{ item.mac }}</span> {{ item.model }}</div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-[13px] tw-text-muted2">
+      Не привязан. Укажите MAC с наклейки при отгрузке — по нему клиент активирует роутер.
+    </div>
+    {% endif %}
+    <form method="post" action="{{ url_for('admin.order_shop_device', order_id=order.id) }}"
+          class="flex items-center gap-2 flex-wrap">
+      <input type="text" name="mac" list="free-macs" placeholder="A0:B1:C2:D3:E4:F5"
+             class="tw-input" style="min-width:220px" required>
+      <datalist id="free-macs">
+        {% for item in free_devices %}
+        <option value="{{ item.mac }}">{{ item.model }}</option>
+        {% endfor %}
+      </datalist>
+      <input type="text" name="model" placeholder="Модель" class="tw-input" style="min-width:160px">
+      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Привязать</span>
+      </button>
+    </form>
+  </div>
+
+  {% if payments %}
+  <div class="tw-card overflow-x-auto">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="tw-text-muted2 text-left">
+          <th class="px-3 py-2 font-medium">Платёж</th>
+          <th class="px-3 py-2 font-medium">Провайдер</th>
+          <th class="px-3 py-2 font-medium">Сумма</th>
+          <th class="px-3 py-2 font-medium">Состояние</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in payments %}
+        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+          <td class="px-3 py-2 font-mono">{{ item.id }}</td>
+          <td class="px-3 py-2">{{ item.provider }}</td>
+          <td class="px-3 py-2">{{ item.amount }} ₽</td>
+          <td class="px-3 py-2">{{ item.status }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.order_shop_note', order_id=order.id) }}"
+        class="tw-card p-5 space-y-3">
+    <label for="note" class="block text-[13px] font-semibold tw-text-base2">Заметка</label>
+    <textarea id="note" name="note" rows="3" class="tw-input"
+              style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical;">{{ order.note }}</textarea>
+    <div class="flex justify-end">
+      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="save" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

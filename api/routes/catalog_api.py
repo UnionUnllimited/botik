@@ -21,16 +21,25 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.deps import get_session, get_transaction
 from api.service_auth import require_token
-from core import validators
+from core import texts, validators
 from core.config import settings
-from core.enums import DeliveryMethod, OrderStatus, PaymentProviderName, PaymentPurpose, VatCode
-from core.models import Order, Product, User
+from core.enums import (
+    OFFERED_DELIVERY_METHODS,
+    DeliveryMethod,
+    DeviceStatus,
+    OrderStatus,
+    PaymentProviderName,
+    PaymentPurpose,
+    VatCode,
+)
+from core.models import Device, Order, Payment, Product, User
+from core.security import normalize_mac
 from core.services import delivery as delivery_service
 from core.services import media, settings_service
 from core.services import orders as order_service
@@ -470,6 +479,286 @@ async def list_orders(
         .options(selectinload(Order.items), selectinload(Order.delivery))
     )
     return {"orders": [_order_payload(order) for order in found]}
+
+
+# --- Управление заказами из админки бота -------------------------------------
+#
+# Заказов у них нет и быть не может: их продукт продаёт подписку, а не железо
+# с посылкой и трек-номером. Поэтому раздел переезжает целиком — список,
+# карточка, статусы, доставка и привязка роутера к заказу.
+
+ORDERS_PAGE_SIZE = 30
+
+
+def _manage_order_row(order: Order) -> dict:
+    return {
+        "id": order.id,
+        "number": order.public_number,
+        "status": str(order.status),
+        "total": str(order.total),
+        "customer": order.customer_name or (order.user.display_name if order.user else ""),
+        "phone": order.customer_phone or "",
+        "city": order.customer_city or "",
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "paid": order.paid_at is not None,
+        "tracking_number": (order.delivery.tracking_number or "") if order.delivery else "",
+    }
+
+
+@router.get("/manage/orders")
+async def manage_orders(
+    status_filter: str = Query(default="", alias="status"),
+    q: str = "",
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    page = max(page, 1)
+    query = select(Order).options(selectinload(Order.user), selectinload(Order.delivery))
+    counter = select(func.count()).select_from(Order)
+
+    if status_filter:
+        query = query.where(Order.status == status_filter)
+        counter = counter.where(Order.status == status_filter)
+    text = q.strip()
+    if text:
+        pattern = f"%{text}%"
+        condition = or_(
+            Order.public_number.ilike(pattern),
+            Order.customer_name.ilike(pattern),
+            Order.customer_phone.ilike(pattern),
+            Order.customer_city.ilike(pattern),
+        )
+        query = query.where(condition)
+        counter = counter.where(condition)
+
+    total = await session.scalar(counter) or 0
+    orders = list(
+        await session.scalars(
+            query.order_by(Order.id.desc())
+            .limit(ORDERS_PAGE_SIZE)
+            .offset((page - 1) * ORDERS_PAGE_SIZE)
+        )
+    )
+    return {
+        "total": total,
+        "page": page,
+        "pages": max((total + ORDERS_PAGE_SIZE - 1) // ORDERS_PAGE_SIZE, 1),
+        "statuses": [str(item) for item in OrderStatus],
+        "orders": [_manage_order_row(order) for order in orders],
+    }
+
+
+async def _order_or_404(session: AsyncSession, order_id: int) -> Order:
+    order = await order_service.get_order(session, order_id)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    return order
+
+
+@router.get("/manage/orders/{order_id}")
+async def manage_order_card(order_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    order = await _order_or_404(session, order_id)
+    payments = list(
+        await session.scalars(
+            select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
+        )
+    )
+    devices = list(await session.scalars(select(Device).where(Device.order_id == order.id)))
+    free_devices = list(
+        await session.scalars(
+            select(Device)
+            .where(Device.status == DeviceStatus.NEW, Device.order_id.is_(None))
+            .order_by(Device.id)
+            .limit(50)
+        )
+    )
+    delivery = order.delivery
+    return {
+        "order": _manage_order_row(order)
+        | {
+            "subtotal": str(order.subtotal),
+            "discount": str(order.discount_total),
+            "delivery_price": str(order.delivery_price),
+            "comment": order.comment or "",
+            "note": order.admin_note or "",
+            "cancel_reason": order.cancel_reason or "",
+            "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+            "shipped_at": order.shipped_at.isoformat() if order.shipped_at else None,
+            "items": [
+                {"title": item.title, "total": str(item.total_price)} for item in (order.items or [])
+            ],
+        },
+        "delivery": {
+            "method": str(delivery.method) if delivery else "",
+            "summary": order_service.delivery_summary(delivery),
+            "address": (delivery.pvz_address or delivery.address or "") if delivery else "",
+            "recipient": delivery.recipient_name if delivery else "",
+            "phone": delivery.recipient_phone if delivery else "",
+            "tracking_number": (delivery.tracking_number or "") if delivery else "",
+            "tracking_url": (delivery.tracking_url or "") if delivery else "",
+        },
+        "payments": [
+            {
+                "id": payment.id,
+                "provider": str(payment.provider),
+                "status": str(payment.status),
+                "amount": str(payment.amount),
+                "created_at": payment.created_at.isoformat() if payment.created_at else None,
+            }
+            for payment in payments
+        ],
+        "devices": [{"id": item.id, "mac": item.mac, "model": item.model or ""} for item in devices],
+        "free_devices": [{"mac": item.mac, "model": item.model or ""} for item in free_devices],
+        "next_statuses": [
+            str(item) for item in OrderStatus if order_service.can_transition(order.status, item)
+        ],
+    }
+
+
+def _status_notice(order: Order, reason: str) -> str:
+    """Текст для клиента при смене статуса.
+
+    Отправляет его их бот, а не мы: клиент разговаривает с ним, и сообщение
+    от другого бота он в лучшем случае не узнает, а в худшем не получит вовсе.
+    Мы только собираем текст — тексты заказов живут у нас.
+    """
+    template = texts.ORDER_STATUS_TEXTS.get(order.status)
+    if template is None:
+        return ""
+    notice = template.format(number=order.public_number, reason=reason or "").strip()
+    delivery = order.delivery
+    if order.status is OrderStatus.SHIPPED and delivery and delivery.tracking_number:
+        notice += "\n\n" + texts.TRACK_INFO.format(track=delivery.tracking_number)
+        if delivery.tracking_url:
+            notice += "\n" + delivery.tracking_url
+    return notice
+
+
+@router.post("/manage/orders/{order_id}/status")
+async def manage_order_status(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    order = await _order_or_404(session, order_id)
+    reason = str(payload.get("reason", "")).strip()
+    try:
+        order_service.set_status(order, OrderStatus(str(payload.get("status", ""))), reason=reason or None)
+    except (order_service.OrderError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+    await session.flush()
+    return {
+        "ok": True,
+        "status": str(order.status),
+        "tg_id": order.user.tg_id if order.user else None,
+        "notice": _status_notice(order, reason),
+    }
+
+
+@router.post("/manage/orders/{order_id}/shipping")
+async def manage_order_shipping(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    order = await _order_or_404(session, order_id)
+    if order.delivery is None:
+        return {"ok": False, "error": "У заказа нет доставки — трек-номеру негде лежать."}
+
+    track = str(payload.get("tracking_number", "")).strip()[:64]
+    order.delivery.tracking_number = track or None
+    order.delivery.tracking_url = delivery_service.tracking_url(order.delivery.method, track)
+    return {"ok": True, "tracking_url": order.delivery.tracking_url or ""}
+
+
+@router.post("/manage/orders/{order_id}/device")
+async def manage_order_device(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Привязка MAC к заказу при отгрузке — по нему клиент активирует роутер."""
+    order = await _order_or_404(session, order_id)
+    mac = normalize_mac(str(payload.get("mac", "")))
+    if not mac:
+        return {"ok": False, "error": "Некорректный MAC. Формат: A0:B1:C2:D3:E4:F5"}
+
+    device = await session.scalar(select(Device).where(Device.mac == mac))
+    if device is None:
+        device = Device(mac=mac, model=str(payload.get("model", "")).strip()[:64], status=DeviceStatus.NEW)
+        session.add(device)
+        await session.flush()
+    elif device.order_id and device.order_id != order.id:
+        return {"ok": False, "error": f"MAC {mac} уже привязан к другому заказу."}
+
+    device.order_id = order.id
+    device.user_id = order.user_id
+    if device.status is DeviceStatus.NEW:
+        device.status = DeviceStatus.ASSIGNED
+    log.info("catalog.device_attached", order_id=order.id, mac=mac)
+    return {"ok": True, "mac": mac}
+
+
+@router.post("/manage/orders/{order_id}/note")
+async def manage_order_note(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    order.admin_note = str(payload.get("note", "")).strip()[:2000] or None
+    return {"ok": True}
+
+
+# --- Настройки доставки ------------------------------------------------------
+
+
+@router.get("/manage/delivery")
+async def manage_delivery_read(session: AsyncSession = Depends(get_session)) -> dict:
+    """Все способы, включая выключенные: иначе их нельзя было бы включить обратно."""
+    options = await delivery_service.get_options(session, only_enabled=False)
+    free_from = await settings_service.get_decimal(session, "delivery.free_from")
+    return {
+        "free_from": str(free_from),
+        "options": [
+            {
+                "method": str(option.method),
+                "title": option.title,
+                "pvz_price": str(option.pvz_price),
+                "courier_price": str(option.courier_price),
+                "days": option.days,
+                "enabled": option.enabled,
+            }
+            for option in options
+        ],
+    }
+
+
+@router.post("/manage/delivery")
+async def manage_delivery_save(
+    payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Сохраняет цены и переключатели. Способы перечислены у нас, их набор
+    правится кодом: перевозчик — это ещё и договор, а не строка в форме."""
+    current = await settings_service.get_setting(session, "delivery.methods") or {}
+    incoming = payload.get("options")
+    if not isinstance(incoming, dict):
+        return {"ok": False, "error": "Ожидается объект со способами доставки."}
+
+    updated = dict(current)
+    for method in OFFERED_DELIVERY_METHODS:
+        raw = incoming.get(method.value)
+        if not isinstance(raw, dict):
+            continue
+        block = dict(updated.get(method.value) or {})
+        block["title"] = str(raw.get("title", block.get("title", method.value)))[:60]
+        block["pvz"] = str(_decimal(raw.get("pvz"), str(block.get("pvz", "0"))))
+        block["courier"] = str(_decimal(raw.get("courier"), str(block.get("courier", "0"))))
+        block["days"] = str(raw.get("days", block.get("days", "")))[:40]
+        block["enabled"] = bool(raw.get("enabled"))
+        updated[method.value] = block
+
+    await settings_service.set_setting(session, "delivery.methods", updated)
+    await settings_service.set_setting(
+        session, "delivery.free_from", str(_decimal(payload.get("free_from"), "0"))
+    )
+    log.info("catalog.delivery_saved")
+    return {"ok": True}
 
 
 @router.get("/orders/{order_id}")

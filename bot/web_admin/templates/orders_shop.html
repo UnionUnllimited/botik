@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Заказы — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Заказы</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Покупки роутеров из каталога: оплата, сборка, отгрузка и трек-номер.
+        Нажмите на номер, чтобы открыть карточку.
+      </p>
+    </div>
+    <form method="get" class="flex items-center gap-2 flex-wrap">
+      <select name="status" class="tw-select">
+        <option value="">Все состояния</option>
+        {% for item in statuses %}
+        <option value="{{ item }}" {% if status_filter == item %}selected{% endif %}>
+          {{ status_titles.get(item, item) }}
+        </option>
+        {% endfor %}
+      </select>
+      <input type="text" name="q" value="{{ query }}" placeholder="Номер, имя, телефон или город"
+             class="tw-input" style="min-width:240px">
+      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
+      </button>
+    </form>
+  </div>
+
+  {% if orders_error %}
+    <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">
+      <div class="flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
+        <div>{{ orders_error }}</div>
+      </div>
+    </div>
+  {% elif orders %}
+  <div class="tw-card overflow-x-auto">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="tw-text-muted2 text-left">
+          <th class="px-3 py-2 font-medium">Заказ</th>
+          <th class="px-3 py-2 font-medium">Покупатель</th>
+          <th class="px-3 py-2 font-medium">Город</th>
+          <th class="px-3 py-2 font-medium">Сумма</th>
+          <th class="px-3 py-2 font-medium">Состояние</th>
+          <th class="px-3 py-2 font-medium">Трек-номер</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in orders %}
+        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+          <td class="px-3 py-2">
+            <a href="{{ url_for('admin.order_shop_card', order_id=item.id) }}" class="font-mono">{{ item.number }}</a>
+          </td>
+          <td class="px-3 py-2">
+            {{ item.customer or '—' }}
+            <div class="tw-text-muted2 text-[12px]">{{ item.phone or '' }}</div>
+          </td>
+          <td class="px-3 py-2">{{ item.city or '—' }}</td>
+          <td class="px-3 py-2">{{ item.total }} ₽</td>
+          <td class="px-3 py-2">
+            {{ status_titles.get(item.status, item.status) }}
+            {% if item.paid %}<span style="color:#16a34a"> ●</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.tracking_number or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex items-center justify-between gap-3 text-[13px] tw-text-muted2">
+    <div>Всего: {{ total }}</div>
+    {% if pages > 1 %}
+    <div class="flex items-center gap-3">
+      {% if page > 1 %}
+        <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, page=page - 1) }}">← назад</a>
+      {% endif %}
+      <span>{{ page }} из {{ pages }}</span>
+      {% if page < pages %}
+        <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, page=page + 1) }}">вперёд →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="tw-card p-4 text-[13px] tw-text-muted2">
+    {% if query or status_filter %}Ничего не нашлось.{% else %}Заказов пока нет.{% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

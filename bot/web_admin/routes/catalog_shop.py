@@ -62,13 +62,36 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
         products, error = await shop_api.products(include_hidden=True)
         if error:
             await flash(error, "danger")
+        # Цены доставки живут там же, где заказы: их читает расчёт суммы.
+        delivery, delivery_error = await shop_api.delivery_settings()
         return await render_template(
             "catalog_shop.html",
             products=products,
             catalog_error=error,
+            delivery=delivery.get("options", []),
+            free_from=delivery.get("free_from", "0"),
+            delivery_error=delivery_error,
             catalog_enabled=str(app_conf.get("catalog_enabled", "1")) == "1",
             specs_limit=app_conf.get("catalog_specs_limit", 8),
         )
+
+    @admin_bp_instance.route("/catalog/delivery", methods=["POST"])
+    async def catalog_delivery_save():
+        form = await request.form
+        options: dict[str, dict] = {}
+        for method in form.getlist("method"):
+            options[method] = {
+                "title": (form.get(f"title_{method}") or "").strip(),
+                "pvz": _decimal_text(form.get(f"pvz_{method}", "")),
+                "courier": _decimal_text(form.get(f"courier_{method}", "")),
+                "days": (form.get(f"days_{method}") or "").strip(),
+                "enabled": form.get(f"enabled_{method}") == "on",
+            }
+        _, error = await shop_api.save_delivery_settings(
+            {"options": options, "free_from": _decimal_text(form.get("free_from", ""))}
+        )
+        await flash(error or "Доставка сохранена.", "danger" if error else "success")
+        return redirect(url_for("admin.catalog_shop"))
 
     @admin_bp_instance.route("/catalog/new")
     async def catalog_product_new():

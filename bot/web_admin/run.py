@@ -1478,6 +1478,8 @@ from web_admin.routes.catalog_shop import attach_catalog_shop_routes
 attach_catalog_shop_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.devices_stock import attach_devices_stock_routes
 attach_devices_stock_routes(admin_bp, async_query_db, async_execute_db)
+from web_admin.routes.orders_shop import attach_orders_shop_routes
+attach_orders_shop_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.tasks import attach_tasks_routes
 attach_tasks_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.misc import attach_misc_routes

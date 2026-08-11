@@ -177,6 +177,49 @@ async def cancel_order(order_id: int, tg_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/orders/{order_id}/cancel", {"tg_id": tg_id})
 
 
+# --- Заказы: сторона оператора -----------------------------------------------
+
+
+async def manage_orders(*, status: str = "", query: str = "", page: int = 1) -> tuple[dict, str]:
+    return await get(
+        "/api/v1/catalog/manage/orders", {"status": status, "q": query, "page": page}
+    )
+
+
+async def manage_order(order_id: int) -> tuple[dict, str]:
+    return await get(f"/api/v1/catalog/manage/orders/{order_id}")
+
+
+async def set_order_status(order_id: int, status: str, reason: str) -> tuple[dict, str]:
+    return await post(
+        f"/api/v1/catalog/manage/orders/{order_id}/status", {"status": status, "reason": reason}
+    )
+
+
+async def set_order_tracking(order_id: int, track: str) -> tuple[dict, str]:
+    return await post(
+        f"/api/v1/catalog/manage/orders/{order_id}/shipping", {"tracking_number": track}
+    )
+
+
+async def attach_order_device(order_id: int, mac: str, model: str) -> tuple[dict, str]:
+    return await post(
+        f"/api/v1/catalog/manage/orders/{order_id}/device", {"mac": mac, "model": model}
+    )
+
+
+async def set_order_note(order_id: int, note: str) -> tuple[dict, str]:
+    return await post(f"/api/v1/catalog/manage/orders/{order_id}/note", {"note": note})
+
+
+async def delivery_settings() -> tuple[dict, str]:
+    return await get("/api/v1/catalog/manage/delivery")
+
+
+async def save_delivery_settings(payload: dict) -> tuple[dict, str]:
+    return await post("/api/v1/catalog/manage/delivery", payload)
+
+
 # --- Склад устройств ---------------------------------------------------------
 
 

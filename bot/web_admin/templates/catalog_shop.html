@@ -58,6 +58,59 @@
     </div>
   </form>
 
+  {% if not delivery_error %}
+  <form method="post" action="{{ url_for('admin.catalog_delivery_save') }}" class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Доставка</div>
+    <div class="text-[11px] tw-text-subtle2">
+      Эти цены бот показывает при оформлении и прибавляет к сумме заказа.
+      Выключенный способ клиенту не предлагается.
+    </div>
+
+    {% for option in delivery %}
+    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end border-t pt-3"
+         style="border-color: rgb(var(--admin-border));">
+      <input type="hidden" name="method" value="{{ option.method }}">
+      <div>
+        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Название</label>
+        <input type="text" name="title_{{ option.method }}" value="{{ option.title }}" class="tw-input">
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">В пункт выдачи, ₽</label>
+        <input type="text" name="pvz_{{ option.method }}" value="{{ option.pvz_price }}" class="tw-input">
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Курьером, ₽</label>
+        <input type="text" name="courier_{{ option.method }}" value="{{ option.courier_price }}" class="tw-input">
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Срок</label>
+        <input type="text" name="days_{{ option.method }}" value="{{ option.days }}"
+               placeholder="2–5 дней" class="tw-input">
+      </div>
+      <label class="flex items-center gap-2.5 cursor-pointer select-none pb-2">
+        <input type="checkbox" name="enabled_{{ option.method }}" class="w-4 h-4 cursor-pointer"
+               {% if option.enabled %}checked{% endif %}>
+        <span class="text-[13px] tw-text-base2">Включена</span>
+      </label>
+    </div>
+    {% endfor %}
+
+    <div class="flex items-end justify-between gap-3 flex-wrap pt-2 border-t"
+         style="border-color: rgb(var(--admin-border));">
+      <div class="max-w-xs">
+        <label for="free_from" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Бесплатно от суммы, ₽
+        </label>
+        <input type="text" id="free_from" name="free_from" value="{{ free_from }}" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">Ноль — доставка платная всегда.</div>
+      </div>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+      </button>
+    </div>
+  </form>
+  {% endif %}
+
   {% if products %}
   <div class="tw-card overflow-x-auto">
     <table class="w-full text-[13px]">

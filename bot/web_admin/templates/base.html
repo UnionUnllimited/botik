@@ -516,6 +516,12 @@
             </a>
             {% endif %}
             {% if moderator_can_see('users') %}
+            {% set _orders_url = url_for('admin.orders_shop') %}
+            <a href="{{ _orders_url }}" class="tw-nav-link {% if request.path.startswith(_orders_url) %}active{% endif %}">
+                <i data-lucide="clipboard-list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Заказы</span>
+            </a>
+            {% endif %}
+            {% if moderator_can_see('users') %}
             {% set _stock_url = url_for('admin.devices_stock') %}
             <a href="{{ _stock_url }}" class="tw-nav-link {% if request.path.startswith(_stock_url) %}active{% endif %}">
                 <i data-lucide="boxes" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Склад</span>
