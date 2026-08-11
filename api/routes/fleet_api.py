@@ -21,7 +21,7 @@ import datetime as dt
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,6 +31,7 @@ from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import Device
+from core.security import normalize_mac
 from core.services import activation, panel_ticket, router_shell
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
@@ -264,6 +265,124 @@ async def unbind_router(device_id: int, session: AsyncSession = Depends(get_tran
     routers_service.add_event(
         session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
     )
+    return {"ok": True}
+
+
+STOCK_PAGE_SIZE = 50
+
+
+@router.get("/devices", dependencies=[Depends(require_token)])
+async def stock_list(
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Склад устройств: те же роутеры, но до отгрузки.
+
+    Отдельно от `/routers` не по прихоти: там показания и туннели, здесь —
+    MAC, серийник, статус и заметка кладовщика, поиск и постранично, потому
+    что коробок бывают сотни, а на связи из них — единицы.
+    """
+    page = max(page, 1)
+    query = select(Device).options(selectinload(Device.user))
+    counter = select(func.count()).select_from(Device)
+
+    text = q.strip()
+    if text:
+        mac = normalize_mac(text)
+        pattern = f"%{text}%"
+        condition = or_(
+            Device.mac == mac if mac else Device.mac.ilike(pattern),
+            Device.model.ilike(pattern),
+            Device.serial.ilike(pattern),
+        )
+        query = query.where(condition)
+        counter = counter.where(condition)
+
+    total = await session.scalar(counter) or 0
+    devices = list(
+        await session.scalars(
+            query.order_by(Device.id.desc())
+            .limit(STOCK_PAGE_SIZE)
+            .offset((page - 1) * STOCK_PAGE_SIZE)
+        )
+    )
+    return {
+        "total": total,
+        "page": page,
+        "pages": max((total + STOCK_PAGE_SIZE - 1) // STOCK_PAGE_SIZE, 1),
+        "statuses": [str(status) for status in DeviceStatus],
+        "devices": [
+            {
+                "id": device.id,
+                "mac": device.mac,
+                "model": device.model or "",
+                "serial": device.serial or "",
+                "status": str(device.status),
+                "client": device.user.display_name if device.user else "",
+                "activated_at": _iso(device.activated_at),
+                "created_at": _iso(device.created_at),
+                "note": device.admin_note or "",
+            }
+            for device in devices
+        ],
+    }
+
+
+@router.post("/devices", dependencies=[Depends(require_token)])
+async def stock_add(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Заведение устройства на складе до отгрузки."""
+    mac = normalize_mac(str(payload.get("mac", "")))
+    if not mac:
+        return {"ok": False, "error": "Некорректный MAC. Формат: A0:B1:C2:D3:E4:F5"}
+    exists = await session.scalar(select(Device).where(Device.mac == mac))
+    if exists is not None:
+        return {"ok": False, "error": f"MAC {mac} уже заведён."}
+
+    device = Device(
+        mac=mac,
+        model=str(payload.get("model", "")).strip()[:64],
+        serial=str(payload.get("serial", "")).strip()[:64] or None,
+        status=DeviceStatus.NEW,
+    )
+    session.add(device)
+    await session.flush()
+    routers_service.add_event(
+        session, device_id=device.id, mac=mac, level="info", message="Заведён на складе"
+    )
+    log.info("fleet.device_created", device_id=device.id, mac=mac)
+    return {"ok": True, "id": device.id, "mac": mac}
+
+
+@router.post("/routers/{device_id}/status", dependencies=[Depends(require_token)])
+async def change_status(
+    device_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    device = await _device_or_404(session, device_id)
+    try:
+        target = DeviceStatus(str(payload.get("status", "")).strip())
+    except ValueError:
+        return {"ok": False, "error": "Неизвестное состояние."}
+
+    if device.status is target:
+        return {"ok": True, "status": str(target)}
+    was = str(device.status)
+    device.status = target
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="warning" if target is DeviceStatus.BLOCKED else "info",
+        message=f"Состояние: {was} → {target}",
+    )
+    log.info("fleet.device_status", device_id=device.id, was=was, now=str(target))
+    return {"ok": True, "status": str(target)}
+
+
+@router.post("/routers/{device_id}/note", dependencies=[Depends(require_token)])
+async def save_note(
+    device_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    device = await _device_or_404(session, device_id)
+    device.admin_note = str(payload.get("note", "")).strip()[:2000] or None
     return {"ok": True}
 
 

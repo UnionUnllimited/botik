@@ -1,4 +1,4 @@
-"""Доступ к каталогу и заказам основного приложения по HTTP.
+"""Доступ к каталогу, заказам и складу основного приложения по HTTP.
 
 Товары, цены и заказы лежат в его Postgres. Ни бот, ни эта админка до него
 не дотягиваются: они отдельные процессы на хосте, со своими venv и без
@@ -175,3 +175,22 @@ async def order_card(order_id: int, tg_id: int) -> tuple[dict, str]:
 
 async def cancel_order(order_id: int, tg_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/orders/{order_id}/cancel", {"tg_id": tg_id})
+
+
+# --- Склад устройств ---------------------------------------------------------
+
+
+async def stock(*, query: str = "", page: int = 1) -> tuple[dict, str]:
+    return await get("/api/v1/fleet/devices", {"q": query, "page": page})
+
+
+async def stock_add(mac: str, model: str, serial: str) -> tuple[dict, str]:
+    return await post("/api/v1/fleet/devices", {"mac": mac, "model": model, "serial": serial})
+
+
+async def set_device_status(device_id: int, status: str) -> tuple[dict, str]:
+    return await post(f"/api/v1/fleet/routers/{device_id}/status", {"status": status})
+
+
+async def set_device_note(device_id: int, note: str) -> tuple[dict, str]:
+    return await post(f"/api/v1/fleet/routers/{device_id}/note", {"note": note})

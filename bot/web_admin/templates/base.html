@@ -502,14 +502,23 @@
             </a>
             {% endif %}
             {% if moderator_can_see('users') %}
+            {# Иконки берутся из локального спрайта, а не из полного набора lucide:
+               имени там может не оказаться, и пункт останется без картинки.
+               Проверять по bot/web_admin/static/icons/lucide-sprite.svg. #}
             <a href="{{ url_for('admin.routers_fleet') }}" class="tw-nav-link {% if request.path == url_for('admin.routers_fleet') %}active{% endif %}">
-                <i data-lucide="router" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
+                <i data-lucide="wifi" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
             </a>
             {% endif %}
             {% if moderator_can_see('users') %}
             {% set _catalog_url = url_for('admin.catalog_shop') %}
             <a href="{{ _catalog_url }}" class="tw-nav-link {% if request.path.startswith(_catalog_url) %}active{% endif %}">
-                <i data-lucide="shopping-bag" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Каталог</span>
+                <i data-lucide="package" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Каталог</span>
+            </a>
+            {% endif %}
+            {% if moderator_can_see('users') %}
+            {% set _stock_url = url_for('admin.devices_stock') %}
+            <a href="{{ _stock_url }}" class="tw-nav-link {% if request.path.startswith(_stock_url) %}active{% endif %}">
+                <i data-lucide="boxes" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Склад</span>
             </a>
             {% endif %}
             {% if moderator_can_see('payments') %}

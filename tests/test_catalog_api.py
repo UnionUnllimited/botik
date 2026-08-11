@@ -186,3 +186,17 @@ class TestDraft:
 
     def test_source_marked_as_bot(self):
         assert _draft(self._payload()).utm_source == "bot"
+
+
+class TestStockAccess:
+    """Склад закрыт тем же секретом, что и остальной парк."""
+
+    def test_disabled_without_token(self, client, monkeypatch):
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr(""))
+        assert client.get("/api/v1/fleet/devices").status_code == 404
+
+    def test_wrong_token_rejected(self, client, token):
+        response = client.get(
+            "/api/v1/fleet/devices", headers={"Authorization": "Bearer not-the-token"}
+        )
+        assert response.status_code == 401

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Склад — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Склад</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Устройства до отгрузки: MAC с наклейки, модель, серийник и состояние.
+        Показания и туннели — в разделе «Роутеры».
+      </p>
+    </div>
+    <form method="get" class="flex items-center gap-2">
+      <input type="text" name="q" value="{{ query }}" placeholder="MAC, модель или серийник"
+             class="tw-input" style="min-width:240px">
+      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
+      </button>
+    </form>
+  </div>
+
+  {% if stock_error %}
+    <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">
+      <div class="flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
+        <div>{{ stock_error }}</div>
+      </div>
+    </div>
+  {% else %}
+
+  <form method="post" action="{{ url_for('admin.devices_stock_add') }}" class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Завести устройство</div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label for="mac" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          MAC <span style="color:#ef4444;">*</span>
+        </label>
+        <input type="text" id="mac" name="mac" required placeholder="A0:B1:C2:D3:E4:F5" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">С наклейки на корпусе. Разделители любые.</div>
+      </div>
+      <div>
+        <label for="model" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Модель</label>
+        <input type="text" id="model" name="model" placeholder="AX3000" class="tw-input">
+      </div>
+      <div>
+        <label for="serial" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Серийный номер</label>
+        <input type="text" id="serial" name="serial" class="tw-input">
+      </div>
+    </div>
+    <input type="hidden" name="q" value="{{ query }}">
+    <input type="hidden" name="page" value="{{ page }}">
+    <div class="flex justify-end">
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Завести</span>
+      </button>
+    </div>
+  </form>
+
+  {% if devices %}
+  <div class="tw-card overflow-x-auto">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="tw-text-muted2 text-left">
+          <th class="px-3 py-2 font-medium">Устройство</th>
+          <th class="px-3 py-2 font-medium">Серийный</th>
+          <th class="px-3 py-2 font-medium">Клиент</th>
+          <th class="px-3 py-2 font-medium">Состояние</th>
+          <th class="px-3 py-2 font-medium">Заметка</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in devices %}
+        <tr class="border-t align-top" style="border-color:var(--tw-line, #26262b)">
+          <td class="px-3 py-2">
+            <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
+            <div class="tw-text-muted2 text-[12px]">{{ item.model or '—' }}</div>
+          </td>
+          <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.serial or '—' }}</td>
+          <td class="px-3 py-2">{{ item.client or '—' }}</td>
+          <td class="px-3 py-2">
+            <form method="post" action="{{ url_for('admin.devices_stock_status', device_id=item.id) }}"
+                  class="flex items-center gap-2">
+              <select name="status" class="tw-select" style="min-width:150px">
+                {% for status in statuses %}
+                <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>
+                  {{ status_titles.get(status, status) }}
+                </option>
+                {% endfor %}
+              </select>
+              <input type="hidden" name="q" value="{{ query }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              </button>
+            </form>
+          </td>
+          <td class="px-3 py-2">
+            <form method="post" action="{{ url_for('admin.devices_stock_note', device_id=item.id) }}"
+                  class="flex items-center gap-2">
+              <input type="text" name="note" value="{{ item.note }}" placeholder="—"
+                     class="tw-input" style="min-width:200px">
+              <input type="hidden" name="q" value="{{ query }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+                <i data-lucide="save" class="w-3.5 h-3.5"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex items-center justify-between gap-3 text-[13px] tw-text-muted2">
+    <div>Всего: {{ total }}</div>
+    {% if pages > 1 %}
+    <div class="flex items-center gap-3">
+      {% if page > 1 %}
+        <a href="{{ url_for('admin.devices_stock', q=query or None, page=page - 1) }}">← назад</a>
+      {% endif %}
+      <span>{{ page }} из {{ pages }}</span>
+      {% if page < pages %}
+        <a href="{{ url_for('admin.devices_stock', q=query or None, page=page + 1) }}">вперёд →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="tw-card p-4 text-[13px] tw-text-muted2">
+    {% if query %}По запросу «{{ query }}» ничего не нашлось.{% else %}Склад пуст.{% endif %}
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}
