@@ -18,15 +18,15 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-import secrets
 
 import structlog
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from api.deps import get_session, get_transaction
+from api.service_auth import require_token
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
@@ -39,19 +39,6 @@ from core.services.frp import RouterApi
 log = structlog.get_logger("api.fleet")
 
 router = APIRouter(prefix="/api/v1/fleet", tags=["fleet"], include_in_schema=False)
-
-
-async def require_token(authorization: str = Header(default="")) -> None:
-    """Общий секрет вместо сессии: на том конце процесс, а не человек в браузере."""
-    expected = settings.api.fleet_token.get_secret_value()
-    if not expected:
-        # Токен не задан — ручки как будто нет. Иначе выключенная возможность
-        # молча раздавала бы список устройств всем.
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-
-    presented = authorization.removeprefix("Bearer ").strip()
-    if not presented or not secrets.compare_digest(presented, expected):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="bad_token")
 
 
 def _iso(value: dt.datetime | None) -> str | None:

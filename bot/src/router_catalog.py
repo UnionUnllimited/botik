@@ -1,0 +1,724 @@
+"""Каталог роутеров и оформление заказа в боте.
+
+Поток:
+    [Главное меню] «🛒 Купить роутер»
+        → shop_catalog          — список моделей
+        → shop_item:{id}        — карточка: описание, характеристики, цена
+        → shop_buy:{id}         — оформление: ФИО, телефон, город,
+                                  доставка, промокод
+        → shop_confirm          — суммы с расчёта основного приложения
+                                  и ссылка на оплату
+    [Главное меню] «📦 Мои заказы»
+        → shop_orders / shop_order:{id} / shop_order_cancel:{id}
+
+Товары, цены, промокоды и сам заказ живут в основном приложении: у него
+таблица `products`, расчёт сумм со снимком цен и приёмник оплаты. Здесь
+только экраны и сбор ответов — второй каталог в базе бота развёл бы цены
+по двум местам. Всё общение через `src/shop_api.py`.
+
+Проверка ФИО, телефона и адреса тоже там: правила одни на бота и на админку,
+и разъехавшись, они пропустили бы телефон, на который не дозвонится курьер.
+"""
+
+from __future__ import annotations
+
+import html
+from decimal import Decimal, InvalidOperation
+
+from aiogram import Dispatcher, F
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, LinkPreviewOptions, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from loguru import logger
+
+from app_config import app_conf
+from button_helpers import btn
+from src import shop_api
+from src.shop_texts import CATALOG_TEXTS
+
+_DEFAULT_TEXTS = {key: value for key, value, _ in CATALOG_TEXTS}
+
+NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
+STATUS_LABELS = {
+    "new": "🆕 Новый",
+    "awaiting_payment": "⏳ Ждёт оплаты",
+    "paid": "✅ Оплачен",
+    "packing": "📦 Собираем",
+    "shipped": "🚚 Отправлен",
+    "delivered": "📬 Доставлен",
+    "done": "✅ Завершён",
+    "cancelled": "❌ Отменён",
+    "refunded": "↩️ Возврат",
+}
+
+CARRIER_TITLES = {"cdek": "СДЭК", "post": "Почта России", "yandex": "Яндекс Go"}
+
+
+class RouterOrder(StatesGroup):
+    """Шаги оформления. Ответы копятся в данных состояния и уезжают
+    в основное приложение одним запросом на последнем шаге."""
+
+    name = State()
+    phone = State()
+    city = State()
+    address = State()
+    promo = State()
+
+
+def catalog_enabled() -> bool:
+    return str(app_conf.get("catalog_enabled", "1")) == "1"
+
+
+def text(key: str) -> str:
+    return app_conf.get(key, _DEFAULT_TEXTS.get(key, key))
+
+
+def _esc(value) -> str:
+    """Экранируем всё, что пришло из каталога: одна угловая скобка в описании
+    роняет отправку целиком — Telegram разбирает текст как HTML."""
+    return html.escape(str(value or ""), quote=False)
+
+
+def money(raw) -> str:
+    """«6900.00» → «6 900 ₽». Копейки показываем, только если они есть."""
+    try:
+        value = Decimal(str(raw or "0"))
+    except (InvalidOperation, ValueError):
+        return f"{raw} ₽"
+    if value == value.to_integral_value():
+        body = f"{int(value):,}".replace(",", " ")
+    else:
+        # Тысячи отделяем пробелом, копейки — запятой: 6 900,50 ₽.
+        body = f"{value:,.2f}".replace(",", " ").replace(".", ",")
+    return f"{body} ₽"
+
+
+def is_positive(raw) -> bool:
+    """Ноль приходит строкой «0.00» — сравнивать её с нулём как текст нельзя."""
+    try:
+        return Decimal(str(raw or "0")) > 0
+    except (InvalidOperation, ValueError):
+        return False
+
+
+def stock_line(product: dict) -> str:
+    if product.get("stock", 0) > 0:
+        return "✅ В наличии"
+    if product.get("allow_preorder"):
+        return "📦 Под заказ"
+    return "⛔️ Нет в наличии"
+
+
+
+async def edit_screen(message, text, *, reply_markup=None, link_preview_options=NO_PREVIEW):
+    """Правит экран на месте.
+
+    Повторное нажатие той же кнопки даёт тот же текст, и Telegram отвечает
+    «message is not modified». Это не поломка, а щелчок мимо: экран уже такой,
+    какой просили, — молчим. Остальные отказы пропускаем наверх.
+    """
+    try:
+        await message.edit_text(
+            text, reply_markup=reply_markup, link_preview_options=link_preview_options
+        )
+    except TelegramBadRequest as exc:
+        if "not modified" not in str(exc).lower():
+            raise
+# --- Экраны каталога ---------------------------------------------------------
+
+
+def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for product in products:
+        builder.row(
+            btn(
+                "btn_shop_item",
+                text=f"{product.get('title', '')} · {money(product.get('price'))}",
+                callback_data=f"shop_item:{product.get('id')}",
+            )
+        )
+    builder.row(btn("btn_my_orders", callback_data="shop_orders"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
+def card_text(product: dict) -> str:
+    lines = [f"<b>{_esc(product.get('title'))}</b>"]
+    if product.get("subtitle"):
+        lines.append(_esc(product["subtitle"]))
+    if product.get("description"):
+        lines += ["", _esc(product["description"])]
+
+    specs = product.get("specs") or {}
+    if specs:
+        limit = max(int(app_conf.get("catalog_specs_limit", 8) or 8), 1)
+        lines += ["", "<b>Характеристики</b>"]
+        for name, value in list(specs.items())[:limit]:
+            lines.append(f"• {_esc(name)}: {_esc(value)}")
+
+    price = f"💰 <b>{money(product.get('price'))}</b>"
+    if product.get("old_price"):
+        price += f"  <s>{money(product['old_price'])}</s>"
+    lines += ["", price, stock_line(product)]
+    return "\n".join(lines)
+
+
+def card_keyboard(product: dict) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if product.get("in_stock"):
+        builder.row(btn("btn_shop_buy", callback_data=f"shop_buy:{product.get('id')}"))
+    builder.row(btn("btn_shop_back_to_list", callback_data="shop_catalog"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
+def card_preview(product: dict) -> LinkPreviewOptions:
+    """Фото показываем ссылкой на картинку, а не отдельным сообщением:
+    экран правится на месте, а превратить текст в фото Telegram не даёт."""
+    photo = product.get("photo_url") or ""
+    if not photo:
+        return NO_PREVIEW
+    return LinkPreviewOptions(url=photo, prefer_large_media=True, show_above_text=True)
+
+
+def cancel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
+    return builder.as_markup()
+
+
+# --- Экраны заказа -----------------------------------------------------------
+
+
+def carrier_keyboard(options: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for option in options:
+        method = option.get("method", "")
+        title = option.get("title") or CARRIER_TITLES.get(method, method)
+        days = f" · {option['days']}" if option.get("days") else ""
+        builder.row(
+            btn("btn_shop_carrier", text=f"{title}{days}", callback_data=f"shop_carrier:{method}")
+        )
+    builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
+    return builder.as_markup()
+
+
+def where_keyboard(method: str, option: dict) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        btn(
+            "btn_shop_to_pvz",
+            text=f"🏬 В пункт выдачи · {money(option.get('pvz_price'))}",
+            callback_data=f"shop_where:{method}:pvz",
+        )
+    )
+    builder.row(
+        btn(
+            "btn_shop_to_door",
+            text=f"🚪 Курьером до двери · {money(option.get('courier_price'))}",
+            callback_data=f"shop_where:{method}:door",
+        )
+    )
+    builder.row(btn("btn_shop_back_to_carrier", callback_data="shop_carriers"))
+    return builder.as_markup()
+
+
+def promo_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(btn("btn_shop_promo_skip", callback_data="shop_promo_skip"))
+    builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
+    return builder.as_markup()
+
+
+def confirm_text(quote: dict, data: dict) -> str:
+    product = quote.get("product") or {}
+    lines = [
+        "🧾 <b>Проверьте заказ</b>",
+        "",
+        f"<b>{_esc(product.get('title'))}</b> — {money(quote.get('subtotal'))}",
+    ]
+    if quote.get("promo"):
+        lines.append(f"Промокод {_esc(quote['promo'].get('code'))} — −{money(quote.get('discount'))}")
+    if data.get("delivery_method"):
+        carrier = CARRIER_TITLES.get(data["delivery_method"], data["delivery_method"])
+        where = "пункт выдачи" if data.get("delivery_to_pvz") else "курьером"
+        price = money(quote.get("delivery")) if is_positive(quote.get("delivery")) else "бесплатно"
+        lines.append(f"Доставка {_esc(carrier)}, {where} — {price}")
+    lines += [
+        "",
+        f"<b>Итого: {money(quote.get('total'))}</b>",
+        "",
+        f"Получатель: {_esc(data.get('name'))}",
+        f"Телефон: {_esc(data.get('phone'))}",
+        f"Адрес: {_esc(data.get('city'))}, {_esc(data.get('address'))}",
+    ]
+    return "\n".join(lines)
+
+
+def confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(btn("btn_shop_confirm", callback_data="shop_confirm"))
+    builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
+    return builder.as_markup()
+
+
+def created_text(order: dict, pay_url: str) -> str:
+    lines = [
+        f"✅ <b>Заказ {_esc(order.get('number'))} принят</b>",
+        "",
+        f"Сумма: <b>{money(order.get('total'))}</b>",
+        f"Доставка: {_esc(order.get('delivery_summary'))}",
+        "",
+        text("text_order_pay_hint") if pay_url else text("text_order_pay_later"),
+    ]
+    return "\n".join(lines)
+
+
+def created_keyboard(pay_url: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if pay_url:
+        builder.row(btn("btn_payment_pay_link", url=pay_url))
+    builder.row(btn("btn_my_orders", callback_data="shop_orders"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
+def orders_text(orders: list[dict]) -> str:
+    lines = ["📦 <b>Мои заказы</b>", ""]
+    for order in orders:
+        status = STATUS_LABELS.get(order.get("status", ""), order.get("status", ""))
+        lines.append(f"<b>{_esc(order.get('number'))}</b> — {money(order.get('total'))} · {status}")
+    return "\n".join(lines)
+
+
+def orders_keyboard(orders: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for order in orders:
+        builder.row(
+            btn(
+                "btn_shop_order",
+                text=f"{order.get('number')} · {money(order.get('total'))}",
+                callback_data=f"shop_order:{order.get('id')}",
+            )
+        )
+    builder.row(btn("btn_catalog", callback_data="shop_catalog"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
+def order_text(order: dict) -> str:
+    status = STATUS_LABELS.get(order.get("status", ""), order.get("status", ""))
+    lines = [f"📦 <b>Заказ {_esc(order.get('number'))}</b>", "", f"Состояние: {status}", ""]
+    for item in order.get("items", []):
+        lines.append(f"• {_esc(item.get('title'))} — {money(item.get('total'))}")
+    if is_positive(order.get("discount")):
+        lines.append(f"Скидка: −{money(order['discount'])}")
+    lines += ["", f"<b>Итого: {money(order.get('total'))}</b>"]
+    if order.get("delivery_summary") and order["delivery_summary"] != "—":
+        lines.append(f"Доставка: {_esc(order['delivery_summary'])}")
+    if order.get("tracking_number"):
+        lines.append(f"Трек-номер: <code>{_esc(order['tracking_number'])}</code>")
+    return "\n".join(lines)
+
+
+def order_keyboard(order: dict, cancellable: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if cancellable:
+        builder.row(
+            btn("btn_shop_order_cancel", callback_data=f"shop_order_cancel:{order.get('id')}")
+        )
+    builder.row(btn("btn_shop_back_to_orders", callback_data="shop_orders"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
+def draft_payload(user, data: dict) -> dict:
+    """Черновик заказа в том виде, в каком его ждёт основное приложение."""
+    return {
+        "tg_id": user.id,
+        "username": user.username or "",
+        "first_name": user.first_name or "",
+        "product_id": data.get("product_id"),
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "city": data.get("city", ""),
+        "delivery_method": data.get("delivery_method", ""),
+        "delivery_to_pvz": bool(data.get("delivery_to_pvz", True)),
+        "address": data.get("address", ""),
+        "promo_code": data.get("promo_code", ""),
+    }
+
+
+# --- Регистрация -------------------------------------------------------------
+
+
+def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, send_blocked_message_func):
+    """Обработчики каталога.
+
+    Args:
+        dp: Dispatcher для регистрации обработчиков
+        check_user_blocked_func: Функция проверки блокировки пользователя
+        send_blocked_message_func: Функция отправки сообщения о блокировке
+    """
+
+    async def blocked(query_or_message, is_query: bool = True) -> bool:
+        user_id = query_or_message.from_user.id
+        if not await check_user_blocked_func(user_id):
+            return False
+        await send_blocked_message_func(user_id, query_or_message if is_query else None)
+        return True
+
+    async def show_error(query: CallbackQuery, error: str):
+        logger.warning(f"[CATALOG] {error}")
+        await edit_screen(
+            query.message,
+            f"{text('text_catalog_unavailable')}\n\n<i>{_esc(error)}</i>",
+            reply_markup=InlineKeyboardBuilder()
+            .row(btn("btn_back_to_main", callback_data="back_to_main"))
+            .as_markup(),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    async def show_catalog(query: CallbackQuery):
+        products, error = await shop_api.products()
+        if error:
+            return await show_error(query, error)
+        if not products:
+            await edit_screen(
+                query.message,
+                text("text_catalog_empty"),
+                reply_markup=InlineKeyboardBuilder()
+                .row(btn("btn_back_to_main", callback_data="back_to_main"))
+                .as_markup(),
+                link_preview_options=NO_PREVIEW,
+            )
+            return await query.answer()
+        await edit_screen(
+            query.message,
+            text("text_catalog_intro"),
+            reply_markup=catalog_keyboard(products),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data == "shop_catalog")
+    async def cq_catalog(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.clear()
+        await show_catalog(query)
+
+    @dp.callback_query(F.data.startswith("shop_item:"))
+    async def cq_item(query: CallbackQuery):
+        if await blocked(query):
+            return
+        product_id = query.data.split(":")[1]
+        product, error = await shop_api.product(int(product_id))
+        if error:
+            return await show_error(query, error)
+        await edit_screen(
+            query.message,
+            card_text(product),
+            reply_markup=card_keyboard(product),
+            link_preview_options=card_preview(product),
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_buy:"))
+    async def cq_buy(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        product_id = int(query.data.split(":")[1])
+        product, error = await shop_api.product(product_id)
+        if error:
+            return await show_error(query, error)
+        if not product.get("in_stock"):
+            return await query.answer("Этой модели сейчас нет в наличии", show_alert=True)
+
+        await state.clear()
+        await state.update_data(product_id=product_id, product_title=product.get("title", ""))
+        await state.set_state(RouterOrder.name)
+        await edit_screen(
+            query.message,
+            text("text_order_ask_name"),
+            reply_markup=cancel_keyboard(),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    async def ask_carrier(target, state: FSMContext, *, edit: bool):
+        """Экран выбора перевозчика. Способов может не быть вовсе —
+        тогда заказ оформляется без доставки, а не упирается в пустой список."""
+        data, error = await shop_api.delivery_options()
+        options = data.get("options", [])
+        if error or not options:
+            if error:
+                logger.warning(f"[CATALOG] доставка недоступна: {error}")
+            await state.update_data(delivery_method="", address="")
+            return await ask_promo(target, state, edit=edit)
+
+        await state.set_state(None)
+        payload = {
+            "text": text("text_order_ask_carrier"),
+            "reply_markup": carrier_keyboard(options),
+            "link_preview_options": NO_PREVIEW,
+        }
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
+
+    async def ask_promo(target, state: FSMContext, *, edit: bool):
+        await state.set_state(RouterOrder.promo)
+        payload = {
+            "text": text("text_order_ask_promo"),
+            "reply_markup": promo_keyboard(),
+            "link_preview_options": NO_PREVIEW,
+        }
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
+
+    async def show_confirm(target, state: FSMContext, user, *, edit: bool):
+        data = await state.get_data()
+        quote, error = await shop_api.quote(draft_payload(user, data))
+        if error:
+            payload = {
+                "text": f"❌ {_esc(error)}",
+                "reply_markup": cancel_keyboard(),
+                "link_preview_options": NO_PREVIEW,
+            }
+        else:
+            payload = {
+                "text": confirm_text(quote, data),
+                "reply_markup": confirm_keyboard(),
+                "link_preview_options": NO_PREVIEW,
+            }
+        await state.set_state(None)
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
+
+    async def check_field(message: Message, field: str) -> str:
+        """Проверка значения на стороне основного приложения. Пустой ответ —
+        клиенту уже объяснили, что не так, и шаг остался прежним."""
+        value, error = await shop_api.validate_field(field, message.text or "")
+        if error:
+            await message.answer(f"❌ {_esc(error)}", reply_markup=cancel_keyboard())
+            return ""
+        return value
+
+    @dp.message(RouterOrder.name)
+    async def on_name(message: Message, state: FSMContext):
+        if await blocked(message, is_query=False):
+            await state.clear()
+            return
+        value = await check_field(message, "name")
+        if not value:
+            return
+        await state.update_data(name=value)
+        await state.set_state(RouterOrder.phone)
+        await message.answer(text("text_order_ask_phone"), reply_markup=cancel_keyboard())
+
+    @dp.message(RouterOrder.phone)
+    async def on_phone(message: Message, state: FSMContext):
+        if await blocked(message, is_query=False):
+            await state.clear()
+            return
+        value = await check_field(message, "phone")
+        if not value:
+            return
+        await state.update_data(phone=value)
+        await state.set_state(RouterOrder.city)
+        await message.answer(text("text_order_ask_city"), reply_markup=cancel_keyboard())
+
+    @dp.message(RouterOrder.city)
+    async def on_city(message: Message, state: FSMContext):
+        if await blocked(message, is_query=False):
+            await state.clear()
+            return
+        value = await check_field(message, "city")
+        if not value:
+            return
+        await state.update_data(city=value)
+        await ask_carrier(message, state, edit=False)
+
+    @dp.callback_query(F.data == "shop_carriers")
+    async def cq_carriers(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await ask_carrier(query, state, edit=True)
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_carrier:"))
+    async def cq_carrier(query: CallbackQuery):
+        if await blocked(query):
+            return
+        method = query.data.split(":")[1]
+        data, error = await shop_api.delivery_options()
+        if error:
+            return await show_error(query, error)
+        option = next((o for o in data.get("options", []) if o.get("method") == method), None)
+        if option is None:
+            return await query.answer("Этот способ доставки выключен", show_alert=True)
+
+        await edit_screen(
+            query.message,
+            text("text_order_ask_where"),
+            reply_markup=where_keyboard(method, option),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_where:"))
+    async def cq_where(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        _, method, where = query.data.split(":")
+        to_pvz = where == "pvz"
+        await state.update_data(delivery_method=method, delivery_to_pvz=to_pvz)
+        await state.set_state(RouterOrder.address)
+        await edit_screen(
+            query.message,
+            text("text_order_ask_pvz") if to_pvz else text("text_order_ask_address"),
+            reply_markup=cancel_keyboard(),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.message(RouterOrder.address)
+    async def on_address(message: Message, state: FSMContext):
+        if await blocked(message, is_query=False):
+            await state.clear()
+            return
+        data = await state.get_data()
+        value = await check_field(message, "pvz" if data.get("delivery_to_pvz") else "address")
+        if not value:
+            return
+        await state.update_data(address=value)
+        await ask_promo(message, state, edit=False)
+
+    @dp.message(RouterOrder.promo)
+    async def on_promo(message: Message, state: FSMContext):
+        if await blocked(message, is_query=False):
+            await state.clear()
+            return
+        await state.update_data(promo_code=(message.text or "").strip())
+        await show_confirm(message, state, message.from_user, edit=False)
+
+    @dp.callback_query(F.data == "shop_promo_skip")
+    async def cq_promo_skip(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.update_data(promo_code="")
+        await show_confirm(query, state, query.from_user, edit=True)
+        await query.answer()
+
+    @dp.callback_query(F.data == "shop_confirm")
+    async def cq_confirm(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        data = await state.get_data()
+        if not data.get("product_id"):
+            return await query.answer("Заказ уже оформлен", show_alert=True)
+
+        await query.answer("Оформляем…")
+        result, error = await shop_api.create_order(draft_payload(query.from_user, data))
+        if error:
+            return await edit_screen(
+                query.message,
+                f"❌ {_esc(error)}",
+                reply_markup=cancel_keyboard(),
+                link_preview_options=NO_PREVIEW,
+            )
+
+        await state.clear()
+        order = result.get("order", {})
+        pay_url = result.get("pay_url", "")
+        if result.get("payment_error"):
+            logger.warning(f"[CATALOG] заказ {order.get('number')} без оплаты: {result['payment_error']}")
+        logger.info(f"[CATALOG] заказ {order.get('number')} от {query.from_user.id}")
+        await edit_screen(
+            query.message,
+            created_text(order, pay_url),
+            reply_markup=created_keyboard(pay_url),
+            link_preview_options=NO_PREVIEW,
+        )
+
+    @dp.callback_query(F.data == "shop_cancel")
+    async def cq_cancel(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.clear()
+        await query.answer(text("text_order_cancelled"))
+        await show_catalog(query)
+
+    @dp.callback_query(F.data == "shop_orders")
+    async def cq_orders(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.clear()
+        orders, error = await shop_api.orders_of(query.from_user.id)
+        if error:
+            return await show_error(query, error)
+        if not orders:
+            await edit_screen(
+                query.message,
+                text("text_orders_empty"),
+                reply_markup=orders_keyboard([]),
+                link_preview_options=NO_PREVIEW,
+            )
+            return await query.answer()
+        await edit_screen(
+            query.message,
+            orders_text(orders),
+            reply_markup=orders_keyboard(orders),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_order:"))
+    async def cq_order(query: CallbackQuery):
+        if await blocked(query):
+            return
+        order_id = int(query.data.split(":")[1])
+        data, error = await shop_api.order_card(order_id, query.from_user.id)
+        if error:
+            return await show_error(query, error)
+        order = data.get("order", {})
+        await edit_screen(
+            query.message,
+            order_text(order),
+            reply_markup=order_keyboard(order, bool(data.get("cancellable"))),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_order_cancel:"))
+    async def cq_order_cancel(query: CallbackQuery):
+        if await blocked(query):
+            return
+        order_id = int(query.data.split(":")[1])
+        _, error = await shop_api.cancel_order(order_id, query.from_user.id)
+        if error:
+            return await query.answer(error[:190], show_alert=True)
+
+        await query.answer("Заказ отменён")
+        data, error = await shop_api.order_card(order_id, query.from_user.id)
+        if error:
+            return await show_error(query, error)
+        order = data.get("order", {})
+        await edit_screen(
+            query.message,
+            order_text(order),
+            reply_markup=order_keyboard(order, bool(data.get("cancellable"))),
+            link_preview_options=NO_PREVIEW,
+        )
+
+    logger.info("[CATALOG] обработчики каталога роутеров зарегистрированы")

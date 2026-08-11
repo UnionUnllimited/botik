@@ -51,6 +51,7 @@ from tg_sender import get_bot_token
 from src.telegram_bot_factory import make_aiogram_bot, normalize_telegram_proxy_url
 from src.subscription_handlers import register_subscription_handlers, show_trial_progress, show_trial_progress_edit
 from src.device_upgrade_handlers import register_device_upgrade_handlers
+from src.router_catalog import register_router_catalog_handlers
 from src.maintenance.register import register_maintenance
 from src.channel_subscription import ChannelSubscriptionChecker, get_channel_checker
 from src.notifications import start_notification_tasks
@@ -8453,6 +8454,8 @@ async def main():
     register_subscription_handlers(dp, check_user_blocked, send_blocked_message, show_main_menu)
     # Регистрируем обработчики расширения лимита устройств
     register_device_upgrade_handlers(dp)
+    # Каталог роутеров и оформление заказа (товары и заказы — в основном приложении)
+    register_router_catalog_handlers(dp, check_user_blocked, send_blocked_message)
     try:
         # До polling нужны актуальный токен/прокси из БД: иначе start_polling(bot) держит
         # старый bootstrap-Bot из верха файла, а on_startup уже создаёт другой — long polling идёт мимо прокси.

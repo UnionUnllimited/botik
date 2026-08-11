@@ -415,6 +415,15 @@ async def populate_default_settings():
                 (key, value, description),
             )
 
+        # Каталог роутеров: экраны в боте и тумблер раздела. Тексты правятся
+        # там же, где остальные, — на странице текстов в админке.
+        from src.shop_texts import catalog_defaults
+        for key, value, description in catalog_defaults():
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
+                (key, value, description),
+            )
+
         # Добавляем настройки для пробного периода
         trial_settings = [
             ('trial_days', '3', 'Количество дней пробного периода'),

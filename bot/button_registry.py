@@ -42,6 +42,7 @@ GROUP_TOGGLE_KEYS: dict[str, str] = {
 BUTTON_GROUPS = [
     ('connect',   '📲 Подключение'),
     ('main_menu', '🏠 Главное меню'),
+    ('shop',      '🛒 Каталог роутеров'),
     ('payment',   '💳 Оплата'),
     ('service',   'ℹ️ Сервис и навигация'),
     ('referral',  '🎁 Рефералы и партнёры'),
@@ -83,6 +84,21 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     _b('btn_about_service',   'main_menu', 'О сервисе',                 'ℹ️ О сервисе',               ''),
     _b('btn_bot_custom_url',  'main_menu', 'КастомURL',                 '🔗 КастомURL',               ''),
     _b('btn_bot_channel',     'main_menu', 'Наш канал',                 '📣 Наш канал',               ''),
+
+    # 🛒 Каталог роутеров (товар, а не подписка: продаётся железо)
+    # Кнопки со сборным текстом — модель с ценой, номер заказа — в реестр
+    # не вносятся: их подпись собирается из данных каталога, и правка
+    # в админке всё равно ни на что не влияла бы.
+    _b('btn_catalog',              'shop', 'Каталог роутеров (главное меню)', '🛒 Купить роутер',      ''),
+    _b('btn_my_orders',            'shop', 'Мои заказы (главное меню)',       '📦 Мои заказы',         ''),
+    _b('btn_shop_buy',             'shop', 'Заказать модель',                 '🛒 Заказать',           ''),
+    _b('btn_shop_back_to_list',    'shop', 'Назад к списку моделей',          '⬅️ К списку моделей',   ''),
+    _b('btn_shop_cancel_order',    'shop', 'Отменить оформление',             '✖️ Отменить',           ''),
+    _b('btn_shop_back_to_carrier', 'shop', 'Назад к выбору доставки',         '⬅️ К службам доставки', ''),
+    _b('btn_shop_promo_skip',      'shop', 'Без промокода',                   '➡️ Без промокода',      ''),
+    _b('btn_shop_confirm',         'shop', 'Оформить заказ',                  '✅ Оформить заказ',     ''),
+    _b('btn_shop_order_cancel',    'shop', 'Отменить заказ',                  '✖️ Отменить заказ',     ''),
+    _b('btn_shop_back_to_orders',  'shop', 'Назад к списку заказов',          '⬅️ К моим заказам',     ''),
 
     # 💳 Оплата
     _b('btn_payment_yookassa',  'payment', 'YooKassa',          '💳 YooKassa',              ''),
@@ -173,6 +189,7 @@ MAIN_MENU_LAYOUT_SETTING = 'main_menu_layout'
 MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
     'btn_connect', 'btn_iphone', 'btn_android',
     'btn_website_access', 'btn_my_devices',
+    'btn_catalog', 'btn_my_orders',
     'btn_renew_sub', 'btn_traffic_renewal', 'btn_device_upgrade',
     'btn_referral', 'btn_support', 'btn_about_service',
     'btn_bot_custom_url', 'btn_bot_channel',
@@ -181,6 +198,7 @@ MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
 DEFAULT_MAIN_MENU_LAYOUT: list[list[str]] = [
     ['btn_connect'],
     ['btn_iphone', 'btn_android'],
+    ['btn_catalog', 'btn_my_orders'],
     ['btn_website_access'],
     ['btn_renew_sub'],
     ['btn_traffic_renewal'],

@@ -218,13 +218,20 @@ cd /root/bot && python3 -m venv web_admin/venv && ./web_admin/venv/bin/pip insta
 ```
 
 Юниты. В `service/vpn-webadmin.service` перед копированием поправить строку
-`ExecStart` (привязка на все интерфейсы — почему, ниже) и дописать в `[Service]`
-доступ к парку роутеров:
+`ExecStart` (привязка на все интерфейсы — почему, ниже). Доступ к нашему API
+дописывается в `[Service]` **обоим юнитам** — и админке, и боту: парк роутеров
+показывает админка, каталог и заказы — бот, а ходят они в одни и те же ручки:
 
 ```
 Environment="FLEET_API_URL=https://vbotrouters.titanvps.click"
 Environment="FLEET_API_TOKEN=то_же_что_API_FLEET_TOKEN_в_нашем_.env"
 ```
+
+Без этих строк у бота не откроется каталог, а в админке — раздел «Каталог»
+и вкладка «Роутеры»: они скажут прямым текстом, чего не хватает.
+Картинки товаров бот отдаёт ссылкой на наш `/media`, поэтому
+`API_PUBLIC_BASE_URL` в нашем `.env` должен быть внешним адресом,
+а не `localhost` — фото тянет Telegram, а он ходит снаружи.
 
 ```bash
 cp /root/bot/service/vpn-bot.service /root/bot/service/vpn-webadmin.service /etc/systemd/system/

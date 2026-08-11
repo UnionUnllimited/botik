@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Каталог — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Каталог</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Роутеры, которые бот показывает клиентам. Товары и заказы живут
+        в основном приложении — здесь их карточки, цены и остатки.
+      </p>
+    </div>
+    <a href="{{ url_for('admin.catalog_product_new') }}" class="tw-btn tw-btn-primary tw-btn-sm">
+      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+      <span>Добавить модель</span>
+    </a>
+  </div>
+
+  {% if catalog_error %}
+    <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">
+      <div class="flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
+        <div>{{ catalog_error }}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.catalog_settings_save') }}" class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Настройки раздела в боте</div>
+
+    <label class="flex items-center gap-2.5 cursor-pointer select-none">
+      <input type="checkbox" name="catalog_enabled" {% if catalog_enabled %}checked{% endif %}
+             class="w-4 h-4 cursor-pointer">
+      <span class="text-[13px] tw-text-base2">Показывать каталог и «Мои заказы» в главном меню</span>
+    </label>
+
+    <div class="max-w-xs">
+      <label for="catalog_specs_limit" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Характеристик в карточке
+      </label>
+      <input type="number" id="catalog_specs_limit" name="catalog_specs_limit"
+             value="{{ specs_limit }}" min="1" max="30" class="tw-input">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Остальные не показываются: длинная карточка не помещается на экран телефона.
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
+      <div class="text-[11px] tw-text-subtle2">
+        Тексты экранов каталога правятся в «Настройки → Тексты».
+      </div>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+        <span>Сохранить</span>
+      </button>
+    </div>
+  </form>
+
+  {% if products %}
+  <div class="tw-card overflow-x-auto">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="tw-text-muted2 text-left">
+          <th class="px-3 py-2 font-medium">Модель</th>
+          <th class="px-3 py-2 font-medium">Цена</th>
+          <th class="px-3 py-2 font-medium">Остаток</th>
+          <th class="px-3 py-2 font-medium">В боте</th>
+          <th class="px-3 py-2 font-medium">Порядок</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in products %}
+        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+          <td class="px-3 py-2">
+            <a href="{{ url_for('admin.catalog_product_form', product_id=item.id) }}">{{ item.title }}</a>
+            <div class="tw-text-muted2 text-[12px] font-mono">{{ item.slug }}</div>
+          </td>
+          <td class="px-3 py-2">
+            {{ item.price }} ₽
+            {% if item.old_price %}
+              <span class="tw-text-muted2 text-[12px]"><s>{{ item.old_price }} ₽</s></span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if item.stock > 0 %}
+              {{ item.stock }} шт.
+            {% elif item.allow_preorder %}
+              <span class="tw-text-muted2">под заказ</span>
+            {% else %}
+              <span style="color:#b91c1c">нет</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if item.is_active %}
+              <span style="color:#16a34a">● показывается</span>
+            {% else %}
+              <span class="tw-text-muted2">○ скрыта</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 tw-text-muted2">{{ item.sort_order }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif not catalog_error %}
+  <div class="tw-card p-4 text-[13px] tw-text-muted2">
+    Моделей пока нет. Добавьте первую — она сразу появится в боте.
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

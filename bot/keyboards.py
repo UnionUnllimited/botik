@@ -29,6 +29,15 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
             return btn('btn_my_devices', callback_data='my_devices')
         return None
 
+    # Каталог роутеров: товар, а не подписка. Выключается настройкой
+    # catalog_enabled — вместе с ним прячутся и заказы, показывать их
+    # без каталога некуда.
+    if key in ('btn_catalog', 'btn_my_orders'):
+        if str(app_conf.get('catalog_enabled', '1')) != '1':
+            return None
+        callback = 'shop_catalog' if key == 'btn_catalog' else 'shop_orders'
+        return btn(key, callback_data=callback)
+
     if key == 'btn_renew_sub':
         return btn('btn_renew_sub', callback_data='renew_choose_payment')
 

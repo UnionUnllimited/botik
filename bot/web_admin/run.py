@@ -1474,6 +1474,8 @@ from web_admin.routes.news import attach_news_routes
 attach_news_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.routers_fleet import attach_routers_fleet_routes
 attach_routers_fleet_routes(admin_bp, async_query_db, async_execute_db)
+from web_admin.routes.catalog_shop import attach_catalog_shop_routes
+attach_catalog_shop_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.tasks import attach_tasks_routes
 attach_tasks_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.misc import attach_misc_routes

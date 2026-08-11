@@ -506,6 +506,12 @@
                 <i data-lucide="router" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
             </a>
             {% endif %}
+            {% if moderator_can_see('users') %}
+            {% set _catalog_url = url_for('admin.catalog_shop') %}
+            <a href="{{ _catalog_url }}" class="tw-nav-link {% if request.path.startswith(_catalog_url) %}active{% endif %}">
+                <i data-lucide="shopping-bag" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Каталог</span>
+            </a>
+            {% endif %}
             {% if moderator_can_see('payments') %}
             <a href="{{ url_for('admin.payments') }}" class="tw-nav-link {% if request.path == url_for('admin.payments') %}active{% endif %}">
                 <i data-lucide="credit-card" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Платежи</span>

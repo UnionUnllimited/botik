@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 max-w-3xl">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 text-[12px] tw-text-muted2 mb-1">
+        <a href="{{ url_for('admin.catalog_shop') }}" class="hover:underline flex items-center gap-1">
+          <i data-lucide="arrow-left" class="w-3 h-3"></i> Назад к каталогу
+        </a>
+      </div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 flex items-center gap-2">
+        <i data-lucide="{{ 'pencil' if product.id else 'plus-circle' }}" class="w-5 h-5"></i>
+        {{ title }}
+      </h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Цены — в&nbsp;<strong>RUB&nbsp;₽</strong>. Изменения видны в боте сразу, деплой не нужен.
+      </p>
+    </div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="tw-card p-5 space-y-5"
+        action="{{ url_for('admin.catalog_product_save', product_id=product.id or 0) }}">
+
+    <div>
+      <label for="title" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Название <span style="color:#ef4444;">*</span>
+      </label>
+      <input type="text" id="title" name="title" required value="{{ product.title or '' }}"
+             placeholder="Например: Роутер AX3000" class="tw-input">
+      <div class="text-[11px] tw-text-subtle2 mt-1">Заголовок карточки и подпись кнопки в боте.</div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label for="slug" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Короткое имя (slug) <span style="color:#ef4444;">*</span>
+        </label>
+        <input type="text" id="slug" name="slug" value="{{ product.slug or '' }}"
+               placeholder="ax3000" class="tw-input"
+               {% if product.id %}readonly{% else %}required{% endif %}>
+        <div class="text-[11px] tw-text-subtle2 mt-1">
+          {% if product.id %}Задаётся один раз: по нему модель узнают в заказах.
+          {% else %}Латиницей, без пробелов. Потом не меняется.{% endif %}
+        </div>
+      </div>
+      <div>
+        <label for="model_code" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Код модели
+        </label>
+        <input type="text" id="model_code" name="model_code" value="{{ product.model_code or '' }}"
+               placeholder="AX3000" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">Внутренний код: им маркируются устройства.</div>
+      </div>
+    </div>
+
+    <div>
+      <label for="subtitle" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Подзаголовок
+      </label>
+      <input type="text" id="subtitle" name="subtitle" value="{{ product.subtitle or '' }}"
+             placeholder="Для квартиры до 80 м²" class="tw-input">
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label for="price" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Цена <span style="color:#ef4444;">*</span>
+        </label>
+        <input type="text" id="price" name="price" required value="{{ product.price or '' }}"
+               placeholder="6900" class="tw-input">
+      </div>
+      <div>
+        <label for="old_price" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Старая цена
+        </label>
+        <input type="text" id="old_price" name="old_price" value="{{ product.old_price or '' }}"
+               placeholder="7900" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">Покажется зачёркнутой. Пусто — не показывать.</div>
+      </div>
+      <div>
+        <label for="stock" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Остаток, шт.
+        </label>
+        <input type="number" id="stock" name="stock" value="{{ product.stock or 0 }}" min="0"
+               class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">Ноль — «нет в наличии», заказать нельзя.</div>
+      </div>
+    </div>
+
+    <div>
+      <label for="description" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Описание
+      </label>
+      <textarea id="description" name="description" rows="4"
+                placeholder="Что это за роутер и кому подойдёт."
+                class="tw-input" style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical;">{{ product.description or '' }}</textarea>
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Обычный текст. Разметку не пишите — бот показывает описание как есть.
+      </div>
+    </div>
+
+    <div>
+      <label for="specs" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Характеристики
+      </label>
+      <textarea id="specs" name="specs" rows="5"
+                placeholder="Порты: 3 LAN&#10;Wi-Fi: 6&#10;Скорость: до 3000 Мбит/с"
+                class="tw-input" style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical;">{{ specs_text }}</textarea>
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        По строке на характеристику, через двоеточие: «Название: значение».
+      </div>
+    </div>
+
+    <div>
+      <label for="photo" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Фото
+      </label>
+      {% if product.photo_url %}
+        <div class="mb-2">
+          <img src="{{ product.photo_url }}" alt="{{ product.title }}"
+               style="max-height:160px;border-radius:8px" loading="lazy">
+        </div>
+      {% endif %}
+      <input type="file" id="photo" name="photo" accept="image/jpeg,image/png,image/webp"
+             class="text-[13px] tw-text-base2">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        JPEG, PNG или WebP. Новый файл заменяет прежний.
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label for="sort_order" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Порядок в списке
+        </label>
+        <input type="number" id="sort_order" name="sort_order" value="{{ product.sort_order or 100 }}"
+               min="0" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">Меньше — выше в каталоге.</div>
+      </div>
+      <div class="space-y-2.5 pt-6">
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" name="is_active" class="w-4 h-4 cursor-pointer"
+                 {% if product.is_active or not product.id %}checked{% endif %}>
+          <span class="text-[13px] tw-text-base2">Показывать в боте</span>
+        </label>
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" name="allow_preorder" class="w-4 h-4 cursor-pointer"
+                 {% if product.allow_preorder %}checked{% endif %}>
+          <span class="text-[13px] tw-text-base2">Продавать под заказ при нулевом остатке</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
+      <a href="{{ url_for('admin.catalog_shop') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        <span>Отмена</span>
+      </a>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+        <span>{% if product.id %}Сохранить{% else %}Создать модель{% endif %}</span>
+      </button>
+    </div>
+  </form>
+
+  {% if product.id %}
+  <form method="post" action="{{ url_for('admin.catalog_product_delete', product_id=product.id) }}"
+        class="tw-card p-5 flex items-center justify-between gap-3 flex-wrap"
+        onsubmit="return confirm('Удалить модель «{{ product.title }}»? Прошлые заказы останутся на месте.');">
+    <div class="text-[13px] tw-text-muted2">
+      Удалить карточку. В оформленных заказах останется название и цена на момент покупки.
+    </div>
+    <button type="submit" class="tw-btn tw-btn-sm" style="border-color:#b91c1c;color:#b91c1c">
+      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+      <span>Удалить</span>
+    </button>
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
