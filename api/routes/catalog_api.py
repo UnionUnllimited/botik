@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -29,6 +30,7 @@ from api.deps import get_session, get_transaction
 from api.service_auth import require_token
 from core import texts, validators
 from core.config import settings
+from core.dates import utcnow
 from core.enums import (
     OFFERED_DELIVERY_METHODS,
     DeliveryMethod,
@@ -40,8 +42,8 @@ from core.enums import (
 )
 from core.models import Device, Order, Payment, Product, User
 from core.security import normalize_mac
+from core.services import activation, media, settings_service
 from core.services import delivery as delivery_service
-from core.services import media, settings_service
 from core.services import orders as order_service
 from core.services import payments as payment_service
 from core.services import promo as promo_service
@@ -308,6 +310,84 @@ async def validate_field(payload: dict) -> dict:
     if not value:
         return {"ok": False, "error": _COMPLAINTS[field]}
     return {"ok": True, "value": value}
+
+
+# --- Клиент и его роутер -----------------------------------------------------
+
+
+@router.post("/clients")
+async def register_client(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Заводит клиента при первом обращении в бот.
+
+    До каталога клиент появлялся у нас только вместе с заказом, и до тех пор
+    роутер не к кому было привязать: оператор вводит MAC при отгрузке, а строки
+    в `users` ещё нет. Поэтому бот отмечается здесь при входе.
+    """
+    user = await _user_by_tg(session, payload, create=True)
+    username = str(payload.get("username", "")).strip()[:64]
+    first_name = str(payload.get("first_name", "")).strip()[:128]
+    # Имя в Telegram меняется, и хранить первое навсегда незачем.
+    if username and user.username != username:
+        user.username = username
+    if first_name and user.first_name != first_name:
+        user.first_name = first_name
+    return {"ok": True, "id": user.id}
+
+
+@router.get("/my-router")
+async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    """Экран «Мой роутер»: что с устройством и подпиской.
+
+    Роутер привязывается к клиенту оператором при отгрузке — по MAC, который
+    уходит в посылке. Поэтому здесь же показывается и состояние заказа: пока
+    роутер в пути, это единственное, что клиенту интересно.
+    """
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        return {"has_client": False, "router": None, "order": None}
+
+    device = await session.scalar(
+        select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+    )
+    order = await session.scalar(
+        select(Order)
+        .where(Order.user_id == user.id)
+        .order_by(Order.id.desc())
+        .options(selectinload(Order.delivery), selectinload(Order.items))
+    )
+
+    router_payload = None
+    if device is not None:
+        now = utcnow()
+        # Срок знает панель: подписку роутеру выдаёт она, а не мы.
+        panel_until = None
+        if settings.remnawave.is_configured:
+            try:
+                account = await asyncio.wait_for(activation.panel_account_of(device), timeout=3)
+                panel_until = activation.panel_expiry_of(account)
+            except TimeoutError:
+                log.warning("catalog.panel_timeout", device_id=device.id)
+
+        router_payload = {
+            "mac": device.mac,
+            "model": device.model or "",
+            "status": str(device.status),
+            "online": device.frp_online
+            or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
+            "activated": device.activated_at is not None,
+            "clients": (device.clients_wifi or 0) + (device.clients_dhcp or 0),
+            "uptime_sec": device.uptime_sec or 0,
+            "rx_bytes": device.rx_bytes or 0,
+            "tx_bytes": device.tx_bytes or 0,
+            "until": panel_until.isoformat() if panel_until else None,
+            "active": bool(panel_until and panel_until > now),
+        }
+
+    return {
+        "has_client": True,
+        "router": router_payload,
+        "order": _order_payload(order) if order is not None else None,
+    }
 
 
 # --- Заказ -------------------------------------------------------------------

@@ -51,7 +51,7 @@ from tg_sender import get_bot_token
 from src.telegram_bot_factory import make_aiogram_bot, normalize_telegram_proxy_url
 from src.subscription_handlers import register_subscription_handlers, show_trial_progress, show_trial_progress_edit
 from src.device_upgrade_handlers import register_device_upgrade_handlers
-from src.router_catalog import register_router_catalog_handlers
+from src.router_catalog import register_router_catalog_handlers, remember_client
 from src.maintenance.register import register_maintenance
 from src.channel_subscription import ChannelSubscriptionChecker, get_channel_checker
 from src.notifications import start_notification_tasks
@@ -1442,6 +1442,10 @@ async def handle_start(message: Message, state: FSMContext):
     logger.info(f"[HANDLER] handle_start: создание/обновление пользователя user_id={user_id}, username={real_username}, name={user_name}")
     
     await db_helpers.add_user(user_id, user_name, real_username)
+    # Отмечаем клиента и в основном приложении: роутер привязывает оператор
+    # по MAC при отгрузке, и строка клиента нужна там раньше заказа.
+    # Фоном — вход в бот не должен ждать чужой сервис.
+    remember_client(message.from_user)
     user_db_data = await db_helpers.get_user(user_id)
     
     # Проверяем, что пользователь создан правильно

@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 from decimal import Decimal, InvalidOperation
 
@@ -112,7 +113,6 @@ def stock_line(product: dict) -> str:
     return "⛔️ Нет в наличии"
 
 
-
 async def edit_screen(message, text, *, reply_markup=None, link_preview_options=NO_PREVIEW):
     """Правит экран на месте.
 
@@ -127,6 +127,8 @@ async def edit_screen(message, text, *, reply_markup=None, link_preview_options=
     except TelegramBadRequest as exc:
         if "not modified" not in str(exc).lower():
             raise
+
+
 # --- Экраны каталога ---------------------------------------------------------
 
 
@@ -286,6 +288,93 @@ def created_keyboard(pay_url: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# --- Экран «Мой роутер» ------------------------------------------------------
+
+
+def human_bytes(value) -> str:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return "0 Б"
+    for unit in ("Б", "КБ", "МБ", "ГБ", "ТБ"):
+        if number < 1024 or unit == "ТБ":
+            return f"{number:.0f} {unit}" if unit in ("Б", "КБ") else f"{number:.1f} {unit}"
+        number /= 1024
+    return f"{number:.1f} ТБ"
+
+
+def human_uptime(seconds) -> str:
+    try:
+        total = int(seconds or 0)
+    except (TypeError, ValueError):
+        return "—"
+    if total < 60:
+        return "меньше минуты"
+    hours, minutes = divmod(total // 60, 60)
+    days, hours = divmod(hours, 24)
+    if days:
+        return f"{days} дн. {hours} ч."
+    return f"{hours} ч. {minutes} мин." if hours else f"{minutes} мин."
+
+
+def human_date(iso: str | None) -> str:
+    """Дата из ISO без разбора часовых поясов: показываем как есть, до дня."""
+    if not iso:
+        return "—"
+    head = str(iso)[:10]
+    parts = head.split("-")
+    return f"{parts[2]}.{parts[1]}.{parts[0]}" if len(parts) == 3 else head
+
+
+def my_router_text(data: dict) -> str:
+    router = data.get("router")
+    order = data.get("order")
+
+    if router is None:
+        lines = [text("text_my_router_none")]
+        if order:
+            status = STATUS_LABELS.get(order.get("status", ""), order.get("status", ""))
+            lines += ["", f"Заказ <b>{_esc(order.get('number'))}</b> — {status}"]
+            if order.get("tracking_number"):
+                lines.append(f"Трек-номер: <code>{_esc(order['tracking_number'])}</code>")
+        return "\n".join(lines)
+
+    if not router.get("activated"):
+        return text("text_my_router_waiting")
+
+    lines = [
+        "📡 <b>Мой роутер</b>",
+        "",
+        f"Модель: {_esc(router.get('model') or '—')}",
+        f"MAC: <code>{_esc(router.get('mac'))}</code>",
+        f"Связь: {'✅ на связи' if router.get('online') else '○ не отвечает'}",
+    ]
+    if router.get("online"):
+        lines += [
+            f"Устройств в сети: {router.get('clients', 0)}",
+            f"Работает без перезагрузки: {human_uptime(router.get('uptime_sec'))}",
+            f"Трафик: ↓ {human_bytes(router.get('rx_bytes'))} · ↑ {human_bytes(router.get('tx_bytes'))}",
+        ]
+    lines += [""]
+    if router.get("active"):
+        lines.append(f"Подписка активна до <b>{human_date(router.get('until'))}</b>")
+    elif router.get("until"):
+        lines.append(f"⚠️ Подписка закончилась {human_date(router.get('until'))}")
+    else:
+        lines.append("Подписка настраивается — загляните через пару минут.")
+    return "\n".join(lines)
+
+
+def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(btn("btn_my_router_refresh", callback_data="shop_my_router"))
+    if data.get("router") is None:
+        builder.row(btn("btn_catalog", callback_data="shop_catalog"))
+    builder.row(btn("btn_my_orders", callback_data="shop_orders"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
 def orders_text(orders: list[dict]) -> str:
     lines = ["📦 <b>Мои заказы</b>", ""]
     for order in orders:
@@ -333,6 +422,28 @@ def order_keyboard(order: dict, cancellable: bool) -> InlineKeyboardMarkup:
     builder.row(btn("btn_shop_back_to_orders", callback_data="shop_orders"))
     builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
     return builder.as_markup()
+
+
+def remember_client(user) -> None:
+    """Отмечает клиента в основном приложении при входе в бот.
+
+    Фоном и без ожидания: роутер привязывает оператор по MAC при отгрузке,
+    и строка клиента нужна там раньше заказа — но экран `/start` не должен
+    зависеть от чужого сервиса. Не отметился сейчас — отметится на первом
+    заходе в каталог или «Мой роутер».
+    """
+
+    async def run() -> None:
+        try:
+            _, error = await shop_api.register_client(
+                user.id, user.username or "", user.first_name or ""
+            )
+            if error:
+                logger.warning(f"[CATALOG] клиент {user.id} не отметился: {error}")
+        except Exception as exc:  # noqa: BLE001 — вход в бот важнее нашей отметки
+            logger.warning(f"[CATALOG] клиент {user.id} не отметился: {exc}")
+
+    asyncio.create_task(run())
 
 
 def draft_payload(user, data: dict) -> dict:
@@ -658,6 +769,27 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         await state.clear()
         await query.answer(text("text_order_cancelled"))
         await show_catalog(query)
+
+    @dp.callback_query(F.data == "shop_my_router")
+    async def cq_my_router(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.clear()
+        # Заодно отмечаем клиента: роутер привязывает оператор по MAC, и строка
+        # в базе должна существовать до отгрузки, а не появляться с заказом.
+        await shop_api.register_client(
+            query.from_user.id, query.from_user.username or "", query.from_user.first_name or ""
+        )
+        data, error = await shop_api.my_router(query.from_user.id)
+        if error:
+            return await show_error(query, error)
+        await edit_screen(
+            query.message,
+            my_router_text(data),
+            reply_markup=my_router_keyboard(data),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
 
     @dp.callback_query(F.data == "shop_orders")
     async def cq_orders(query: CallbackQuery, state: FSMContext):

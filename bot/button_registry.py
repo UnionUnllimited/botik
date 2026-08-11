@@ -90,7 +90,9 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     # не вносятся: их подпись собирается из данных каталога, и правка
     # в админке всё равно ни на что не влияла бы.
     _b('btn_catalog',              'shop', 'Каталог роутеров (главное меню)', '🛒 Купить роутер',      ''),
+    _b('btn_my_router',            'shop', 'Мой роутер (главное меню)',       '📡 Мой роутер',         ''),
     _b('btn_my_orders',            'shop', 'Мои заказы (главное меню)',       '📦 Мои заказы',         ''),
+    _b('btn_my_router_refresh',    'shop', 'Обновить показания роутера',      '🔄 Обновить',           ''),
     _b('btn_shop_buy',             'shop', 'Заказать модель',                 '🛒 Заказать',           ''),
     _b('btn_shop_back_to_list',    'shop', 'Назад к списку моделей',          '⬅️ К списку моделей',   ''),
     _b('btn_shop_cancel_order',    'shop', 'Отменить оформление',             '✖️ Отменить',           ''),
@@ -189,7 +191,7 @@ MAIN_MENU_LAYOUT_SETTING = 'main_menu_layout'
 MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
     'btn_connect', 'btn_iphone', 'btn_android',
     'btn_website_access', 'btn_my_devices',
-    'btn_catalog', 'btn_my_orders',
+    'btn_catalog', 'btn_my_router', 'btn_my_orders',
     'btn_renew_sub', 'btn_traffic_renewal', 'btn_device_upgrade',
     'btn_referral', 'btn_support', 'btn_about_service',
     'btn_bot_custom_url', 'btn_bot_channel',
@@ -198,6 +200,7 @@ MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
 DEFAULT_MAIN_MENU_LAYOUT: list[list[str]] = [
     ['btn_connect'],
     ['btn_iphone', 'btn_android'],
+    ['btn_my_router'],
     ['btn_catalog', 'btn_my_orders'],
     ['btn_website_access'],
     ['btn_renew_sub'],

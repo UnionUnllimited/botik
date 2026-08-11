@@ -177,6 +177,25 @@ async def cancel_order(order_id: int, tg_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/orders/{order_id}/cancel", {"tg_id": tg_id})
 
 
+# --- Клиент и его роутер -----------------------------------------------------
+
+
+async def register_client(tg_id: int, username: str, first_name: str) -> tuple[dict, str]:
+    """Отмечает клиента в базе основного приложения.
+
+    Нужно до заказа: роутер привязывает оператор по MAC при отгрузке, и строка
+    в `users` должна к тому моменту существовать.
+    """
+    return await post(
+        "/api/v1/catalog/clients",
+        {"tg_id": tg_id, "username": username, "first_name": first_name},
+    )
+
+
+async def my_router(tg_id: int) -> tuple[dict, str]:
+    return await get("/api/v1/catalog/my-router", {"tg_id": tg_id})
+
+
 # --- Заказы: сторона оператора -----------------------------------------------
 
 
