@@ -30,7 +30,9 @@
 
     <div class="tw-card p-5 space-y-2 text-[13px]">
       <div class="font-semibold tw-text-base2">Состав</div>
-      {% for item in order.items %}
+      {# Именно ['items']: order — обычный словарь, и order.items отдал бы
+         метод dict.items, а не состав заказа. Страница падала на этом. #}
+      {% for item in order['items'] %}
       <div class="flex justify-between gap-3">
         <span>{{ item.title }}</span><span>{{ item.total }} ₽</span>
       </div>

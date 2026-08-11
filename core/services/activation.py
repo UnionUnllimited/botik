@@ -26,11 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.dates import utcnow
-from core.enums import DeviceStatus, SubscriptionStatus
-from core.models import Device, Subscription, User
+from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
+from core.models import Device, Order, Subscription, User
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
-from core.services import remnawave, router_shell, routers, subscriptions
+from core.services import remnawave, router_shell, routers, settings_service, subscriptions
 
 log = structlog.get_logger("services.activation")
 
@@ -141,6 +141,55 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
     )
     log.info("activation.manual_done", mac=device.mac, username=username, days=days)
     return expire_at
+
+
+SHIPPED_STATUSES = (OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.DONE)
+"""«Уже у клиента». До отгрузки роутер лежит на столе и его прошивают —
+он тоже выходит на связь, и активировать его там нельзя: дни начнут гореть
+у мастера, а подписка уедет на устройство, которое ещё никому не отдали."""
+
+
+async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> bool:
+    """Активация отгруженного роутера, когда он впервые вышел на связь у клиента.
+
+    Условие одно и жёсткое: устройство привязано к заказу, а заказ отгружен.
+    Всё остальное — служебные роутеры, подменные, стенд — активируется руками.
+
+    Ошибку не глушим наверх, но и не считаем поломкой: туннель после включения
+    поднимается не мгновенно, и первая попытка часто приходится на момент,
+    когда SSH ещё не отвечает. Следующий обход попробует снова, а дни клиента
+    не сгорят — отсчёт стартует только после успешной доставки ссылки.
+    """
+    if device.activated_at is not None or device.order_id is None:
+        return False
+    if not await settings_service.get_bool(session, "activation.auto_enabled"):
+        return False
+
+    order = await session.get(Order, device.order_id)
+    if order is None or order.status not in SHIPPED_STATUSES:
+        return False
+
+    raw_days = await settings_service.get_setting(session, "activation.auto_days")
+    try:
+        days = max(int(raw_days), 1)
+    except (TypeError, ValueError):
+        days = 30
+
+    try:
+        await activate_manually(session, device=device, days=days)
+    except ActivationError as exc:
+        log.info("activation.auto_postponed", mac=device.mac, error=str(exc))
+        return False
+
+    routers.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="success",
+        message=f"Автоактивация после отгрузки, заказ {order.public_number}",
+    )
+    log.info("activation.auto_done", mac=device.mac, order=order.public_number, days=days)
+    return True
 
 
 async def extend_manually(session: AsyncSession, *, device: Device, days: int) -> dt.datetime:

@@ -97,12 +97,25 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
     @admin_bp_instance.route("/routers")
     async def routers_fleet():
         data, error = await fetch_fleet()
+        options, _ = await _get("/api/v1/fleet/settings")
         return await render_template(
             "routers_fleet.html",
             fleet=data,
             routers=data.get("routers", []),
             fleet_error=error,
+            auto_enabled=options.get("auto_enabled", False),
+            auto_days=options.get("auto_days", 30),
         )
+
+    @admin_bp_instance.route("/routers/settings", methods=["POST"])
+    async def routers_fleet_settings():
+        form = await request.form
+        _, error = await _post(
+            "/api/v1/fleet/settings",
+            {"auto_enabled": form.get("auto_enabled") == "on", "auto_days": form.get("auto_days", 30)},
+        )
+        await flash(error or "Настройки сохранены.", "danger" if error else "success")
+        return redirect(url_for("admin.routers_fleet"))
 
     async def _render_card(device_id: int, *, console_output: str = "", console_command: str = ""):
         data, error = await _get(f"/api/v1/fleet/routers/{device_id}")

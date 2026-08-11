@@ -45,6 +45,36 @@
       </div>
     </div>
 
+    <form method="post" action="{{ url_for('admin.routers_fleet_settings') }}"
+          class="tw-card p-5 space-y-4">
+      <div class="text-[13px] font-semibold tw-text-base2">Активация</div>
+      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+        <input type="checkbox" name="auto_enabled" {% if auto_enabled %}checked{% endif %}
+               class="w-4 h-4 cursor-pointer">
+        <span class="text-[13px] tw-text-base2">
+          Активировать сам, когда отгруженный заказ выходит на связь
+        </span>
+      </label>
+      <div class="text-[11px] tw-text-subtle2">
+        Срабатывает только для роутеров, привязанных к отгруженному заказу, — значит,
+        роутер уже у клиента. Тот, что лежит на столе и прошивается, тоже выходит
+        на связь, но его не трогает: дни горели бы у мастера. Остальные активируются
+        кнопкой в карточке роутера.
+      </div>
+      <div class="flex items-end gap-3 flex-wrap">
+        <div class="max-w-[160px]">
+          <label for="auto_days" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+            На сколько дней
+          </label>
+          <input type="number" id="auto_days" name="auto_days" value="{{ auto_days }}"
+                 min="1" max="3650" class="tw-input">
+        </div>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+        </button>
+      </div>
+    </form>
+
     {% if routers %}
     <div class="tw-card overflow-x-auto">
       <table class="w-full text-[13px]">

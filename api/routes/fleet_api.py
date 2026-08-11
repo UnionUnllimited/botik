@@ -32,7 +32,7 @@ from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import Device
 from core.security import normalize_mac
-from core.services import activation, panel_ticket, router_shell
+from core.services import activation, panel_ticket, router_shell, settings_service
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
 from core.services.frp import RouterApi
@@ -265,6 +265,31 @@ async def unbind_router(device_id: int, session: AsyncSession = Depends(get_tran
     routers_service.add_event(
         session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
     )
+    return {"ok": True}
+
+
+@router.get("/settings", dependencies=[Depends(require_token)])
+async def fleet_settings_read(session: AsyncSession = Depends(get_session)) -> dict:
+    raw_days = await settings_service.get_setting(session, "activation.auto_days")
+    return {
+        "auto_enabled": await settings_service.get_bool(session, "activation.auto_enabled"),
+        "auto_days": int(raw_days) if str(raw_days).isdigit() else 30,
+    }
+
+
+@router.post("/settings", dependencies=[Depends(require_token)])
+async def fleet_settings_save(
+    payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    try:
+        days = max(min(int(payload.get("auto_days", 30)), 3650), 1)
+    except (TypeError, ValueError):
+        days = 30
+    await settings_service.set_setting(
+        session, "activation.auto_enabled", bool(payload.get("auto_enabled"))
+    )
+    await settings_service.set_setting(session, "activation.auto_days", days)
+    log.info("fleet.settings_saved", auto_enabled=bool(payload.get("auto_enabled")), days=days)
     return {"ok": True}
 
 
