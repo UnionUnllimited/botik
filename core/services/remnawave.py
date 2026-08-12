@@ -41,6 +41,14 @@ class UserExistsError(RemnawaveError):
     """Учётка с таким именем уже заведена — повторная активация того же роутера."""
 
 
+def _int_of(value: Any) -> int:
+    """Панель отдаёт байты то числом, то строкой, то вовсе не отдаёт."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _pick(item: dict[str, Any], *names: str, default: Any = None) -> Any:
     """Первое непустое значение из перечисленных ключей.
 
@@ -244,6 +252,9 @@ class RemnaUser:
     subscription_url: str
     status: str = ""
     expire_at: str = ""
+    used_traffic_bytes: int = 0
+    """Расход по счётчику панели. Именно он показывает, сколько ушло через
+    подписку: счётчики самого роутера считают и домашний трафик тоже."""
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -254,6 +265,9 @@ class RemnaUser:
             subscription_url=str(_pick(item, "subscriptionUrl", default="")),
             status=str(_pick(item, "status", default="")),
             expire_at=str(_pick(item, "expireAt", default="")),
+            used_traffic_bytes=_int_of(
+                _pick(item, "usedTrafficBytes", "lifetimeUsedTrafficBytes", default=0)
+            ),
             raw=item,
         )
 

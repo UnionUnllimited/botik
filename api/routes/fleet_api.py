@@ -342,14 +342,24 @@ async def routers_of_clients(tg_ids: str = "", session: AsyncSession = Depends(g
 
 
 def _client_router_row(device: Device, *, now) -> dict:
+    """Показания те же, что в карточке роутера: оператору, который открыл
+    клиента по жалобе, они и нужны — а не только MAC."""
+    seen = (device.last_heartbeat_at, device.last_poll_at, device.frp_last_seen_at)
     return {
         "id": device.id,
         "mac": device.mac,
         "model": device.model or "",
+        "fw_version": device.fw_version or "",
         "status": str(device.status),
         "online": device.frp_online
         or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
+        "last_seen": _iso(max((value for value in seen if value), default=None)),
         "activated_at": _iso(device.activated_at),
+        "clients": (device.clients_wifi or 0) + (device.clients_dhcp or 0),
+        "uptime_sec": device.uptime_sec or 0,
+        "rx_bytes": device.rx_bytes or 0,
+        "tx_bytes": device.tx_bytes or 0,
+        "wan_ip": device.last_wan_ip or "",
     }
 
 
@@ -376,6 +386,18 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
         )
     )
     current = await subscription_service.get_current(session, user.id) if user is not None else None
+
+    # Расход по счётчику панели: он показывает, сколько ушло через подписку,
+    # а счётчики роутера считают и домашний трафик тоже. Ждать панель долго
+    # нельзя — карточка клиента не должна открываться по пять секунд.
+    panel_used = None
+    if devices and settings.remnawave.is_configured:
+        try:
+            account = await asyncio.wait_for(activation.panel_account_of(devices[0]), timeout=3)
+            panel_used = account.used_traffic_bytes if account else None
+        except TimeoutError:
+            log.warning("fleet.panel_timeout", tg_id=tg_id)
+
     return {
         "has_client": user is not None,
         "routers": [_client_router_row(device, now=now) for device in devices],
@@ -384,6 +406,7 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
             "status": str(current.status) if current else "",
             "until": _iso(current.expires_at) if current else None,
         },
+        "panel_used_bytes": panel_used,
     }
 
 

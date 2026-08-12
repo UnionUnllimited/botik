@@ -179,9 +179,26 @@ PAGES = {
         "clients": [
             {"value": "614685408", "tg_id": 614685408, "name": "Union", "username": "union", "phone": ""}
         ],
-        "router": {"mac": "A0:B1:C2:D3:E4:F5", "model": "", "online": True, "visitor_port": 20003},
-        "client": {},
-        "subscription": {},
+        "router": {
+            "id": 1,
+            "mac": "A0:B1:C2:D3:E4:F5",
+            "model": "AX3000",
+            "fw_version": "25.12.3",
+            "status": "active",
+            "online": True,
+            "last_seen": "2026-08-12T14:25:04+00:00",
+            "activated_at": "2026-08-04T18:35:00+00:00",
+            "wan_ip": "192.168.16.136",
+            "uptime_sec": 90000,
+            "clients": 17,
+            "cpu_pct": 0,
+            "ram_pct": 22,
+            "rx_bytes": 1024,
+            "tx_bytes": 2048,
+            "visitor_port": 20003,
+        },
+        "client": {"id": 5, "name": "Иванов Иван", "email": "", "phone": "+79001234567"},
+        "subscription": {"status": "active", "until": "2026-09-04T10:00:00+00:00", "here": True},
         "panel": {"username": "a0-b1-c2-d3-e4-f5", "until": None, "active": False},
         "events": [],
         "fleet_error": "",
@@ -236,6 +253,33 @@ def env() -> jinja2.Environment:
         moderator_can_see=lambda section: True,
     )
     return environment
+
+
+OURS = {
+    "catalog_shop.html",
+    "catalog_shop_form.html",
+    "devices_stock.html",
+    "orders_shop.html",
+    "orders_shop_card.html",
+    "router_card.html",
+    "routers_fleet.html",
+}
+"""Страницы, написанные нами. Их рисуем строго: обращение к непереданной
+переменной должно падать в тесте, а не рисоваться пустотой у оператора.
+Для чужих страниц так нельзя — там свой контекст в сотню ключей."""
+
+
+@pytest.fixture(scope="module")
+def strict_env(env) -> jinja2.Environment:
+    strict = env.overlay(undefined=jinja2.StrictUndefined)
+    strict.filters.update(env.filters)
+    strict.globals.update(env.globals)
+    return strict
+
+
+@pytest.mark.parametrize("name", sorted(OURS))
+def test_our_page_has_everything_it_asks_for(strict_env, name):
+    assert strict_env.get_template(name).render(**PAGES[name]).strip()
 
 
 @pytest.mark.parametrize("name", sorted(PAGES))

@@ -60,10 +60,10 @@ services:
       options: {max-size: "20m", max-file: "3"}
 
   # Разовая задача: накатывает миграции до старта приложений.
+  # Своей сборки нет намеренно: образ у api, worker и migrate один и тот же,
+  # а три секции build заставляли buildx собирать, выгружать и распаковывать
+  # его трижды — это и была основная часть времени `make deploy`.
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: router-shop:latest
     env_file: [.env]
     command: ["alembic", "upgrade", "head"]

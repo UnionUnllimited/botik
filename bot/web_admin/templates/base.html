@@ -1327,15 +1327,49 @@
             });
           };
 
+          // Байты и время — в человеческий вид: оператор смотрит сюда по жалобе
+          // «плохо работает», и ему нужны цифры, а не единицы измерения.
+          var bytes = function (value) {
+            var num = Number(value || 0);
+            if (!num) return '0';
+            var units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+            var i = Math.min(Math.floor(Math.log(num) / Math.log(1024)), units.length - 1);
+            return (num / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + units[i];
+          };
+          var uptime = function (seconds) {
+            var sec = Number(seconds || 0);
+            if (!sec) return '—';
+            var days = Math.floor(sec / 86400);
+            var hours = Math.floor((sec % 86400) / 3600);
+            return days ? days + ' д ' + hours + ' ч' : hours + ' ч';
+          };
+          var row = function (label, value) {
+            return '<div class="um-row"><span class="um-row-label">' + label
+              + '</span><span class="um-row-value">' + value + '</span></div>';
+          };
+
           var rows = (result.routers || []).map(function (item) {
-            return '<div class="um-row">'
-              + '<span class="um-row-label">' + esc(item.mac) + '</span>'
-              + '<span class="um-row-value">'
-              + (item.online ? '<span style="color:#16a34a">на связи</span>'
-                             : '<span style="color:var(--admin-text-muted)">молчит</span>')
-              + (item.activated_at ? '' : ' · не активирован')
+            var head = row(
+              esc(item.mac),
+              (item.online ? '<span style="color:#16a34a">на связи</span>'
+                           : '<span style="color:var(--admin-text-muted)">молчит</span>')
               + ' <a href="' + basePath.replace(/\/$/, '') + '/routers/' + item.id + '">карточка</a>'
-              + '</span></div>';
+            );
+            var details = ''
+              + row('Модель', esc(item.model || '—')
+                    + (item.fw_version ? ' · прошивка ' + esc(item.fw_version) : ''))
+              + row('Активирован', item.activated_at
+                    ? esc(String(item.activated_at).slice(0, 10))
+                    : '<span style="color:#f59e0b">ещё нет</span>')
+              + row('Устройств в сети', esc(item.clients))
+              + row('Аптайм', uptime(item.uptime_sec))
+              + row('Трафик роутера', 'принято ' + bytes(item.rx_bytes)
+                    + ' · отдано ' + bytes(item.tx_bytes))
+              + (result.panel_used_bytes != null
+                  ? row('Через подписку', bytes(result.panel_used_bytes))
+                  : '')
+              + row('WAN IP', esc(item.wan_ip || '—'));
+            return head + details;
           }).join('');
 
           var options = (result.free || []).map(function (item) {
