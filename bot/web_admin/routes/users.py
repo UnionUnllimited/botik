@@ -1186,7 +1186,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
         # Роутеры показанных клиентов — одной картой на страницу. Молчание
         # основного приложения оставляет колонку пустой, но список не ломает.
         from src import shop_api
-        client_routers_map, _ = await shop_api.routers_of_clients(
+        client_routers_map, client_subs_map, _ = await shop_api.routers_of_clients(
             [u['telegram_id'] for u in users_list_local if u.get('telegram_id')]
         )
 
@@ -1195,6 +1195,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             'users.html',
             users=users_list_local,
             client_routers_map=client_routers_map,
+            client_subs_map=client_subs_map,
             page=page,
             total_pages=total_pages,
             now=now,

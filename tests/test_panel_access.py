@@ -53,13 +53,13 @@ class TestPanelWithoutSession:
         )
         assert response.status_code == 409
 
-    def test_our_admin_cookie_still_goes_to_login(self, client):
-        """Прежнее поведение для нашей админки не изменилось."""
+    def test_stale_admin_cookie_changes_nothing(self, client):
+        """Кука прежней админки могла остаться в браузере оператора. Входа
+        по ней больше нет — вход в панель один, по билету."""
         response = client.get(
             "/cgi-bin/luci/", cookies={"rs_admin": "expired-value"}, follow_redirects=False
         )
-        assert response.status_code == 303
-        assert response.headers["location"] == "/admin/login"
+        assert response.status_code == 409
 
     def test_open_with_bad_ticket_refuses(self, client):
         response = client.get("/panel/open?ticket=подделка", follow_redirects=False)

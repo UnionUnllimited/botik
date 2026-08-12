@@ -249,14 +249,19 @@ async def clients() -> tuple[list[dict], str]:
     return data.get("clients", []), error
 
 
-async def routers_of_clients(tg_ids: list[int]) -> tuple[dict, str]:
-    """MAC-адреса по списку клиентов: один запрос на страницу списка."""
+async def routers_of_clients(tg_ids: list[int]) -> tuple[dict, dict, str]:
+    """Роутеры и подписки по списку клиентов: один запрос на страницу списка.
+
+    Подписка здесь же не для красоты: их колонка «Подписка» читает их таблицу,
+    а у клиента роутера подписка живёт в основном приложении — иначе в списке
+    у всех честное «Нет».
+    """
     if not tg_ids:
-        return {}, ""
+        return {}, {}, ""
     data, error = await get(
         "/api/v1/fleet/clients/routers", {"tg_ids": ",".join(str(item) for item in tg_ids)}
     )
-    return data.get("routers", {}), error
+    return data.get("routers", {}), data.get("subscriptions", {}), error
 
 
 async def client_routers(tg_id: int) -> tuple[dict, str]:

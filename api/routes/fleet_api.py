@@ -93,9 +93,6 @@ async def list_routers(session: AsyncSession = Depends(get_session)) -> dict:
         "generated_at": now.isoformat(),
         "total": len(items),
         "online": online_total,
-        # Ссылка на нашу админку: действия с роутером живут там, и вкладке
-        # в чужой админке нужно куда-то отправить человека.
-        "admin_url": f"{settings.api.admin_base_url.rstrip('/')}/admin/fleet",
         "routers": items,
     }
 
@@ -320,15 +317,28 @@ async def routers_of_clients(tg_ids: str = "", session: AsyncSession = Depends(g
         return {"routers": {}}
 
     rows = await session.execute(
-        select(User.tg_id, Device.id, Device.mac)
+        select(User.id, User.tg_id, Device.id, Device.mac)
         .join(Device, Device.user_id == User.id)
         .where(User.tg_id.in_(wanted))
         .order_by(Device.id.desc())
     )
     found: dict[str, list[dict]] = {}
-    for tg_id, device_id, mac in rows:
+    owners: dict[str, int] = {}
+    for user_id, tg_id, device_id, mac in rows:
         found.setdefault(str(tg_id), []).append({"id": device_id, "mac": mac})
-    return {"routers": found}
+        owners[str(tg_id)] = user_id
+
+    # Подписка идёт той же картой: в их списке колонка «Подписка» читает их
+    # таблицу, где у клиента роутера ничего нет и быть не может.
+    subscriptions: dict[str, dict] = {}
+    for tg_id, user_id in owners.items():
+        current = await subscription_service.get_current(session, user_id)
+        if current is not None:
+            subscriptions[tg_id] = {
+                "status": str(current.status),
+                "until": _iso(current.expires_at),
+            }
+    return {"routers": found, "subscriptions": subscriptions}
 
 
 def _client_router_row(device: Device, *, now) -> dict:
@@ -365,10 +375,15 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
             .limit(FREE_DEVICES_LIMIT)
         )
     )
+    current = await subscription_service.get_current(session, user.id) if user is not None else None
     return {
         "has_client": user is not None,
         "routers": [_client_router_row(device, now=now) for device in devices],
         "free": [{"mac": device.mac, "model": device.model or ""} for device in free],
+        "subscription": {
+            "status": str(current.status) if current else "",
+            "until": _iso(current.expires_at) if current else None,
+        },
     }
 
 

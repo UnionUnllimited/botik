@@ -1,8 +1,9 @@
-"""FastAPI-приложение: админка, вебхуки платежей, парк роутеров.
+"""FastAPI-приложение: ручки каталога и парка, вебхуки платежей, панель роутера.
 
-Публичного сайта здесь больше нет: клиентская часть ушла в сторонний продукт
-в `bot/` вместе с ботом. За нами осталось то, чего у него нет, — админка,
-управление парком роутеров и туннели к ним.
+Ни сайта, ни своей админки здесь больше нет — интерфейс остался один,
+в стороннем продукте в `bot/`. За нами данные и всё, что физически может
+делать только процесс в нашей сети: туннели к роутерам, активация по SSH,
+проксирование панели и приём оплаты.
 """
 
 from __future__ import annotations
@@ -15,13 +16,11 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api import admin
-from api.admin.routes import luci
-from api.routes import catalog_api, fleet_api, health, webhooks
+from api.routes import catalog_api, fleet_api, health, panel_proxy, webhooks
 from core.config import settings
 from core.db import check_database, dispose_engine
 from core.logging import configure_logging
@@ -97,26 +96,6 @@ async def observability_middleware(
     return response
 
 
-def _is_admin_page(request: Request) -> bool:
-    """Страницам админки нужен HTML: голый JSON в браузере ничего не объясняет."""
-    return request.url.path.startswith("/admin") and "text/html" in request.headers.get("accept", "")
-
-
-def _admin_error_page(message: str, status_code: int) -> HTMLResponse:
-    return HTMLResponse(
-        f"""<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
-<title>Ошибка · {settings.app.brand}</title></head>
-<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-background:#0f1115;color:#e6e8ee;font:15px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif">
-<div style="max-width:460px;padding:26px;background:#171a21;border:1px solid #2a2f3a;border-radius:12px">
-<h1 style="font-size:19px;margin:0 0 10px">Ошибка {status_code}</h1>
-<p style="color:#99a0ae;margin:0 0 18px">{message}</p>
-<a href="/admin/" style="color:#4c8dff">← в админку</a>
-</div></body></html>""",
-        status_code=status_code,
-    )
-
-
 def create_app() -> FastAPI:
     app = FastAPI(
         title=f"{settings.app.brand} API",
@@ -142,15 +121,11 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router)
     app.include_router(fleet_api.router)
     app.include_router(catalog_api.router)
-    app.include_router(admin.router)
     # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
-    app.include_router(luci.router)
-    app.add_exception_handler(admin.LoginRequired, admin.login_redirect_handler)  # type: ignore[arg-type]
+    app.include_router(panel_proxy.router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
-        if _is_admin_page(request):
-            return _admin_error_page(str(exc.detail), exc.status_code)
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(RequestValidationError)
@@ -160,8 +135,6 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
         log.exception("api.unhandled", error=str(exc), path=request.url.path)
-        if _is_admin_page(request):
-            return _admin_error_page("Внутренняя ошибка. Подробности в логах: docker compose logs api", 500)
         return JSONResponse(status_code=500, content={"error": "internal_error"})
 
     return app

@@ -11,9 +11,6 @@ from typing import ClassVar
 
 import pytest
 
-from api.admin.routes.remnawave import host_uuid_of, protocol_for, remarks_for
-from core.enums import NodeProtocol
-from core.models import Node
 from core.services.remnawave import (
     PanelStatus,
     RemnaHost,
@@ -143,45 +140,6 @@ class TestHostParsing:
     def test_none_values_are_dropped(self):
         host = RemnaHost.parse({"uuid": "h", "remark": "r", "address": "a", "alpn": None})
         assert "alpn" not in host.connection_config
-
-
-class TestImportRules:
-    def test_remarks_get_required_prefix(self):
-        assert remarks_for("Netherlands").startswith("Router_")
-
-    def test_existing_prefix_is_not_doubled(self):
-        assert remarks_for("Router_NL") == "Router_NL"
-
-    def test_whitespace_is_collapsed(self):
-        assert remarks_for("  Netherlands   Reality ") == "Router_Netherlands Reality"
-
-    def test_empty_remark_still_valid(self):
-        assert remarks_for("") == "Router_node"
-
-    def test_long_remark_is_trimmed_to_column(self):
-        """`Node.remarks` — String(120), длиннее в базу не влезет."""
-        assert len(remarks_for("я" * 200)) == 120
-
-    @pytest.mark.parametrize(
-        ("config", "expected"),
-        [
-            ({"publicKey": "x", "shortId": "y"}, NodeProtocol.VLESS_REALITY),
-            ({"security": "reality"}, NodeProtocol.VLESS_REALITY),
-            ({"path": "/ws", "sni": "example.com"}, NodeProtocol.VLESS_WS_TLS),
-            ({}, NodeProtocol.VLESS_WS_TLS),
-        ],
-    )
-    def test_protocol_is_guessed_from_params(self, config, expected):
-        assert protocol_for(config) is expected
-
-    def test_host_uuid_read_from_node_config(self):
-        node = Node(remarks="Router_NL", host="h", port=443, config={"remnawave": {"host_uuid": "h1"}})
-        assert host_uuid_of(node) == "h1"
-
-    @pytest.mark.parametrize("config", [{}, {"remnawave": "не объект"}, {"sni": "x"}, None])
-    def test_own_node_has_no_host_uuid(self, config):
-        node = Node(remarks="Router_own", host="h", port=443, config=config)
-        assert host_uuid_of(node) == ""
 
 
 class TestSquadParsing:
