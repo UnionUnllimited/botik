@@ -12,7 +12,7 @@
 import os
 
 import httpx
-from quart import flash, redirect, render_template, request, url_for
+from quart import flash, jsonify, redirect, render_template, request, url_for
 
 from src import shop_api
 
@@ -176,6 +176,24 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             await flash(error, "danger")
             return redirect(url_for("admin.router_card", device_id=device_id))
         return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
+
+    @admin_bp_instance.route("/users/<int:telegram_id>/routers.json")
+    async def client_routers_json(telegram_id: int):
+        """Роутеры клиента для модальной карточки.
+
+        Карточка рисуется на стороне браузера и данные берёт запросами, поэтому
+        отдаём JSON. Ошибку возвращаем текстом в том же ответе — модалка покажет
+        её в своём блоке и не станет молча пустой.
+        """
+        data, error = await shop_api.client_routers(telegram_id)
+        return jsonify(
+            {
+                "ok": not error,
+                "error": error,
+                "routers": data.get("routers", []),
+                "free": data.get("free", []),
+            }
+        )
 
     @admin_bp_instance.route("/users/<int:telegram_id>/router/bind", methods=["POST"])
     async def client_router_bind(telegram_id: int):
