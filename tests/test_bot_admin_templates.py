@@ -163,6 +163,7 @@ PAGES = {
         ],
         "client_free_routers": [{"mac": "A0:B1:C2:D3:E4:F6", "model": "AX3000"}],
         "client_routers_error": "",
+        "client_subscription": {"status": "active", "until": "2026-09-04T10:00:00+00:00"},
         "payments": [],
         "promo": [],
         "traffic_stats": {},

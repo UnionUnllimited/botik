@@ -1342,12 +1342,28 @@
             return '<option value="' + esc(item.mac) + '">' + esc(item.model) + '</option>';
           }).join('');
 
+          // Подписка роутера: в шапке карточки видно их подписку для телефона,
+          // а у клиента роутера она живёт в основном приложении.
+          var sub = result.subscription || {};
+          var subRow = '';
+          if (sub.status === 'active') {
+            subRow = '<div class="um-row"><span class="um-row-label">Подписка</span>'
+              + '<span class="um-row-value" style="color:#16a34a">активна до '
+              + esc((sub.until || '').slice(0, 10)) + '</span></div>';
+          } else if (sub.status === 'pending') {
+            subRow = '<div class="um-row"><span class="um-row-label">Подписка</span>'
+              + '<span class="um-row-value" style="color:#f59e0b">оплачена, ждёт включения роутера</span></div>';
+          } else if (sub.status) {
+            subRow = '<div class="um-row"><span class="um-row-label">Подписка</span>'
+              + '<span class="um-row-value" style="color:#ef4444">' + esc(sub.status) + '</span></div>';
+          }
+
           var body;
           if (result.error) {
             body = '<div class="um-row"><span class="um-row-value" style="color:#b91c1c">'
               + esc(result.error) + '</span></div>';
           } else {
-            body = (rows || '<div class="um-row"><span class="um-row-value"'
+            body = subRow + (rows || '<div class="um-row"><span class="um-row-value"'
               + ' style="color:var(--admin-text-muted)">Роутер за клиентом не числится.</span></div>')
               + '<form method="post" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"'
               + ' action="' + (basePath + '/users/' + telegramId + '/router/bind').replace(/\/+/g, '/') + '">'

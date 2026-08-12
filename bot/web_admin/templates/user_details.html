@@ -38,6 +38,20 @@
       {% if client_routers_error %}
         <p class="text-[13px] m-0" style="color:#b91c1c">{{ client_routers_error }}</p>
       {% else %}
+        {# Подписка роутера живёт в основном приложении: колонка выше про
+           подписку для телефона, и у клиента роутера там пусто. #}
+        {% if client_subscription and client_subscription.status %}
+        <p class="text-[13px] mb-3">
+          Подписка:
+          {% if client_subscription.status == 'active' %}
+            <span style="color:#16a34a">активна до {{ (client_subscription.until or '')[:10] }}</span>
+          {% elif client_subscription.status == 'pending' %}
+            <span style="color:#f59e0b">оплачена, ждёт первого включения роутера</span>
+          {% else %}
+            <span style="color:#ef4444">{{ client_subscription.status }}</span>
+          {% endif %}
+        </p>
+        {% endif %}
         {% if client_routers %}
         <div class="overflow-x-auto rounded-[var(--radius-card)] border border-[rgb(var(--admin-border))] mb-3">
           <table class="tw-tbl text-[12px]">

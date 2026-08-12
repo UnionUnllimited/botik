@@ -1322,6 +1322,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             client_routers=client_routers_data.get('routers', []),
             client_free_routers=client_routers_data.get('free', []),
             client_routers_error=client_routers_error,
+            client_subscription=client_routers_data.get('subscription', {}),
             payments=payments,
             promo=promo,
             traffic_stats=traffic_stats,

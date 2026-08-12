@@ -192,6 +192,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
                 "error": error,
                 "routers": data.get("routers", []),
                 "free": data.get("free", []),
+                "subscription": data.get("subscription", {}),
             }
         )
 
