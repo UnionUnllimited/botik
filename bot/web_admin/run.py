@@ -106,8 +106,9 @@ for _name in (
     _lg.propagate = False
 
 # --- Настройки ---
-# Путь к БД должен быть относительным от корня проекта, а не от папки web_admin
-DATABASE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'vpn_bot.db')
+# Путь к БД берём у бота: он лежит в корне проекта, а не в папке web_admin,
+# и вычислять его тут вторым литералом значит разъехаться при переименовании.
+from config import DATABASE_NAME as DATABASE_PATH
 
 # SECRET_KEY для сессий - храним в БД для работы с несколькими workers
 # Это критично для работы с несколькими workers, чтобы сессии не терялись
@@ -384,7 +385,7 @@ async def _admin_auth_guard():
         # Любой запрос в admin_bp до cookie/auth должен пройти проверку.
         # Loopback всегда разрешён — иначе systemd/healthcheck/CLI ломаются.
         # Если случайно отрезали себе доступ — сбросьте через SQLite:
-        #   sqlite3 vpn_bot.db "UPDATE settings SET value='0' \
+        #   sqlite3 router_bot.db "UPDATE settings SET value='0' \
         #     WHERE key='admin_ip_whitelist_enabled'"
         try:
             from web_admin.core.ip_whitelist import (

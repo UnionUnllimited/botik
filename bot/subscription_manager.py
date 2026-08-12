@@ -110,7 +110,7 @@ def _prepare_uuid_and_identity(user_id: int, user_db_data) -> tuple[str, str, st
         xui_client_email = user_db_data['xui_client_email']
     else:
         random_suffix = ''.join(random.choices('abcdef0123456789', k=6))
-        email_domain = app_conf.get('email_domain', 'vpn.bot')
+        email_domain = app_conf.get('email_domain', 'router.bot')
         xui_client_email = f"tg{user_id}_{random_suffix}@{email_domain}"
 
     remnawave_username = f"tg{user_id}"
@@ -233,7 +233,7 @@ async def _renew_remnawave_subscription(
     if user_data.get('xui_client_email'):
         email_to_save = user_data['xui_client_email']
     else:
-        email_to_save = f"tg{user_id}_{''.join(random.choices('abcdef0123456789', k=6))}@{app_conf.get('email_domain', 'vpn.bot')}"
+        email_to_save = f"tg{user_id}_{''.join(random.choices('abcdef0123456789', k=6))}@{app_conf.get('email_domain', 'router.bot')}"
 
     remnawave_username = (
         user_data['remnawave_username']

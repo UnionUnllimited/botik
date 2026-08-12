@@ -193,15 +193,16 @@ on same line».
 ### 5в. Публикация админки бота
 
 Админка стороннего бота — отдельный процесс на хосте: systemd-юнит
-`vpn-webadmin.service`, `hypercorn` на порту 8181. Себя она отдаёт не в корне,
+`router-webadmin.service`, `hypercorn` на порту 8181. Себя она отдаёт не в корне,
 а по секретному пути из своей базы (`settings.admin_secret_path`, по умолчанию
 `admin123`), поэтому с нашими `/webhooks` и `/api` не пересекается
 и живёт на том же домене.
 
-**Штатный `install_bot.sh` запускать нельзя.** Он ставит и перезапускает nginx
-и просит сертификат через `certbot --standalone`, а порты 80 и 443 держит Caddy:
-в лучшем случае скрипт сломается на середине, в худшем оставит сервер без TLS.
-Нужные его шаги делаем руками, их немного.
+**Штатный `install_bot.sh` рассчитан на чистый сервер.** Раньше его нельзя было
+запускать вовсе: он ставил nginx и просил сертификат через `certbot --standalone`,
+а порты 80 и 443 держит Caddy — сервер оставался без TLS. Эти шаги из скрипта
+убраны, но он по-прежнему спрашивает домен и токен в диалоге и сам поднимает
+юниты. У нас те же шаги делаются руками, их немного.
 
 Код ожидает себя в `/root/bot` — это зашито и в юнитах, и в установщике.
 Симлинк оставляет один источник правды:
@@ -221,7 +222,7 @@ cd /root/bot && python3 -m venv venv && ./venv/bin/pip install -q -r service/req
 cd /root/bot && python3 -m venv web_admin/venv && ./web_admin/venv/bin/pip install -q -r service/requirements.txt
 ```
 
-Юниты. В `service/vpn-webadmin.service` перед копированием поправить строку
+Юниты. В `service/router-webadmin.service` перед копированием поправить строку
 `ExecStart` (привязка на все интерфейсы — почему, ниже). Доступ к нашему API
 дописывается в `[Service]` **обоим юнитам** — и админке, и боту: парк роутеров
 показывает админка, каталог и заказы — бот, а ходят они в одни и те же ручки:
@@ -238,8 +239,8 @@ Environment="FLEET_API_TOKEN=то_же_что_API_FLEET_TOKEN_в_нашем_.env
 а не `localhost` — фото тянет Telegram, а он ходит снаружи.
 
 ```bash
-cp /root/bot/service/vpn-bot.service /root/bot/service/vpn-webadmin.service /etc/systemd/system/
-systemctl daemon-reload && systemctl enable --now vpn-bot
+cp /root/bot/service/router-bot.service /root/bot/service/router-webadmin.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now router-bot
 ```
 
 **База создаётся сама, переносить её неоткуда и незачем.** `init_db()` в боте
@@ -248,7 +249,7 @@ systemctl daemon-reload && systemctl enable --now vpn-bot
 поэтому бот запускается первым:
 
 ```bash
-sleep 5 && ls -la /root/bot/*.db && systemctl enable --now vpn-webadmin
+sleep 5 && ls -la /root/bot/*.db && systemctl enable --now router-webadmin
 ```
 
 Токен бота в свежей базе — заглушка `123`. Настоящий задаётся в веб-админке
@@ -262,7 +263,7 @@ sqlite3 /root/bot/*.db "SELECT value FROM settings WHERE key='admin_secret_path'
 
 **Caddy живёт в контейнере, и `127.0.0.1` для него — он сам.** Юнит по умолчанию
 слушает только петлю, до неё прокси не достучится. Поэтому меняем в
-`/etc/systemd/system/vpn-webadmin.service` привязку на все интерфейсы:
+`/etc/systemd/system/router-webadmin.service` привязку на все интерфейсы:
 
 ```
 ExecStart=/root/bot/web_admin/venv/bin/hypercorn web_admin.run:app -w 1 --bind 0.0.0.0:8181 --keep-alive 30
@@ -272,7 +273,7 @@ ExecStart=/root/bot/web_admin/venv/bin/hypercorn web_admin.run:app -w 1 --bind 0
 прокси и без TLS:
 
 ```bash
-ufw deny 8181/tcp && systemctl daemon-reload && systemctl restart vpn-webadmin
+ufw deny 8181/tcp && systemctl daemon-reload && systemctl restart router-webadmin
 ```
 
 Адрес, по которому контейнер Caddy видит хост, — шлюз его сети:
@@ -334,6 +335,50 @@ crontab -e
 
 ```bash
 make deploy      # git pull → сборка → миграции → перезапуск
+```
+
+Затем службы бота — **после** того как `api` станет `healthy`: бот при старте
+сразу стучится в наши ручки и на не поднявшийся API получает 502.
+
+```bash
+docker compose ps --format "{{.Service}} {{.Status}}" && systemctl restart router-bot router-webadmin
+```
+
+### Разовый шаг: юниты и база переименованы
+
+Прежние имена содержали запрещённое слово. В коде их больше нет, но на сервере
+остались включённые юниты со старыми именами — их нужно погасить один раз,
+иначе после выката будут работать обе пары и драться за одну базу.
+
+Порядок: сначала снять старые, потом поставить новые. База переименуется сама
+при первом старте бота — `bot/config.py` сворачивает хвост WAL контрольной
+точкой и переносит файл; если перенос не удался, бот останется на старой базе,
+а в журнале будет строка об ошибке. Пустую базу он не заведёт ни при каком
+исходе — это проверяется `tests/test_bot_db_migration.py`.
+
+Прежние имена здесь не выписаны намеренно — они и есть то самое слово. Юниты
+находятся по хвосту имени, всё, что не начинается на `router-`, гасится и сносится:
+
+```bash
+for u in $(systemctl list-unit-files --no-legend | awk '$1 ~ /-(bot|webadmin)\.service$/ && $1 !~ /^router-/ {print $1}'); do systemctl disable --now "$u"; rm -f "/etc/systemd/system/$u"; done
+```
+
+```bash
+cp /root/bot/service/router-bot.service /root/bot/service/router-webadmin.service /etc/systemd/system/
+```
+
+Привязку `0.0.0.0:8181` в `router-webadmin.service` и строки `FLEET_API_*`
+обоим юнитам нужно проставить заново — правки жили в старых файлах
+(см. раздел 5в).
+
+```bash
+systemctl daemon-reload && systemctl enable --now router-bot && sleep 5 && systemctl enable --now router-webadmin
+```
+
+Проверить, что база переехала и клиенты на месте:
+
+```bash
+ls -la /root/bot/*.db && sqlite3 /root/bot/router_bot.db "SELECT COUNT(*) FROM users;"
 ```
 
 ## Разработка

@@ -188,7 +188,7 @@ def _classify_user_agent(user_agent: str) -> str:
 
 
 async def get_device_stats() -> dict:
-    """Статистика устройств по ОС и приложениям (только VPN-клиенты, уникальные hwid)."""
+    """Статистика устройств по ОС и приложениям (только приложения подписки, уникальные hwid)."""
     async with get_db_connection(read_only=True) as db:
         db.row_factory = aiosqlite.Row
 
@@ -242,7 +242,7 @@ async def get_device_stats() -> dict:
     }
 
 
-def _new_vpn_device_hwid_clause() -> str:
+def _new_app_device_hwid_clause() -> str:
     """Устройство с реальным HWID (как в списках клиента)."""
     return """
         TRIM(COALESCE(hwid, '')) != ''
@@ -261,17 +261,17 @@ def _first_seen_on_utc_today_clause() -> str:
     """
 
 
-async def count_new_vpn_devices_first_seen_today() -> int:
-    """Сколько новых (первый INSERT) VPN-устройств с HWID за текущие сутки UTC."""
-    vpn_filter = _get_vpn_user_agents_sql_filter()
-    hwid_clause = _new_vpn_device_hwid_clause()
+async def count_new_app_devices_first_seen_today() -> int:
+    """Сколько новых (первый INSERT) устройств с HWID за текущие сутки UTC."""
+    app_filter = _get_app_user_agents_sql_filter()
+    hwid_clause = _new_app_device_hwid_clause()
     date_clause = _first_seen_on_utc_today_clause()
     sql = f'''
         SELECT COUNT(*) AS cnt
         FROM subscription_access
         WHERE {hwid_clause}
           AND {date_clause}
-          {vpn_filter}
+          {app_filter}
     '''
     async with get_db_connection(read_only=True) as db:
         cursor = await db.execute(sql)
@@ -279,25 +279,25 @@ async def count_new_vpn_devices_first_seen_today() -> int:
         return int(row[0]) if row and row[0] is not None else 0
 
 
-async def get_new_vpn_devices_first_seen_today_paginated(
+async def get_new_app_devices_first_seen_today_paginated(
     page: int = 1,
     per_page: int = 20,
 ) -> Dict:
     """
-    Новые устройства за сегодня (UTC): первая запись uuid+hwid с фильтром VPN-клиентов.
+    Новые устройства за сегодня (UTC): первая запись uuid+hwid с фильтром приложений подписки.
     Сортировка: самые свежие первые по времени первого появления.
     """
     page = max(1, page)
     per_page = max(1, min(per_page, 100))
     offset = (page - 1) * per_page
-    vpn_filter = _get_vpn_user_agents_sql_filter()
-    hwid_clause = _new_vpn_device_hwid_clause()
+    app_filter = _get_app_user_agents_sql_filter()
+    hwid_clause = _new_app_device_hwid_clause()
     date_clause = _first_seen_on_utc_today_clause()
 
     base_where = f'''
         WHERE {hwid_clause}
           AND {date_clause}
-          {vpn_filter}
+          {app_filter}
     '''
 
     async with get_db_connection(read_only=True) as db:
@@ -374,20 +374,20 @@ def _is_subscription_access_stale(last_access: str | None, *, stale_hours: int) 
 
 
 async def _get_active_subscription_users() -> List[Dict]:
-    """Активные подписки из vpn_bot.db (не истекли, не заблокированы, есть UUID)."""
+    """Активные подписки из router_bot.db (не истекли, не заблокированы, есть UUID)."""
     import db_helpers
     return await db_helpers.get_active_subscription_users(require_uuid=True)
 
 
-async def get_max_vpn_subscription_access_by_uuid() -> Dict[str, str]:
-    """Последнее обращение VPN-клиента к подписке по uuid."""
-    vpn_filter = _get_vpn_user_agents_sql_filter()
+async def get_max_app_subscription_access_by_uuid() -> Dict[str, str]:
+    """Последнее обращение приложения подписки по uuid."""
+    app_filter = _get_app_user_agents_sql_filter()
     async with get_db_connection(read_only=True) as db:
         cursor = await db.execute(f'''
             SELECT uuid, MAX(access_time) AS last_access
             FROM subscription_access
             WHERE TRIM(COALESCE(uuid, '')) != ''
-              {vpn_filter}
+              {app_filter}
             GROUP BY uuid
         ''')
         rows = await cursor.fetchall()
@@ -400,11 +400,11 @@ async def get_max_vpn_subscription_access_by_uuid() -> Dict[str, str]:
 
 async def count_stale_active_subscription_users(*, stale_hours: int = 24) -> Dict:
     """
-    Активные клиенты, не обновлявшие подписку дольше stale_hours (VPN-обращения).
+    Активные клиенты, не обновлявшие подписку дольше stale_hours (обращения приложений).
     Без записей в subscription_access считаются «не обновляли».
     """
     active = await _get_active_subscription_users()
-    last_map = await get_max_vpn_subscription_access_by_uuid()
+    last_map = await get_max_app_subscription_access_by_uuid()
     stale = sum(
         1 for u in active
         if _is_subscription_access_stale(last_map.get(u['uuid']), stale_hours=stale_hours)
@@ -426,7 +426,7 @@ async def get_stale_active_subscription_users_paginated(
     page = max(1, page)
     per_page = max(1, min(per_page, 100))
     active = await _get_active_subscription_users()
-    last_map = await get_max_vpn_subscription_access_by_uuid()
+    last_map = await get_max_app_subscription_access_by_uuid()
 
     stale_rows: List[Dict] = []
     for u in active:
@@ -466,13 +466,13 @@ def classify_subscription_user_agent(user_agent: str) -> str:
     return _classify_user_agent(user_agent or '')
 
 
-def _is_vpn_client_user_agent(user_agent: str) -> bool:
-    """Проверяет, является ли User-Agent VPN-клиентом (исключает браузеры)"""
+def _is_app_user_agent(user_agent: str) -> bool:
+    """Проверяет, является ли User-Agent приложением подписки (исключает браузеры)"""
     if not user_agent or user_agent == '':
         return False
 
     ua = user_agent.lower()
-    vpn_clients = [
+    app_user_agents = [
         'happ', 'brn-node', 'brnnode', 'v2raytun', 'v2ray', 'hiddify', 'hiddifynext',
         'clash', 'clashmeta', 'shadowrocket', 'quantumult', 'surge',
         'v2rayng', 'sing-box', 'singbox', 'v2fly', 'xray', 'trojan',
@@ -485,7 +485,7 @@ def _is_vpn_client_user_agent(user_agent: str) -> bool:
     for b in browsers:
         if b in ua:
             return False
-    for c in vpn_clients:
+    for c in app_user_agents:
         if c in ua:
             return True
     return True
@@ -537,8 +537,8 @@ def _subscription_requests_visibility_sql() -> str:
     """
 
 
-def _get_vpn_user_agents_sql_filter() -> str:
-    """SQL-условие для фильтрации только VPN-клиентов"""
+def _get_app_user_agents_sql_filter() -> str:
+    """SQL-условие для фильтрации только приложений подписки"""
     return """
         AND (
             NOT (
@@ -753,14 +753,14 @@ async def get_devices_by_uuid(uuid: str) -> List[Dict]:
     """Уникальные устройства пользователя (одна строка = одно устройство)"""
     async with get_db_connection(read_only=True) as db:
         db.row_factory = aiosqlite.Row
-        vpn_filter = _get_vpn_user_agents_sql_filter()
+        app_filter = _get_app_user_agents_sql_filter()
 
         cursor = await db.execute(f'''
             SELECT hwid, os, os_version, model, user_agent, ip_address,
                    access_time, access_count, created_at, custom_name
             FROM subscription_access
             WHERE uuid = ?
-                {vpn_filter}
+                {app_filter}
             ORDER BY datetime(created_at) ASC, access_time ASC
         ''', (uuid,))
 
@@ -788,10 +788,10 @@ async def get_devices_by_uuid(uuid: str) -> List[Dict]:
 
 
 async def get_latest_access_by_uuid(uuid: str) -> Optional[Dict]:
-    """Последнее обращение к подписке (только VPN-клиенты)"""
+    """Последнее обращение к подписке (только приложения подписки)"""
     async with get_db_connection(read_only=True) as db:
         db.row_factory = aiosqlite.Row
-        vpn_filter = _get_vpn_user_agents_sql_filter()
+        app_filter = _get_app_user_agents_sql_filter()
 
         cursor = await db.execute(f'''
             SELECT
@@ -799,7 +799,7 @@ async def get_latest_access_by_uuid(uuid: str) -> Optional[Dict]:
                 access_time, method, path, status_code, response_size, created_at, custom_name
             FROM subscription_access
             WHERE uuid = ?
-                {vpn_filter}
+                {app_filter}
             ORDER BY access_time DESC
             LIMIT 1
         ''', (uuid,))
@@ -886,7 +886,7 @@ async def get_device_violations(include_hwid_list: bool = False) -> List[Dict]:
     """Список UUID с количеством уникальных устройств (для проверки нарушителей лимита)"""
     async with get_db_connection(read_only=True) as db:
         db.row_factory = aiosqlite.Row
-        vpn_filter = _get_vpn_user_agents_sql_filter()
+        app_filter = _get_app_user_agents_sql_filter()
 
         cursor = await db.execute(f'''
             SELECT
@@ -902,7 +902,7 @@ async def get_device_violations(include_hwid_list: bool = False) -> List[Dict]:
                 MAX(access_time) as last_access
             FROM subscription_access
             WHERE uuid IS NOT NULL AND uuid != ''
-                {vpn_filter}
+                {app_filter}
             GROUP BY uuid
             HAVING device_count > 0
             ORDER BY device_count DESC
@@ -943,7 +943,7 @@ async def get_device_violations(include_hwid_list: bool = False) -> List[Dict]:
 
 async def get_hwid_list_for_uuid(uuid: str) -> List[str]:
     """Список уникальных идентификаторов устройств для UUID"""
-    vpn_filter = _get_vpn_user_agents_sql_filter()
+    app_filter = _get_app_user_agents_sql_filter()
 
     async with get_db_connection(read_only=True) as db:
         db.row_factory = aiosqlite.Row
@@ -956,7 +956,7 @@ async def get_hwid_list_for_uuid(uuid: str) -> List[str]:
                 END as device_id
             FROM subscription_access
             WHERE uuid = ?
-                {vpn_filter}
+                {app_filter}
         ''', (uuid,))
 
         rows = await cursor.fetchall()
@@ -976,8 +976,8 @@ async def get_hwid_list_for_uuid(uuid: str) -> List[str]:
 
 
 async def get_duplicate_hwids() -> List[Dict]:
-    """HWID, встречающиеся у нескольких UUID (только реальные HWID, VPN-клиенты)."""
-    vpn_filter = _get_vpn_user_agents_sql_filter()
+    """HWID, встречающиеся у нескольких UUID (только реальные HWID, приложения подписки)."""
+    app_filter = _get_app_user_agents_sql_filter()
 
     async with get_db_connection(read_only=True) as db:
         db.row_factory = aiosqlite.Row
@@ -988,7 +988,7 @@ async def get_duplicate_hwids() -> List[Dict]:
             WHERE hwid IS NOT NULL AND hwid != '' AND hwid != '-'
                 AND LENGTH(hwid) > 0
                 AND uuid IS NOT NULL AND uuid != ''
-                {vpn_filter}
+                {app_filter}
             GROUP BY hwid
             HAVING client_count > 1
             ORDER BY client_count DESC, hwid
@@ -1012,7 +1012,7 @@ async def get_duplicate_hwids() -> List[Dict]:
                 SUM(COALESCE(access_count, 1)) AS total_accesses
             FROM subscription_access
             WHERE hwid IN ({placeholders})
-                {vpn_filter}
+                {app_filter}
             GROUP BY hwid, uuid
             ORDER BY hwid, last_access DESC
         ''', tuple(hwids))

@@ -5997,7 +5997,7 @@ async def yookassa_webhook_handler(request: web.Request):
         logger.error(f"YooKassa webhook error: {e}", exc_info=True)
         return web.Response(status=500, text='Internal error')
 
-# Путь к агрегированной БД трафика Remnawave (рядом с vpn_bot.db, заливается вебхуком)
+# Путь к агрегированной БД трафика Remnawave (рядом с router_bot.db, заливается вебхуком)
 
 
 async def _handle_remnawave_node_usage_upload(request: web.Request, body: bytes):
@@ -6008,7 +6008,7 @@ async def _handle_remnawave_node_usage_upload(request: web.Request, body: bytes)
     gzip + HMAC-подпись тем же ``remnawave_webhook_secret`` и POST-ит сюда.
 
     Здесь: проверяем подпись → (опц.) распаковываем gzip → проверяем магию SQLite →
-    атомарно сохраняем в ``remnawave.db`` (рядом с ``vpn_bot.db``). Читатели открывают файл read-only.
+    атомарно сохраняем в ``remnawave.db`` (рядом с ``router_bot.db``). Читатели открывают файл read-only.
     """
     import hmac as _hmac
     import gzip as _gzip
@@ -6046,7 +6046,7 @@ async def _handle_remnawave_node_usage_upload(request: web.Request, body: bytes)
         logger.warning("Remnawave node-usage: тело не является SQLite-файлом")
         return web.Response(status=400, text='Bad payload')
 
-    # Атомарная запись в remnawave.db (рядом с vpn_bot.db)
+    # Атомарная запись в remnawave.db (рядом с router_bot.db)
     target = migrate_remnawave_db_if_needed()
     try:
         fd, tmp_path = _tempfile.mkstemp(dir=os.path.dirname(target), suffix='.tmp')
@@ -7908,12 +7908,9 @@ async def wsl_email_input(message: Message, state: FSMContext):
 
     # Отправляем код через email_sender
     try:
-        import sys, os as _os
-        _website_dir = _os.path.join(_os.path.dirname(__file__), 'website')
-        if _website_dir not in sys.path:
-            sys.path.insert(0, _website_dir)
+        import os as _os
         from email_sender import send_email, code_email_html
-        project_name = app_conf.get('project_name', 'VPN')
+        project_name = app_conf.get('project_name', 'Сервис')
         await send_email(
             to=email,
             subject=f"Код подтверждения — {project_name}",

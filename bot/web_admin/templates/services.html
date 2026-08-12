@@ -162,7 +162,7 @@
     <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5" style="color: var(--color-brand-500);"></i>
     <div>
       Действия выполняются через <code class="tw-kbd">sudo systemctl</code>. Перезапуск
-      <strong>VPN WebAdmin</strong> разорвёт текущее соединение — страница автоматически перезагрузится.
+      <strong>Веб-админка</strong> разорвёт текущее соединение — страница автоматически перезагрузится.
     </div>
   </div>
 </div>
@@ -395,7 +395,7 @@
 
   // ───────── actions ─────────
   async function runAction(unit, action) {
-    if (unit === 'vpn-webadmin.service' && action === 'restart') {
+    if (unit === 'router-webadmin.service' && action === 'restart') {
       if (!confirm('Перезапуск веб-админки разорвёт текущее соединение. Продолжить?')) return;
     }
     if (action === 'stop' && !confirm(`Остановить сервис ${unit}?`)) return;
@@ -452,7 +452,7 @@
         showToast(`Перезапущено: ${okCnt}, ошибок: ${failCnt}`, 'error');
       }
       setTimeout(refreshAll, 1500);
-      // если в списке есть vpn-webadmin (deferred) — перезагружаем страницу
+      // если в списке есть router-webadmin (deferred) — перезагружаем страницу
       if ((data.restarted || []).some(x => x.deferred)) {
         setTimeout(() => window.location.reload(), 3500);
       }

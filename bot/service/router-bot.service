@@ -1,5 +1,5 @@
 [Unit]
-Description=VPN Telegram Bot
+Description=Telegram Bot
 After=network.target
 
 [Service]

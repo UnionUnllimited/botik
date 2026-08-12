@@ -7,7 +7,7 @@ from typing import ClassVar
 import pytest
 
 from core.services.frp import mac_from_proxy_name, proxy_kind, proxy_names_for
-from core.services.routers import parse_stats
+from core.services.routers import LEGACY_ACTIVE_FIELD, parse_stats
 
 
 class TestProxyNames:
@@ -72,7 +72,7 @@ class TestParseStats:
         """Старые прошивки называют флаг сервиса иначе — данные не теряем."""
         legacy = dict(self.payload)
         del legacy["service_active"]
-        legacy["vpn_active"] = True
+        legacy[LEGACY_ACTIVE_FIELD] = True
         assert parse_stats(legacy).service_active is True
 
     def test_empty_payload_does_not_crash(self):

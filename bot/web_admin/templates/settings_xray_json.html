@@ -362,7 +362,7 @@ function rebuildRemarksPanel() {
     const inp = document.createElement('input');
     inp.type = 'text';
     inp.className = 'tw-input text-[13px]';
-    inp.placeholder = 'VPN [Email]';
+    inp.placeholder = 'Сервис [Email]';
     inp.value = parsed.remarks != null ? String(parsed.remarks) : '';
     bindRootRemarkInput(inp, function(p) { return p; });
     panel.appendChild(lb);

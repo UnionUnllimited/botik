@@ -1,5 +1,5 @@
 [Unit]
-Description=VPN Web Admin
+Description=Web Admin
 After=network.target
 
 [Service]

@@ -525,7 +525,7 @@ async def _send_user_notification(telegram_id: int, new_uuid: str) -> None:
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo  # noqa: WPS433
 
     await app_conf.load_settings()
-    connect_url = app_conf.get('sub_page_url', 'https://vpn.example.com')
+    connect_url = app_conf.get('sub_page_url', 'https://example.com')
     full_url = f"{connect_url.rstrip('/')}/sub/{new_uuid}"
 
     text = app_conf.get(

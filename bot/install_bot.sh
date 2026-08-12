@@ -40,6 +40,13 @@ apt update
 wait_apt_lock
 apt install -y python3 python3-venv python3-pip sqlite3
 
+# Файл базы. Скрипт может попасть и на сервер, где база ещё не переименована,
+# поэтому имя ищется по маске: бот перенесёт её сам при первом запуске.
+DB_FILE="/root/bot/router_bot.db"
+if [ ! -f "$DB_FILE" ]; then
+  DB_FILE="$(ls /root/bot/*_bot.db 2>/dev/null | head -1)"
+fi
+
 # ── Секретный путь веб-админки ────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -48,8 +55,8 @@ echo "  (используется в URL: https://домен/<путь>/)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 ADMIN_PATH_CURRENT=""
-if [ -f "/root/bot/vpn_bot.db" ]; then
-  ADMIN_PATH_CURRENT=$(sqlite3 /root/bot/vpn_bot.db "SELECT value FROM settings WHERE key='admin_secret_path' LIMIT 1;" 2>/dev/null || true)
+if [ -f "$DB_FILE" ]; then
+  ADMIN_PATH_CURRENT=$(sqlite3 "$DB_FILE" "SELECT value FROM settings WHERE key='admin_secret_path' LIMIT 1;" 2>/dev/null || true)
 fi
 ADMIN_PATH_DEFAULT="${ADMIN_PATH_CURRENT:-admin123}"
 
@@ -66,8 +73,8 @@ echo ""
 read -rp "Введите домен, по которому сервис виден снаружи (или Enter чтобы пропустить): " DOMAIN
 
 if [ -n "$DOMAIN" ]; then
-  if [ -f "/root/bot/vpn_bot.db" ]; then
-    sqlite3 /root/bot/vpn_bot.db \
+  if [ -f "$DB_FILE" ]; then
+    sqlite3 "$DB_FILE" \
       "INSERT INTO settings (key, value) VALUES ('connect_page_url', 'https://$DOMAIN')
        ON CONFLICT(key) DO UPDATE SET value = excluded.value;
        INSERT INTO settings (key, value) VALUES ('admin_secret_path', '$ADMIN_SECRET_PATH')
@@ -107,8 +114,8 @@ echo "  Настройка токена Telegram-бота"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 BOT_TOKEN_SET=""
-if [ -f "/root/bot/vpn_bot.db" ]; then
-  BOT_TOKEN_SET=$(sqlite3 /root/bot/vpn_bot.db "SELECT value FROM settings WHERE key='bot_token' LIMIT 1;" 2>/dev/null || true)
+if [ -f "$DB_FILE" ]; then
+  BOT_TOKEN_SET=$(sqlite3 "$DB_FILE" "SELECT value FROM settings WHERE key='bot_token' LIMIT 1;" 2>/dev/null || true)
 fi
 
 if [ -n "$BOT_TOKEN_SET" ]; then
@@ -126,8 +133,8 @@ if [ -z "$BOT_TOKEN_SET" ]; then
   echo "  Получить токен можно у @BotFather в Telegram."
   read -rp "  Введите токен бота (или Enter чтобы пропустить): " BOT_TOKEN_INPUT
   if [ -n "$BOT_TOKEN_INPUT" ]; then
-    if [ -f "/root/bot/vpn_bot.db" ]; then
-      sqlite3 /root/bot/vpn_bot.db \
+    if [ -f "$DB_FILE" ]; then
+      sqlite3 "$DB_FILE" \
         "INSERT INTO settings (key, value) VALUES ('bot_token', '$BOT_TOKEN_INPUT')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
       echo "  Токен бота сохранён."
@@ -142,13 +149,13 @@ if [ -z "$BOT_TOKEN_SET" ]; then
 fi
 
 echo "\nНастраиваю автозапуск сервисов..."
-cp service/vpn-bot.service /etc/systemd/system/
-cp service/vpn-webadmin.service /etc/systemd/system/
+cp service/router-bot.service /etc/systemd/system/
+cp service/router-webadmin.service /etc/systemd/system/
 systemctl daemon-reload
 # Сначала бот — базу создаёт он. Веб-админка только читает и на пустом месте падает.
-systemctl enable --now vpn-bot.service
+systemctl enable --now router-bot.service
 sleep 5
-systemctl enable --now vpn-webadmin.service
+systemctl enable --now router-webadmin.service
 echo "\nБот и веб-админка запущены и добавлены в автозагрузку!"
 
 # ── Итоговый вывод ────────────────────────────────────────────────────────────

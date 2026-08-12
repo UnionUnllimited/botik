@@ -5,13 +5,17 @@ from quart import current_app
 import asyncio
 from contextlib import asynccontextmanager
 
+from config import DATABASE_NAME
+
+
 # Получаем путь к БД из конфигурации Flask
 def _get_database_path() -> str:
     try:
         return current_app.config['DATABASE_PATH']
     except RuntimeError:
-        # Если нет контекста приложения, используем fallback
-        return os.path.join(os.path.dirname(os.path.dirname(__file__)), 'vpn_bot.db')
+        # Вне контекста приложения — тот же путь, что у бота. Своим литералом
+        # он тут был дважды, и переименование базы разошлось бы по половинам.
+        return DATABASE_NAME
 
 @asynccontextmanager
 async def get_db_connection():

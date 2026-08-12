@@ -485,10 +485,10 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
     async def restart_all():
         try:
             process = await asyncio.create_subprocess_exec(
-                'sudo', 'systemctl', 'restart', 'vpn-bot.service'
+                'sudo', 'systemctl', 'restart', 'router-bot.service'
             )
             # Не ждём завершения для restart
-            await flash('Сервис vpn-bot перезапускается...', 'success')
+            await flash('Сервис router-bot перезапускается...', 'success')
         except Exception as e:
             await flash(f'Ошибка перезапуска: {e}', 'danger')
         return redirect(url_for('admin.remnawave_dashboard'))
@@ -498,11 +498,11 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
         try:
             # Запускаем все команды параллельно
             await asyncio.gather(
-                asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'vpn-bot.service'),
-                asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'vpn-webadmin.service'),
+                asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'router-bot.service'),
+                asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'router-webadmin.service'),
                 return_exceptions=True
             )
-            await flash('Все сервисы перезапускаются: vpn-bot, vpn-webadmin...', 'success')
+            await flash('Все сервисы перезапускаются: router-bot, router-webadmin...', 'success')
         except Exception as e:
             await flash(f'Ошибка перезапуска сервисов: {e}', 'danger')
         return redirect(url_for('admin.updates'))
@@ -512,8 +512,8 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
     # xuiweb и website из списка убраны вместе с их кодом: сервисов больше нет,
     # и кнопка «перезапустить» на них отвечала бы ошибкой юнита.
     SERVICES_WHITELIST = {
-        'vpn-bot.service':      {'label': 'Бот',       'icon': 'bot',      'accent': '#10b981', 'desc': 'Telegram-бот'},
-        'vpn-webadmin.service': {'label': 'Веб-админка', 'icon': 'sliders', 'accent': '#f59e0b', 'desc': 'Веб-админка'},
+        'router-bot.service':      {'label': 'Бот',       'icon': 'bot',      'accent': '#10b981', 'desc': 'Telegram-бот'},
+        'router-webadmin.service': {'label': 'Веб-админка', 'icon': 'sliders', 'accent': '#f59e0b', 'desc': 'Веб-админка'},
     }
 
     async def _systemctl_cmd(*args, timeout=10):
@@ -701,7 +701,7 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
 
     @admin_bp_instance.route('/api/services/restart-all', methods=['POST'])
     async def api_services_restart_all():
-        """Перезапускает все УСТАНОВЛЕННЫЕ сервисы из whitelist (vpn-webadmin — отложенно)."""
+        """Перезапускает все УСТАНОВЛЕННЫЕ сервисы из whitelist (router-webadmin — отложенно)."""
         units = list(SERVICES_WHITELIST.keys())
         # Отфильтруем неустановленные
         async def _is_installed(u):
@@ -710,11 +710,11 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
         statuses = await asyncio.gather(*[_is_installed(u) for u in units])
         installed = [u for u, ok in statuses if ok]
 
-        # vpn-webadmin рестартим в самом конце с задержкой (нам нужно успеть отдать ответ)
+        # router-webadmin рестартим в самом конце с задержкой (нам нужно успеть отдать ответ)
         deferred = []
         immediate = []
         for u in installed:
-            (deferred if u == 'vpn-webadmin.service' else immediate).append(u)
+            (deferred if u == 'router-webadmin.service' else immediate).append(u)
 
         results = []
         if immediate:
@@ -753,8 +753,8 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
         if load_state not in ('loaded', 'stub'):
             return jsonify({'success': False, 'error': 'Сервис не установлен (systemd unit не найден)'}), 400
 
-        # Для vpn-webadmin restart — откладываем перезапуск, чтобы успеть отправить JSON ответ
-        if unit == 'vpn-webadmin.service' and action == 'restart':
+        # Для router-webadmin restart — откладываем перезапуск, чтобы успеть отправить JSON ответ
+        if unit == 'router-webadmin.service' and action == 'restart':
             async def delayed_restart():
                 await asyncio.sleep(2)
                 await _systemctl_sudo('restart', unit)

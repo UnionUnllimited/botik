@@ -10,7 +10,7 @@ Loopback (127.0.0.0/8, ::1/128) **всегда** разрешён — иначе
 перестанут работать. Это и резервный bypass: если случайно отрезали себе
 доступ, заходим по SSH и:
 
-    sqlite3 vpn_bot.db "UPDATE settings SET value='0' WHERE key='admin_ip_whitelist_enabled'"
+    sqlite3 router_bot.db "UPDATE settings SET value='0' WHERE key='admin_ip_whitelist_enabled'"
 
 Реальный IP клиента берём из заголовков, **только** если запрос пришёл с
 доверенного прокси (по умолчанию loopback). Так обратный прокси

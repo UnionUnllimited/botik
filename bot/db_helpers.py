@@ -1045,7 +1045,7 @@ async def count_active_subscription_users(
 
 
 async def get_active_subscription_users(*, require_uuid: bool = True) -> List[Dict]:
-    """Список пользователей с активной подпиской (для отчётов по VPN-обновлениям)."""
+    """Список пользователей с активной подпиской (для отчётов по обновлениям подписки)."""
     now = datetime.now(timezone.utc)
     rows = await _fetch_active_subscription_candidates(require_uuid=require_uuid, exclude_blocked=True)
     out: List[Dict] = []

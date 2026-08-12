@@ -104,7 +104,7 @@ async def get_main_keyboard(is_trial_available: bool, has_active_sub: bool, sub_
 
     builder = InlineKeyboardBuilder()
 
-    connect_url = app_conf.get('sub_page_url', 'https://vpn.example.com')
+    connect_url = app_conf.get('sub_page_url', 'https://example.com')
     if sub_uuid:
         full_url = f"{connect_url.rstrip('/')}/sub/{sub_uuid}"
     else:

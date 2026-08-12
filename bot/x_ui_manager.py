@@ -1008,7 +1008,7 @@ class XUIManager:
                 email = client_email
                 logger.info(f"[CREATE_XUI_USER] Используется переданный email: {email}")
             else:
-                email = f"tg{telegram_id}_{''.join(random.choices('abcdef0123456789', k=6))}@{app_conf.get('email_domain', 'vpn.bot')}"
+                email = f"tg{telegram_id}_{''.join(random.choices('abcdef0123456789', k=6))}@{app_conf.get('email_domain', 'router.bot')}"
                 logger.info(f"[CREATE_XUI_USER] Сгенерирован новый email: {email}")
             
             # Используем переданную дату истечения или рассчитываем от текущего момента
@@ -2196,10 +2196,10 @@ class XUIManager:
             # Добавляем информацию о том, что статистика может быть неактуальной
             if stats['up'] == 0 and stats['down'] == 0:
                 logger.info(f"Статистика трафика для {user_uuid} показывает 0. Это может означать:")
-                logger.info(f"1. Пользователь еще не использовал VPN")
+                logger.info(f"1. Пользователь еще не пользовался сервисом")
                 logger.info(f"2. Статистика не обновилась в X-UI (может потребоваться время)")
                 logger.info(f"3. Проблема с получением статистики из X-UI")
-                logger.info(f"4. Статистика обновляется только при активном использовании VPN")
+                logger.info(f"4. Статистика обновляется только при активном использовании сервиса")
                 logger.info(f"5. Возможно, нужно перезапустить X-UI сервис для обновления статистики")
             
             # Кэшируем результат

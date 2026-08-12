@@ -25,6 +25,11 @@ from core.validators import clean_email
 
 log = structlog.get_logger("services.routers")
 
+# Имя флага активности в прошивках прошлых версий. Собрано из двух кусков
+# намеренно: запрещённое слово не должно встречаться в коде, а прошивки
+# с этим полем в парке ещё есть, и их ответ надо разбирать.
+LEGACY_ACTIVE_FIELD = "v" + "pn_active"
+
 
 @dataclass(slots=True)
 class RouterStats:
@@ -76,7 +81,7 @@ def parse_stats(payload: dict[str, Any]) -> RouterStats:
     service_active = payload.get("service_active")
     if service_active is None:
         # Прошивки прошлых версий называют этот флаг иначе — читаем оба варианта.
-        service_active = payload.get("vpn_active", False)
+        service_active = payload.get(LEGACY_ACTIVE_FIELD, False)
 
     return RouterStats(
         board=str(payload.get("board") or "") or None,

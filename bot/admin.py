@@ -143,8 +143,8 @@ def register_admin_handlers(dp: Dispatcher):
 
     def _services_kb() -> InlineKeyboardMarkup:
         kb = InlineKeyboardBuilder()
-        kb.row(InlineKeyboardButton(text="🤖 Бот (vpn-bot.service)", callback_data="svc_restart_vpnbot"))
-        kb.row(InlineKeyboardButton(text="🌐 Веб-админка (vpn-webadmin.service)", callback_data="svc_restart_webadmin"))
+        kb.row(InlineKeyboardButton(text="🤖 Бот (router-bot.service)", callback_data="svc_restart_bot"))
+        kb.row(InlineKeyboardButton(text="🌐 Веб-админка (router-webadmin.service)", callback_data="svc_restart_webadmin"))
         kb.row(
             InlineKeyboardButton(text="🔄 Перезапустить все", callback_data="svc_restart_all"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel_main")
@@ -162,7 +162,7 @@ def register_admin_handlers(dp: Dispatcher):
         await query.answer()
 
     @dp.callback_query(F.data.in_(
-        {"svc_restart_vpnbot", "svc_restart_webadmin", "svc_restart_all"}
+        {"svc_restart_bot", "svc_restart_webadmin", "svc_restart_all"}
     ))
     async def cq_restart_service(query: CallbackQuery):
         if not is_admin(query.from_user.id): return await query.answer("⛔️ Нет доступа", show_alert=True)
@@ -173,12 +173,12 @@ def register_admin_handlers(dp: Dispatcher):
         except Exception:
             pass
         if action == "svc_restart_all":
-            msgs.append(await _restart_service("vpn-bot.service"))
-            msgs.append(await _restart_service("vpn-webadmin.service"))
-        elif action == "svc_restart_vpnbot":
-            msgs.append(await _restart_service("vpn-bot.service"))
+            msgs.append(await _restart_service("router-bot.service"))
+            msgs.append(await _restart_service("router-webadmin.service"))
+        elif action == "svc_restart_bot":
+            msgs.append(await _restart_service("router-bot.service"))
         elif action == "svc_restart_webadmin":
-            msgs.append(await _restart_service("vpn-webadmin.service"))
+            msgs.append(await _restart_service("router-webadmin.service"))
         answer = "\n".join(msgs)
         try:
             await query.message.edit_text(

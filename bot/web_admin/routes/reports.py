@@ -499,12 +499,12 @@ def attach_reports_routes(admin_bp_instance, query_db_func, execute_db_func):
         try:
             from devices.database import (
                 get_device_stats,
-                count_new_vpn_devices_first_seen_today,
+                count_new_app_devices_first_seen_today,
                 count_stale_active_subscription_users,
             )
 
             stats = await get_device_stats()
-            today_new = await count_new_vpn_devices_first_seen_today()
+            today_new = await count_new_app_devices_first_seen_today()
             stale_stats = await count_stale_active_subscription_users(stale_hours=24)
             return jsonify({
                 'success': True,
@@ -520,10 +520,10 @@ def attach_reports_routes(admin_bp_instance, query_db_func, execute_db_func):
 
     @admin_bp_instance.route('/api/reports/device-stats/today-new-devices')
     async def api_device_stats_today_new_devices():
-        """Новые VPN-устройства (HWID) за календарные сутки UTC с пагинацией."""
+        """Новые устройства (HWID) за календарные сутки UTC с пагинацией."""
         try:
             from devices.database import (
-                get_new_vpn_devices_first_seen_today_paginated,
+                get_new_app_devices_first_seen_today_paginated,
                 classify_subscription_user_agent,
             )
             import db_helpers
@@ -531,7 +531,7 @@ def attach_reports_routes(admin_bp_instance, query_db_func, execute_db_func):
             page = request.args.get('page', 1, type=int) or 1
             per_page = request.args.get('per_page', 20, type=int) or 20
 
-            batch = await get_new_vpn_devices_first_seen_today_paginated(
+            batch = await get_new_app_devices_first_seen_today_paginated(
                 page=max(1, page),
                 per_page=max(1, min(per_page, 100)),
             )
@@ -575,7 +575,7 @@ def attach_reports_routes(admin_bp_instance, query_db_func, execute_db_func):
                 'per_page': batch['per_page'],
                 'pages': batch['pages'],
                 'items': items_out,
-                'day_note': 'Только устройства, впервые зарегистрированные сегодня (UTC), по полю created_at — не по последнему обновлению подписки. VPN-клиенты с HWID.',
+                'day_note': 'Только устройства, впервые зарегистрированные сегодня (UTC), по полю created_at — не по последнему обновлению подписки. Приложения подписки с HWID.',
             })
         except ImportError:
             return jsonify({'success': False, 'error': 'Модуль devices недоступен'}), 404
@@ -585,7 +585,7 @@ def attach_reports_routes(admin_bp_instance, query_db_func, execute_db_func):
 
     @admin_bp_instance.route('/api/reports/device-stats/stale-subscriptions')
     async def api_device_stats_stale_subscriptions():
-        """Активные клиенты без обновления текстовой подписки дольше порога (VPN-обращения)."""
+        """Активные клиенты без обновления текстовой подписки дольше порога (обращения приложений)."""
         try:
             from devices.database import get_stale_active_subscription_users_paginated
 
@@ -645,7 +645,7 @@ def attach_reports_routes(admin_bp_instance, query_db_func, execute_db_func):
                 'active_subscription_users': batch.get('active_subscription_users', 0),
                 'items': items_out,
                 'day_note': (
-                    f'Только активные подписки без VPN-обновления подписки более {hours} ч. '
+                    f'Только активные подписки, не обновлявшиеся более {hours} ч. '
                     f'(по последнему access_time в журнале устройств).'
                 ),
             })

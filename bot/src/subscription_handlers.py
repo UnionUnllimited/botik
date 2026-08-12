@@ -171,7 +171,7 @@ def register_subscription_handlers(dp: Dispatcher, check_user_blocked_func, send
             # и «Назад в главное меню». Стили/иконки/режим — из button_registry.
             # respect_group_toggle=False — это нотификация об успехе, кнопка
             # подключения обязательна даже если группа «Подключение» скрыта.
-            connect_url = app_conf.get('sub_page_url', 'https://vpn.example.com')
+            connect_url = app_conf.get('sub_page_url', 'https://example.com')
             if sub_uuid:
                 full_url = f"{connect_url.rstrip('/')}/sub/{sub_uuid}"
             else:
