@@ -95,8 +95,26 @@
         {% else %}
           <p class="text-[13px] tw-text-muted2">Клиент не привязан.</p>
           <form method="post" action="{{ url_for('admin.router_bind', device_id=device_id) }}" class="space-y-2">
-            <label class="text-[12px] tw-text-muted2" for="client">Почта, телефон, @username или id</label>
-            <input id="client" name="client" required class="tw-input w-full" placeholder="client@example.com">
+            {% if clients %}
+              {# Выбор из базы, а не ввод строки: опечатка в почте раньше
+                 обнаруживалась только отказом при отправке. #}
+              <label class="text-[12px] tw-text-muted2" for="client">Клиент</label>
+              <select id="client" name="client" required class="tw-select w-full">
+                <option value="">— выберите клиента —</option>
+                {% for item in clients %}
+                <option value="{{ item.value }}">
+                  {{ item.name }}{% if item.username %} · @{{ item.username }}{% endif %}
+                  {% if item.tg_id %} · ID {{ item.tg_id }}{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <label class="text-[12px] tw-text-muted2" for="client">Почта, телефон, @username или id</label>
+              <input id="client" name="client" required class="tw-input w-full" placeholder="client@example.com">
+              <div class="text-[11px] tw-text-subtle2">
+                Список клиентов сейчас недоступен — введите вручную.
+              </div>
+            {% endif %}
             <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Привязать</button>
           </form>
         {% endif %}

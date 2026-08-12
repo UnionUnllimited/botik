@@ -158,6 +158,21 @@ PAGES = {
         "user_raw": {},
         "user_columns_meta": [],
     },
+    "router_card.html": {
+        "device_id": 1,
+        "card": {},
+        "clients": [
+            {"value": "614685408", "tg_id": 614685408, "name": "Union", "username": "union", "phone": ""}
+        ],
+        "router": {"mac": "A0:B1:C2:D3:E4:F5", "model": "", "online": True, "visitor_port": 20003},
+        "client": {},
+        "subscription": {},
+        "panel": {"username": "a0-b1-c2-d3-e4-f5", "until": None, "active": False},
+        "events": [],
+        "fleet_error": "",
+        "console_output": "",
+        "console_command": "",
+    },
     "routers_fleet.html": {
         "fleet": {"total": 1, "online": 1},
         "routers": [

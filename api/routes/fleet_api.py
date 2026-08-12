@@ -275,6 +275,62 @@ async def unbind_router(device_id: int, session: AsyncSession = Depends(get_tran
 # `tg_id`: у бота свои пользователи, у нас свои, общее между ними только он.
 
 
+CLIENTS_LIMIT = 200
+"""Столько клиентов уходит в выпадающий список привязки. Дальше выбирать
+глазами всё равно нельзя — там понадобится поиск, а не длинный список."""
+
+
+@router.get("/clients", dependencies=[Depends(require_token)])
+async def clients_list(session: AsyncSession = Depends(get_session)) -> dict:
+    """Клиенты для выбора при привязке роутера.
+
+    Раньше оператор вводил почту, телефон или id строкой и узнавал об опечатке
+    только по отказу. Список из базы такой возможности не оставляет.
+    """
+    users = list(
+        await session.scalars(select(User).order_by(User.id.desc()).limit(CLIENTS_LIMIT))
+    )
+    return {
+        "total": len(users),
+        "limit": CLIENTS_LIMIT,
+        "clients": [
+            {
+                # Привязка ищет клиента по этому значению: tg_id понятнее
+                # внутреннего номера и совпадает с тем, что видно в их админке.
+                "value": str(user.tg_id or user.id),
+                "tg_id": user.tg_id,
+                "name": user.display_name,
+                "username": user.username or "",
+                "phone": user.phone or "",
+            }
+            for user in users
+        ],
+    }
+
+
+@router.get("/clients/routers", dependencies=[Depends(require_token)])
+async def routers_of_clients(tg_ids: str = "", session: AsyncSession = Depends(get_session)) -> dict:
+    """MAC-адреса по списку клиентов — колонка «Роутер» в их списке клиентов.
+
+    Одним запросом на страницу, а не по клиенту на строку: иначе список
+    из тридцати человек стоил бы тридцати обращений по сети.
+    """
+    wanted = [int(part) for part in tg_ids.split(",") if part.strip().lstrip("-").isdigit()]
+    if not wanted:
+        return {"routers": {}}
+
+    rows = await session.execute(
+        select(User.tg_id, Device.id, Device.mac)
+        .join(Device, Device.user_id == User.id)
+        .where(User.tg_id.in_(wanted))
+        .order_by(Device.id.desc())
+    )
+    found: dict[str, list[dict]] = {}
+    for tg_id, device_id, mac in rows:
+        found.setdefault(str(tg_id), []).append({"id": device_id, "mac": mac})
+    return {"routers": found}
+
+
 def _client_router_row(device: Device, *, now) -> dict:
     return {
         "id": device.id,

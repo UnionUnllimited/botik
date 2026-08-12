@@ -14,6 +14,8 @@ import os
 import httpx
 from quart import flash, redirect, render_template, request, url_for
 
+from src import shop_api
+
 FLEET_TIMEOUT_SEC = 8
 ACTION_TIMEOUT_SEC = 90
 """Активация идёт до самого роутера по SSH и занимает до минуты."""
@@ -119,10 +121,14 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
 
     async def _render_card(device_id: int, *, console_output: str = "", console_command: str = ""):
         data, error = await _get(f"/api/v1/fleet/routers/{device_id}")
+        # Клиенты для выбора при привязке. Пустой список — не беда: форма
+        # переключится на ввод вручную и скажет об этом.
+        clients, _ = await shop_api.clients()
         return await render_template(
             "router_card.html",
             device_id=device_id,
             card=data,
+            clients=clients,
             router=data.get("router", {}),
             client=data.get("client", {}),
             subscription=data.get("subscription", {}),

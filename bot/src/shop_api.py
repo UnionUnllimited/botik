@@ -199,6 +199,22 @@ async def my_router(tg_id: int) -> tuple[dict, str]:
 # --- Роутеры клиента ---------------------------------------------------------
 
 
+async def clients() -> tuple[list[dict], str]:
+    """Клиенты для выпадающего списка привязки."""
+    data, error = await get("/api/v1/fleet/clients")
+    return data.get("clients", []), error
+
+
+async def routers_of_clients(tg_ids: list[int]) -> tuple[dict, str]:
+    """MAC-адреса по списку клиентов: один запрос на страницу списка."""
+    if not tg_ids:
+        return {}, ""
+    data, error = await get(
+        "/api/v1/fleet/clients/routers", {"tg_ids": ",".join(str(item) for item in tg_ids)}
+    )
+    return data.get("routers", {}), error
+
+
 async def client_routers(tg_id: int) -> tuple[dict, str]:
     return await get(f"/api/v1/fleet/clients/{tg_id}/routers")
 

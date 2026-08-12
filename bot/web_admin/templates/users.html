@@ -186,6 +186,7 @@
               <th style="min-width: 120px;">Telegram&nbsp;ID</th>
               <th style="min-width: 130px;">@username</th>
               <th style="min-width: 150px;">Тег</th>
+              <th style="min-width: 130px;">Роутер</th>
               <th style="min-width: 80px;">С нами</th>
               <th style="min-width: 95px;">Подписка</th>
               <th style="min-width: 70px;">Лимит</th>
@@ -251,6 +252,19 @@
                   <option value="{{ opt }}" {% if user.get('user_tag') == opt %}selected{% endif %}>{{ opt }}</option>
                   {% endfor %}
                 </select>
+              </td>
+              <td>
+                {# Роутеры клиента приходят одной картой на всю страницу:
+                   запрос на строку стоил бы тридцати обращений по сети. #}
+                {% set macs = (client_routers_map|default({})).get(user['telegram_id']|string, []) %}
+                {% if macs %}
+                  {% for item in macs %}
+                  <a href="{{ url_for('admin.router_card', device_id=item.id) }}"
+                     class="font-mono text-[12px] block">{{ item.mac }}</a>
+                  {% endfor %}
+                {% else %}
+                  <span class="tw-text-subtle2">—</span>
+                {% endif %}
               </td>
               <td>
                 {% if user.get('days_with_us') is not none %}
