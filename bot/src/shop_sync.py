@@ -73,11 +73,46 @@ async def sync_once() -> tuple[dict, str]:
     return data, error
 
 
+async def sync_subscriptions() -> int:
+    """Переносит подписки роутеров в нашу таблицу `users`.
+
+    Дашборд, фильтры «активные/истёкшие», рассылки и шапка карточки клиента
+    читают одно поле `subscription_end_date` в нашей базе. Подписка роутера
+    живёт в основном приложении, и без этого зеркала везде показывается
+    «Без подписки» — сколько экранов ни правь.
+
+    Пишем только тем, у кого подписка там есть: свои записи, если продукт
+    когда-нибудь снова начнут продавать подпиской для телефона, не трогаем.
+    """
+    rows, error = await shop_api.subscriptions_snapshot()
+    if error:
+        logger.debug(f"[SUBS] снимок подписок недоступен: {error}")
+        return 0
+
+    updated = 0
+    async with db_helpers.get_db_connection_safe() as db:
+        for row in rows:
+            until = row.get("until")
+            if not row.get("tg_id") or not until:
+                continue
+            cursor = await db.execute(
+                "UPDATE users SET subscription_end_date = ? WHERE telegram_id = ?",
+                (until, int(row["tg_id"])),
+            )
+            updated += cursor.rowcount or 0
+        await db.commit()
+
+    if updated:
+        logger.info(f"[SUBS] подписок перенесено в базу бота: {updated}")
+    return updated
+
+
 async def sync_loop() -> None:
-    logger.info("[TARIFFS] синхронизация тарифов с каталогом запущена")
+    logger.info("[TARIFFS] синхронизация тарифов и подписок с каталогом запущена")
     while True:
         try:
             await sync_once()
+            await sync_subscriptions()
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — цикл переживает что угодно

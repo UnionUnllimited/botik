@@ -41,7 +41,7 @@ from core.enums import (
     PaymentPurpose,
     VatCode,
 )
-from core.models import Device, Notification, Order, Payment, Plan, Product, User
+from core.models import Device, Notification, Order, Payment, Plan, Product, Subscription, User
 from core.security import normalize_mac
 from core.services import activation, media, settings_service
 from core.services import delivery as delivery_service
@@ -543,6 +543,36 @@ async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) ->
         "router": router_payload,
         "order": _order_payload(order) if order is not None else None,
     }
+
+
+@router.get("/subscriptions")
+async def subscriptions_snapshot(session: AsyncSession = Depends(get_session)) -> dict:
+    """Все подписки клиентов с Telegram — для зеркала в базе бота.
+
+    Его дашборд, фильтры, рассылки и шапка карточки клиента читают одно поле
+    `users.subscription_end_date` в его собственной базе. Подписка роутера живёт
+    у нас, и без зеркала там честное «Без подписки» — сколько экранов ни правь.
+    Поэтому отдаём снимок целиком, а бот раскладывает его по своим строкам.
+    """
+    rows = await session.execute(
+        select(User.tg_id, Subscription.status, Subscription.expires_at)
+        .join(Subscription, Subscription.user_id == User.id)
+        .where(User.tg_id.is_not(None))
+        .order_by(Subscription.id)
+    )
+    latest: dict[int, dict] = {}
+    for tg_id, state, expires_at in rows:
+        # Подписок у человека может быть несколько за историю; в базе бота
+        # поле одно, и туда должна попасть последняя по сроку.
+        current = latest.get(tg_id)
+        if current and current["until"] and expires_at and current["until"] >= expires_at.isoformat():
+            continue
+        latest[tg_id] = {
+            "tg_id": tg_id,
+            "status": str(state),
+            "until": _iso_dt(expires_at),
+        }
+    return {"total": len(latest), "subscriptions": list(latest.values())}
 
 
 # --- Очередь сообщений -------------------------------------------------------

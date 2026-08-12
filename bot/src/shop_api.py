@@ -182,6 +182,12 @@ async def create_order(payload: dict) -> tuple[dict, str]:
     return await post("/api/v1/catalog/orders", payload)
 
 
+async def subscriptions_snapshot() -> tuple[list[dict], str]:
+    """Все подписки клиентов — для зеркала в нашей базе."""
+    data, error = await get("/api/v1/catalog/subscriptions")
+    return data.get("subscriptions", []), error
+
+
 async def renew_state(tg_id: int) -> tuple[dict, str]:
     """Текущий срок и периоды для экрана продления."""
     return await get("/api/v1/catalog/renew", {"tg_id": tg_id})
