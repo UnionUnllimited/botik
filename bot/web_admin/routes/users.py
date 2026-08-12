@@ -587,11 +587,15 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                 order_by_sql = "".join(order_by_sql)
 
             if has_is_blocked and has_is_active:
-                # Формируем uuid_filter: исключаем пустые UUID, если фильтр empty_uuid_only не включен
+                # Отбор по учётке в панели: обычный список показывает всех, отдельный фильтр — только пустые UUID
                 if empty_uuid_only:
                     uuid_filter = ""  # Показываем только пустые UUID через where_parts
                 else:
-                    uuid_filter = "AND (u.xui_client_uuid IS NOT NULL AND u.xui_client_uuid != '')"  # Исключаем пустые UUID
+                    # Клиента, у которого ещё нет учётки в панели, не прячем: у роутеров
+                    # человек появляется с первого /start и задолго до подписки,
+                    # а оператору его искать — чтобы привязать роутер к заказу.
+                    # Отбор «только пустые UUID» остался отдельным фильтром.
+                    uuid_filter = ""
                 
                 base_sql = (
                     f"""
@@ -676,11 +680,15 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                 final_sql = base_sql.format(server_filter=server_filter_str, uuid_filter=uuid_filter, having_clause=having_sql, order_by_sql=order_by_sql, limit_clause=limit_clause)
                 users = await async_query_db(final_sql, tuple(final_params))
             elif has_is_blocked and not has_is_active:
-                # Формируем uuid_filter: исключаем пустые UUID, если фильтр empty_uuid_only не включен
+                # Отбор по учётке в панели: обычный список показывает всех, отдельный фильтр — только пустые UUID
                 if empty_uuid_only:
                     uuid_filter = ""  # Показываем только пустые UUID через where_parts
                 else:
-                    uuid_filter = "AND (u.xui_client_uuid IS NOT NULL AND u.xui_client_uuid != '')"  # Исключаем пустые UUID
+                    # Клиента, у которого ещё нет учётки в панели, не прячем: у роутеров
+                    # человек появляется с первого /start и задолго до подписки,
+                    # а оператору его искать — чтобы привязать роутер к заказу.
+                    # Отбор «только пустые UUID» остался отдельным фильтром.
+                    uuid_filter = ""
                 
                 base_sql = (
                     f"""
@@ -766,7 +774,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     final_params = [day_ago_utc_str] + final_params
                 users = await async_query_db(base_sql.format(server_filter=" ".join(where_parts), uuid_filter=uuid_filter, having_clause=having_sql, order_by_sql=order_by_sql, limit_clause=limit_clause), tuple(final_params))
             else:
-                # Формируем uuid_filter: исключаем пустые UUID, если фильтр empty_uuid_only не включен
+                # Отбор по учётке в панели: обычный список показывает всех, отдельный фильтр — только пустые UUID
                 if empty_uuid_only:
                     uuid_filter = ""  # Показываем только пустые UUID через where_parts
                 else:
@@ -901,11 +909,15 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             if skip_count:
                 total_users = len(users_list_local)
             elif has_is_blocked and has_is_active:
-                # Формируем uuid_filter для count_sql: исключаем пустые UUID, если фильтр empty_uuid_only не включен
+                # То же для счётчика: список и его число должны считаться по одному правилу
                 if empty_uuid_only:
                     uuid_filter_count = ""  # Показываем только пустые UUID через where_parts
                 else:
-                    uuid_filter_count = "AND (u.xui_client_uuid IS NOT NULL AND u.xui_client_uuid != '')"  # Исключаем пустые UUID
+                    # Клиента, у которого ещё нет учётки в панели, не прячем: у роутеров
+                    # человек появляется с первого /start и задолго до подписки,
+                    # а оператору его искать — чтобы привязать роутер к заказу.
+                    # Отбор «только пустые UUID» остался отдельным фильтром.
+                    uuid_filter_count = ""
                 
                 count_sql = (
                     """
@@ -953,11 +965,15 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     params.append(min_referrals)
                 total_users = await count_with(count_sql.format(server_filter=" ".join(where_parts), uuid_filter=uuid_filter_count, having_clause=having_sql), tuple(params))
             elif has_is_blocked and not has_is_active:
-                # Формируем uuid_filter для count_sql: исключаем пустые UUID, если фильтр empty_uuid_only не включен
+                # То же для счётчика: список и его число должны считаться по одному правилу
                 if empty_uuid_only:
                     uuid_filter_count = ""  # Показываем только пустые UUID через where_parts
                 else:
-                    uuid_filter_count = "AND (u.xui_client_uuid IS NOT NULL AND u.xui_client_uuid != '')"  # Исключаем пустые UUID
+                    # Клиента, у которого ещё нет учётки в панели, не прячем: у роутеров
+                    # человек появляется с первого /start и задолго до подписки,
+                    # а оператору его искать — чтобы привязать роутер к заказу.
+                    # Отбор «только пустые UUID» остался отдельным фильтром.
+                    uuid_filter_count = ""
                 
                 count_sql = (
                     """
