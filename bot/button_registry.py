@@ -198,14 +198,13 @@ MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
 })
 
 DEFAULT_MAIN_MENU_LAYOUT: list[list[str]] = [
-    ['btn_connect'],
-    ['btn_iphone', 'btn_android'],
+    # Порядок под роутеры: сначала своё устройство и покупка, потом продление.
+    # Кнопки подключения для приложений, «Мои устройства», гигабайты и лимит
+    # устройств в раскладку не входят — они от подписки для телефона и роутеру
+    # не нужны. Ключи остались в реестре: вернуть любую — дело раскладки.
     ['btn_my_router'],
     ['btn_catalog', 'btn_my_orders'],
-    ['btn_website_access'],
     ['btn_renew_sub'],
-    ['btn_traffic_renewal'],
-    ['btn_device_upgrade'],
     ['btn_referral', 'btn_support'],
     ['btn_about_service'],
     ['btn_bot_custom_url'],

@@ -582,18 +582,13 @@
             {% set on_topup = request.path.startswith(_topup_url) %}
             {% set on_renew = request.path.startswith(_tariffs_url) and not on_devlim %}
             {% set is_tariffs = on_renew or on_topup or on_devlim %}
-            <div class="tw-nav-section tw-sidebar-label">Тарифы</div>
-            <div class="tw-nav-group {% if is_tariffs %}open{% endif %}" data-tw-group>
-                <div class="tw-nav-link {% if is_tariffs %}active{% endif %}" data-tw-toggle>
-                    <i data-lucide="tag" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Тарифы</span>
-                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 tw-nav-group-icon tw-sidebar-label"></i>
-                </div>
-                <div class="tw-nav-sub {% if is_tariffs %}open{% endif %}">
-                    <a href="{{ _tariffs_url }}" class="{% if on_renew %}active{% endif %}"><i data-lucide="repeat" class="w-3.5 h-3.5"></i> Продление</a>
-                    <a href="{{ _topup_url }}" class="{% if on_topup %}active{% endif %}"><i data-lucide="trending-up" class="w-3.5 h-3.5"></i> Докупить GB</a>
-                    <a href="{{ _devlim_url }}" class="{% if on_devlim %}active{% endif %}"><i data-lucide="smartphone" class="w-3.5 h-3.5"></i> Лимит устройств</a>
-                </div>
-            </div>
+            {# «Докупить GB» и «Лимит устройств» из меню убраны: тариф роутера
+               меряется временем, а за роутером сидит вся домашняя сеть —
+               считать её поштучно и продавать гигабайты нечему. Страницы живы
+               по прямым ссылкам, если продукт снова сменит назначение. #}
+            <a href="{{ _tariffs_url }}" class="tw-nav-link {% if on_renew %}active{% endif %}">
+                <i data-lucide="tag" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Сроки подписки</span>
+            </a>
             {% endif %}
 
             {# Настройки #}

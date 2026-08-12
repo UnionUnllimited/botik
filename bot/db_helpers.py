@@ -417,12 +417,32 @@ async def populate_default_settings():
 
         # Каталог роутеров: экраны в боте и тумблер раздела. Тексты правятся
         # там же, где остальные, — на странице текстов в админке.
-        from src.shop_texts import catalog_defaults
+        from src.shop_texts import PROFILE_MARK, ROUTER_PROFILE, catalog_defaults
         for key, value, description in catalog_defaults():
             await db.execute(
                 "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
                 (key, value, description),
             )
+
+        # Профиль роутеров: выключаем то, что осталось от подписки для телефона.
+        # Один раз и с отметкой — иначе мы бы каждым запуском отменяли решение
+        # оператора, если он сознательно включил что-то обратно.
+        async with db.execute(
+            "SELECT 1 FROM settings WHERE key = ?", (PROFILE_MARK,)
+        ) as cursor:
+            applied = await cursor.fetchone()
+        if not applied:
+            for key, value, description in ROUTER_PROFILE:
+                await db.execute(
+                    "INSERT INTO settings (key, value, description) VALUES (?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, value, description),
+                )
+            await db.execute(
+                "INSERT INTO settings (key, value, description) VALUES (?, '1', ?)",
+                (PROFILE_MARK, "Профиль роутеров применён: лишние возможности выключены"),
+            )
+            logger.info("Профиль роутеров применён: выключено лишнее от подписки для телефона")
 
         # Добавляем настройки для пробного периода
         trial_settings = [
