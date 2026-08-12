@@ -1144,8 +1144,6 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
         btn_referral = '👥 Реферальная программа'
         btn_video_instruction = '📹 Видео инструкция'
         show_website_button = False
-        show_device_upgrade_button = False
-        btn_device_upgrade = '📱 Расширить лимит устройств'
         try:
             row = await async_query_db("SELECT value FROM settings WHERE key = 'btn_renew_sub'", (), one=True)
             if row and row.get('value'):
@@ -1168,18 +1166,6 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             row = await async_query_db("SELECT value FROM settings WHERE key = 'show_website_button'", (), one=True)
             if row and str(row.get('value', '0')) == '1':
                 show_website_button = True
-        except Exception:
-            pass
-        try:
-            row = await async_query_db("SELECT value FROM settings WHERE key = 'device_upgrade_enabled'", (), one=True)
-            if row and str(row.get('value', '0')) == '1':
-                show_device_upgrade_button = True
-        except Exception:
-            pass
-        try:
-            row = await async_query_db("SELECT value FROM settings WHERE key = 'btn_device_upgrade'", (), one=True)
-            if row and row.get('value'):
-                btn_device_upgrade = row['value']
         except Exception:
             pass
 
@@ -1225,8 +1211,6 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             btn_referral=btn_referral,
             btn_video_instruction=btn_video_instruction,
             show_website_button=show_website_button,
-            show_device_upgrade_button=show_device_upgrade_button,
-            btn_device_upgrade=btn_device_upgrade,
             search_query=search_query,
             traffic_source=traffic_source,
         )

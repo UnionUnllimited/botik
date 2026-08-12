@@ -543,8 +543,6 @@ def attach_news_routes(admin_bp_instance, query_db_func, execute_db_func):
                 add_referral_btn = data.get('add_referral_btn', False)
                 send_ins_video = data.get('send_ins_video', False)
                 add_website_btn = data.get('add_website_btn', False)
-                add_devices_btn = data.get('add_devices_btn', False)
-                add_device_upgrade_btn = data.get('add_device_upgrade_btn', False)
                 custom_btn_text = (data.get('custom_btn_text', '') or '').strip()
                 custom_btn_url = (data.get('custom_btn_url', '') or '').strip()
                 _media = data.get('media') or {}
@@ -563,8 +561,6 @@ def attach_news_routes(admin_bp_instance, query_db_func, execute_db_func):
                 add_referral_btn = 'add_referral_btn' in form
                 send_ins_video = 'send_ins_video' in form
                 add_website_btn = 'add_website_btn' in form
-                add_devices_btn = 'add_devices_btn' in form
-                add_device_upgrade_btn = 'add_device_upgrade_btn' in form
                 custom_btn_text = (form.get('custom_btn_text', '') or '').strip()
                 custom_btn_url = (form.get('custom_btn_url', '') or '').strip()
                 mk = (form.get('media_kind') or '').strip().lower()
@@ -582,8 +578,6 @@ def attach_news_routes(admin_bp_instance, query_db_func, execute_db_func):
                 add_referral_btn = 'add_referral_btn' in form
                 send_ins_video = 'send_ins_video' in form
                 add_website_btn = 'add_website_btn' in form
-                add_devices_btn = 'add_devices_btn' in form
-                add_device_upgrade_btn = 'add_device_upgrade_btn' in form
                 custom_btn_text = (form.get('custom_btn_text', '') or '').strip()
                 custom_btn_url = (form.get('custom_btn_url', '') or '').strip()
                 mk = (form.get('media_kind') or '').strip().lower()
@@ -597,7 +591,7 @@ def attach_news_routes(admin_bp_instance, query_db_func, execute_db_func):
                 await flash(f'Ошибка при обработке запроса: {e}', 'danger')
                 return redirect(url_for('admin.users_list'))
         
-        logger.info(f"[NEWS] Параметры: add_renew_btn={add_renew_btn}, add_free_renew_btn={add_free_renew_btn}, add_referral_btn={add_referral_btn}, add_website_btn={add_website_btn}, add_devices_btn={add_devices_btn}, add_device_upgrade_btn={add_device_upgrade_btn}")
+        logger.info(f"[NEWS] Параметры: add_renew_btn={add_renew_btn}, add_free_renew_btn={add_free_renew_btn}, add_referral_btn={add_referral_btn}, add_website_btn={add_website_btn}")
         if media_file_id:
             logger.info(f"[NEWS] Медиа-аттач: kind={media_kind}, file_id={(media_file_id[:32] + '…') if media_file_id else '-'}, "
                         f"caption_inline={'yes' if len(news_text) <= TG_CAPTION_LIMIT else 'no (text>1024, отдельным сообщением)'}")
@@ -639,10 +633,6 @@ def attach_news_routes(admin_bp_instance, query_db_func, execute_db_func):
                                 buttons.append([btn('btn_referral', callback_data='referral_program')])
                             if add_website_btn:
                                 buttons.append([btn('btn_website_access', callback_data='website_access')])
-                            if add_devices_btn:
-                                buttons.append([btn('btn_my_devices', callback_data='my_devices')])
-                            if add_device_upgrade_btn:
-                                buttons.append([btn('btn_device_upgrade', callback_data='device_upgrade_start')])
                             # Кастомная кнопка, если корректно заполнены поля
                             if custom_btn_text and custom_btn_url and (custom_btn_url.startswith('http://') or custom_btn_url.startswith('https://')):
                                 buttons.append([InlineKeyboardButton(text=custom_btn_text, url=custom_btn_url)])

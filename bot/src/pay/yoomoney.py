@@ -118,54 +118,6 @@ async def create_yoomoney_quickpay(
         return None
 
 
-async def create_yoomoney_quickpay_device_upgrade(
-    *,
-    account: str,
-    user_id: int,
-    new_limit: int,
-    upgrade_meta: dict,
-) -> Optional[tuple[str, str]]:
-    """Создаёт Quickpay-форму YooMoney для расширения лимита устройств.
-
-    ``upgrade_meta`` — результат ``device_upgrade_service.build_payment_metadata()``
-    (содержит ``payment_type='device_limit_upgrade'``, ``new_limit``, ``old_limit``,
-    ``price``, ``currency``, ``telegram_user_id``).
-
-    payment_id формируется как ``YOOMONEY_DEVICE_UPGRADE_<ts>_<uid>`` — webhook
-    (``payment_type == 'device_limit_upgrade'``) применит апгрейд через
-    ``process_successful_payment``.
-
-    Возвращает ``(payment_id, redirect_url)`` или ``None`` при ошибке.
-    """
-    import time as _time
-
-    amount = float(upgrade_meta.get("price") or 0)
-    if amount <= 0:
-        logger.error(f"[PAYMENT] device_upgrade YooMoney: неверная сумма {amount}")
-        return None
-
-    payment_id = f"YOOMONEY_DEVICE_UPGRADE_{int(_time.time())}_{user_id}"
-    meta = dict(upgrade_meta)
-    meta.setdefault("telegram_user_id", int(user_id))
-    meta.setdefault("user_id", int(user_id))  # webhook читает meta['user_id']
-    meta.setdefault("amount", amount)          # webhook читает meta['amount']
-    meta.setdefault("payment_method", "YooMoney")
-    meta.setdefault("registration_type", "site")
-
-    url = await create_yoomoney_quickpay(
-        account=account,
-        telegram_id=int(user_id),
-        payment_id=payment_id,
-        amount=amount,
-        currency=str(meta.get("currency") or "RUB"),
-        target_text=f"Расширение лимита устройств до {new_limit}",
-        metadata=meta,
-    )
-    if not url:
-        return None
-    return payment_id, url
-
-
 async def verify_yoomoney_payment_via_api(
     label: str,
     operation_id: Optional[str],
@@ -378,7 +330,6 @@ def verify_yoomoney_signature(
 __all__ = [
     "build_yoomoney_quickpay_url",
     "create_yoomoney_quickpay",
-    "create_yoomoney_quickpay_device_upgrade",
     "verify_yoomoney_payment_via_api",
     "verify_yoomoney_signature",
 ]

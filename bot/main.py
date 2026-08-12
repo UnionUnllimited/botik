@@ -50,7 +50,6 @@ from subscription_manager import grant_subscription
 from tg_sender import get_bot_token
 from src.telegram_bot_factory import make_aiogram_bot, normalize_telegram_proxy_url
 from src.subscription_handlers import register_subscription_handlers, show_trial_progress, show_trial_progress_edit
-from src.device_upgrade_handlers import register_device_upgrade_handlers
 from src.router_catalog import register_router_catalog_handlers, remember_client
 from src.shop_outbox import start_outbox
 from src.shop_sync import start_tariff_sync
@@ -749,15 +748,6 @@ def _format_device_limit_label(limit: int) -> str:
     return f"📱 {limit} Лимит устройств"
 
 
-def _device_upgrade_enabled() -> bool:
-    """True если включена pro-rata фича (device_upgrade_enabled=1).
-
-    При включённой фиче выбор «другого лимита» при продлении всё равно доступен
-    в окне ≤7 дней до конца подписки — см. _renewal_pick_other_limits_from_ctx.
-    """
-    return str(app_conf.get('device_upgrade_enabled', '0')) == '1'
-
-
 def _no_tariffs_for_limit_text(target_limit: int | None) -> str:
     """Текст-заглушка, когда под лимит клиента нет активных тарифов."""
     if target_limit and target_limit > 0:
@@ -800,9 +790,6 @@ class BotProtection(StatesGroup):
 class WebsiteEmailLink(StatesGroup):
     waiting_email = State()
     waiting_code  = State()
-
-class MyDeviceRename(StatesGroup):
-    waiting_name = State()
 
 # --- Вспомогательные функции ---
 async def check_user_blocked(user_id: int) -> bool:
@@ -892,23 +879,6 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
         # Проверяем тип платежа для уже обработанных платежей
         payment_type = payment_metadata.get('payment_type') if payment_metadata else None
         logger.info(f"Платеж {payment_id}: payment_type из metadata = {payment_type}")
-        if payment_type == 'device_limit_upgrade':
-            # Apply_upgrade сам идемпотентен по payment_id — возвращает 'already_applied'.
-            from src.device_upgrade_service import apply_upgrade as _apply_device_upgrade
-            try:
-                _new_limit = int(payment_metadata.get('new_limit') or 0)
-            except (ValueError, TypeError):
-                _new_limit = 0
-            if _new_limit > 0:
-                _res = await _apply_device_upgrade(
-                    telegram_id=telegram_user_id,
-                    new_limit=_new_limit,
-                    payment_id=payment_id,
-                    source='user_purchase',
-                    reason=f"payment {payment_id} (retry)",
-                )
-                logger.info(f"Платеж {payment_id}: device_limit_upgrade retry result={_res}")
-            return True
         # ── 'traffic_reset' (платный сброс трафика отдельной кнопкой) удалён.
         # Автоматический сброс при продлении подписки в «No Limit+» делается
         # в grant_subscription через reset_traffic_on_renewal=True — это
@@ -1013,61 +983,6 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
     # Проверяем тип платежа: сброс трафика, продление трафика или продление подписки
     payment_type = payment_metadata.get('payment_type') if payment_metadata else None
     logger.info(f"Платеж {payment_id}: обработка нового платежа, payment_type = {payment_type}, payment_metadata = {payment_metadata}")
-
-    if payment_type == 'device_limit_upgrade':
-        # Расширение лимита устройств — меняем только users.limit_ip в БД.
-        # На X-UI/Remnawave новый лимит уедет при следующем grant_subscription.
-        from src.device_upgrade_service import apply_upgrade as _apply_device_upgrade
-        try:
-            new_limit = int(payment_metadata.get('new_limit') or 0)
-        except (ValueError, TypeError):
-            new_limit = 0
-        if new_limit <= 0:
-            logger.error(f"Платеж {payment_id}: device_limit_upgrade без корректного new_limit ({payment_metadata})")
-            await db_helpers.update_payment_status(payment_id, 'failed')
-            try:
-                await bot.send_message(
-                    telegram_user_id,
-                    "❌ Не удалось применить расширение лимита (некорректные данные платежа). Обратитесь в поддержку.",
-                    reply_markup=keyboards.get_back_to_main_keyboard(),
-                )
-            except Exception:
-                pass
-            return False
-
-        result = await _apply_device_upgrade(
-            telegram_id=telegram_user_id,
-            new_limit=new_limit,
-            payment_id=payment_id,
-            source='user_purchase',
-            reason=f"payment {payment_id}",
-        )
-        if result.get('ok'):
-            await db_helpers.update_payment_status(payment_id, 'succeeded')
-            old_limit = result.get('old_limit')
-            try:
-                await bot.send_message(
-                    telegram_user_id,
-                    f"✅ <b>Лимит устройств расширен!</b>\n\n"
-                    f"🔄 Лимит: {old_limit if (old_limit is not None and old_limit >= 0) else '—'} → <b>{new_limit}</b>",
-                    reply_markup=keyboards.get_back_to_main_keyboard(),
-                    parse_mode='HTML',
-                )
-            except Exception as _e:
-                logger.warning(f"Платеж {payment_id}: не удалось уведомить пользователя: {_e}")
-            return True
-        else:
-            logger.error(f"Платеж {payment_id}: apply_upgrade failed: {result}")
-            await db_helpers.update_payment_status(payment_id, 'failed')
-            try:
-                await bot.send_message(
-                    telegram_user_id,
-                    "❌ Ошибка при применении нового лимита. Обратитесь в поддержку.",
-                    reply_markup=keyboards.get_back_to_main_keyboard(),
-                )
-            except Exception:
-                pass
-            return False
 
     if payment_type == 'traffic_renewal':
         # Обработка продления трафика для Remnawave
@@ -2734,46 +2649,6 @@ async def handle_cryptobot_invoice_paid(payment_id: str, payload_str: str) -> No
         await process_successful_payment(paid_user_id, payment_id, payment_metadata_db)
         return
 
-    # ── Расширение лимита устройств ──────────────────────────────────────────
-    if "device_upgrade" in ps and ps.lstrip().startswith("{"):
-        try:
-            pl = json.loads(ps)
-            if pl.get("op") == "device_upgrade":
-                paid_user_id = int(pl.get("user_id") or 0)
-                new_limit = int(pl.get("new_limit") or 0)
-                if paid_user_id <= 0 or new_limit <= 0:
-                    raise ValueError("invalid device_upgrade payload")
-
-                db_payment = await db_helpers.get_payment(payment_id)
-                if db_payment and db_payment[4] == "succeeded":
-                    return
-
-                payment_metadata_db = {}
-                if db_payment and db_payment[6]:
-                    try:
-                        payment_metadata_db = json.loads(db_payment[6])
-                    except Exception:
-                        pass
-
-                payment_metadata_db["payment_type"] = "device_limit_upgrade"
-                payment_metadata_db["new_limit"] = new_limit
-                payment_metadata_db.setdefault("telegram_user_id", paid_user_id)
-                payment_metadata_db.setdefault("payment_method", "CryptoBot")
-
-                # Не помечаем 'succeeded' заранее: тогда process_successful_payment
-                # уйдёт в retry-ветку и НЕ отправит пользователю сообщение об
-                # успешном расширении лимита. Статус выставит сам обработчик
-                # в основном пути (line ~978).
-                await process_successful_payment(paid_user_id, payment_id, payment_metadata_db)
-                return
-        except Exception as e:
-            logger.error(
-                f"CryptoBot: device_upgrade упал для {payment_id}, payload={ps!r}: {e}",
-                exc_info=True,
-            )
-            await db_helpers.update_payment_status(payment_id, "failed")
-            return
-
     # ── Продление подписки (формат user|tariff|days|limit_ip) ─────────────────
     try:
         user_id_str, tariff_id_str, days_str, limit_ip_str = ps.split("|")
@@ -3725,13 +3600,7 @@ async def _render_renew_tariffs_for_method(query: CallbackQuery, method: str):
     except Exception:
         unique_limits = set()
 
-    show_change_limit_btn = (
-        len(unique_limits) > 1
-        and (
-            not _device_upgrade_enabled()
-            or _renewal_pick_other_limits_from_ctx(ctx_rlim)
-        )
-    )
+    show_change_limit_btn = len(unique_limits) > 1
 
     if show_change_limit_btn:
         rows.append([InlineKeyboardButton(
@@ -3769,9 +3638,8 @@ async def cq_renew_choose_method(query: CallbackQuery):
 async def cq_renew_increase_limit(query: CallbackQuery):
     """Экран выбора лимита устройств → затем тарифы с этим лимитом.
 
-    При выключенной pro-rata (device_upgrade_enabled=0) кнопка видна всегда при
-    нескольких лимитах в тарифах. При включённой pro-rata — только в окне продления
-    (≤7 дней / истекла), см. _renewal_pick_other_limits_from_ctx.
+    Показывается при нескольких лимитах в тарифах. Окно продления и pro-rata
+    ушли вместе с расширением лимита: у роутера за подпиской домашняя сеть.
     """
     if await check_user_blocked(query.from_user.id):
         await send_blocked_message(query.from_user.id, query)
@@ -3787,17 +3655,6 @@ async def cq_renew_increase_limit(query: CallbackQuery):
             method = parts[0] or "yookassa"
     except Exception:
         pass
-
-    upgrade_on = _device_upgrade_enabled()
-    renewal_pick = await _renewal_window_allows_other_device_limits(query.from_user.id)
-
-    # Раньше при включённой pro-rata сразу кидали в плоский список — кнопка не работала.
-    if upgrade_on and not renewal_pick:
-        if method == "platega":
-            await cq_renew_choose_platega(query)
-        else:
-            await _render_renew_tariffs_for_method(query, method)
-        return
 
     try:
         tariffs = await db_helpers.get_active_tariffs()
@@ -4754,7 +4611,6 @@ async def cq_traffic_renewal_choose_tgstar(query: CallbackQuery):
     # provider_token для XTR (Telegram Stars) НЕ требуется с осени 2024 —
     # Telegram принимает Stars-инвойсы напрямую. Поле в админке оставляем
     # опциональным; если пусто — отправляем пустую строку, send_invoice примет.
-    # См. также src/device_upgrade_handlers.py:172 (там та же логика).
     provider_token = app_conf.get('tgstar_provider_token') or ''
 
     # Проверяем, есть ли ID тарифа в callback_data
@@ -4931,22 +4787,6 @@ async def cq_renew_choose_by_limit(query: CallbackQuery):
             limit_required = int(lim_str)
     except Exception as e:
         logger.warning(f"renew_limit: parse failed for {query.data}: {e}")
-
-    if _device_upgrade_enabled():
-        if not await _renewal_window_allows_other_device_limits(query.from_user.id):
-            if method == "platega":
-                await cq_renew_choose_platega(query)
-            else:
-                await _render_renew_tariffs_for_method(query, method)
-            return
-        ctx_chk = await _renewal_limit_ui_context(query.from_user.id)
-        ul_now = int(ctx_chk['user_limit'] or 0)
-        if not _tariff_limit_same_or_higher_for_renewal(limit_required, ul_now):
-            await query.answer(
-                "Нельзя уменьшить лимит устройств при продлении.",
-                show_alert=True,
-            )
-            return
 
     try:
         tariffs = await db_helpers.get_active_tariffs()
@@ -5376,9 +5216,7 @@ async def process_yoomoney_webhook_payment(payment_id, operation_id, amount, cur
         # Проверяем тип платежа
         payment_type = payment_metadata.get('payment_type')
         
-        if payment_type in ('traffic_renewal', 'device_limit_upgrade'):
-            # device_limit_upgrade: НЕ трогаем дни/лимит подписки — внутри
-            # process_successful_payment вызовется apply_upgrade (идемпотентно).
+        if payment_type == 'traffic_renewal':
             try:
                 await db_helpers.update_payment_status(payment_id, 'succeeded')
                 await process_successful_payment(
@@ -5652,10 +5490,6 @@ async def platega_callback_handler(request: web.Request):
                     logger.info(f"Platega webhook: обработка продления трафика для платежа {payment_id}")
                     # НЕ обновляем статус здесь - process_successful_payment сам обновит статус после успешной обработки
                     await process_successful_payment(user_id, payment_id, meta)
-                elif payment_type == 'device_limit_upgrade':
-                    # Расширение лимита устройств — НЕ трогаем дни, НЕ обнуляем лимит.
-                    logger.info(f"Platega webhook: обработка device_limit_upgrade для платежа {payment_id}")
-                    await process_successful_payment(user_id, payment_id, meta)
                 else:
                     # Обработка продления подписки (существующая логика)
                     days = int(meta.get('subscription_days') or app_conf.get('subscription_days', 30))
@@ -5842,11 +5676,6 @@ async def yookassa_webhook_handler(request: web.Request):
                         # Обработка продления трафика
                         logger.info(f"YooKassa webhook: обработка продления трафика для платежа {payment_id}")
                         # НЕ обновляем статус здесь - process_successful_payment сам обновит статус после успешной обработки
-                        await process_successful_payment(user_id, payment_id, meta)
-                    elif payment_type == 'device_limit_upgrade':
-                        # Расширение лимита устройств — НЕ трогаем дни, НЕ обнуляем лимит.
-                        # process_successful_payment сам вызовет apply_upgrade и обновит статус.
-                        logger.info(f"YooKassa webhook: обработка device_limit_upgrade для платежа {payment_id}")
                         await process_successful_payment(user_id, payment_id, meta)
                     else:
                         # Обработка продления подписки (существующая логика)
@@ -6405,11 +6234,6 @@ async def wata_webhook_handler(request: web.Request):
                     f"WATA webhook: продление трафика payment_id={payment_id}"
                 )
                 await process_successful_payment(user_id, payment_id, meta)
-            elif payment_type == "device_limit_upgrade":
-                logger.info(
-                    f"WATA webhook: device_limit_upgrade payment_id={payment_id}"
-                )
-                await process_successful_payment(user_id, payment_id, meta)
             else:
                 days = int(
                     meta.get("subscription_days")
@@ -6711,196 +6535,6 @@ def _api_is_localhost(request: web.Request) -> bool:
     )
 
 
-async def api_device_upgrade_options(request: web.Request):
-    """Возвращает доступные варианты расширения лимита для пользователя.
-
-    Вызывается с website по loopback. Бизнес-логика и настройки берутся из
-    bot-процесса (app_conf), поэтому это единый источник истины.
-    """
-    try:
-        if not _api_is_localhost(request):
-            logger.warning(f"API device-upgrade/options: отклонён запрос от {request.remote}")
-            return web.json_response({'ok': False, 'error': 'Access denied'}, status=403)
-
-        data = await request.json()
-        user_id = data.get('user_id')
-        if not isinstance(user_id, int):
-            return web.json_response({'ok': False, 'error': 'Неверный user_id'}, status=400)
-
-        from src.device_upgrade_service import get_available_options, get_monthly_price_for_limit
-        info = await get_available_options(user_id)
-
-        # Для сайта сразу добавляем честную строку «Подписка далее» по той же
-        # логике, что и в боте: ищем активный RUB-тариф с таким же limit_ip.
-        enabled_rub_methods = set()
-        if str(app_conf.get('show_payment_yookassa', '1')) == '1' \
-                and app_conf.get('yookassa_shop_id') and app_conf.get('yookassa_secret_key'):
-            enabled_rub_methods.add('yookassa')
-        if str(app_conf.get('show_payment_platega', '1')) == '1' \
-                and app_conf.get('platega_merchant_id') and app_conf.get('platega_api_secret'):
-            enabled_rub_methods.add('platega')
-        if str(app_conf.get('show_payment_wata', '1')) == '1' and app_conf.get('wata_access_token'):
-            enabled_rub_methods.add('wata')
-        if str(app_conf.get('show_payment_yoomoney', '1')) == '1' and app_conf.get('yoomoney_account'):
-            enabled_rub_methods.add('yoomoney')
-
-        if info.get('options'):
-            for opt in info['options']:
-                try:
-                    monthly = await get_monthly_price_for_limit(
-                        int(opt.get('new_limit') or 0),
-                        enabled_rub_methods,
-                    )
-                except Exception as e:
-                    monthly = None
-                    logger.debug(f"[DEVICE-UPGRADE-API] monthly tariff lookup failed: {e}")
-
-                if monthly and monthly.get('price') and int(monthly.get('days') or 0) > 0:
-                    opt['monthly_price'] = float(monthly.get('price') or 0)
-                    opt['monthly_days'] = int(monthly.get('days') or 0)
-                    opt['monthly_name'] = monthly.get('name') or ''
-                    m_traffic = float(monthly.get('traffic_gb') or 0)
-                    opt['monthly_traffic_gb'] = m_traffic if m_traffic > 0 else None
-                else:
-                    opt['monthly_price'] = None
-                    opt['monthly_days'] = None
-                    opt['monthly_name'] = ''
-                    opt['monthly_traffic_gb'] = None
-
-        return web.json_response({'ok': True, **info})
-    except Exception as e:
-        logger.error(f"[DEVICE-UPGRADE-API] options error: {e}", exc_info=True)
-        return web.json_response({'ok': False, 'error': str(e)}, status=500)
-
-
-async def api_device_upgrade_create_payment(request: web.Request):
-    """Создаёт платёж на расширение лимита устройств (для website).
-
-    Защита от понижения лимита: new_limit валидируется через
-    calculate_upgrade_price против актуального users.limit_ip в БД —
-    значение клиента игнорируется, если оно не является апгрейдом.
-    """
-    try:
-        if not _api_is_localhost(request):
-            logger.warning(f"API device-upgrade/create-payment: отклонён запрос от {request.remote}")
-            return web.json_response({'ok': False, 'error': 'Access denied'}, status=403)
-
-        data = await request.json()
-        user_id = data.get('user_id')
-        method = str(data.get('method') or '').strip().lower()
-        return_url = str(data.get('return_url') or '').strip()
-        email = str(data.get('email') or '').strip()
-        try:
-            new_limit = int(data.get('new_limit') or 0)
-        except (ValueError, TypeError):
-            new_limit = 0
-
-        if not isinstance(user_id, int):
-            return web.json_response({'ok': False, 'error': 'Неверный user_id'}, status=400)
-        if new_limit <= 0:
-            return web.json_response({'ok': False, 'error': 'Неверный new_limit'}, status=400)
-        if method not in ('yookassa', 'platega', 'yoomoney', 'wata'):
-            return web.json_response({'ok': False, 'error': 'Неизвестный метод оплаты'}, status=400)
-
-        # Блокировка
-        user_row = await db_helpers.get_user(user_id)
-        if not user_row:
-            return web.json_response({'ok': False, 'error': 'Пользователь не найден'}, status=404)
-        if int((user_row.get('is_blocked') if isinstance(user_row, dict) else user_row['is_blocked']) or 0) == 1:
-            return web.json_response({'ok': False, 'error': 'Аккаунт заблокирован'}, status=403)
-
-        # ── Валидация апгрейда (защита от понижения/превышения/мало дней) ──
-        from src.device_upgrade_service import calculate_upgrade_price, build_payment_metadata
-        calc = await calculate_upgrade_price(user_id, new_limit)
-        if not calc.get('allowed'):
-            reason = calc.get('reason') or 'not_allowed'
-            return web.json_response(
-                {'ok': False, 'error': 'upgrade_not_allowed', 'reason': reason},
-                status=403,
-            )
-
-        upgrade_meta = build_payment_metadata(user_id, new_limit, calc)
-        if not return_url:
-            return_url = (app_conf.get('website_url', '') or '').rstrip('/') + '/cabinet?paid=1'
-
-        payment_id = None
-        pay_url = None
-
-        if method == 'yookassa':
-            shop_id = app_conf.get('yookassa_shop_id')
-            secret = app_conf.get('yookassa_secret_key')
-            if not shop_id or not secret:
-                return web.json_response({'ok': False, 'error': 'YooKassa не настроена'}, status=503)
-            from src.pay import create_yookassa_payment_device_upgrade
-            res = await create_yookassa_payment_device_upgrade(
-                shop_id=str(shop_id), secret_key=str(secret),
-                user_id=user_id, new_limit=new_limit,
-                upgrade_meta=upgrade_meta, return_url=return_url, email=email,
-            )
-            if res:
-                payment_id, pay_url = res
-
-        elif method == 'platega':
-            merchant_id = app_conf.get('platega_merchant_id')
-            api_secret = app_conf.get('platega_api_secret')
-            if not merchant_id or not api_secret:
-                return web.json_response({'ok': False, 'error': 'Platega не настроена'}, status=503)
-            from src.pay import create_platega_payment_device_upgrade
-            res = await create_platega_payment_device_upgrade(
-                merchant_id=str(merchant_id), api_secret=str(api_secret),
-                user_id=user_id, new_limit=new_limit,
-                upgrade_meta=upgrade_meta, return_url=return_url,
-            )
-            if res:
-                payment_id, pay_url = res
-
-        elif method == 'wata':
-            access_token = (app_conf.get('wata_access_token') or '').strip() \
-                or (os.getenv('WATA_ACCESS_TOKEN') or '').strip()
-            terminal_public_id = (app_conf.get('wata_terminal_public_id') or '').strip() \
-                or (os.getenv('WATA_TERMINAL_PUBLIC_ID') or '').strip()
-            if not access_token:
-                return web.json_response({'ok': False, 'error': 'Wata не настроена'}, status=503)
-            from src.pay import create_wata_payment_device_upgrade
-            res = await create_wata_payment_device_upgrade(
-                str(access_token),
-                user_id=user_id, new_limit=new_limit,
-                upgrade_meta=upgrade_meta, return_url=return_url,
-                terminal_public_id=str(terminal_public_id),
-            )
-            if res:
-                payment_id, pay_url = res
-
-        elif method == 'yoomoney':
-            account = app_conf.get('yoomoney_account')
-            notif_secret = app_conf.get('yoomoney_notification_secret')
-            if not account or not notif_secret:
-                return web.json_response({'ok': False, 'error': 'YooMoney не настроена'}, status=503)
-            from src.pay import create_yoomoney_quickpay_device_upgrade
-            res = await create_yoomoney_quickpay_device_upgrade(
-                account=str(account),
-                user_id=user_id, new_limit=new_limit,
-                upgrade_meta=upgrade_meta,
-            )
-            if res:
-                payment_id, pay_url = res
-
-        if not pay_url:
-            return web.json_response({'ok': False, 'error': 'Не удалось создать платёж'}, status=500)
-
-        logger.info(
-            f"[DEVICE-UPGRADE-API] user={user_id} method={method} payment={payment_id} "
-            f"limit {calc.get('old_limit')}->{new_limit} = {calc.get('price')}₽"
-        )
-        return web.json_response({'ok': True, 'redirect': pay_url, 'payment_id': payment_id})
-
-    except Exception as e:
-        logger.error(f"[DEVICE-UPGRADE-API] create-payment error: {e}", exc_info=True)
-        return web.json_response({'ok': False, 'error': str(e)}, status=500)
-
-
-web_app.router.add_post('/api/device-upgrade/options', api_device_upgrade_options)
-web_app.router.add_post('/api/device-upgrade/create-payment', api_device_upgrade_create_payment)
 
 # REST перезагрузки настроек удален по запросу
 
@@ -7095,85 +6729,6 @@ async def process_tgstar_payment(message: Message):
         
     payload = message.successful_payment.invoice_payload
     if not payload.startswith("tgstar_"):
-        return
-
-    # ── Расширение лимита устройств (device_upgrade) ─────────────────────
-    if payload.startswith("tgstar_device_upgrade:"):
-        try:
-            # payload = "tgstar_device_upgrade:{user_id}:{new_limit}" → 3 части
-            # см. src/device_upgrade_handlers.py:366
-            _, user_id_str, new_limit_str = payload.split(":")
-            telegram_user_id = int(user_id_str)
-            new_limit = int(new_limit_str)
-        except (ValueError, IndexError):
-            logger.error(f"TG Star: некорректный device_upgrade payload: {payload}")
-            await message.answer(
-                "❌ Произошла внутренняя ошибка. Обратитесь в поддержку.",
-                reply_markup=keyboards.get_back_to_main_keyboard(),
-            )
-            return
-
-        try:
-            from src.device_upgrade_service import calculate_upgrade_price, build_payment_metadata
-            calc = await calculate_upgrade_price(telegram_user_id, new_limit)
-            if not calc.get('allowed'):
-                logger.error(
-                    f"TG Star: device_upgrade недоступен для user={telegram_user_id} "
-                    f"new_limit={new_limit}, причина={calc.get('reason')}"
-                )
-                await message.answer(
-                    "❌ Не удалось применить расширение лимита. Обратитесь в поддержку.",
-                    reply_markup=keyboards.get_back_to_main_keyboard(),
-                )
-                return
-            upgrade_meta = build_payment_metadata(telegram_user_id, new_limit, calc)
-        except Exception as e:
-            logger.error(f"TG Star: device_upgrade build_meta failed: {e}", exc_info=True)
-            await message.answer(
-                "❌ Внутренняя ошибка при применении лимита. Обратитесь в поддержку.",
-                reply_markup=keyboards.get_back_to_main_keyboard(),
-            )
-            return
-
-        paid_stars = int(getattr(message.successful_payment, 'total_amount', 0) or 0)
-        rub_price = float(upgrade_meta.get('price') or 0)
-
-        payment_id = f"TGSTAR_DEVICE_UPGRADE_{message.successful_payment.telegram_payment_charge_id}"
-        meta_for_db = dict(upgrade_meta)
-        meta_for_db.update({
-            'payment_method': 'tgstar',
-            'paid_stars': paid_stars,
-        })
-
-        try:
-            await db_helpers.add_payment(
-                payment_id=payment_id,
-                telegram_id=telegram_user_id,
-                amount=rub_price,
-                currency='RUB',
-                metadata_json=json.dumps(meta_for_db, ensure_ascii=False),
-            )
-            # Платёж создаётся со статусом 'pending'. Не помечаем 'succeeded'
-            # ЗДЕСЬ — иначе process_successful_payment уйдёт в retry-ветку
-            # (line ~813) и НЕ отправит пользователю сообщение об успешном
-            # расширении лимита. Статус выставит сам process_successful_payment
-            # в основном пути (line ~978).
-        except Exception as e:
-            logger.error(f"TG Star: device_upgrade add_payment failed для {payment_id}: {e}")
-
-        try:
-            await process_successful_payment(telegram_user_id, payment_id, meta_for_db)
-        except Exception as e:
-            logger.error(
-                f"TG Star: device_upgrade process_successful_payment упал для "
-                f"{payment_id}: {e}",
-                exc_info=True,
-            )
-            await message.answer(
-                "✅ Платёж получен, но при применении нового лимита возникла "
-                "ошибка. Обратитесь в поддержку — ваш лимит будет восстановлен.",
-                reply_markup=keyboards.get_back_to_main_keyboard(),
-            )
         return
 
     # Проверяем, это продление трафика или продление подписки
@@ -7387,25 +6942,6 @@ async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery):
     logger.info(f"TG Star: pre_checkout_query подтвержден для user_id={pre_checkout_query.from_user.id}")
 
 
-async def _website_hwid_my_devices_row(user: Optional[Dict]) -> Optional[list]:
-    """Строка клавиатуры с «Мои устройства», если включён HWID-лимит и есть UUID подписки."""
-    if not user:
-        return None
-    hwid_limit_on = str(app_conf.get('hwid_limit_enabled', '0')).strip() == '1'
-    if not hwid_limit_on:
-        try:
-            _hwid_row = await db_helpers.query_db(
-                "SELECT value FROM settings WHERE key='hwid_limit_enabled' LIMIT 1", (), one=True
-            )
-            hwid_limit_on = (_hwid_row or {}).get('value', '0') == '1'
-        except Exception:
-            pass
-    has_any_uuid = user.get('xui_client_uuid') or user.get('remnawave_short_uuid')
-    if hwid_limit_on and has_any_uuid:
-        return [btn('btn_my_devices', callback_data='my_devices')]
-    return None
-
-
 @dp.callback_query(F.data == "website_access")
 async def cq_website_access(query: CallbackQuery, state: FSMContext):
     """Доступ к личному кабинету на сайте."""
@@ -7420,15 +6956,12 @@ async def cq_website_access(query: CallbackQuery, state: FSMContext):
 
     user = await db_helpers.get_user(query.from_user.id)
     email = (user.get('email') or '').strip() if user else ''
-    hwid_devices_row = await _website_hwid_my_devices_row(user)
 
     # 1. Если email не привязан — просим привязку; «Мои устройства» всё равно показываем при HWID
     if not email or email.startswith('tg:'):
         kb_rows = [
             [btn('btn_website_link_email', callback_data='website_link_email')],
         ]
-        if hwid_devices_row:
-            kb_rows.append(hwid_devices_row)
         kb_rows.append([btn('btn_back_to_main', callback_data='back_to_main')])
         kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
         text = setting_text(
@@ -7474,8 +7007,6 @@ async def cq_website_access(query: CallbackQuery, state: FSMContext):
     if not sub_active:
         # Подписка истекла или отсутствует
         kb_rows.append([btn('btn_renew_sub', callback_data='renew_choose_payment')])
-        if hwid_devices_row:
-            kb_rows.append(hwid_devices_row)
         kb_rows.append([btn('btn_back_to_main', callback_data='back_to_main')])
         await query.message.edit_text(
             setting_text(
@@ -7489,8 +7020,6 @@ async def cq_website_access(query: CallbackQuery, state: FSMContext):
         await query.answer()
         return
 
-    if hwid_devices_row:
-        kb_rows.append(hwid_devices_row)
 
     # Кнопку "Привязать email" мы отсюда убрали, так как сюда доходят только те, кто уже привязал.
     kb_rows.append([btn('btn_back_to_main', callback_data='back_to_main')])
@@ -7507,349 +7036,6 @@ async def cq_website_access(query: CallbackQuery, state: FSMContext):
     await query.answer()
 
 
-# ── Мои устройства (HWID) ─────────────────────────────────────────────────────
-
-_MY_DEVICES_PAGE_SIZE = 5
-
-
-def _my_devices_short_label(dev: dict) -> str:
-    """Короткое имя для кнопки: только модель устройства.
-
-    Примеры:
-        POCO F6
-        iPhone 13
-        Galaxy S23 Ultra
-
-    Если модели нет — пробуем ОС, потом user_agent, потом «Неизвестное устройство».
-    """
-    model = (dev.get('model') or '').strip()
-    if model and model != (dev.get('os') or ''):
-        return model
-
-    os_name = (dev.get('os') or '').strip()
-    if os_name:
-        ver = (dev.get('os_version') or '').strip()
-        return f"{os_name} {ver}".strip()
-
-    ua = dev.get('user_agent') or ''
-    return ua[:35] if ua else 'Неизвестное устройство'
-
-
-def _my_devices_label(dev: dict) -> str:
-    """Полное имя для текста сообщения: префикс клиента + ОС + модель."""
-    ua = dev.get('user_agent', '') or ''
-    ua_prefix = ''
-    if ua:
-        slash = ua.find('/')
-        if 0 < slash <= 7:
-            ua_prefix = ua[:slash + 1]   # например "Happ/" или "v2rayN/"
-        else:
-            first_word = ua.split()[0] if ua.split() else ua
-            ua_prefix = first_word[:8]
-
-    device_info = _my_devices_short_label(dev)
-    if device_info == 'Неизвестное устройство':
-        device_info = ''
-
-    if ua_prefix and device_info:
-        return f"{ua_prefix} {device_info}"
-    if ua_prefix:
-        return ua_prefix
-    if device_info:
-        return device_info
-    if ua:
-        return ua[:35]
-    return 'Неизвестное устройство'
-
-
-def _my_devices_fmt_dt(dt_str: str) -> str:
-    try:
-        d = datetime.fromisoformat(str(dt_str).replace(' ', 'T'))
-        return d.strftime('%d.%m %H:%M')
-    except Exception:
-        return str(dt_str)[:16] if dt_str else '—'
-
-
-async def _my_devices_fetch(uuid: str) -> list:
-    base = os.getenv('XUIWEB_INTERNAL_URL', 'http://127.0.0.1:8282').rstrip('/')
-    try:
-        async with httpx.AsyncClient(timeout=6) as cl:
-            r = await cl.get(f"{base}/devices/{uuid}")
-        if r.status_code == 200:
-            return r.json().get('devices', [])
-    except Exception as e:
-        logger.warning(f"[my_devices] fetch error for {uuid}: {e}")
-    return []
-
-
-async def _my_devices_delete(uuid: str, hwid: str) -> bool:
-    base = os.getenv('XUIWEB_INTERNAL_URL', 'http://127.0.0.1:8282').rstrip('/')
-    try:
-        async with httpx.AsyncClient(timeout=6) as cl:
-            r = await cl.delete(f"{base}/devices/{uuid}/{hwid}")
-        return r.status_code == 200
-    except Exception as e:
-        logger.warning(f"[my_devices] delete error: {e}")
-    return False
-
-
-_MY_DEVICE_NAME_MAX = 15
-
-
-def _sanitize_my_device_name(raw: str) -> str:
-    """Чистим имя устройства перед отправкой: без управляющих символов и <>, ≤15."""
-    s = re.sub(r'[\x00-\x1f\x7f]', ' ', str(raw or ''))
-    s = s.replace('<', '').replace('>', '')
-    s = re.sub(r'\s+', ' ', s).strip()
-    return s[:_MY_DEVICE_NAME_MAX]
-
-
-async def _my_devices_set_name(uuid: str, hwid: str, custom_name: str) -> bool:
-    base = os.getenv('XUIWEB_INTERNAL_URL', 'http://127.0.0.1:8282').rstrip('/')
-    try:
-        async with httpx.AsyncClient(timeout=6) as cl:
-            r = await cl.post(
-                f"{base}/devices/{uuid}/{hwid}/name",
-                json={"custom_name": custom_name},
-            )
-        return r.status_code == 200
-    except Exception as e:
-        logger.warning(f"[my_devices] set_name error: {e}")
-    return False
-
-
-def _my_devices_display_name(dev: dict) -> str:
-    """Имя для кнопки/списка: пользовательское имя, если задано, иначе — модель/ОС."""
-    custom = (dev.get('custom_name') or '').strip()
-    if custom:
-        return custom
-    return _my_devices_short_label(dev)
-
-
-def _my_devices_os_emoji(dev: dict) -> str:
-    """Эмодзи по ОС устройства: 💻 для Windows/macOS, 📱 для остального
-    (Android, iOS, iPadOS и неизвестной/пустой ОС).
-
-    macOS / «Mac OS X» содержат подстроку «mac»; iOS и iPadOS — нет,
-    поэтому мобильные Apple-устройства сюда не попадают.
-    """
-    os_name = (dev.get('os') or '').lower()
-    if 'windows' in os_name or 'mac' in os_name or 'os x' in os_name:
-        return '💻'
-    return '📱'
-
-
-def _my_devices_text(devices: list, page: int) -> str:
-    total = len(devices)
-    pages = max(1, (total + _MY_DEVICES_PAGE_SIZE - 1) // _MY_DEVICES_PAGE_SIZE)
-    header = f"📱 <b>Мои устройства</b> ({total})"
-    if pages > 1:
-        header += f" · стр. {page + 1}/{pages}"
-    return (
-        f"{header}\n\n"
-        "<i>Выберите устройство, чтобы управлять им — удалить или задать имя.</i>"
-    )
-
-
-def _my_device_manage_text(dev: dict) -> str:
-    """Экран «Управление устройством»: инфо об устройстве в цитате + подсказка."""
-    app = (dev.get('app') or '').strip()
-    if not app:
-        ua = dev.get('user_agent') or ''
-        app = (ua.split('/')[0][:20] if ua else '') or 'Неизвестно'
-    model = (dev.get('model') or '').strip()
-    custom = (dev.get('custom_name') or '').strip()
-    hwid = dev.get('hwid') or ''
-    hwid_part = (hwid[:8] + '…') if len(hwid) > 8 else (hwid or '—')
-
-    lines = [f"Приложение: {html.escape(app)}"]
-    if custom:
-        lines.append(f"Имя устройства: {html.escape(custom)}")
-    lines.append(f"Модель устройства: {html.escape(model) if model else '—'}")
-    lines.append(f"HWID: <code>{html.escape(hwid_part)}</code>")
-    quote = "<blockquote>" + "\n".join(lines) + "</blockquote>"
-    return (
-        "🛠 <b>Управление устройством</b>\n\n"
-        f"{quote}\n\n"
-        "<i>Вы можете удалить это устройство или задать ему имя (до 15 символов).</i>"
-    )
-
-
-def _my_device_manage_kb(idx: int) -> InlineKeyboardMarkup:
-    page = idx // _MY_DEVICES_PAGE_SIZE
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ Назначить имя", callback_data=f"my_dev_name_{idx}", style="primary")],
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"my_dev_del_{idx}", style="danger")],
-        [InlineKeyboardButton(text="◀️ Отмена", callback_data=f"my_devices_p_{page}")],
-    ])
-
-
-def _my_devices_kb(devices: list, page: int) -> InlineKeyboardMarkup:
-    total = len(devices)
-    pages = max(1, (total + _MY_DEVICES_PAGE_SIZE - 1) // _MY_DEVICES_PAGE_SIZE)
-    start = page * _MY_DEVICES_PAGE_SIZE
-    end = min(start + _MY_DEVICES_PAGE_SIZE, total)
-    rows = []
-    for i, dev in enumerate(devices[start:end]):
-        label = _my_devices_display_name(dev)[:32]
-        emoji = _my_devices_os_emoji(dev)
-        rows.append([InlineKeyboardButton(
-            text=f"{emoji} {label}",
-            callback_data=f"my_dev_manage_{start + i}",
-            style="primary"
-        )])
-    if pages > 1:
-        pager = []
-        if page > 0:
-            pager.append(InlineKeyboardButton(text="◀", callback_data=f"my_devices_p_{page - 1}"))
-        pager.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="noop"))
-        if page < pages - 1:
-            pager.append(InlineKeyboardButton(text="▶", callback_data=f"my_devices_p_{page + 1}"))
-        rows.append(pager)
-    rows.append([btn('btn_back_to_main', callback_data='back_to_main')])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-async def _my_devices_show(query, state: FSMContext, page: int, refresh: bool = False):
-    user = await db_helpers.get_user(query.from_user.id)
-    uuid = (user or {}).get('xui_client_uuid', '')
-    if not uuid:
-        await query.answer("UUID не найден", show_alert=True)
-        return
-    data = await state.get_data()
-    devices = data.get('my_devices') if not refresh else None
-    if devices is None:
-        devices = await _my_devices_fetch(uuid)
-        await state.update_data(my_devices=devices, my_devices_uuid=uuid)
-    total = len(devices)
-    if total == 0:
-        await query.message.edit_text(
-            "📱 <b>Мои устройства</b>\n\nУстройств не найдено.",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [btn('btn_back_to_main', callback_data='back_to_main')]
-            ])
-        )
-        return
-    await query.message.edit_text(
-        _my_devices_text(devices, page),
-        parse_mode="HTML",
-        reply_markup=_my_devices_kb(devices, page)
-    )
-
-
-@dp.callback_query(F.data == "my_devices")
-async def cq_my_devices(query: CallbackQuery, state: FSMContext):
-    await _my_devices_show(query, state, page=0, refresh=True)
-    await query.answer()
-
-
-@dp.callback_query(F.data.startswith("my_devices_p_"))
-async def cq_my_devices_page(query: CallbackQuery, state: FSMContext):
-    page = int(query.data.split("_")[-1])
-    await _my_devices_show(query, state, page=page, refresh=False)
-    await query.answer()
-
-
-@dp.callback_query(F.data.startswith("my_dev_manage_"))
-async def cq_my_dev_manage(query: CallbackQuery, state: FSMContext):
-    """Экран управления одним устройством (удалить / назначить имя)."""
-    await state.set_state(None)  # выйти из режима ввода имени, если он был активен
-    idx = int(query.data.split("_")[-1])
-    data = await state.get_data()
-    devices = data.get('my_devices', [])
-    if idx >= len(devices):
-        await query.answer("Устройство не найдено", show_alert=True)
-        return
-    dev = devices[idx]
-    await query.message.edit_text(
-        _my_device_manage_text(dev),
-        parse_mode="HTML",
-        reply_markup=_my_device_manage_kb(idx),
-    )
-    await query.answer()
-
-
-@dp.callback_query(F.data.startswith("my_dev_name_"))
-async def cq_my_dev_name(query: CallbackQuery, state: FSMContext):
-    """Запрос нового имени устройства."""
-    idx = int(query.data.split("_")[-1])
-    data = await state.get_data()
-    devices = data.get('my_devices', [])
-    if idx >= len(devices):
-        await query.answer("Устройство не найдено", show_alert=True)
-        return
-    hwid = devices[idx].get('hwid', '')
-    await state.update_data(rename_idx=idx, rename_hwid=hwid)
-    await state.set_state(MyDeviceRename.waiting_name)
-    await query.message.edit_text(
-        "✏️ <b>Имя устройства</b>\n\n"
-        "Отправьте новое имя устройства сообщением (до 15 символов).\n"
-        "Оно будет отображаться вместо модели.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✖️ Отмена", callback_data=f"my_dev_manage_{idx}")]
-        ]),
-    )
-    await query.answer()
-
-
-@dp.callback_query(F.data.startswith("my_dev_del_"))
-async def cq_my_dev_del(query: CallbackQuery, state: FSMContext):
-    """Удаление устройства (с экрана управления)."""
-    await state.set_state(None)
-    idx = int(query.data.split("_")[-1])
-    data = await state.get_data()
-    devices = data.get('my_devices', [])
-    uuid = data.get('my_devices_uuid', '')
-    if idx >= len(devices) or not uuid:
-        await query.answer("Устройство не найдено", show_alert=True)
-        return
-    hwid = devices[idx].get('hwid', '')
-    ok = await _my_devices_delete(uuid, hwid)
-    if not ok:
-        await query.answer("❌ Не удалось удалить устройство", show_alert=True)
-        return
-    devices.pop(idx)
-    await state.update_data(my_devices=devices)
-    await query.answer("✅ Устройство удалено")
-    page = min(idx // _MY_DEVICES_PAGE_SIZE, max(0, (len(devices) - 1) // _MY_DEVICES_PAGE_SIZE))
-    await _my_devices_show(query, state, page=page, refresh=False)
-
-
-@dp.message(MyDeviceRename.waiting_name)
-async def msg_my_dev_rename(message: Message, state: FSMContext):
-    """Приём и сохранение нового имени устройства (через внутренний API xuiweb)."""
-    name = _sanitize_my_device_name(message.text or '')
-    data = await state.get_data()
-    idx = data.get('rename_idx')
-    hwid = data.get('rename_hwid', '')
-    uuid = data.get('my_devices_uuid', '')
-    devices = data.get('my_devices', [])
-    if not name:
-        await message.answer("❌ Пустое или недопустимое имя. Отправьте имя (до 15 символов):")
-        return
-    if not uuid or not hwid:
-        await state.set_state(None)
-        await message.answer("❌ Устройство не найдено. Откройте «Мои устройства» заново.")
-        return
-    ok = await _my_devices_set_name(uuid, hwid, name)
-    await state.set_state(None)
-    if not ok:
-        await message.answer("❌ Не удалось сохранить имя. Попробуйте позже.")
-        return
-    if isinstance(idx, int) and 0 <= idx < len(devices):
-        devices[idx]['custom_name'] = name
-        await state.update_data(my_devices=devices)
-    page = (idx // _MY_DEVICES_PAGE_SIZE) if isinstance(idx, int) else 0
-    await message.answer(
-        "✅ <b>Имя устройства сохранено</b>\n\n" + _my_devices_text(devices, page),
-        parse_mode="HTML",
-        reply_markup=_my_devices_kb(devices, page),
-    )
-
-
-# ── конец блока "Мои устройства" ──────────────────────────────────────────────
 
 
 @dp.callback_query(F.data == "website_link_email")
@@ -8456,7 +7642,6 @@ async def main():
     # Регистрируем обработчики подписок из src
     register_subscription_handlers(dp, check_user_blocked, send_blocked_message, show_main_menu)
     # Регистрируем обработчики расширения лимита устройств
-    register_device_upgrade_handlers(dp)
     # Каталог роутеров и оформление заказа (товары и заказы — в основном приложении)
     register_router_catalog_handlers(dp, check_user_blocked, send_blocked_message)
     try:

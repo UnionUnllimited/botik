@@ -1585,9 +1585,9 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             for b in BUTTON_REGISTRY if b['key'] in MAIN_MENU_LAYOUT_KEYS
         }
         _conditional_layout_keys = frozenset({
-            'btn_traffic_renewal', 'btn_device_upgrade',
+            'btn_traffic_renewal',
             'btn_bot_custom_url', 'btn_bot_channel',
-            'btn_website_access', 'btn_my_devices',
+            'btn_website_access',
         })
         layout_button_meta = {}
         for b in BUTTON_REGISTRY:

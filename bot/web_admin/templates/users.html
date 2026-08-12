@@ -701,16 +701,6 @@
               <i data-lucide="check" class="check"></i>
             </button>
             {% endif %}
-            <button type="button" class="tg-btn" data-checkbox="add_devices_btn" data-storage-key="send_news_add_devices_btn">
-              <span>📱 Мои устройства</span>
-              <i data-lucide="check" class="check"></i>
-            </button>
-            {% if show_device_upgrade_button %}
-            <button type="button" class="tg-btn" data-checkbox="add_device_upgrade_btn" data-storage-key="send_news_add_device_upgrade_btn">
-              <span>{{ btn_device_upgrade }}</span>
-              <i data-lucide="check" class="check"></i>
-            </button>
-            {% endif %}
           </div>
           {# hidden form-bound inputs #}
           <input type="hidden" id="add_renew_btn" name="add_renew_btn" value="0">
@@ -718,8 +708,6 @@
           <input type="hidden" id="add_referral_btn" name="add_referral_btn" value="0">
           <input type="hidden" id="send_ins_video" name="send_ins_video" value="0">
           <input type="hidden" id="add_website_btn" name="add_website_btn" value="0">
-          <input type="hidden" id="add_devices_btn" name="add_devices_btn" value="0">
-          <input type="hidden" id="add_device_upgrade_btn" name="add_device_upgrade_btn" value="0">
         </div>
 
         {# Submit #}
@@ -1649,8 +1637,6 @@
                 add_referral_btn: fd.get('add_referral_btn') === '1',
                 send_ins_video: fd.get('send_ins_video') === '1',
                 add_website_btn: fd.get('add_website_btn') === '1',
-                add_devices_btn: fd.get('add_devices_btn') === '1',
-                add_device_upgrade_btn: fd.get('add_device_upgrade_btn') === '1',
                 custom_btn_text: fd.get('custom_btn_text') || '',
                 custom_btn_url: fd.get('custom_btn_url') || ''
             };

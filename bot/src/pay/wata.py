@@ -336,87 +336,6 @@ async def create_wata_payment_shared(
         return None
 
 
-async def create_wata_payment_device_upgrade(
-    access_token: str,
-    *,
-    user_id: int,
-    new_limit: int,
-    upgrade_meta: dict,
-    return_url: str,
-    terminal_public_id: str = "",
-) -> Optional[tuple[str, str]]:
-    """Создаёт платёж Wata для расширения лимита устройств.
-
-    ``upgrade_meta`` — результат ``device_upgrade_service.build_payment_metadata()``
-    (содержит ``payment_type='device_limit_upgrade'``, ``new_limit``, ``old_limit``,
-    ``price``, ``currency``, ``telegram_user_id`` и т.д.).
-
-    Возвращает ``(payment_id, pay_url)`` или ``None`` при ошибке.
-    Wata-webhook (``payment_type == 'device_limit_upgrade'``) сам применит
-    апгрейд через ``process_successful_payment``.
-    """
-    try:
-        amount = float(upgrade_meta.get("price") or 0)
-        if amount <= 0:
-            logger.error(f"[PAYMENT] device_upgrade Wata: неверная сумма {amount}")
-            return None
-
-        currency = str(upgrade_meta.get("currency") or "RUB").upper()
-
-        meta = dict(upgrade_meta)
-        meta["cms_name"] = "wata"
-        meta["payment_method"] = "Wata"
-        meta.setdefault("registration_type", "bot")
-        meta.setdefault("telegram_user_id", int(user_id))
-
-        payment_id = f"WATA_{py_uuid.uuid4()}"
-        extra = {"publicId": terminal_public_id} if terminal_public_id else None
-
-        result = await create_wata_payment_link(
-            access_token,
-            amount=amount,
-            currency=currency,
-            order_id=payment_id,
-            description=f"Расширение лимита устройств до {new_limit}",
-            link_type="OneTime",
-            success_redirect_url=return_url,
-            fail_redirect_url=return_url,
-            extra_json=extra,
-        )
-
-        if not result.get("ok"):
-            logger.error(
-                f"[PAYMENT] device_upgrade Wata: создание ссылки не удалось: "
-                f"{result.get('error')}"
-            )
-            return None
-
-        pay_url = result.get("url")
-        if not pay_url:
-            logger.error("[PAYMENT] device_upgrade Wata: пустой url в ответе")
-            return None
-
-        await db_helpers.add_payment(
-            payment_id,
-            user_id,
-            float(amount),
-            currency,
-            json.dumps(meta, ensure_ascii=False),
-        )
-        logger.info(
-            f"[PAYMENT] device_upgrade Wata создан: {payment_id}, "
-            f"user={user_id}, new_limit={new_limit}"
-        )
-        return payment_id, str(pay_url)
-
-    except Exception as e:
-        logger.error(
-            f"[PAYMENT] device_upgrade Wata ошибка: {type(e).__name__}: {e}",
-            exc_info=True,
-        )
-        return None
-
-
 async def create_wata_payment_traffic_renewal(
     access_token: str,
     *,
@@ -516,6 +435,5 @@ __all__ = [
     "decode_wata_webhook_json",
     "create_wata_payment_link",
     "create_wata_payment_shared",
-    "create_wata_payment_device_upgrade",
     "create_wata_payment_traffic_renewal",
 ]

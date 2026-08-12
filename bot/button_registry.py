@@ -75,11 +75,9 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     _b('btn_renew_sub',       'main_menu', 'Продлить подписку',         '🔄 Продлить',                ''),
     _b('btn_free_renew',      'main_menu', 'Продлить бесплатно (newsletter)', '🆓 Продлить подписку бесплатно', ''),
     _b('btn_traffic_renewal', 'main_menu', 'Докупить гигабайты',        '📈 Докупить гигабайты',      ''),
-    _b('btn_device_upgrade',  'main_menu', 'Расширить лимит устройств', '📱 Расширить лимит устройств', ''),
     _b('btn_website_access',     'main_menu', 'Личный кабинет (главное меню)', '🌐 Личный кабинет',         ''),
     _b('btn_website_open',       'main_menu', 'Открыть личный кабинет (magic link)', '🌐 Открыть личный кабинет', ''),
     _b('btn_website_link_email', 'main_menu', 'Привязать email (в кабинете)',  '📧 Привязать email',        ''),
-    _b('btn_my_devices',         'main_menu', 'Мои устройства',                '📱 Мои устройства',         ''),
     _b('btn_support',         'main_menu', 'Поддержка',                 '💬 Поддержка',               ''),
     _b('btn_about_service',   'main_menu', 'О сервисе',                 'ℹ️ О сервисе',               ''),
     _b('btn_bot_custom_url',  'main_menu', 'КастомURL',                 '🔗 КастомURL',               ''),
@@ -190,9 +188,9 @@ MAIN_MENU_LAYOUT_SETTING = 'main_menu_layout'
 # Ключи, которые можно размещать в раскладке главного меню.
 MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
     'btn_connect', 'btn_iphone', 'btn_android',
-    'btn_website_access', 'btn_my_devices',
+    'btn_website_access',
     'btn_catalog', 'btn_my_router', 'btn_my_orders',
-    'btn_renew_sub', 'btn_traffic_renewal', 'btn_device_upgrade',
+    'btn_renew_sub', 'btn_traffic_renewal',
     'btn_referral', 'btn_support', 'btn_about_service',
     'btn_bot_custom_url', 'btn_bot_channel',
 })

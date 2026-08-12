@@ -457,19 +457,6 @@ async def populate_default_settings():
         for key, value, description in trial_settings:
             await db.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, description))
 
-        # Настройки фичи "Расширение лимита устройств" (платный апгрейд для клиентов).
-        # Меняется ТОЛЬКО users.limit_ip — на X-UI/Remnawave новый лимит уезжает
-        # при следующем продлении/обновлении подписки.
-        device_upgrade_settings = [
-            ('device_upgrade_enabled', '0', 'Включить продажу расширения лимита устройств клиентам (0/1)'),
-            ('device_upgrade_max_limit', '20', 'Максимальный лимит, до которого клиент может расшириться через бота'),
-            ('device_upgrade_min_days_left', '3', 'Минимум дней подписки, чтобы разрешить апгрейд'),
-            ('device_upgrade_min_price', '30', 'Минимальный чек апгрейда (₽), цена ниже округляется вверх'),
-            ('device_upgrade_price_per_slot_per_day', '5', 'Цена за 1 устройство в 1 день (₽)'),
-        ]
-        for key, value, description in device_upgrade_settings:
-            await db.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, description))
-
         maintenance_settings = [
             ('bot_maintenance_enabled', '0', 'Сервисный режим: бот отвечает заглушкой на сообщения и кнопки (0/1)'),
             ('bot_maintenance_message', 'К сожалению, бот находится на технических работах. Попробуйте позже.', 'Текст заглушки сервисного режима'),

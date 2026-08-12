@@ -7,8 +7,6 @@
 Здесь живут:
 - `cryptobot_fiat_invoice_body(amount)` — формирует тело инвойса в RUB,
   результат объединять с описанием/payload через `**`.
-- `create_cryptobot_invoice_device_upgrade(...)` — создание инвойса
-  для расширения лимита устройств (device_upgrade).
 - `verify_cryptobot_webhook_signature` — проверка подписи HTTP-уведомления Crypto Pay.
 - `resolve_cryptobot_payment_row` — наш ``payment_id`` по ``invoice_id`` из webhook/API.
 """
@@ -117,104 +115,10 @@ def cryptobot_fiat_invoice_body(amount: float) -> dict:
     }
 
 
-async def create_cryptobot_invoice_device_upgrade(
-    token: str,
-    user_id: int,
-    new_limit: int,
-    upgrade_meta: dict,
-    return_url: str,
-) -> Optional[tuple[str, str, str]]:
-    """Создаёт CryptoBot-инвойс для расширения лимита устройств.
-
-    Цена в ``upgrade_meta['price']`` всегда в рублях — отправляем через
-    fiat-инвойс CryptoBot (`currency_type='fiat', fiat='RUB'`), CryptoBot
-    сам конвертит в крипту по курсу.
-
-    Возвращает (payment_id, pay_url, payload) или None.
-    """
-    try:
-        amount = float(upgrade_meta.get("price") or 0)
-        if amount <= 0:
-            logger.error(
-                f"[PAYMENT] device_upgrade CryptoBot: неверная сумма {amount}"
-            )
-            return None
-
-        # Кодируем metadata в payload, чтобы автопроверка смогла достать
-        # device_upgrade-параметры даже если в инвойсе они потерялись.
-        meta = dict(upgrade_meta)
-        meta.setdefault("registration_type", "bot")
-
-        # CryptoBot допускает payload до 1024 символов; кодируем JSON.
-        payload_str = json.dumps({
-            "op": "device_upgrade",
-            "user_id": user_id,
-            "new_limit": new_limit,
-            "price": amount,
-        }, ensure_ascii=False)
-
-        invoice_amount_part = cryptobot_fiat_invoice_body(amount)
-
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.post(
-                "https://pay.crypt.bot/api/createInvoice",
-                headers={"Crypto-Pay-API-Token": token},
-                json={
-                    **invoice_amount_part,
-                    "description": f"Расширение лимита устройств до {new_limit}",
-                    "payload": payload_str,
-                    # CryptoBot принимает только: viewItem, openChannel, openBot, callback.
-                    "paid_btn_name": "openBot",
-                    "paid_btn_url": return_url,
-                    "allow_comments": False,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        if not data.get("ok") or not data.get("result"):
-            logger.error(f"[PAYMENT] device_upgrade CryptoBot ответ не ok: {data}")
-            return None
-
-        invoice = data["result"]
-        invoice_id = invoice.get("invoice_id")
-        pay_url = invoice.get("pay_url") or invoice.get("mini_app_invoice_url")
-        if not invoice_id or not pay_url:
-            logger.error(
-                f"[PAYMENT] device_upgrade CryptoBot нет invoice_id/pay_url: {invoice}"
-            )
-            return None
-
-        payment_id = f"CRYPTO_DEVICE_UPGRADE_{invoice_id}"
-        meta_for_db = dict(meta)
-        meta_for_db["payload"] = payload_str
-        meta_for_db.setdefault("payment_method", "CryptoBot")
-
-        await db_helpers.add_payment(
-            payment_id=payment_id,
-            telegram_id=user_id,
-            amount=amount,
-            currency="RUB",
-            metadata_json=json.dumps(meta_for_db, ensure_ascii=False),
-        )
-        logger.info(
-            f"[PAYMENT] device_upgrade CryptoBot создан: {payment_id}, "
-            f"user={user_id}, new_limit={new_limit}, amount={amount}₽"
-        )
-        return payment_id, pay_url, payload_str
-
-    except Exception as e:
-        logger.error(
-            f"[PAYMENT] device_upgrade CryptoBot ошибка: {type(e).__name__}: {e}"
-        )
-        return None
-
-
 __all__ = [
     "cryptobot_fiat_invoice_body",
     "cryptobot_payment_id_candidates",
     "verify_cryptobot_webhook_signature",
     "resolve_cryptobot_payment_row",
     "cryptobot_set_webhook_url",
-    "create_cryptobot_invoice_device_upgrade",
 ]

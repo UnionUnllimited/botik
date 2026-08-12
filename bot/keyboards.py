@@ -22,13 +22,6 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
             return btn('btn_website_access', callback_data='website_access')
         return None
 
-    if key == 'btn_my_devices':
-        if (str(app_conf.get('show_website_button', '0')) != '1'
-                and str(app_conf.get('hwid_limit_enabled', '0')) == '1'
-                and sub_uuid):
-            return btn('btn_my_devices', callback_data='my_devices')
-        return None
-
     # Каталог роутеров: товар, а не подписка. Выключается настройкой
     # catalog_enabled — вместе с ним прячутся и заказы, показывать их
     # без каталога некуда.
@@ -68,12 +61,6 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
                     return btn('btn_traffic_renewal', callback_data='traffic_renewal_choose_payment')
         except Exception:
             pass
-        return None
-
-    if key == 'btn_device_upgrade':
-        device_upgrade_enabled = str(app_conf.get('device_upgrade_enabled', '0')) == '1'
-        if device_upgrade_enabled and has_active_sub:
-            return btn('btn_device_upgrade', callback_data='device_upgrade_start')
         return None
 
     if key == 'btn_referral':
@@ -118,16 +105,8 @@ async def get_main_keyboard(is_trial_available: bool, has_active_sub: bool, sub_
     for row_keys in layout:
         row_buttons = []
         for key in row_keys:
-            # website_access и my_devices — взаимоисключающий слот
-            if key in ('btn_website_access', 'btn_my_devices'):
-                b = await _resolve_main_menu_button('btn_website_access', user_id=user_id,
-                    has_active_sub=has_active_sub, sub_uuid=sub_uuid, connect_urls=connect_urls)
-                if b is None:
-                    b = await _resolve_main_menu_button('btn_my_devices', user_id=user_id,
-                        has_active_sub=has_active_sub, sub_uuid=sub_uuid, connect_urls=connect_urls)
-            else:
-                b = await _resolve_main_menu_button(key, user_id=user_id,
-                    has_active_sub=has_active_sub, sub_uuid=sub_uuid, connect_urls=connect_urls)
+            b = await _resolve_main_menu_button(key, user_id=user_id,
+                has_active_sub=has_active_sub, sub_uuid=sub_uuid, connect_urls=connect_urls)
             if b is not None:
                 row_buttons.append(b)
         if row_buttons:
