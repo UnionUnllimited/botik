@@ -44,7 +44,7 @@
         <p class="text-[13px] mb-3">
           Подписка:
           {% if client_subscription.status == 'active' %}
-            <span style="color:#16a34a">активна до {{ (client_subscription.until or '')[:10] }}</span>
+            <span style="color:#16a34a">активна до {{ client_subscription.until|msk_datetime }}</span>
           {% elif client_subscription.status == 'pending' %}
             <span style="color:#f59e0b">оплачена, ждёт первого включения роутера</span>
           {% else %}

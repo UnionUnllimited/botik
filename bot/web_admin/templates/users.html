@@ -281,7 +281,7 @@
                 {% if router_sub %}
                   {% if router_sub.status == 'active' %}
                     <span class="font-medium" style="color:#16a34a;">
-                      до {{ (router_sub.until or '')[:10] }}
+                      до {{ router_sub.until|msk_datetime if router_sub.until else '—' }}
                     </span>
                   {% elif router_sub.status == 'pending' %}
                     <span class="font-medium" style="color:#f59e0b;">ждёт роутера</span>

@@ -1355,6 +1355,12 @@
             var hours = Math.floor((sec % 86400) / 3600);
             return days ? days + ' д ' + hours + ' ч' : hours + ' ч';
           };
+          // Дата по-русски: панель и наши ручки отдают ISO, а оператору нужен
+          // привычный вид — иначе 2026-09-04 читается как «непонятно что».
+          var date = function (value) {
+            var head = String(value || '').slice(0, 10).split('-');
+            return head.length === 3 ? head[2] + '.' + head[1] + '.' + head[0] : '—';
+          };
           var row = function (label, value) {
             return '<div class="um-row"><span class="um-row-label">' + label
               + '</span><span class="um-row-value">' + value + '</span></div>';
@@ -1367,11 +1373,15 @@
                            : '<span style="color:var(--admin-text-muted)">молчит</span>')
               + ' <a href="' + basePath.replace(/\/$/, '') + '/routers/' + item.id + '">карточка</a>'
             );
+            // Модель у роутера часто не читается прошивкой — тогда пишем прямо,
+            // а не оставляем прочерк с висящей точкой.
+            var model = item.model
+              ? esc(item.model) + (item.fw_version ? ' · прошивка ' + esc(item.fw_version) : '')
+              : (item.fw_version ? 'неизвестна · прошивка ' + esc(item.fw_version) : 'неизвестна');
             var details = ''
-              + row('Модель', esc(item.model || '—')
-                    + (item.fw_version ? ' · прошивка ' + esc(item.fw_version) : ''))
+              + row('Модель', model)
               + row('Активирован', item.activated_at
-                    ? esc(String(item.activated_at).slice(0, 10))
+                    ? date(item.activated_at)
                     : '<span style="color:#f59e0b">ещё нет</span>')
               + row('Устройств в сети', esc(item.clients))
               + row('Аптайм', uptime(item.uptime_sec))
@@ -1395,7 +1405,7 @@
           if (sub.status === 'active') {
             subRow = '<div class="um-row"><span class="um-row-label">Подписка</span>'
               + '<span class="um-row-value" style="color:#16a34a">активна до '
-              + esc((sub.until || '').slice(0, 10)) + '</span></div>';
+              + date(sub.until) + '</span></div>';
           } else if (sub.status === 'pending') {
             subRow = '<div class="um-row"><span class="um-row-label">Подписка</span>'
               + '<span class="um-row-value" style="color:#f59e0b">оплачена, ждёт включения роутера</span></div>';
