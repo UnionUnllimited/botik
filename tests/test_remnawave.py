@@ -16,6 +16,7 @@ from core.services.remnawave import (
     RemnaHost,
     RemnaNode,
     RemnaSquad,
+    RemnaUser,
     as_list,
     unwrap,
 )
@@ -140,6 +141,27 @@ class TestHostParsing:
     def test_none_values_are_dropped(self):
         host = RemnaHost.parse({"uuid": "h", "remark": "r", "address": "a", "alpn": None})
         assert "alpn" not in host.connection_config
+
+
+class TestUserTraffic:
+    """Счётчики лежат то во вложенном `userTraffic`, то рядом с учёткой —
+    в разных версиях панели по-разному. Читать одно место значит показывать
+    оператору ноль и не понимать, расход это или недосмотр."""
+
+    def test_nested_counters(self):
+        account = RemnaUser.parse({
+            "uuid": "u", "username": "d4-0d-ab-28-3b-80",
+            "userTraffic": {"usedTrafficBytes": 5120, "onlineAt": "2026-08-12T10:00:00Z"},
+        })
+        assert account.used_traffic_bytes == 5120
+        assert account.online_at.startswith("2026-08-12")
+
+    def test_flat_counters(self):
+        account = RemnaUser.parse({"uuid": "u", "username": "x", "usedTrafficBytes": 777})
+        assert account.used_traffic_bytes == 777
+
+    def test_missing_counters_are_zero(self):
+        assert RemnaUser.parse({"uuid": "u", "username": "x"}).used_traffic_bytes == 0
 
 
 class TestSquadParsing:

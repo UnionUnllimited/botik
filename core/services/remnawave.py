@@ -263,17 +263,27 @@ class RemnaUser:
 
     @classmethod
     def parse(cls, item: dict[str, Any]) -> RemnaUser:
+        traffic = item.get("userTraffic") or {}
         return cls(
             uuid=str(_pick(item, "uuid", "id", default="")),
             username=str(_pick(item, "username", default="")),
             subscription_url=str(_pick(item, "subscriptionUrl", default="")),
             status=str(_pick(item, "status", default="")),
             expire_at=str(_pick(item, "expireAt", default="")),
+            # Счётчики панель кладёт то во вложенный `userTraffic`, то рядом
+            # с самой учёткой — зависит от версии. Читаем оба места: иначе
+            # расход молча показывается нулём, а причину не отличить от того,
+            # что клиент правда ничего не потратил.
             used_traffic_bytes=_int_of(
-                _pick(item, "usedTrafficBytes", "lifetimeUsedTrafficBytes", default=0)
+                _pick(traffic, "usedTrafficBytes", "lifetimeUsedTrafficBytes", default=0)
+                or _pick(item, "usedTrafficBytes", "lifetimeUsedTrafficBytes", default=0)
             ),
             telegram_id=_int_of(_pick(item, "telegramId", "telegram_id", default=0)),
-            online_at=str(_pick(item, "onlineAt", "lastConnectedAt", default="") or ""),
+            online_at=str(
+                _pick(traffic, "onlineAt", default="")
+                or _pick(item, "onlineAt", "lastConnectedAt", default="")
+                or ""
+            ),
             raw=item,
         )
 
