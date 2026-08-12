@@ -1301,9 +1301,18 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             for c in (_col_info or [])
         ]
 
+        # Роутеры клиента живут в основном приложении — там же, где парк и заказы.
+        # Ошибку не поднимаем: карточка клиента не должна пропадать из-за того,
+        # что соседний сервис молчит, — блок просто скажет, что не дозвонился.
+        from src import shop_api
+        client_routers_data, client_routers_error = await shop_api.client_routers(telegram_id)
+
         return await render_template(
             'user_details.html',
             user=user,
+            client_routers=client_routers_data.get('routers', []),
+            client_free_routers=client_routers_data.get('free', []),
+            client_routers_error=client_routers_error,
             payments=payments,
             promo=promo,
             traffic_stats=traffic_stats,

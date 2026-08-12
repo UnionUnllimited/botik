@@ -171,6 +171,29 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             return redirect(url_for("admin.router_card", device_id=device_id))
         return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
 
+    @admin_bp_instance.route("/users/<int:telegram_id>/router/bind", methods=["POST"])
+    async def client_router_bind(telegram_id: int):
+        """Привязка роутера из карточки клиента.
+
+        Та же операция, что в карточке роутера и в заказе, но со стороны
+        человека: оператор чаще открывает клиента, чем ищет устройство по MAC.
+        """
+        form = await request.form
+        data, error = await _post(
+            f"/api/v1/fleet/clients/{telegram_id}/routers",
+            {"mac": (form.get("mac") or "").strip(), "model": (form.get("model") or "").strip()},
+        )
+        await flash(error or f"Роутер {data.get('mac', '')} привязан.", "danger" if error else "success")
+        return redirect(url_for("admin.user_details", telegram_id=telegram_id))
+
+    @admin_bp_instance.route("/users/<int:telegram_id>/router/<int:device_id>/unbind", methods=["POST"])
+    async def client_router_unbind(telegram_id: int, device_id: int):
+        _, error = await _post(
+            f"/api/v1/fleet/clients/{telegram_id}/routers/{device_id}/unbind", {}
+        )
+        await flash(error or "Роутер отвязан.", "danger" if error else "success")
+        return redirect(url_for("admin.user_details", telegram_id=telegram_id))
+
     @admin_bp_instance.route("/routers/<int:device_id>/poll", methods=["POST"])
     async def router_poll(device_id: int):
         return await _act(device_id, "/poll", {}, "Показания обновлены.")

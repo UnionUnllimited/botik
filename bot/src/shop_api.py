@@ -196,6 +196,21 @@ async def my_router(tg_id: int) -> tuple[dict, str]:
     return await get("/api/v1/catalog/my-router", {"tg_id": tg_id})
 
 
+# --- Роутеры клиента ---------------------------------------------------------
+
+
+async def client_routers(tg_id: int) -> tuple[dict, str]:
+    return await get(f"/api/v1/fleet/clients/{tg_id}/routers")
+
+
+async def bind_client_router(tg_id: int, mac: str, model: str = "") -> tuple[dict, str]:
+    return await post(f"/api/v1/fleet/clients/{tg_id}/routers", {"mac": mac, "model": model})
+
+
+async def unbind_client_router(tg_id: int, device_id: int) -> tuple[dict, str]:
+    return await post(f"/api/v1/fleet/clients/{tg_id}/routers/{device_id}/unbind", {})
+
+
 # --- Заказы: сторона оператора -----------------------------------------------
 
 

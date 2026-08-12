@@ -44,6 +44,64 @@
     <div id="genInfoCollapse" class="collapse">
     <div class="px-3 sm:px-4 py-3 sm:py-4 space-y-8">
       <section>
+        <p class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-2">Роутер клиента</p>
+        {% if client_routers_error %}
+          <p class="text-[13px] m-0" style="color:#b91c1c">{{ client_routers_error }}</p>
+        {% else %}
+          {% if client_routers %}
+          <div class="overflow-x-auto rounded-[var(--radius-card)] border border-[rgb(var(--admin-border))] mb-3">
+            <table class="tw-tbl text-[12px]">
+              <thead>
+                <tr><th>MAC</th><th>Модель</th><th>Связь</th><th>Активирован</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for item in client_routers %}
+                <tr>
+                  <td class="whitespace-nowrap font-mono">
+                    <a href="{{ url_for('admin.router_card', device_id=item.id) }}">{{ item.mac }}</a>
+                  </td>
+                  <td class="whitespace-nowrap">{{ item.model or '—' }}</td>
+                  <td class="whitespace-nowrap">
+                    {% if item.online %}<span style="color:#16a34a">на связи</span>
+                    {% else %}<span class="tw-text-muted2">молчит</span>{% endif %}
+                  </td>
+                  <td class="whitespace-nowrap tw-text-muted2">
+                    {{ item.activated_at|msk_datetime if item.activated_at else 'нет' }}
+                  </td>
+                  <td class="whitespace-nowrap text-end">
+                    <form method="post" class="inline"
+                          action="{{ url_for('admin.client_router_unbind', telegram_id=user.telegram_id, device_id=item.id) }}"
+                          onsubmit="return confirm('Отвязать роутер {{ item.mac }} от клиента?');">
+                      <button type="submit" class="tw-btn tw-btn-sm">Отвязать</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-[13px] tw-text-muted2 mb-3">Роутер за клиентом не числится.</p>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('admin.client_router_bind', telegram_id=user.telegram_id) }}"
+                class="flex items-center gap-2 flex-wrap">
+            <input type="text" name="mac" list="client-free-macs" required
+                   placeholder="A0:B1:C2:D3:E4:F5" class="tw-input" style="min-width:220px">
+            <datalist id="client-free-macs">
+              {% for item in client_free_routers %}
+              <option value="{{ item.mac }}">{{ item.model }}</option>
+              {% endfor %}
+            </datalist>
+            <input type="text" name="model" placeholder="Модель" class="tw-input" style="min-width:150px">
+            <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">Привязать роутер</button>
+          </form>
+          <p class="text-[11px] tw-text-subtle2 mt-1 mb-0">
+            MAC написан на корпусе. В списке подсказки — свободные устройства со склада.
+          </p>
+        {% endif %}
+      </section>
+      <section>
         <p class="text-[11px] font-semibold uppercase tracking-wide tw-text-subtle2 mb-2">Активированные промокоды</p>
         {% if promo and promo|length > 0 %}
           <ul class="divide-y divide-[rgb(var(--admin-border))] rounded-[var(--radius-card)] border border-[rgb(var(--admin-border))] overflow-hidden bg-[rgb(var(--admin-border)/0.03)] m-0 p-0 list-none">

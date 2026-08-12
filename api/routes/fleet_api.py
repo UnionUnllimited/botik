@@ -30,7 +30,7 @@ from api.service_auth import require_token
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
-from core.models import Device
+from core.models import Device, User
 from core.security import normalize_mac
 from core.services import activation, panel_ticket, router_shell, settings_service
 from core.services import routers as routers_service
@@ -260,6 +260,112 @@ async def bind_router(
 @router.post("/routers/{device_id}/unbind", dependencies=[Depends(require_token)])
 async def unbind_router(device_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
     device = await _device_or_404(session, device_id)
+    device.user_id = None
+    device.status = DeviceStatus.NEW if device.activated_at is None else DeviceStatus.REVOKED
+    routers_service.add_event(
+        session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
+    )
+    return {"ok": True}
+
+
+# --- Роутеры клиента ---------------------------------------------------------
+#
+# Та же привязка, что в карточке роутера и в заказе, но со стороны человека:
+# оператор открывает клиента и видит, какое железо за ним числится. Ключ —
+# `tg_id`: у бота свои пользователи, у нас свои, общее между ними только он.
+
+
+def _client_router_row(device: Device, *, now) -> dict:
+    return {
+        "id": device.id,
+        "mac": device.mac,
+        "model": device.model or "",
+        "status": str(device.status),
+        "online": device.frp_online
+        or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
+        "activated_at": _iso(device.activated_at),
+    }
+
+
+@router.get("/clients/{tg_id}/routers", dependencies=[Depends(require_token)])
+async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    """Роутеры клиента и список свободных — из него оператор выбирает при привязке."""
+    now = utcnow()
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    devices = (
+        list(
+            await session.scalars(
+                select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+            )
+        )
+        if user is not None
+        else []
+    )
+    free = list(
+        await session.scalars(
+            select(Device)
+            .where(Device.user_id.is_(None))
+            .order_by(Device.id.desc())
+            .limit(FREE_DEVICES_LIMIT)
+        )
+    )
+    return {
+        "has_client": user is not None,
+        "routers": [_client_router_row(device, now=now) for device in devices],
+        "free": [{"mac": device.mac, "model": device.model or ""} for device in free],
+    }
+
+
+FREE_DEVICES_LIMIT = 50
+"""Подсказка для поля ввода, а не полный склад: список там и так есть."""
+
+
+@router.post("/clients/{tg_id}/routers", dependencies=[Depends(require_token)])
+async def bind_client_router(
+    tg_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Привязка роутера к клиенту по MAC."""
+    mac = normalize_mac(str(payload.get("mac", "")))
+    if not mac:
+        return {"ok": False, "error": "Некорректный MAC. Формат: A0:B1:C2:D3:E4:F5"}
+
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        # Оператор привязывает осознанно, и отказ «клиента нет у нас» ему ничего
+        # не объясняет: у бота-то клиент есть. Заводим строку и продолжаем.
+        user = User(tg_id=tg_id, username=str(payload.get("username", "")).strip()[:64] or None)
+        session.add(user)
+        await session.flush()
+
+    device, _ = await routers_service.get_or_create_by_mac(
+        session, mac, model=str(payload.get("model", "")).strip()[:64]
+    )
+    if device.user_id and device.user_id != user.id:
+        return {"ok": False, "error": f"Роутер {mac} уже привязан к другому клиенту."}
+
+    device.user_id = user.id
+    if device.status in (DeviceStatus.NEW, DeviceStatus.REVOKED):
+        device.status = DeviceStatus.ASSIGNED
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message="Привязан клиент " + user.display_name,
+    )
+    log.info("fleet.client_router_bound", tg_id=tg_id, mac=mac)
+    return {"ok": True, "mac": mac}
+
+
+@router.post("/clients/{tg_id}/routers/{device_id}/unbind", dependencies=[Depends(require_token)])
+async def unbind_client_router(
+    tg_id: int, device_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    device = await _device_or_404(session, device_id)
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None or device.user_id != user.id:
+        return {"ok": False, "error": "Этот роутер числится не за этим клиентом."}
+
     device.user_id = None
     device.status = DeviceStatus.NEW if device.activated_at is None else DeviceStatus.REVOKED
     routers_service.add_event(

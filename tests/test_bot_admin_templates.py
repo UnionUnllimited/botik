@@ -136,6 +136,28 @@ PAGES = {
         "query": "",
         "stock_error": "",
     },
+    "user_details.html": {
+        "user": {"telegram_id": 614685408, "username": "Union"},
+        "client_routers": [
+            {
+                "id": 1,
+                "mac": "A0:B1:C2:D3:E4:F5",
+                "model": "AX3000",
+                "online": True,
+                "activated_at": "2026-08-11T09:00:00+00:00",
+            }
+        ],
+        "client_free_routers": [{"mac": "A0:B1:C2:D3:E4:F6", "model": "AX3000"}],
+        "client_routers_error": "",
+        "payments": [],
+        "promo": [],
+        "traffic_stats": {},
+        "multi_traffic_stats": {},
+        "device_limit_history": [],
+        "has_2ip_token": False,
+        "user_raw": {},
+        "user_columns_meta": [],
+    },
     "routers_fleet.html": {
         "fleet": {"total": 1, "online": 1},
         "routers": [
@@ -171,10 +193,17 @@ def env() -> jinja2.Environment:
         ),
         autoescape=True,
     )
+    # Фильтры их админки — нам важно, что страница собирается, а не как
+    # выглядит дата.
+    environment.filters["msk_datetime"] = lambda value: str(value or "")
     environment.globals.update(
         url_for=lambda endpoint, **kwargs: f"/{endpoint}",
         get_flashed_messages=lambda **kwargs: [],
         request=SimpleNamespace(path="/", args={}),
+        # Права проверяются в их шаблонах напрямую; для отрисовки достаточно
+        # самого широкого доступа — иначе половина блоков просто не появится.
+        current_user=SimpleNamespace(is_admin=True, is_authenticated=True, auth_id="1"),
+        moderator_can_see=lambda section: True,
     )
     return environment
 
