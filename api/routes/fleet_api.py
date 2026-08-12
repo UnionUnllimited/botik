@@ -32,7 +32,7 @@ from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import Device, User
 from core.security import normalize_mac
-from core.services import activation, panel_ticket, router_shell, settings_service
+from core.services import activation, panel_ticket, remnawave, router_shell, settings_service
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
 from core.services.frp import RouterApi
@@ -338,7 +338,46 @@ async def routers_of_clients(tg_ids: str = "", session: AsyncSession = Depends(g
                 "status": str(current.status),
                 "until": _iso(current.expires_at),
             }
-    return {"routers": found, "subscriptions": subscriptions}
+
+    return {
+        "routers": found,
+        "subscriptions": subscriptions,
+        "traffic": await _panel_traffic(set(owners)),
+    }
+
+
+async def _panel_traffic(tg_ids: set[str]) -> dict[str, dict]:
+    """Расход и последний выход в сеть по учёткам панели.
+
+    Одним запросом на всю страницу: список учёток панель отдаёт целиком,
+    и спрашивать её по клиенту на строку значило бы тридцать запросов
+    на один список.
+
+    Служба аналитики бота, которая наполняла его собственные колонки трафика,
+    на сервере не установлена вовсе — эти цифры теперь берутся отсюда.
+    """
+    if not tg_ids or not settings.remnawave.is_configured:
+        return {}
+    try:
+        accounts = await asyncio.wait_for(remnawave.client().users(), timeout=5)
+    except (TimeoutError, remnawave.RemnawaveError) as exc:
+        log.warning("fleet.panel_traffic_failed", error=str(exc))
+        return {}
+
+    found: dict[str, dict] = {}
+    for account in accounts:
+        # Учётка роутера заводится с telegram_id, но панель может его
+        # и не вернуть — тогда имя `tg{id}_{mac}` остаётся единственной зацепкой.
+        owner = str(account.telegram_id or "")
+        if not owner and account.username.startswith("tg"):
+            owner = account.username[2:].split("_", 1)[0]
+        if owner not in tg_ids:
+            continue
+        current = found.setdefault(owner, {"used_bytes": 0, "online_at": ""})
+        current["used_bytes"] += account.used_traffic_bytes
+        if account.online_at > current["online_at"]:
+            current["online_at"] = account.online_at
+    return found
 
 
 def _client_router_row(device: Device, *, now) -> dict:

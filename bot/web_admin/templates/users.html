@@ -191,7 +191,7 @@
               <th style="min-width: 95px;">Подписка</th>
               <th style="min-width: 70px;">Лимит</th>
               {% set _tsrc = traffic_source|default('xui') %}
-              <th style="min-width: 90px;" title="Источник: таблица users (синхронизация Remnawave)">Трафик</th>
+              <th style="min-width: 90px;" title="Расход по счётчику панели: для клиентов с роутером берётся напрямую из неё">Трафик</th>
               <th style="min-width: 90px;" title="Источник: таблица users (синхронизация Remnawave)">За сутки</th>
               <th style="min-width: 140px;" title="Онлайн, если был в сети менее 10 минут назад">
                 <span class="inline-flex items-center gap-1">
@@ -310,7 +310,20 @@
                 {% endif %}
               </td>
               <td>
-                {% if traffic_mb > 0 %}
+                {# Расход по счётчику панели. Своя колонка трафика наполнялась
+                   службой аналитики, которой на сервере нет, — у клиента
+                   роутера она всегда пустая. #}
+                {% set router_traffic = (client_traffic_map|default({})).get(user['telegram_id']|string) %}
+                {% if router_traffic and router_traffic.used_bytes %}
+                  {% set gb = router_traffic.used_bytes / (1024 * 1024 * 1024) %}
+                  {% if gb >= 1024 %}
+                    <span>{{ (gb / 1024)|round(2) }}&nbsp;ТБ</span>
+                  {% elif gb >= 1 %}
+                    <span>{{ gb|round(2) }}&nbsp;ГБ</span>
+                  {% else %}
+                    <span>{{ (gb * 1024)|round(1) }}&nbsp;МБ</span>
+                  {% endif %}
+                {% elif traffic_mb > 0 %}
                   {% if traffic_mb >= 1024 * 1024 %}
                     <span title="{{ traffic_mb|round(2) }} МБ">{{ (traffic_mb / (1024*1024))|round(2) }}&nbsp;ТБ</span>
                   {% elif traffic_mb >= 1024 %}

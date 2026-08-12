@@ -255,6 +255,10 @@ class RemnaUser:
     used_traffic_bytes: int = 0
     """Расход по счётчику панели. Именно он показывает, сколько ушло через
     подписку: счётчики самого роутера считают и домашний трафик тоже."""
+    telegram_id: int = 0
+    """Проставляется при заведении учётки — по нему учётка находится обратно,
+    без разбора имени."""
+    online_at: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -268,6 +272,8 @@ class RemnaUser:
             used_traffic_bytes=_int_of(
                 _pick(item, "usedTrafficBytes", "lifetimeUsedTrafficBytes", default=0)
             ),
+            telegram_id=_int_of(_pick(item, "telegramId", "telegram_id", default=0)),
+            online_at=str(_pick(item, "onlineAt", "lastConnectedAt", default="") or ""),
             raw=item,
         )
 
@@ -377,16 +383,20 @@ class RemnawaveClient:
     async def squads(self) -> list[RemnaSquad]:
         return [RemnaSquad.parse(item) for item in as_list(await self.get(self._config.squads_path))]
 
-    async def find_user(self, username: str) -> RemnaUser | None:
-        """Учётка по имени.
+    async def users(self) -> list[RemnaUser]:
+        """Все учётки панели одним запросом.
 
-        Ищем перебором списка, а не отдельной ручкой: имя ручки поиска
-        в разных версиях панели своё, а список мы и так умеем читать.
+        Отдельной ручки «дай по имени» у панели в разных версиях называется
+        по-разному, а список читается одинаково. Заодно им закрывается расход
+        трафика сразу по странице клиентов — иначе вышло бы по запросу на строку.
         """
+        return [RemnaUser.parse(item) for item in as_list(await self.get(self._config.users_path))]
+
+    async def find_user(self, username: str) -> RemnaUser | None:
         wanted = username.strip().lower()
-        for item in as_list(await self.get(self._config.users_path)):
-            if str(_pick(item, "username", default="")).strip().lower() == wanted:
-                return RemnaUser.parse(item)
+        for account in await self.users():
+            if account.username.strip().lower() == wanted:
+                return account
         return None
 
     async def create_user(
