@@ -108,6 +108,19 @@ PAGES = {
         "delivery": DELIVERY_OPTIONS,
         "free_from": "0.00",
         "delivery_error": "",
+        "plans": [
+            {
+                "id": 1,
+                "slug": "m3",
+                "title": "3 месяца",
+                "months": 3,
+                "extra_days": 0,
+                "price": "1490.00",
+                "is_active": True,
+                "sort_order": 100,
+            }
+        ],
+        "plans_error": "",
         "catalog_enabled": True,
         "specs_limit": 8,
     },

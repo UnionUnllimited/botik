@@ -186,6 +186,33 @@ def card_preview(product: dict) -> LinkPreviewOptions:
     return LinkPreviewOptions(url=photo, prefer_large_media=True, show_above_text=True)
 
 
+def period_text(plan: dict) -> str:
+    """«12 мес + 30 дней» — срок словами, как его выбирает клиент."""
+    parts = []
+    months = int(plan.get("months") or 0)
+    days = int(plan.get("extra_days") or 0)
+    if months:
+        parts.append(f"{months} мес.")
+    if days:
+        parts.append(f"+{days} дн.")
+    return " ".join(parts) or plan.get("title", "")
+
+
+def plans_keyboard(plans: list[dict], product_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for plan in plans:
+        builder.row(
+            btn(
+                "btn_shop_plan",
+                text=f"{plan.get('title', '')} · {money(plan.get('price'))}",
+                callback_data=f"shop_plan:{product_id}:{plan.get('id')}",
+            )
+        )
+    builder.row(btn("btn_shop_back_to_list", callback_data=f"shop_item:{product_id}"))
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
 def cancel_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
@@ -240,8 +267,13 @@ def confirm_text(quote: dict, data: dict) -> str:
     lines = [
         "🧾 <b>Проверьте заказ</b>",
         "",
-        f"<b>{_esc(product.get('title'))}</b> — {money(quote.get('subtotal'))}",
+        # Цена самой модели, а не общая сумма: срок идёт отдельной строкой ниже,
+        # и одинаковые числа рядом читались бы как ошибка счёта.
+        f"<b>{_esc(product.get('title'))}</b> — {money(product.get('price'))}",
     ]
+    plan = quote.get("plan") or {}
+    if plan:
+        lines.append(f"Подписка: {_esc(plan.get('title'))} — {money(plan.get('price'))}")
     if quote.get("promo"):
         lines.append(f"Промокод {_esc(quote['promo'].get('code'))} — −{money(quote.get('discount'))}")
     if data.get("delivery_method"):
@@ -453,6 +485,7 @@ def draft_payload(user, data: dict) -> dict:
         "username": user.username or "",
         "first_name": user.first_name or "",
         "product_id": data.get("product_id"),
+        "plan_id": data.get("plan_id"),
         "name": data.get("name", ""),
         "phone": data.get("phone", ""),
         "city": data.get("city", ""),
@@ -552,6 +585,29 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
 
         await state.clear()
         await state.update_data(product_id=product_id, product_title=product.get("title", ""))
+
+        # Срок выбирается вместе с роутером: от него зависит и цена, и то,
+        # на сколько включится подписка, когда роутер доедет.
+        periods, error = await shop_api.plans()
+        if error:
+            return await show_error(query, error)
+        if not periods:
+            return await query.answer(text("text_order_no_plans"), show_alert=True)
+
+        await edit_screen(
+            query.message,
+            text("text_order_ask_plan"),
+            reply_markup=plans_keyboard(periods, product_id),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_plan:"))
+    async def cq_plan(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        _, product_id, plan_id = query.data.split(":")
+        await state.update_data(product_id=int(product_id), plan_id=int(plan_id))
         await state.set_state(RouterOrder.name)
         await edit_screen(
             query.message,

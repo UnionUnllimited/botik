@@ -40,7 +40,7 @@ from core.enums import (
     PaymentPurpose,
     VatCode,
 )
-from core.models import Device, Order, Payment, Product, User
+from core.models import Device, Order, Payment, Plan, Product, User
 from core.security import normalize_mac
 from core.services import activation, media, settings_service
 from core.services import delivery as delivery_service
@@ -252,6 +252,92 @@ async def delete_product(product_id: int, session: AsyncSession = Depends(get_tr
     return {"ok": True}
 
 
+# --- Сроки подписки ----------------------------------------------------------
+#
+# Срок выбирается вместе с роутером: без него оплата не из чего создаёт подписку,
+# и приехавший роутер нечем активировать. Это те же тарифы, по которым считается
+# цена и продление, — второго списка сроков заводить нельзя.
+
+
+def _plan_payload(plan: Plan) -> dict[str, Any]:
+    return {
+        "id": plan.id,
+        "slug": plan.slug,
+        "title": plan.title,
+        "description": plan.description or "",
+        "months": plan.months,
+        "extra_days": plan.extra_days,
+        "price": str(plan.price),
+        "old_price": str(plan.old_price) if plan.old_price is not None else "",
+        "price_per_month": str(plan.price_per_month),
+        "is_active": plan.is_active,
+        "is_default": plan.is_default,
+        "sort_order": plan.sort_order,
+    }
+
+
+@router.get("/plans")
+async def list_plans(
+    session: AsyncSession = Depends(get_session),
+    include_hidden: bool = Query(default=False, alias="all"),
+) -> dict:
+    query = select(Plan).order_by(Plan.sort_order, Plan.months)
+    if not include_hidden:
+        query = query.where(Plan.is_active.is_(True))
+    plans = list(await session.scalars(query))
+    return {"total": len(plans), "plans": [_plan_payload(plan) for plan in plans]}
+
+
+@router.post("/plans/{plan_id}")
+async def save_plan(
+    plan_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Сохранение срока из админки бота. `plan_id = 0` — создание нового."""
+    plan = await session.get(Plan, plan_id) if plan_id else None
+    creating = plan is None
+    title = str(payload.get("title", "")).strip()
+
+    if creating:
+        slug = str(payload.get("slug", "")).strip().lower()
+        if not slug:
+            return {"ok": False, "error": "Нужен slug — короткое имя латиницей."}
+        if await session.scalar(select(Plan).where(Plan.slug == slug)) is not None:
+            return {"ok": False, "error": "Срок с таким slug уже есть."}
+        if not title:
+            return {"ok": False, "error": "Нужно название."}
+        plan = Plan(slug=slug, title=title, months=1, price=Decimal("0"))
+        session.add(plan)
+
+    plan.title = title or plan.title
+    plan.description = str(payload.get("description", "")).strip()
+    plan.months = max(_int(payload.get("months"), plan.months), 0)
+    plan.extra_days = max(_int(payload.get("extra_days"), plan.extra_days), 0)
+    plan.price = _decimal(payload.get("price"), str(plan.price))
+    old_price = str(payload.get("old_price", "")).strip()
+    plan.old_price = _decimal(old_price) if old_price else None
+    plan.sort_order = _int(payload.get("sort_order"), plan.sort_order)
+    plan.is_active = bool(payload.get("is_active"))
+
+    if plan.months <= 0 and plan.extra_days <= 0:
+        return {"ok": False, "error": "Срок пустой: укажите месяцы или дни."}
+
+    await session.flush()
+    log.info("catalog.plan_saved", plan_id=plan.id, created=creating, months=plan.months)
+    return {"ok": True, "plan": _plan_payload(plan)}
+
+
+@router.post("/plans/{plan_id}/delete")
+async def delete_plan(plan_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Удаление срока. Оплаченные подписки не страдают: у них свой снимок
+    условий, а ссылка на тариф обнуляется самой базой."""
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    await session.delete(plan)
+    log.info("catalog.plan_deleted", plan_id=plan_id, title=plan.title)
+    return {"ok": True}
+
+
 # --- Доставка и проверка полей ----------------------------------------------
 
 
@@ -424,6 +510,7 @@ def _draft(payload: dict) -> order_service.OrderDraft:
     to_pvz = bool(payload.get("delivery_to_pvz", True))
     return order_service.OrderDraft(
         product_id=_int(payload.get("product_id")) or None,
+        plan_id=_int(payload.get("plan_id")) or None,
         customer_name=validators.clean_full_name(str(payload.get("name", ""))),
         customer_phone=validators.clean_phone(str(payload.get("phone", ""))),
         customer_city=validators.clean_city(str(payload.get("city", ""))),
@@ -446,6 +533,7 @@ def _totals_payload(totals: order_service.OrderTotals) -> dict:
         "total": str(totals.total),
         "currency": settings.app.currency,
         "product": _product_payload(totals.product) if totals.product else None,
+        "plan": _plan_payload(totals.plan) if totals.plan else None,
         "promo": {"code": promo.promo.code, "discount": str(totals.discount)} if promo else None,
     }
 

@@ -138,6 +138,20 @@ async def delete_product(product_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/products/{product_id}/delete", {})
 
 
+async def plans(*, include_hidden: bool = False) -> tuple[list[dict], str]:
+    """Сроки подписки: их выбирают вместе с роутером."""
+    data, error = await get("/api/v1/catalog/plans", {"all": "1"} if include_hidden else None)
+    return data.get("plans", []), error
+
+
+async def save_plan(plan_id: int, payload: dict) -> tuple[dict, str]:
+    return await post(f"/api/v1/catalog/plans/{plan_id}", payload)
+
+
+async def delete_plan(plan_id: int) -> tuple[dict, str]:
+    return await post(f"/api/v1/catalog/plans/{plan_id}/delete", {})
+
+
 async def delivery_options() -> tuple[dict, str]:
     return await get("/api/v1/catalog/delivery")
 
