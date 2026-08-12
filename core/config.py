@@ -467,19 +467,15 @@ class Settings(EnvSettings):
         if not self.app.is_prod:
             return self
         missing: list[str] = []
-        if not self.bot.token.get_secret_value():
-            missing.append("BOT_TOKEN")
+        # BOT_TOKEN здесь больше не требуется: своего бота у нас нет, клиенту
+        # пишет бот стороннего продукта своим токеном. Требовать мёртвый токен
+        # ради запуска — верный способ держать его в .env вечно.
         if not self.security.secret_key.get_secret_value():
             missing.append("SECURITY_SECRET_KEY")
         if not self.security.encryption_key.get_secret_value():
             missing.append("SECURITY_ENCRYPTION_KEY")
         if not self.db.password.get_secret_value():
             missing.append("POSTGRES_PASSWORD")
-        if self.bot.mode == "webhook":
-            if not self.bot.webhook_base_url.startswith("https://"):
-                missing.append("BOT_WEBHOOK_BASE_URL (должен быть https)")
-            if not self.bot.webhook_secret.get_secret_value():
-                missing.append("BOT_WEBHOOK_SECRET")
         if not self.api.public_base_url.startswith("https://"):
             missing.append("API_PUBLIC_BASE_URL (должен быть https)")
         if missing:

@@ -47,13 +47,15 @@ async def notify_payment_result(session: AsyncSession, payment: Payment) -> None
             has_device=has_device,
         ),
         session=session,
+        kind="payment",
     )
     await notify_admins(
         ru.ADMIN_PAYMENT_OK.format(
             number=order.public_number if order else f"платёж #{payment.id}",
             total=ru.money(payment.amount),
             customer=user.display_name,
-        )
+        ),
+        session=session,
     )
 
 
@@ -82,14 +84,21 @@ async def notify_order_status(
             url = order.delivery.tracking_url or delivery_service.tracking_url(order.delivery.method, track)
             markup = tg_buttons.tracking(url)
 
-    return await send_message(user.tg_id, text.strip(), reply_markup=markup, session=session)
+    return await send_message(
+        user.tg_id, text.strip(), reply_markup=markup, session=session, kind="order"
+    )
 
 
-async def notify_amount_mismatch(payment: Payment, received: str) -> None:
+async def notify_amount_mismatch(
+    payment: Payment, received: str, *, session: AsyncSession | None = None
+) -> None:
+    """Сессия нужна, чтобы положить алерт в очередь: своего бота у нас нет,
+    отправляет чужой. Без неё сообщение только уйдёт в лог."""
     await notify_admins(
         ru.ADMIN_PAYMENT_MISMATCH.format(
             payment_id=payment.id,
             expected=ru.money(payment.amount),
             received=received,
-        )
+        ),
+        session=session,
     )

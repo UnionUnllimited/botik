@@ -144,10 +144,12 @@ class TestProdValidation:
     def test_valid_prod_config(self, prod_env):
         assert Settings().app.is_prod is True
 
-    def test_missing_bot_token_fails(self, prod_env):
+    def test_missing_bot_token_is_fine(self, prod_env):
+        """Своего бота у нас нет: клиенту пишет бот стороннего продукта своим
+        токеном, а сообщения мы кладём в очередь. Требовать мёртвый токен ради
+        запуска — способ держать его в .env вечно."""
         prod_env.setenv("BOT_TOKEN", "")
-        with pytest.raises(ValueError, match="BOT_TOKEN"):
-            Settings()
+        assert Settings().app.is_prod is True
 
     def test_plain_http_public_url_fails(self, prod_env):
         """Ссылки подписки прошиваются в роутеры — там не может быть http."""
@@ -155,12 +157,6 @@ class TestProdValidation:
         with pytest.raises(ValueError, match="API_PUBLIC_BASE_URL"):
             Settings()
 
-    def test_webhook_mode_requires_secret(self, prod_env):
-        prod_env.setenv("BOT_MODE", "webhook")
-        prod_env.setenv("BOT_WEBHOOK_BASE_URL", "https://api.example.ru")
-        prod_env.setenv("BOT_WEBHOOK_SECRET", "")
-        with pytest.raises(ValueError, match="BOT_WEBHOOK_SECRET"):
-            Settings()
 
     def test_dev_env_skips_checks(self, monkeypatch):
         monkeypatch.setenv("APP_ENV", "dev")

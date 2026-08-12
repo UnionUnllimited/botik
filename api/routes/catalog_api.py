@@ -22,7 +22,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -40,7 +40,7 @@ from core.enums import (
     PaymentPurpose,
     VatCode,
 )
-from core.models import Device, Order, Payment, Plan, Product, User
+from core.models import Device, Notification, Order, Payment, Plan, Product, User
 from core.security import normalize_mac
 from core.services import activation, media, settings_service
 from core.services import delivery as delivery_service
@@ -479,6 +479,76 @@ async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) ->
         "router": router_payload,
         "order": _order_payload(order) if order is not None else None,
     }
+
+
+# --- Очередь сообщений -------------------------------------------------------
+#
+# Отправляет их бот: клиент разговаривает с ним, и токен есть только у него.
+# Мы кладём готовый текст, бот забирает пачку, отправляет и отчитывается.
+
+OUTBOX_MAX_ATTEMPTS = 5
+"""После пяти неудач перестаём предлагать сообщение: доставить его уже нечем,
+а очередь не должна расти вечно из-за одного заблокировавшего бота клиента."""
+
+
+@router.get("/outbox")
+async def outbox(limit: int = 20, session: AsyncSession = Depends(get_session)) -> dict:
+    """Что отправить клиентам прямо сейчас."""
+    pending = list(
+        await session.scalars(
+            select(Notification)
+            .where(
+                Notification.sent_at.is_(None),
+                Notification.attempts < OUTBOX_MAX_ATTEMPTS,
+            )
+            .order_by(Notification.id)
+            .limit(max(min(limit, 100), 1))
+        )
+    )
+    return {
+        "messages": [
+            {
+                "id": item.id,
+                "tg_id": item.tg_id,
+                "text": item.text,
+                "buttons": item.buttons or [],
+                "kind": item.kind,
+            }
+            for item in pending
+        ]
+    }
+
+
+@router.post("/outbox/{message_id}/ack")
+async def outbox_ack(
+    message_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Отчёт бота о судьбе сообщения.
+
+    `blocked` — клиент закрылся от бота: помечаем его у себя, чтобы не копить
+    ему очередь, и сообщение больше не предлагаем. Прочие ошибки просто
+    считаем попытками — связь и Telegram отказывают временно.
+    """
+    message = await session.get(Notification, message_id)
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    if payload.get("ok"):
+        message.sent_at = utcnow()
+        message.last_error = None
+        return {"ok": True}
+
+    message.attempts += 1
+    message.last_error = str(payload.get("error", ""))[:500]
+    if payload.get("blocked"):
+        message.attempts = OUTBOX_MAX_ATTEMPTS
+        await session.execute(
+            update(User)
+            .where(User.tg_id == message.tg_id, User.bot_blocked.is_(False))
+            .values(bot_blocked=True, bot_blocked_at=utcnow())
+        )
+        log.info("catalog.outbox_blocked", tg_id=message.tg_id)
+    return {"ok": True}
 
 
 # --- Продление ---------------------------------------------------------------

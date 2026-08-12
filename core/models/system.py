@@ -6,6 +6,7 @@ import datetime as dt
 from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.enums import ActorType
@@ -54,3 +55,36 @@ class AuditLog(BigIntPkMixin, Base):
         Index("ix_audit_log_admin_id_created_at", "admin_id", "created_at"),
         Index("ix_audit_log_action_created_at", "action", "created_at"),
     )
+
+
+class Notification(BigIntPkMixin, Base):
+    """Сообщение клиенту, которое ждёт отправки ботом.
+
+    Своего бота у нас больше нет: клиент разговаривает с ботом стороннего
+    продукта, и токен есть только у него. Слать напрямую мы не можем и не должны —
+    сообщение от неизвестного бота человек в лучшем случае не узнает.
+
+    Поэтому очередь: мы кладём готовый текст, бот раз в несколько секунд
+    забирает пачку, отправляет и отчитывается. Заодно это переживает и его
+    перезапуск, и обрыв связи — напоминание об окончании подписки не должно
+    теряться из-за того, что бота в этот момент обновляли.
+    """
+
+    __tablename__ = "notifications"
+
+    tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    buttons: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
+    """Только ссылки: [{"text": "...", "url": "..."}]. Callback обрабатывает бот,
+    а он сменный — кнопка с уехавшим обработчиком молча перестала бы работать."""
+    kind: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    """Зачем отправлено: reminder, payment, order, admin. Нужно для разбора жалоб."""
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (Index("ix_notifications_pending", "sent_at", "id"),)

@@ -1,47 +1,41 @@
-"""Отправка сообщений из процессов без диспетчера (api, worker).
+"""Сообщения клиенту из процессов без диспетчера (api, worker).
 
-Бот здесь создаётся по требованию и закрывается вместе с процессом.
-Все ошибки Telegram обрабатываются: заблокировавшего бота пользователя
-помечаем в БД, RetryAfter выжидаем.
+Своего бота у нас нет: клиент разговаривает с ботом стороннего продукта,
+и токен есть только у него. Слать напрямую мы не можем — и не должны,
+даже если бы могли: сообщение от постороннего бота человек не узнает,
+а половина клиентов его вовсе не получит.
+
+Поэтому здесь очередь, а не отправка. Мы кладём готовый текст в таблицу
+`notifications`, бот раз в несколько секунд забирает пачку через
+`/api/v1/catalog/outbox`, отправляет своим токеном и отчитывается. Очередь
+переживает и его перезапуск, и обрыв связи: напоминание об окончании подписки
+не должно теряться из-за того, что бота в этот момент обновляли.
+
+Кнопки — только ссылки. Callback обрабатывает конкретный бот, а он сменный:
+кнопка с уехавшим обработчиком молча перестала бы работать.
 """
 
 from __future__ import annotations
 
-import asyncio
-import datetime as dt
-
 import structlog
-from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.models import User
+from core.models import Notification
 
 log = structlog.get_logger("notifications")
 
-_bot: Bot | None = None
 
-
-def get_bot() -> Bot:
-    global _bot  # noqa: PLW0603 — один клиент на процесс
-    if _bot is None:
-        _bot = Bot(
-            token=settings.bot.token.get_secret_value(),
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True),
-        )
-    return _bot
-
-
-async def close_bot() -> None:
-    global _bot  # noqa: PLW0603
-    if _bot is not None:
-        await _bot.session.close()
-    _bot = None
+def _buttons_of(markup: InlineKeyboardMarkup | None) -> list[dict[str, str]]:
+    if markup is None:
+        return []
+    return [
+        {"text": button.text, "url": button.url}
+        for row in markup.inline_keyboard
+        for button in row
+        if button.url
+    ]
 
 
 async def send_message(
@@ -50,41 +44,48 @@ async def send_message(
     *,
     reply_markup: InlineKeyboardMarkup | None = None,
     session: AsyncSession | None = None,
-    retries: int = 2,
+    kind: str = "",
 ) -> bool:
-    """Отправляет сообщение. False — доставить не удалось."""
+    """Ставит сообщение в очередь на отправку ботом.
+
+    `False` значит «отправлять некому или некуда»: без сессии записать в очередь
+    нельзя, а без chat_id — незачем. Успешная постановка ещё не доставка:
+    результат появится в `notifications.sent_at` после того, как бот отчитается.
+    """
     if not chat_id:
         return False
-    bot = get_bot()
-    for attempt in range(retries + 1):
-        try:
-            await bot.send_message(chat_id, text, reply_markup=reply_markup)
-        except TelegramForbiddenError:
-            log.info("notify.bot_blocked", chat_id=chat_id)
-            if session is not None:
-                await session.execute(
-                    update(User)
-                    .where(User.tg_id == chat_id, User.bot_blocked.is_(False))
-                    .values(bot_blocked=True, bot_blocked_at=dt.datetime.now(dt.UTC))
-                )
-            return False
-        except TelegramRetryAfter as exc:
-            log.warning("notify.retry_after", chat_id=chat_id, seconds=exc.retry_after)
-            if attempt >= retries:
-                return False
-            await asyncio.sleep(exc.retry_after)
-        except Exception as exc:  # noqa: BLE001 — уведомление не должно ронять транзакцию
-            log.warning("notify.failed", chat_id=chat_id, error=str(exc))
-            return False
-        else:
-            return True
-    return False
+    if session is None:
+        # Раньше здесь молча уходило в Telegram. Теперь без сессии сообщение
+        # просто некуда деть, и терять его тихо нельзя.
+        log.error("notify.no_session", chat_id=chat_id, text=text[:120])
+        return False
+
+    session.add(
+        Notification(
+            tg_id=chat_id,
+            text=text,
+            buttons=_buttons_of(reply_markup),
+            kind=kind or "message",
+        )
+    )
+    log.info("notify.queued", chat_id=chat_id, kind=kind or "message")
+    return True
 
 
-async def notify_admins(text: str, *, reply_markup: InlineKeyboardMarkup | None = None) -> None:
+async def notify_admins(
+    text: str,
+    *,
+    session: AsyncSession | None = None,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
     """Служебное сообщение в админ-канал; если он не задан — владельцу."""
     chat_id = settings.bot.alerts_chat_id or settings.bot.owner_id
     if not chat_id:
         log.warning("notify.no_admin_chat", text=text[:120])
         return
-    await send_message(chat_id, text, reply_markup=reply_markup)
+    await send_message(chat_id, text, reply_markup=reply_markup, session=session, kind="admin")
+
+
+async def close_bot() -> None:
+    """Осталось ради вызова при остановке api: закрывать больше нечего."""
+    return None

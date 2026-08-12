@@ -200,6 +200,22 @@ async def cancel_order(order_id: int, tg_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/orders/{order_id}/cancel", {"tg_id": tg_id})
 
 
+# --- Очередь сообщений -------------------------------------------------------
+
+
+async def outbox(limit: int = 20) -> tuple[dict, str]:
+    """Что основное приложение просит отправить клиентам."""
+    return await get("/api/v1/catalog/outbox", {"limit": limit})
+
+
+async def outbox_ack(message_id: int, *, ok: bool, error: str = "", blocked: bool = False):
+    """Отчёт о судьбе сообщения: без него оно будет предложено снова."""
+    return await post(
+        f"/api/v1/catalog/outbox/{message_id}/ack",
+        {"ok": ok, "error": error, "blocked": blocked},
+    )
+
+
 # --- Клиент и его роутер -----------------------------------------------------
 
 

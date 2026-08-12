@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from core import texts as ru
-from core import tg_buttons
 from core.config import settings
 from core.dates import days_left, days_phrase, utcnow
 from core.db import session_scope
@@ -89,11 +88,13 @@ async def send_reminders() -> int:
                 subscription.last_reminder_day = marker
                 continue
 
+            # Кнопки нет намеренно: кабинет на сайте удалён вместе с сайтом,
+            # а продление живёт в самом боте — клиент уже в нужном чате.
             delivered = await send_message(
                 user.tg_id,
                 text,
-                reply_markup=tg_buttons.cabinet(),
                 session=session,
+                kind="reminder",
             )
             subscription.last_reminder_day = marker
             sent += int(delivered)

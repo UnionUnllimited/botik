@@ -52,6 +52,7 @@ from src.telegram_bot_factory import make_aiogram_bot, normalize_telegram_proxy_
 from src.subscription_handlers import register_subscription_handlers, show_trial_progress, show_trial_progress_edit
 from src.device_upgrade_handlers import register_device_upgrade_handlers
 from src.router_catalog import register_router_catalog_handlers, remember_client
+from src.shop_outbox import start_outbox
 from src.maintenance.register import register_maintenance
 from src.channel_subscription import ChannelSubscriptionChecker, get_channel_checker
 from src.notifications import start_notification_tasks
@@ -8467,6 +8468,10 @@ async def main():
         await app_conf.load_settings()
         await apply_bot_session_from_settings(dp)
         start_notification_tasks(bot)
+        # Очередь основного приложения: напоминания об окончании подписки,
+        # подтверждения оплаты и алерты оператору. Отправляем мы — токен
+        # есть только у нас, и клиент разговаривает именно с этим ботом.
+        start_outbox(bot)
         start_stale_payments_task(active_payment_checkers)
         start_expired_traffic_reset_task()
 
