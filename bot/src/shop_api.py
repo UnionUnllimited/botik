@@ -177,6 +177,15 @@ async def create_order(payload: dict) -> tuple[dict, str]:
     return await post("/api/v1/catalog/orders", payload)
 
 
+async def renew_state(tg_id: int) -> tuple[dict, str]:
+    """Текущий срок и периоды для экрана продления."""
+    return await get("/api/v1/catalog/renew", {"tg_id": tg_id})
+
+
+async def renew_start(tg_id: int, plan_id: int) -> tuple[dict, str]:
+    return await post("/api/v1/catalog/renew", {"tg_id": tg_id, "plan_id": plan_id})
+
+
 async def orders_of(tg_id: int, limit: int = 10) -> tuple[list[dict], str]:
     data, error = await get("/api/v1/catalog/orders", {"tg_id": tg_id, "limit": limit})
     return data.get("orders", []), error

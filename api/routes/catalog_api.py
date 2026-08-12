@@ -47,6 +47,7 @@ from core.services import delivery as delivery_service
 from core.services import orders as order_service
 from core.services import payments as payment_service
 from core.services import promo as promo_service
+from core.services import subscriptions as subscription_service
 
 log = structlog.get_logger("api.catalog")
 
@@ -120,6 +121,10 @@ async def _product_or_404(session: AsyncSession, product_id: int) -> Product:
 async def product_card(product_id: int, session: AsyncSession = Depends(get_session)) -> dict:
     product = await _product_or_404(session, product_id)
     return {"product": _product_payload(product), "currency": settings.app.currency}
+
+
+def _iso_dt(value) -> str | None:
+    return value.isoformat() if value else None
 
 
 def _decimal(raw: Any, default: str = "0") -> Decimal:
@@ -474,6 +479,77 @@ async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) ->
         "router": router_payload,
         "order": _order_payload(order) if order is not None else None,
     }
+
+
+# --- Продление ---------------------------------------------------------------
+#
+# Продлевать подписку роутера умеет только наша цепочка: учётка в панели заведена
+# на MAC устройства (`tg{id}_{mac}`), и продление двигает срок именно ей. Их
+# собственное продление работает с учёткой `tg{id}` — это подписка для приложения
+# на телефоне, к роутеру отношения не имеющая: клиент заплатил бы, а доступ
+# на роутере не продлился.
+
+
+@router.get("/renew")
+async def renew_state(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    """Что показать на экране продления: текущий срок и доступные периоды."""
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    subscription = (
+        await subscription_service.get_current(session, user.id) if user is not None else None
+    )
+    plans = list(
+        await session.scalars(
+            select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order, Plan.months)
+        )
+    )
+    return {
+        "has_client": user is not None,
+        "subscription": {
+            "status": str(subscription.status) if subscription else "",
+            "until": _iso_dt(subscription.expires_at) if subscription else None,
+        },
+        "plans": [_plan_payload(plan) for plan in plans],
+    }
+
+
+@router.post("/renew")
+async def renew_start(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Ссылка на оплату продления. Срок двигается уже по факту оплаты."""
+    user = await _user_by_tg(session, payload, create=False)
+    if user is None:
+        return {"ok": False, "error": "Сначала оформите заказ — продлевать пока нечего."}
+
+    plan = await session.get(Plan, _int(payload.get("plan_id")))
+    if plan is None or not plan.is_active:
+        return {"ok": False, "error": "Этот срок больше не продаётся."}
+
+    subscription = await subscription_service.get_current(session, user.id)
+    if subscription is None:
+        return {
+            "ok": False,
+            "error": "Подписки нет. Она появится вместе с заказом роутера.",
+        }
+
+    try:
+        payment = await payment_service.start_payment(
+            session,
+            user=user,
+            provider_name=PaymentProviderName.PLATEGA,
+            amount=plan.price,
+            purpose=PaymentPurpose.SUBSCRIPTION,
+            description=f"Продление подписки: {plan.title}",
+            plan=plan,
+            subscription=subscription,
+        )
+    except Exception as exc:  # noqa: BLE001 — причина уже описана человеческим языком
+        log.warning("catalog.renew_payment_failed", tg_id=tg_id_of(payload), error=str(exc))
+        return {"ok": False, "error": f"Оплата сейчас недоступна: {exc}"}
+
+    return {"ok": True, "pay_url": payment.confirmation_url or "", "plan": _plan_payload(plan)}
+
+
+def tg_id_of(payload: dict) -> int:
+    return _int(payload.get("tg_id"))
 
 
 # --- Заказ -------------------------------------------------------------------

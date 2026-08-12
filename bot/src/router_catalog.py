@@ -255,6 +255,33 @@ def where_keyboard(method: str, option: dict) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def renew_text(state: dict) -> str:
+    subscription = state.get("subscription") or {}
+    lines = ["🔄 <b>Продление подписки</b>", ""]
+    until = subscription.get("until")
+    if until:
+        lines.append(f"Сейчас оплачено до {human_date(until)}.")
+        lines.append("Новый срок прибавится к этой дате, а не начнётся с сегодня.")
+    else:
+        lines.append("Срок ещё не идёт — он начнётся, когда роутер первый раз выйдет на связь.")
+    lines += ["", "Выберите, на сколько продлить:"]
+    return "\n".join(lines)
+
+
+def renew_keyboard(plans: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for plan in plans:
+        builder.row(
+            btn(
+                "btn_shop_renew_plan",
+                text=f"{plan.get('title', '')} · {money(plan.get('price'))}",
+                callback_data=f"shop_renew_plan:{plan.get('id')}",
+            )
+        )
+    builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
 def promo_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(btn("btn_shop_promo_skip", callback_data="shop_promo_skip"))
@@ -402,6 +429,9 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
     builder.row(btn("btn_my_router_refresh", callback_data="shop_my_router"))
     if data.get("router") is None:
         builder.row(btn("btn_catalog", callback_data="shop_catalog"))
+    else:
+        # Продлевать приходят сюда чаще, чем в главное меню: тут виден срок.
+        builder.row(btn("btn_renew_sub", callback_data="shop_renew"))
     builder.row(btn("btn_my_orders", callback_data="shop_orders"))
     builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
     return builder.as_markup()
@@ -846,6 +876,65 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             link_preview_options=NO_PREVIEW,
         )
         await query.answer()
+
+    @dp.callback_query(F.data == "shop_renew")
+    async def cq_renew(query: CallbackQuery, state: FSMContext):
+        """Продление подписки роутера.
+
+        Сюда же переведена их кнопка «Продлить»: их продление работает
+        с учёткой `tg{id}` — подпиской для приложения на телефоне, — а роутеру
+        доступ выдан учётке `tg{id}_{mac}`. Клиент заплатил бы, а срок
+        на роутере не сдвинулся.
+        """
+        if await blocked(query):
+            return
+        await state.clear()
+        data, error = await shop_api.renew_state(query.from_user.id)
+        if error:
+            return await show_error(query, error)
+
+        periods = data.get("plans", [])
+        if not periods:
+            return await query.answer(text("text_order_no_plans"), show_alert=True)
+        await edit_screen(
+            query.message,
+            renew_text(data),
+            reply_markup=renew_keyboard(periods),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_renew_plan:"))
+    async def cq_renew_plan(query: CallbackQuery):
+        if await blocked(query):
+            return
+        plan_id = int(query.data.split(":")[1])
+        await query.answer("Готовим оплату…")
+        result, error = await shop_api.renew_start(query.from_user.id, plan_id)
+        if error:
+            return await edit_screen(
+                query.message,
+                f"❌ {_esc(error)}",
+                reply_markup=created_keyboard(""),
+                link_preview_options=NO_PREVIEW,
+            )
+
+        plan = result.get("plan") or {}
+        pay_url = result.get("pay_url", "")
+        logger.info(f"[CATALOG] продление {plan.get('title')} для {query.from_user.id}")
+        await edit_screen(
+            query.message,
+            "🔄 <b>Продление на "
+            + _esc(plan.get("title"))
+            + "</b>\n\n"
+            + (
+                text("text_order_pay_hint")
+                if pay_url
+                else text("text_order_pay_later")
+            ),
+            reply_markup=created_keyboard(pay_url),
+            link_preview_options=NO_PREVIEW,
+        )
 
     @dp.callback_query(F.data == "shop_orders")
     async def cq_orders(query: CallbackQuery, state: FSMContext):
