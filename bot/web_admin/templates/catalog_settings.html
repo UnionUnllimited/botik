@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Настройки каталога — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4 max-w-4xl">
+
+  <div class="pt-1">
+    <p class="text-[13px] tw-text-muted2 mb-1">
+      <a href="{{ url_for('admin.catalog_shop') }}">← Каталог</a>
+    </p>
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Настройки каталога</h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">Как каталог выглядит в боте.</p>
+  </div>
+
+  <form method="post" action="{{ url_for('admin.catalog_settings_save') }}" class="tw-card p-5 space-y-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Настройки раздела в боте</div>
+
+    <label class="flex items-center gap-2.5 cursor-pointer select-none">
+      <input type="checkbox" name="catalog_enabled" {% if catalog_enabled %}checked{% endif %}
+             class="w-4 h-4 cursor-pointer">
+      <span class="text-[13px] tw-text-base2">Показывать каталог и «Мои заказы» в главном меню</span>
+    </label>
+
+    <div class="max-w-xs">
+      <label for="catalog_specs_limit" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Характеристик в карточке
+      </label>
+      <input type="number" id="catalog_specs_limit" name="catalog_specs_limit"
+             value="{{ specs_limit }}" min="1" max="30" class="tw-input">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Остальные не показываются: длинная карточка не помещается на экран телефона.
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
+      <div class="text-[11px] tw-text-subtle2">
+        Тексты экранов каталога правятся в «Настройки → Тексты».
+      </div>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+        <span>Сохранить</span>
+      </button>
+    </div>
+  </form>
+
+  <div class="tw-card p-5 space-y-2">
+    <div class="text-[13px] font-semibold tw-text-base2">Сроки подписки</div>
+    <div class="text-[13px] tw-text-muted2">
+      Клиент выбирает срок вместе с роутером: от него зависит цена заказа и то,
+      на сколько включится подписка, когда роутер доедет. Отсчёт начинается
+      с первого выхода на связь — дни доставки не сгорают.
+    </div>
+    <div class="text-[13px]">
+      Сроки и цены задаются в разделе
+      <a href="{{ url_for('admin.tariffs_list') }}">«Тарифы»</a> — это единственное
+      место, где они правятся.
+    </div>
+  </div>
+
+</div>
+{% endblock %}

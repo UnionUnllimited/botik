@@ -75,22 +75,29 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
 
     @admin_bp_instance.route("/catalog")
     async def catalog_shop():
+        """Только модели. Доставка и настройки — отдельными страницами:
+        одним полотном это не читалось, а правки разного рода мешались."""
         products, error = await shop_api.products(include_hidden=True)
         if error:
             await flash(error, "danger")
-        # Цены доставки живут там же, где заказы: их читает расчёт суммы.
-        delivery, delivery_error = await shop_api.delivery_settings()
-        # Сроки подписки: их выбирают вместе с роутером, поэтому правятся здесь же.
-        periods, periods_error = await shop_api.plans(include_hidden=True)
+        return await render_template("catalog_shop.html", products=products, catalog_error=error)
+
+    @admin_bp_instance.route("/catalog/delivery")
+    async def catalog_delivery():
+        delivery, error = await shop_api.delivery_settings()
+        if error:
+            await flash(error, "danger")
         return await render_template(
-            "catalog_shop.html",
-            products=products,
-            catalog_error=error,
+            "catalog_delivery.html",
             delivery=delivery.get("options", []),
             free_from=delivery.get("free_from", "0"),
-            delivery_error=delivery_error,
-            plans=periods,
-            plans_error=periods_error,
+            delivery_error=error,
+        )
+
+    @admin_bp_instance.route("/catalog/settings")
+    async def catalog_settings():
+        return await render_template(
+            "catalog_settings.html",
             catalog_enabled=str(app_conf.get("catalog_enabled", "1")) == "1",
             specs_limit=app_conf.get("catalog_specs_limit", 8),
         )
@@ -111,7 +118,7 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             {"options": options, "free_from": _decimal_text(form.get("free_from", ""))}
         )
         await flash(error or "Доставка сохранена.", "danger" if error else "success")
-        return redirect(url_for("admin.catalog_shop"))
+        return redirect(url_for("admin.catalog_delivery"))
 
     @admin_bp_instance.route("/catalog/new")
     async def catalog_product_new():
@@ -217,4 +224,4 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
 
         await reload_bot_settings()
         await flash("Настройки каталога сохранены.", "success")
-        return redirect(url_for("admin.catalog_shop"))
+        return redirect(url_for("admin.catalog_settings"))

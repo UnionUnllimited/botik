@@ -109,25 +109,13 @@ PAGES = {
         "next_statuses": ["packing", "cancelled"],
         "status_titles": {"packing": "Собираем", "cancelled": "Отменён", "paid": "Оплачен"},
     },
-    "catalog_shop.html": {
-        "products": [PRODUCT],
-        "catalog_error": "",
+    "catalog_shop.html": {"products": [PRODUCT], "catalog_error": ""},
+    "catalog_delivery.html": {
         "delivery": DELIVERY_OPTIONS,
         "free_from": "0.00",
         "delivery_error": "",
-        "plans": [
-            {
-                "id": 1,
-                "slug": "m3",
-                "title": "3 месяца",
-                "months": 0,
-                "extra_days": 90,
-                "price": "1490.00",
-                "is_active": True,
-                "sort_order": 100,
-            }
-        ],
-        "plans_error": "",
+    },
+    "catalog_settings.html": {
         "catalog_enabled": True,
         "specs_limit": 8,
     },
@@ -271,6 +259,8 @@ def env() -> jinja2.Environment:
 
 
 OURS = {
+    "catalog_delivery.html",
+    "catalog_settings.html",
     "catalog_shop.html",
     "catalog_shop_form.html",
     "devices_stock.html",
