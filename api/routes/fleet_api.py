@@ -20,7 +20,7 @@ import asyncio
 import datetime as dt
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -458,21 +458,40 @@ async def fleet_settings_save(
 STOCK_PAGE_SIZE = 50
 
 
+SHIPPED_DEVICE_STATUSES = (DeviceStatus.ASSIGNED, DeviceStatus.ACTIVE, DeviceStatus.REVOKED)
+"""Уже не на полке: привязан к клиенту, работает у него или у него же изъят.
+На складе таким делать нечего — склад отвечает на вопрос «что можно отгрузить»."""
+
+
 @router.get("/devices", dependencies=[Depends(require_token)])
 async def stock_list(
-    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session)
+    q: str = "",
+    page: int = 1,
+    show_all: bool = Query(default=False, alias="all"),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Склад устройств: те же роутеры, но до отгрузки.
 
     Отдельно от `/routers` не по прихоти: там показания и туннели, здесь —
     MAC, серийник, статус и заметка кладовщика, поиск и постранично, потому
     что коробок бывают сотни, а на связи из них — единицы.
+
+    Отгруженные не показываются: роутер, уехавший к клиенту, со склада ушёл,
+    и держать его в списке — значит каждый раз глазами отделять то, что можно
+    положить в коробку, от того, что уже в пути. Найти его по-прежнему можно:
+    поиск и `all=1` показывают всё.
     """
     page = max(page, 1)
     query = select(Device).options(selectinload(Device.user))
     counter = select(func.count()).select_from(Device)
 
     text = q.strip()
+    if not show_all and not text:
+        # При поиске отбор не применяем: ищут обычно как раз отгруженный,
+        # чтобы понять, у кого он и что с ним.
+        query = query.where(Device.status.notin_(SHIPPED_DEVICE_STATUSES))
+        counter = counter.where(Device.status.notin_(SHIPPED_DEVICE_STATUSES))
+
     if text:
         mac = normalize_mac(text)
         pattern = f"%{text}%"

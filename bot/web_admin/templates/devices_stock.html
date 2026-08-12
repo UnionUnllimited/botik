@@ -13,12 +13,19 @@
         до включения. Показания и туннели — в разделе «Роутеры».
       </p>
     </div>
-    <form method="get" class="flex items-center gap-2">
+    <form method="get" class="flex items-center gap-2 flex-wrap">
       <input type="text" name="q" value="{{ query }}" placeholder="MAC, модель или серийник"
              class="tw-input" style="min-width:240px">
+      {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
       <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
         <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
       </button>
+      {# Отгруженные по умолчанию скрыты: склад отвечает на вопрос «что можно
+         положить в коробку». Найти их по-прежнему можно поиском. #}
+      <a href="{{ url_for('admin.devices_stock', q=query or None, all=None if show_all else 1) }}"
+         class="tw-btn tw-btn-sm">
+        {{ 'Только на складе' if show_all else 'Показать отгруженные' }}
+      </a>
     </form>
   </div>
 

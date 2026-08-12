@@ -33,7 +33,8 @@ def attach_devices_stock_routes(admin_bp_instance, query_db_func, execute_db_fun
         except (TypeError, ValueError):
             page = 1
 
-        data, error = await shop_api.stock(query=query, page=page)
+        show_all = request.args.get("all") == "1"
+        data, error = await shop_api.stock(query=query, page=page, show_all=show_all)
         if error:
             await flash(error, "danger")
         return await render_template(
@@ -45,6 +46,7 @@ def attach_devices_stock_routes(admin_bp_instance, query_db_func, execute_db_fun
             page=data.get("page", page),
             pages=data.get("pages", 1),
             query=query,
+            show_all=show_all,
             stock_error=error,
         )
 

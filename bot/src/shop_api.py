@@ -317,8 +317,12 @@ async def save_delivery_settings(payload: dict) -> tuple[dict, str]:
 # --- Склад устройств ---------------------------------------------------------
 
 
-async def stock(*, query: str = "", page: int = 1) -> tuple[dict, str]:
-    return await get("/api/v1/fleet/devices", {"q": query, "page": page})
+async def stock(*, query: str = "", page: int = 1, show_all: bool = False) -> tuple[dict, str]:
+    """По умолчанию только то, что можно отгрузить: уехавшее к клиенту со склада ушло."""
+    params = {"q": query, "page": page}
+    if show_all:
+        params["all"] = "1"
+    return await get("/api/v1/fleet/devices", params)
 
 
 async def stock_add(mac: str, model: str, serial: str) -> tuple[dict, str]:

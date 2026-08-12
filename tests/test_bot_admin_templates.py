@@ -147,6 +147,7 @@ PAGES = {
         "page": 1,
         "pages": 1,
         "query": "",
+        "show_all": False,
         "stock_error": "",
     },
     "user_details.html": {
