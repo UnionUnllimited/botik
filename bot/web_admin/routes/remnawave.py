@@ -332,22 +332,11 @@ def attach_remnawave_routes(admin_bp_instance):
 
         if request.method == 'POST':
             form = await request.form
-            restart_keys = (
-                'xray_json_enabled',
-                'xray_balancer_enabled',
-                'xray_balancer_node_stats_enabled',
-                'xray_balancer_routing_enabled',
-            )
-            prev_rows = await async_query_db(
-                f"SELECT key, value FROM settings WHERE key IN ({','.join(['?'] * len(restart_keys))})",
-                restart_keys,
-            )
-            prev_vals = {r['key']: r['value'] for r in (prev_rows or [])}
-            restart_needed = False
+            # Раньше часть переключателей просила рестарта: их читал xuiweb,
+            # и на лету он их не подхватывал. Сервис вырезан, перезапускать
+            # больше нечего — бот забирает настройки по loopback ниже.
             for key in _REMNAWAVE_TOGGLE_KEYS:
                 val = '1' if key in form else '0'
-                if key in restart_keys and prev_vals.get(key, '0') != val:
-                    restart_needed = True
                 await _upsert_setting(key, val)
             for key in _REMNAWAVE_VALUE_KEYS:
                 if key not in form:
@@ -367,15 +356,7 @@ def attach_remnawave_routes(admin_bp_instance):
                     await client.post('http://127.0.0.1:8081/api/reload-settings')
             except Exception as e:
                 logger.warning(f'[REMNAWAVE] bot reload-settings: {e}')
-            restart_hint = restart_needed
-            if restart_hint:
-                await flash(
-                    'Настройки Remnawave сохранены. Перезапустите сервис xuiweb: '
-                    'sudo systemctl restart xuiweb.service',
-                    'success',
-                )
-            else:
-                await flash('Настройки Remnawave сохранены.', 'success')
+            await flash('Настройки Remnawave сохранены.', 'success')
             return redirect(url_for('admin.remnawave_settings'))
 
         # Автоинициализация ключей, если ещё не созданы
@@ -404,7 +385,7 @@ def attach_remnawave_routes(admin_bp_instance):
             ('xray_balancer_routing_enabled', '0',
              'Свои правила routing (block / proxy / direct) вместо шаблона Remnawave. Требует умную балансировку.'),
             ('xray_balancer_routing_config', '{}',
-             'JSON: правила routing (block / proxy / direct) для балансировщика xuiweb.'),
+             'JSON: правила routing (block / proxy / direct) для балансировщика ссылок.'),
             ('xray_balancer_strategy', 'leastLoad',
              'Стратегия Xray balancer: leastLoad, random, roundRobin или leastPing.'),
             ('xray_balancer_mode', 'full',
@@ -456,7 +437,7 @@ def attach_remnawave_routes(admin_bp_instance):
             ('sub_link_dedup_online_threshold', '100',
              'Режим online: не выдавать ключ, если usersOnline на привязанной ноде хоста выше порога.'),
             ('sub_link_dedup_online_interval_sec', '60',
-             'Режим online: интервал опроса /api/hosts/ и /api/nodes/ в xuiweb (сек).'),
+             'Режим online: интервал опроса /api/hosts/ и /api/nodes/ (сек).'),
         ]
         for key, val, desc in _default_settings:
             exists = await async_query_db('SELECT 1 FROM settings WHERE key = ?', (key,), one=True)

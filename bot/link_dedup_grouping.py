@@ -1,4 +1,8 @@
-"""Shared grouping rules for text subscription link dedup (xuiweb + admin)."""
+"""Правила группировки ссылок подписки для балансировщика хостов в админке.
+
+Переехал из вырезанного `xuiweb/dedup/`: сам сервис не нужен роутерам,
+а эти правила читает менеджер Remnawave и страница балансировщика.
+"""
 
 from __future__ import annotations
 

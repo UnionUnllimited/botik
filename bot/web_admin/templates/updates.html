@@ -163,7 +163,7 @@
     <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 mt-0.5" style="color: #f59e0b;"></i>
     <div>
       После загрузки и распаковки нажмите <strong>«Перезагрузить всё»</strong>, чтобы перезапустить
-      <code class="tw-kbd">vpn-bot</code>, <code class="tw-kbd">vpn-webadmin</code> и <code class="tw-kbd">xuiweb</code>.
+      <code class="tw-kbd">vpn-bot</code> и <code class="tw-kbd">vpn-webadmin</code>.
       Без перезапуска часть изменений может не применяться.
     </div>
   </div>
@@ -326,7 +326,7 @@
 
   // ─── Подтверждение перезагрузки ───
   document.getElementById('updRestartForm').addEventListener('submit', (e) => {
-    if (!confirm('Перезапустить все сервисы (vpn-bot, vpn-webadmin, xuiweb)? Текущая сессия может ненадолго оборваться.')) {
+    if (!confirm('Перезапустить все сервисы (vpn-bot, vpn-webadmin)? Текущая сессия может ненадолго оборваться.')) {
       e.preventDefault();
     }
   });

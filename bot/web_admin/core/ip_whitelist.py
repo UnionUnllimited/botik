@@ -13,8 +13,8 @@ Loopback (127.0.0.0/8, ::1/128) **всегда** разрешён — иначе
     sqlite3 vpn_bot.db "UPDATE settings SET value='0' WHERE key='admin_ip_whitelist_enabled'"
 
 Реальный IP клиента берём из заголовков, **только** если запрос пришёл с
-доверенного прокси (по умолчанию loopback). Так nginx (см. service/xuiweb.conf,
-``proxy_set_header X-Real-IP $remote_addr``) даёт нам правильный исходный IP,
+доверенного прокси (по умолчанию loopback). Так обратный прокси
+(``proxy_set_header X-Real-IP $remote_addr``) даёт нам правильный исходный IP,
 а сторонний клиент не сможет подсунуть свой ``X-Forwarded-For``.
 """
 from __future__ import annotations
@@ -99,7 +99,7 @@ def resolve_client_ip(request, trusted: Iterable[IpNetwork] | None = None) -> Ip
     """
     Достаёт реальный IP клиента, защищаясь от подмены заголовков.
 
-    Сценарий деплоя — за nginx (см. ``service/xuiweb.conf``):
+    Сценарий деплоя — за обратным прокси, который ставит заголовки:
 
         proxy_set_header X-Real-IP        $remote_addr;
         proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;

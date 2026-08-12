@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from web_admin.async_db import async_execute_db, async_query_db
-from website.email_domain_policy import (
+from email_domain_policy import (
     SETTING_KEY,
     POPULAR_DOMAIN_PRESETS,
     merge_config,

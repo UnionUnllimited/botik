@@ -24,9 +24,6 @@
         </div>
         <div class="text-xs text-[var(--admin-text-muted)] leading-relaxed">
           Ссылки на приложения для веб-кабинета пользователя и дополнительные ссылки в тело подписки.
-          Лимит устройств по HWID настраивается в разделе
-          <a href="{{ url_for('admin.settings_subpage') }}"
-             class="text-[rgb(var(--admin-accent))] hover:underline">Subpage</a>.
         </div>
       </div>
     </div>
@@ -135,7 +132,7 @@
           <div class="ss-field" style="margin-top: 12px;">
             <label>
               <i data-lucide="shield" class="w-4 h-4 text-[var(--admin-text-muted)]"></i>
-              Резервная VLESS-ссылка (xuiweb)
+              Резервная VLESS-ссылка
               <span class="lbl-key">{{ setting.key }}</span>
             </label>
             <input type="text" class="ss-input"
@@ -143,7 +140,7 @@
                    value="{{ setting.value }}"
                    placeholder="vless://...">
             <div class="hint">
-              Используется xuiweb когда основная подписка пустая (нет рабочих ключей у клиента).
+              Используется, когда основная подписка пустая (нет рабочих ключей у клиента).
               Можно оставить пустым — тогда клиент получит обычную пустую подписку.
             </div>
           </div>

@@ -145,7 +145,6 @@ def register_admin_handlers(dp: Dispatcher):
         kb = InlineKeyboardBuilder()
         kb.row(InlineKeyboardButton(text="🤖 Бот (vpn-bot.service)", callback_data="svc_restart_vpnbot"))
         kb.row(InlineKeyboardButton(text="🌐 Веб-админка (vpn-webadmin.service)", callback_data="svc_restart_webadmin"))
-        kb.row(InlineKeyboardButton(text="🔗 XUI Web (xuiweb.service)", callback_data="svc_restart_xuiweb"))
         kb.row(
             InlineKeyboardButton(text="🔄 Перезапустить все", callback_data="svc_restart_all"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel_main")
@@ -163,7 +162,7 @@ def register_admin_handlers(dp: Dispatcher):
         await query.answer()
 
     @dp.callback_query(F.data.in_(
-        {"svc_restart_vpnbot", "svc_restart_webadmin", "svc_restart_xuiweb", "svc_restart_all"}
+        {"svc_restart_vpnbot", "svc_restart_webadmin", "svc_restart_all"}
     ))
     async def cq_restart_service(query: CallbackQuery):
         if not is_admin(query.from_user.id): return await query.answer("⛔️ Нет доступа", show_alert=True)
@@ -176,13 +175,10 @@ def register_admin_handlers(dp: Dispatcher):
         if action == "svc_restart_all":
             msgs.append(await _restart_service("vpn-bot.service"))
             msgs.append(await _restart_service("vpn-webadmin.service"))
-            msgs.append(await _restart_service("xuiweb.service"))
         elif action == "svc_restart_vpnbot":
             msgs.append(await _restart_service("vpn-bot.service"))
         elif action == "svc_restart_webadmin":
             msgs.append(await _restart_service("vpn-webadmin.service"))
-        elif action == "svc_restart_xuiweb":
-            msgs.append(await _restart_service("xuiweb.service"))
         answer = "\n".join(msgs)
         try:
             await query.message.edit_text(
@@ -215,16 +211,9 @@ def register_admin_handlers(dp: Dispatcher):
     async def cq_web_set_secret(query: CallbackQuery, state: FSMContext):
         if not is_admin(query.from_user.id): return await query.answer("⛔️ Нет доступа", show_alert=True)
         note = (
-            "\n\nНа сервере обновите файл: <code>/etc/nginx/conf.d/xuiweb.conf</code>\n"
-            "Замените <code>admin123</code> на ваш новый путь в примере ниже:\n\n"
-            "<code>location /admin123/\n"
-            "    proxy_pass http://127.0.0.1:8181/admin123/;\n"
-            "    proxy_set_header Host $host;\n"
-            "    proxy_set_header X-Real-IP $remote_addr;\n"
-            "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
-            "    proxy_set_header X-Forwarded-Proto $scheme;\n"
-            "}</code>\n\n"
-            "После правки выполните: <code>sudo systemctl reload nginx</code>"
+            "\n\nПосле смены пути поправьте обратный прокси: он проксирует"
+            " старый путь на <code>127.0.0.1:8181</code>, и по новому админка"
+            " снаружи не откроется."
         )
         await query.message.edit_text(
             "🛡 Введите новый секретный путь (3–64 символа, латиница/цифры/._-), без слэшей." + note,
@@ -249,19 +238,13 @@ def register_admin_handlers(dp: Dispatcher):
                 pass
             base = (app_conf.get('connect_page_url', '') or '').strip().rstrip('/')
             link = f"{base}/{candidate}" if base else f"/{candidate}"
-            nginx_note = (
-                "\n\nНе забудьте обновить Nginx конфиг: <code>/etc/nginx/conf.d/xuiweb.conf</code>\n"
-                "Замените блок на:\n\n"
-                f"location /{candidate}/\n"
-                f"    proxy_pass http://127.0.0.1:8181/{candidate}/;\n"
-                "    proxy_set_header Host $host;\n"
-                "    proxy_set_header X-Real-IP $remote_addr;\n"
-                "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
-                "    proxy_set_header X-Forwarded-Proto $scheme;\n\n"
-                "После правки: <code>sudo systemctl reload nginx</code>"
+            proxy_note = (
+                "\n\nНе забудьте обратный прокси: он должен отдавать"
+                f" <code>/{candidate}/</code> на <code>127.0.0.1:8181</code>,"
+                " иначе снаружи админка откроется только по старому пути."
             )
             await message.answer(
-                f"✅ Секретный путь обновлён: <code>/{candidate}</code>\nСсылка: {link}" + nginx_note,
+                f"✅ Секретный путь обновлён: <code>/{candidate}</code>\nСсылка: {link}" + proxy_note,
                 reply_markup=get_admin_keyboard()
             )
         else:

@@ -617,7 +617,7 @@ WEBHOOK_URL={% if connect_page_url %}{{ connect_page_url }}/remnawave/webhook{% 
               </div>
             </div>
             <p class="text-[12px] tw-text-subtle2 m-0">
-              xuiweb опрашивает Remnawave <span class="tw-kbd text-[11px]">/api/nodes/</span> и не отдаёт клиентам серверы на offline- или перегруженных нодах. Требует умную балансировку и API token на вкладке «Подключение».
+              Балансировщик опрашивает Remnawave <span class="tw-kbd text-[11px]">/api/nodes/</span> и не отдаёт клиентам серверы на offline- или перегруженных нодах. Требует умную балансировку и API token на вкладке «Подключение».
             </p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -757,14 +757,6 @@ WEBHOOK_URL={% if connect_page_url %}{{ connect_page_url }}/remnawave/webhook{% 
             <i data-lucide="info" class="w-3.5 h-3.5 shrink-0 mt-0.5"></i>
             <span>Поле <span class="tw-kbd text-[11px]">xrayConfig</span> получают только выбранные клиенты (Happ / INCY / v2raytun) по User-Agent. Шаблон и хосты настраиваются в панели Remnawave.</span>
           </p>
-          <div class="tw-card p-3.5 border-amber-500/30" style="background: rgba(245, 158, 11, 0.06);">
-            <p class="text-[12px] tw-text-base2 m-0 flex items-start gap-2 leading-relaxed">
-              <i data-lucide="refresh-cw" class="w-4 h-4 shrink-0 mt-0.5 text-amber-600"></i>
-              <span>После включения или выключения JSON-подписки, балансировки, node_stats или переключателя «Свои правила routing» сохраните форму и перезапустите сервис:
-                <code class="tw-kbd text-[11px] block mt-1.5">sudo systemctl restart xuiweb.service</code>
-              </span>
-            </p>
-          </div>
         </div>
       </div>
 

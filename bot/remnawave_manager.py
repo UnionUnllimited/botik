@@ -2070,7 +2070,7 @@ class RemnawaveManager:
             return False, str(e)
 
     async def init_balancer_pool(self, host_uuid: str) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
-        from xuiweb.dedup.link_dedup_grouping import base_name_for_grouping, extract_trailing_index, format_member_remark
+        from link_dedup_grouping import base_name_for_grouping, extract_trailing_index, format_member_remark
 
         host = await self.get_host_by_uuid(host_uuid)
         if not host:
@@ -2108,7 +2108,7 @@ class RemnawaveManager:
         pool_remarks: Optional[List[str]] = None,
     ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Добавить члена пула: новый endpoint (из шаблона пула) или дубликат существующего хоста."""
-        from xuiweb.dedup.link_dedup_grouping import base_name_for_grouping, format_member_remark, next_pool_index
+        from link_dedup_grouping import base_name_for_grouping, format_member_remark, next_pool_index
 
         mode = (mode or 'new').strip().lower()
         if mode not in ('new', 'duplicate', 'from_node'):

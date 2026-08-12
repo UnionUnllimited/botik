@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# Установщик бота и веб-админки.
+#
+# Публикацией наружу он не занимается: сервер отдаёт домен обратным прокси
+# (у нас Caddy, порядок в README, раздел 5в). Прежняя версия ставила nginx
+# и просила сертификат через `certbot --standalone`, а тот занимает порт 80 —
+# на сервере с работающим прокси это гасит сайт целиком. Вместе с nginx ушли
+# и три сервиса, которых больше нет: xuiweb, subpage, website.
+
 # Проверка запуска из /root/bot/
 if [[ "$PWD" != "/root/bot" ]]; then
   echo "Скрипт должен запускаться из /root/bot/! Текущая папка: $PWD"
@@ -32,24 +40,6 @@ apt update
 wait_apt_lock
 apt install -y python3 python3-venv python3-pip sqlite3
 
-# Установка nginx, если не установлен
-if ! command -v nginx >/dev/null 2>&1; then
-  echo "nginx не найден, устанавливаю..."
-  apt install -y nginx
-else
-  echo "nginx уже установлен."
-fi
-
-# Установка certbot, если не установлен
-if ! command -v certbot >/dev/null 2>&1; then
-  echo "certbot не найден, устанавливаю..."
-  apt install -y certbot
-fi
-
-
-# Перезапуск nginx для применения конфига (может быть нужен для certbot)
-systemctl restart nginx
-
 # ── Секретный путь веб-админки ────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -70,36 +60,12 @@ ADMIN_SECRET_PATH="${ADMIN_SECRET_PATH#/}"
 ADMIN_SECRET_PATH="${ADMIN_SECRET_PATH%/}"
 echo "  Секретный путь: /$ADMIN_SECRET_PATH/"
 
-# --- Получение SSL-сертификата через certbot ---
-echo "\n=== Получение SSL-сертификата для nginx ==="
-read -p "Введите ваш домен для SSL (например, example.com): " DOMAIN
+# ── Домен ─────────────────────────────────────────────────────────────────────
+# Нужен только для настроек в БД: сертификат и публикацию делает прокси.
+echo ""
+read -rp "Введите домен, по которому сервис виден снаружи (или Enter чтобы пропустить): " DOMAIN
 
-# Проверка, что домен не пустой
-if [ -z "$DOMAIN" ]; then
-  echo "Домен не введён, пропускаю получение сертификата."
-else
-  # Остановить nginx, если запущен
-  systemctl stop nginx || true
-
-  # Получить сертификат через certbot
-  certbot certonly --standalone -d "$DOMAIN"
-
-  # Создать папку для сертификатов, если нет
-  mkdir -p /root/cert/
-
-  # Скопировать сертификаты
-  if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/privkey.pem" ]; then
-    cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" /root/cert/fullchain.pem
-    cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" /root/cert/privkey.pem
-    echo "Сертификаты скопированы в /root/cert/"
-  else
-    echo "Сертификаты не найдены. Проверьте, что certbot успешно получил их."
-  fi
-
-# Копирование xuiweb.conf в конфиг nginx с подстановкой домена и секретного пути
-sed "s/bot\.domain\.ru/$DOMAIN/g; s/admin123/$ADMIN_SECRET_PATH/g" service/xuiweb.conf > /etc/nginx/conf.d/xuiweb.conf
-
-  # Прописываем домен и секретный путь в БД
+if [ -n "$DOMAIN" ]; then
   if [ -f "/root/bot/vpn_bot.db" ]; then
     sqlite3 /root/bot/vpn_bot.db \
       "INSERT INTO settings (key, value) VALUES ('connect_page_url', 'https://$DOMAIN')
@@ -111,9 +77,6 @@ sed "s/bot\.domain\.ru/$DOMAIN/g; s/admin123/$ADMIN_SECRET_PATH/g" service/xuiwe
   else
     echo "БД не найдена, пропускаю обновление настроек домена."
   fi
-
-  # Запустить nginx обратно
-  systemctl start nginx
 fi
 
 echo "\nУстановка зависимостей Python..."
@@ -133,15 +96,6 @@ fi
 source web_admin/venv/bin/activate
 pip install --upgrade pip
 pip install -r service/requirements.txt
-deactivate
-
-# Создание venv для xuiweb
-if [ ! -d "xuiweb/venv" ]; then
-  python3 -m venv xuiweb/venv
-fi
-source xuiweb/venv/bin/activate
-pip install --upgrade pip
-pip install -r service/xuiweb.txt
 deactivate
 
 echo "\nУстановка завершена!"
@@ -190,67 +144,25 @@ fi
 echo "\nНастраиваю автозапуск сервисов..."
 cp service/vpn-bot.service /etc/systemd/system/
 cp service/vpn-webadmin.service /etc/systemd/system/
-cp service/xuiweb.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now vpn-bot.service vpn-webadmin.service xuiweb.service
-systemctl enable --now xuiweb.service
+# Сначала бот — базу создаёт он. Веб-админка только читает и на пустом месте падает.
+systemctl enable --now vpn-bot.service
+sleep 5
+systemctl enable --now vpn-webadmin.service
 echo "\nБот и веб-админка запущены и добавлены в автозагрузку!"
-
-# ── Установка SUBPAGE ─────────────────────────────────────────────────────────
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Хотите установить SUBPAGE (страница подписки) на"
-echo "  этом сервере, или он будет на внешнем сервере?"
-echo ""
-echo "  1) Установить SUBPAGE на этом сервере"
-echo "  2) Пропустить — SUBPAGE на внешнем сервере"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-read -rp "Ваш выбор [1/2]: " subpage_choice
-
-if [[ "$subpage_choice" == "1" ]]; then
-  # SUBPAGE на этом же сервере — sub_page_url = домен бота
-  SUBPAGE_DOMAIN="$DOMAIN"
-  if [ -f "/root/bot/vpn_bot.db" ]; then
-    sqlite3 /root/bot/vpn_bot.db \
-      "INSERT INTO settings (key, value) VALUES ('sub_page_url', 'https://$SUBPAGE_DOMAIN')
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
-    echo "sub_page_url → https://$SUBPAGE_DOMAIN"
-  fi
-  echo "\nКопирую SUBPAGE в /root/subpage..."
-  cp -r /root/bot/subpage /root/subpage
-  echo "Запускаю установку SUBPAGE..."
-  cd /root/subpage
-  bash install.sh
-else
-  # SUBPAGE на внешнем сервере — спрашиваем его домен
-  echo ""
-  echo "Укажите домен внешнего SUBPAGE (страницы подписки)."
-  read -rp "Домен SUBPAGE [по умолчанию: $DOMAIN]: " SUBPAGE_DOMAIN_INPUT
-  SUBPAGE_DOMAIN="${SUBPAGE_DOMAIN_INPUT:-$DOMAIN}"
-  if [ -f "/root/bot/vpn_bot.db" ]; then
-    sqlite3 /root/bot/vpn_bot.db \
-      "INSERT INTO settings (key, value) VALUES ('sub_page_url', 'https://$SUBPAGE_DOMAIN')
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
-    echo "sub_page_url → https://$SUBPAGE_DOMAIN"
-  else
-    echo "БД не найдена, пропускаю обновление sub_page_url."
-  fi
-  echo "\nПропускаем установку SUBPAGE."
-fi
 
 # ── Итоговый вывод ────────────────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  ✅  Установка завершена!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [ -n "$DOMAIN" ] && [ -n "$ADMIN_SECRET_PATH" ]; then
-  echo ""
-  echo "  🌐  Веб-админка:"
-  echo "      https://$DOMAIN/$ADMIN_SECRET_PATH/"
-  echo ""
-  echo "  📡  Страница подписки (SUBPAGE):"
-  echo "      https://$SUBPAGE_DOMAIN/sub/<uuid>"
+echo ""
+echo "  🌐  Веб-админка слушает 127.0.0.1:8181 по пути /$ADMIN_SECRET_PATH/"
+if [ -n "$DOMAIN" ]; then
+  echo "      Снаружи: https://$DOMAIN/$ADMIN_SECRET_PATH/ — если домен отдан прокси."
 fi
 echo ""
+echo "  ℹ️   Публикацию наружу настраивает обратный прокси, а не этот скрипт."
+echo "      Порядок — в README, раздел 5в."
 echo "  ℹ️   Токен бота и остальные настройки — в веб-админке."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

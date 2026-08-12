@@ -500,21 +500,20 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
             await asyncio.gather(
                 asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'vpn-bot.service'),
                 asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'vpn-webadmin.service'),
-                asyncio.create_subprocess_exec('sudo', 'systemctl', 'restart', 'xuiweb.service'),
                 return_exceptions=True
             )
-            await flash('Все сервисы перезапускаются: vpn-bот, vpn-webadmin, xuiweb...', 'success')
+            await flash('Все сервисы перезапускаются: vpn-bot, vpn-webadmin...', 'success')
         except Exception as e:
             await flash(f'Ошибка перезапуска сервисов: {e}', 'danger')
         return redirect(url_for('admin.updates'))
 
     # --- Сервисы (Инструменты) ---
     # icon — Lucide icon name (без data-lucide=); accent — hex/rgb для подложки иконки.
+    # xuiweb и website из списка убраны вместе с их кодом: сервисов больше нет,
+    # и кнопка «перезапустить» на них отвечала бы ошибкой юнита.
     SERVICES_WHITELIST = {
-        'xuiweb.service':       {'label': 'XUI Web',       'icon': 'link-2',         'accent': '#6366f1', 'desc': 'Веб-сервер подписок'},
-        'vpn-bot.service':      {'label': 'VPN Bot',       'icon': 'bot',            'accent': '#10b981', 'desc': 'Telegram-бот'},
-        'vpn-webadmin.service': {'label': 'VPN WebAdmin',  'icon': 'sliders',        'accent': '#f59e0b', 'desc': 'Веб-админка'},
-        'website.service':      {'label': 'Website',       'icon': 'globe',          'accent': '#06b6d4', 'desc': 'Личный кабинет клиентов'},
+        'vpn-bot.service':      {'label': 'Бот',       'icon': 'bot',      'accent': '#10b981', 'desc': 'Telegram-бот'},
+        'vpn-webadmin.service': {'label': 'Веб-админка', 'icon': 'sliders', 'accent': '#f59e0b', 'desc': 'Веб-админка'},
     }
 
     async def _systemctl_cmd(*args, timeout=10):

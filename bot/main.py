@@ -7887,7 +7887,7 @@ async def wsl_email_input(message: Message, state: FSMContext):
         )
         return
 
-    from website.email_domain_policy import (
+    from email_domain_policy import (
         SETTING_KEY,
         config_from_setting_value,
         is_email_domain_allowed,
@@ -7960,7 +7960,7 @@ async def wsl_code_input(message: Message, state: FSMContext):
         await message.answer("❌ Неверный код. Попробуйте ещё раз:", reply_markup=kb)
         return
 
-    from website.email_domain_policy import (
+    from email_domain_policy import (
         SETTING_KEY,
         config_from_setting_value,
         is_email_domain_allowed,

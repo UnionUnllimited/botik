@@ -593,7 +593,7 @@
 
             {# Настройки #}
             {% if current_user.is_admin %}
-            {% set is_settings = request.path == url_for('admin.settings_general') or request.path == url_for('admin.settings_texts') or request.path == url_for('admin.settings_buttons') or request.path == url_for('admin.settings_subpage') or request.path == url_for('admin.settings_website_cabinet') or request.path == url_for('admin.settings_subscription') or request.path == url_for('admin.settings_backup') or request.path == url_for('admin.settings_push') %}
+            {% set is_settings = request.path == url_for('admin.settings_general') or request.path == url_for('admin.settings_texts') or request.path == url_for('admin.settings_buttons') or request.path == url_for('admin.settings_website_cabinet') or request.path == url_for('admin.settings_subscription') or request.path == url_for('admin.settings_backup') or request.path == url_for('admin.settings_push') %}
             <div class="tw-nav-section tw-sidebar-label">Конфигурация</div>
             <div class="tw-nav-group {% if is_settings %}open{% endif %}" data-tw-group>
                 <div class="tw-nav-link {% if is_settings %}active{% endif %}" data-tw-toggle>
@@ -604,7 +604,6 @@
                     <a href="{{ url_for('admin.settings_general') }}" class="{% if request.path == url_for('admin.settings_general') %}active{% endif %}"><i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i> Основные</a>
                     <a href="{{ url_for('admin.settings_texts') }}" class="{% if request.path == url_for('admin.settings_texts') %}active{% endif %}"><i data-lucide="message-square-text" class="w-3.5 h-3.5"></i> Тексты</a>
                     <a href="{{ url_for('admin.settings_buttons') }}" class="{% if request.path == url_for('admin.settings_buttons') %}active{% endif %}"><i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> Стиль кнопок</a>
-                    <a href="{{ url_for('admin.settings_subpage') }}" class="{% if request.path == url_for('admin.settings_subpage') %}active{% endif %}"><i data-lucide="layout-template" class="w-3.5 h-3.5"></i> Subpage</a>
                     <a href="{{ url_for('admin.settings_website_cabinet') }}" class="{% if request.path == url_for('admin.settings_website_cabinet') %}active{% endif %}"><i data-lucide="globe" class="w-3.5 h-3.5"></i> Веб-кабинет</a>
                     <a href="{{ url_for('admin.settings_subscription') }}" class="{% if request.path == url_for('admin.settings_subscription') %}active{% endif %}"><i data-lucide="wrench" class="w-3.5 h-3.5"></i> Доп возможности</a>
                     <a href="{{ url_for('admin.settings_push') }}" class="{% if request.path == url_for('admin.settings_push') %}active{% endif %}"><i data-lucide="bell" class="w-3.5 h-3.5"></i> Push-уведомления</a>

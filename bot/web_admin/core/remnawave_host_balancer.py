@@ -1,10 +1,10 @@
-"""Build host-balancer groups for web admin (same rules as xuiweb link dedup)."""
+"""Build host-balancer groups for web admin (same rules as link_dedup_grouping)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from xuiweb.dedup.link_dedup_grouping import (
+from link_dedup_grouping import (
     base_name_for_grouping,
     extract_trailing_index,
     is_pool_balanced,
