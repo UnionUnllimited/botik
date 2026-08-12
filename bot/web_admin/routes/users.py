@@ -801,9 +801,10 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                 )
                 where_parts = []
                 params = []
-                # Добавляем условие на UUID в начало where_parts для where_clause
-                if not empty_uuid_only:
-                    where_parts.append("(u.xui_client_uuid IS NOT NULL AND u.xui_client_uuid != '')")
+                # Клиента без учётки в панели не прячем: у роутеров человек
+                # появляется с первого /start и задолго до подписки, а искать его
+                # оператору — чтобы привязать роутер к заказу перед отгрузкой.
+                # Отбор «только пустые UUID» остался отдельным фильтром ниже.
                 if filter_server_id:
                     where_parts.append("u.current_server_id = ?")
                     params.append(filter_server_id)
@@ -1033,9 +1034,10 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                 )
                 where_parts = []
                 params = []
-                # Добавляем условие на UUID в начало where_parts для where_clause
-                if not empty_uuid_only:
-                    where_parts.append("(u.xui_client_uuid IS NOT NULL AND u.xui_client_uuid != '')")
+                # Клиента без учётки в панели не прячем: у роутеров человек
+                # появляется с первого /start и задолго до подписки, а искать его
+                # оператору — чтобы привязать роутер к заказу перед отгрузкой.
+                # Отбор «только пустые UUID» остался отдельным фильтром ниже.
                 if filter_server_id:
                     where_parts.append("u.current_server_id = ?")
                     params.append(filter_server_id)
