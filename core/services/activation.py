@@ -152,13 +152,19 @@ SHIPPED_STATUSES = (OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.DONE
 async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> bool:
     """Активация отгруженного роутера, когда он впервые вышел на связь у клиента.
 
-    Условие одно и жёсткое: устройство привязано к заказу, а заказ отгружен.
-    Всё остальное — служебные роутеры, подменные, стенд — активируется руками.
+    Срок берётся не из настройки, а из того, что человек купил: оплата заводит
+    подписку в ожидании активации, и здесь она включается на свой тариф. Так
+    «купил три месяца» и означает три месяца, а отсчёт начинается с момента,
+    когда роутер получил ссылку, — дни доставки не горят.
 
-    Ошибку не глушим наверх, но и не считаем поломкой: туннель после включения
-    поднимается не мгновенно, и первая попытка часто приходится на момент,
-    когда SSH ещё не отвечает. Следующий обход попробует снова, а дни клиента
-    не сгорят — отсчёт стартует только после успешной доставки ссылки.
+    Условие одно и жёсткое: устройство привязано к заказу, а заказ отгружен.
+    До отгрузки роутер лежит на столе и прошивается — он тоже виден в туннеле,
+    и активировать его там нельзя. Служебные, подменные и стенд активируются
+    руками из карточки.
+
+    Отказ не считаем поломкой: туннель после включения поднимается не мгновенно,
+    и первая попытка часто приходится на момент, когда SSH ещё не отвечает.
+    Следующий обход попробует снова.
     """
     if device.activated_at is not None or device.order_id is None:
         return False
@@ -169,14 +175,15 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
     if order is None or order.status not in SHIPPED_STATUSES:
         return False
 
-    raw_days = await settings_service.get_setting(session, "activation.auto_days")
-    try:
-        days = max(int(raw_days), 1)
-    except (TypeError, ValueError):
-        days = 30
+    user = await session.get(User, device.user_id or order.user_id)
+    if user is None:
+        return False
 
     try:
-        await activate_manually(session, device=device, days=days)
+        # Тот же путь, которым активировался клиент сам: учётка на купленный
+        # срок, ссылка по SSH и старт отсчёта. Ограничение частоты здесь ни
+        # к чему — это наш обход, а не человек, нажимающий кнопку.
+        await activate(session, user=user, raw_mac=device.mac, rate_limited=False)
     except ActivationError as exc:
         log.info("activation.auto_postponed", mac=device.mac, error=str(exc))
         return False
@@ -188,7 +195,7 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
         level="success",
         message=f"Автоактивация после отгрузки, заказ {order.public_number}",
     )
-    log.info("activation.auto_done", mac=device.mac, order=order.public_number, days=days)
+    log.info("activation.auto_done", mac=device.mac, order=order.public_number)
     return True
 
 
@@ -364,8 +371,15 @@ async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -
     return True
 
 
-async def activate(session: AsyncSession, *, user: User, raw_mac: str) -> Device:
-    """Активация целиком. Любой отказ — `ActivationError` с текстом для клиента."""
+async def activate(
+    session: AsyncSession, *, user: User, raw_mac: str, rate_limited: bool = True
+) -> Device:
+    """Активация целиком. Любой отказ — `ActivationError` с текстом для клиента.
+
+    `rate_limited=False` — для нашего же обхода парка: ограничение частоты
+    защищает от подбора MAC человеком, а обход и так приходит раз в минуту
+    и по своему списку.
+    """
     mac = normalize_mac(raw_mac)
     if not mac:
         raise ActivationError(
@@ -373,7 +387,8 @@ async def activate(session: AsyncSession, *, user: User, raw_mac: str) -> Device
             "12 знаков, найдите их на наклейке снизу роутера."
         )
 
-    await _check_rate_limit(user)
+    if rate_limited:
+        await _check_rate_limit(user)
     device = await _resolve_device(session, user, mac)
     subscription = await _pending_subscription(session, user)
 
