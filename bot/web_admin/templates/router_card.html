@@ -81,7 +81,7 @@
           <div class="text-[13px]">
             Подписка:
             {% if subscription.status %}
-              {{ subscription.status }}
+              {{ subscription.label or subscription.status }}
               {% if subscription.until %}<span class="tw-text-muted2">до {{ subscription.until[:10] }}</span>{% endif %}
               {% if not subscription.here %}<span class="tw-text-muted2">(активирована на другом роутере)</span>{% endif %}
             {% else %}

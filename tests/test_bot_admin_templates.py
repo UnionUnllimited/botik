@@ -36,6 +36,7 @@ ORDER = {
     "cancel_reason": "",
     "paid_at": "2026-08-11T09:00:00+00:00",
     "shipped_at": None,
+    "delivered_at": None,
     "created_at": "2026-08-11T08:00:00+00:00",
     "paid": True,
     "tracking_number": "",
@@ -95,7 +96,13 @@ PAGES = {
             "tracking_url": "",
         },
         "payments": [
-            {"id": 1, "provider": "platega", "status": "succeeded", "amount": "6900.00"}
+            {
+                "id": 1,
+                "provider": "platega",
+                "status": "succeeded",
+                "status_label": "оплачен",
+                "amount": "6900.00",
+            }
         ],
         "devices": [{"id": 1, "mac": "A0:B1:C2:D3:E4:F5", "model": "AX3000"}],
         "free_devices": [{"mac": "A0:B1:C2:D3:E4:F6", "model": "AX3000"}],
@@ -185,6 +192,7 @@ PAGES = {
             "model": "AX3000",
             "fw_version": "25.12.3",
             "status": "active",
+            "status_label": "работает",
             "online": True,
             "last_seen": "2026-08-12T14:25:04+00:00",
             "activated_at": "2026-08-04T18:35:00+00:00",
@@ -198,7 +206,12 @@ PAGES = {
             "visitor_port": 20003,
         },
         "client": {"id": 5, "name": "Иванов Иван", "email": "", "phone": "+79001234567"},
-        "subscription": {"status": "active", "until": "2026-09-04T10:00:00+00:00", "here": True},
+        "subscription": {
+            "status": "active",
+            "label": "активна",
+            "until": "2026-09-04T10:00:00+00:00",
+            "here": True,
+        },
         "panel": {"username": "a0-b1-c2-d3-e4-f5", "until": None, "active": False},
         "events": [],
         "fleet_error": "",
@@ -215,6 +228,8 @@ PAGES = {
                 "client": "Иванов Иван",
                 "online": True,
                 "subscription_status": "active",
+                "subscription_label": "активна",
+                "status_label": "работает",
                 "subscription_here": True,
                 "clients": 3,
                 "cpu_pct": 12,

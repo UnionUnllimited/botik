@@ -42,6 +42,29 @@ log = structlog.get_logger("api.fleet")
 router = APIRouter(prefix="/api/v1/fleet", tags=["fleet"], include_in_schema=False)
 
 
+SUBSCRIPTION_LABELS = {
+    "pending": "оплачена, ждёт роутера",
+    "active": "активна",
+    "grace": "льготный период",
+    "expired": "истекла",
+    "cancelled": "отменена",
+}
+"""Человеческие названия состояний. Переводим здесь, а не в каждом шаблоне:
+иначе `active` рано или поздно вылезет оператору — так и вышло."""
+
+DEVICE_LABELS = {
+    "new": "на складе",
+    "assigned": "отгружен клиенту",
+    "active": "работает",
+    "revoked": "изъят",
+    "blocked": "заблокирован",
+}
+
+
+def _label(value: str, labels: dict[str, str]) -> str:
+    return labels.get(value, value)
+
+
 def _iso(value: dt.datetime | None) -> str | None:
     return value.isoformat() if value else None
 
@@ -83,6 +106,10 @@ async def list_routers(session: AsyncSession = Depends(get_session)) -> dict:
                 "client": device.user.display_name if device.user else "",
                 "client_id": device.user_id,
                 "subscription_status": str(subscription.status) if subscription else "",
+                "subscription_label": _label(str(subscription.status), SUBSCRIPTION_LABELS)
+                if subscription
+                else "",
+                "status_label": _label(str(device.status), DEVICE_LABELS),
                 "subscription_until": _iso(subscription.expires_at) if subscription else None,
                 "subscription_here": bool(subscription and subscription.device_id == device.id),
             }
@@ -105,6 +132,7 @@ def _device_payload(device, *, now):
         "model": device.model or "",
         "fw_version": device.fw_version or "",
         "status": str(device.status),
+        "status_label": _label(str(device.status), DEVICE_LABELS),
         "online": device.frp_online
         or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
         "last_seen": _iso(max((value for value in seen if value), default=None)),
@@ -155,6 +183,7 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
         },
         "subscription": {
             "status": str(subscription.status) if subscription else "",
+            "label": _label(str(subscription.status), SUBSCRIPTION_LABELS) if subscription else "",
             "until": _iso(subscription.expires_at) if subscription else None,
             "here": bool(subscription and subscription.device_id == device.id),
         },
@@ -336,27 +365,35 @@ async def routers_of_clients(tg_ids: str = "", session: AsyncSession = Depends(g
         if current is not None:
             subscriptions[tg_id] = {
                 "status": str(current.status),
+                "label": _label(str(current.status), SUBSCRIPTION_LABELS),
                 "until": _iso(current.expires_at),
             }
 
     return {
         "routers": found,
         "subscriptions": subscriptions,
-        "traffic": await _panel_traffic(set(owners)),
+        "traffic": await _panel_traffic(
+            {tg_id: [item["mac"] for item in items] for tg_id, items in found.items()}
+        ),
     }
 
 
-async def _panel_traffic(tg_ids: set[str]) -> dict[str, dict]:
+async def _panel_traffic(macs_by_client: dict[str, list[str]]) -> dict[str, dict]:
     """Расход и последний выход в сеть по учёткам панели.
 
     Одним запросом на всю страницу: список учёток панель отдаёт целиком,
     и спрашивать её по клиенту на строку значило бы тридцать запросов
     на один список.
 
+    Учётка ищется тремя способами, потому что заводится она двумя путями:
+    клиентская активация даёт `tg{id}_{mac}` и проставляет telegram_id, ручная
+    из карточки — имя из MAC и без него. Искать только по первому значит
+    не находить всё, что активировано руками, а это половина парка.
+
     Служба аналитики бота, которая наполняла его собственные колонки трафика,
-    на сервере не установлена вовсе — эти цифры теперь берутся отсюда.
+    на сервере не установлена вовсе — цифры берутся отсюда.
     """
-    if not tg_ids or not settings.remnawave.is_configured:
+    if not macs_by_client or not settings.remnawave.is_configured:
         return {}
     try:
         accounts = await asyncio.wait_for(remnawave.client().users(), timeout=5)
@@ -364,15 +401,25 @@ async def _panel_traffic(tg_ids: set[str]) -> dict[str, dict]:
         log.warning("fleet.panel_traffic_failed", error=str(exc))
         return {}
 
+    by_manual_name = {
+        activation.manual_username_for(mac): tg_id
+        for tg_id, macs in macs_by_client.items()
+        for mac in macs
+    }
+
     found: dict[str, dict] = {}
     for account in accounts:
-        # Учётка роутера заводится с telegram_id, но панель может его
-        # и не вернуть — тогда имя `tg{id}_{mac}` остаётся единственной зацепкой.
         owner = str(account.telegram_id or "")
+        if owner not in macs_by_client:
+            owner = ""
         if not owner and account.username.startswith("tg"):
-            owner = account.username[2:].split("_", 1)[0]
-        if owner not in tg_ids:
+            candidate = account.username[2:].split("_", 1)[0]
+            owner = candidate if candidate in macs_by_client else ""
+        if not owner:
+            owner = by_manual_name.get(account.username, "")
+        if not owner:
             continue
+
         current = found.setdefault(owner, {"used_bytes": 0, "online_at": ""})
         current["used_bytes"] += account.used_traffic_bytes
         if account.online_at > current["online_at"]:
@@ -443,6 +490,7 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
         "free": [{"mac": device.mac, "model": device.model or ""} for device in free],
         "subscription": {
             "status": str(current.status) if current else "",
+            "label": _label(str(current.status), SUBSCRIPTION_LABELS) if current else "",
             "until": _iso(current.expires_at) if current else None,
         },
         "panel_used_bytes": panel_used,

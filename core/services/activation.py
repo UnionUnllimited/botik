@@ -108,6 +108,10 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
     username = manual_username_for(device.mac)
     expire_at = utcnow() + dt.timedelta(days=days)
 
+    # Владелец, если роутер уже привязан: с ним учётка находится обратно
+    # по telegram_id, а не только по имени, и в панели видно, чья она.
+    owner = await session.get(User, device.user_id) if device.user_id else None
+
     try:
         panel = remnawave.client()
         account = await panel.find_user(username)
@@ -115,7 +119,11 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
             account = await panel.create_user(
                 username=username,
                 expire_at=expire_at,
-                description=f"Ручная активация · {device.mac}",
+                telegram_id=owner.tg_id if owner else None,
+                description=(
+                    f"Ручная активация · {device.mac}"
+                    + (f" · {owner.display_name}" if owner else "")
+                ),
             )
         else:
             # Повторная активация того же роутера не должна плодить учётки:

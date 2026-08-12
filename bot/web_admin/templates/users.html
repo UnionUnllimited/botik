@@ -286,7 +286,7 @@
                   {% elif router_sub.status == 'pending' %}
                     <span class="font-medium" style="color:#f59e0b;">ждёт роутера</span>
                   {% else %}
-                    <span class="font-medium" style="color:#ef4444;">Истекла</span>
+                    <span class="font-medium" style="color:#ef4444;">{{ router_sub.label or 'истекла' }}</span>
                   {% endif %}
                 {% elif days_left is not none %}
                   {% if days_left >= 0 %}

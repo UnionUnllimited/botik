@@ -9,10 +9,13 @@
       <a href="{{ url_for('admin.orders_shop') }}">← Заказы</a>
     </p>
     <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 font-mono">{{ order.number }}</h1>
+    {# Состояние словом, а рядом — когда что произошло. Раньше здесь стояло
+       «Отправлен · оплачен · отправлен»: текущий статус повторялся отметкой. #}
     <p class="text-[13px] tw-text-muted2 mt-1">
       {{ status_titles.get(order.status, order.status) }}
-      {% if order.paid_at %} · оплачен{% endif %}
-      {% if order.shipped_at %} · отправлен{% endif %}
+      {% if order.paid_at %} · оплачен {{ order.paid_at[:10] }}{% endif %}
+      {% if order.shipped_at %} · отправлен {{ order.shipped_at[:10] }}{% endif %}
+      {% if order.delivered_at %} · доставлен {{ order.delivered_at[:10] }}{% endif %}
     </p>
   </div>
 
@@ -151,7 +154,7 @@
           <td class="px-3 py-2 font-mono">{{ item.id }}</td>
           <td class="px-3 py-2">{{ item.provider }}</td>
           <td class="px-3 py-2">{{ item.amount }} ₽</td>
-          <td class="px-3 py-2">{{ item.status }}</td>
+          <td class="px-3 py-2">{{ item.status_label }}</td>
         </tr>
         {% endfor %}
       </tbody>

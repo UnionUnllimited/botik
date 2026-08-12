@@ -48,7 +48,7 @@
           {% elif client_subscription.status == 'pending' %}
             <span style="color:#f59e0b">оплачена, ждёт первого включения роутера</span>
           {% else %}
-            <span style="color:#ef4444">{{ client_subscription.status }}</span>
+            <span style="color:#ef4444">{{ client_subscription.label or client_subscription.status }}</span>
           {% endif %}
         </p>
         {% endif %}

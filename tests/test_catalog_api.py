@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from api.routes import fleet_api
 from api.routes.catalog_api import _draft, _product_payload, _specs
 from core.config import settings
 from core.enums import DeliveryMethod
 from core.models import Product
+from core.services.remnawave import RemnaUser
 
 TOKEN = "catalog-token"
 
@@ -186,6 +189,65 @@ class TestDraft:
 
     def test_source_marked_as_bot(self):
         assert _draft(self._payload()).utm_source == "bot"
+
+
+class TestPanelTrafficMatching:
+    """Учётка в панели заводится двумя путями и называется по-разному:
+    клиентская активация даёт `tg{id}_{mac}`, ручная из карточки — имя из MAC.
+    Искать только по первому значит терять всё, что активировано руками."""
+
+    @pytest.fixture(autouse=True)
+    def panel_configured(self, monkeypatch):
+        """Без настроенной панели функция выходит раньше — тест бы ничего
+        не проверял, а зелёным был."""
+        monkeypatch.setattr(
+            type(settings.remnawave), "is_configured", property(lambda self: True)
+        )
+
+    def _account(self, username, *, telegram_id=0, used=0):
+        return RemnaUser(
+            uuid="u", username=username, subscription_url="",
+            used_traffic_bytes=used, telegram_id=telegram_id,
+        )
+
+    @pytest.mark.anyio
+    async def test_client_activation_matched_by_telegram_id(self, monkeypatch):
+        monkeypatch.setattr(
+            fleet_api.remnawave, "client",
+            lambda: SimpleNamespace(users=self._users([
+                self._account("tg614685408_d40dab283b80", telegram_id=614685408, used=1024)
+            ])),
+        )
+        found = await fleet_api._panel_traffic({"614685408": ["D4:0D:AB:28:3B:80"]})
+        assert found["614685408"]["used_bytes"] == 1024
+
+    @pytest.mark.anyio
+    async def test_manual_activation_matched_by_mac(self, monkeypatch):
+        """Ровно этот случай и не находился: имя из MAC, telegram_id пустой."""
+        monkeypatch.setattr(
+            fleet_api.remnawave, "client",
+            lambda: SimpleNamespace(users=self._users([
+                self._account("d4-0d-ab-28-3b-80", used=2048)
+            ])),
+        )
+        found = await fleet_api._panel_traffic({"614685408": ["D4:0D:AB:28:3B:80"]})
+        assert found["614685408"]["used_bytes"] == 2048
+
+    @pytest.mark.anyio
+    async def test_foreign_account_ignored(self, monkeypatch):
+        """В панели живут и чужие учётки — приписать их клиенту нельзя."""
+        monkeypatch.setattr(
+            fleet_api.remnawave, "client",
+            lambda: SimpleNamespace(users=self._users([
+                self._account("tg999_aaaa", telegram_id=999, used=4096)
+            ])),
+        )
+        assert await fleet_api._panel_traffic({"614685408": ["D4:0D:AB:28:3B:80"]}) == {}
+
+    def _users(self, accounts):
+        async def users():
+            return accounts
+        return users
 
 
 class TestStockAccess:

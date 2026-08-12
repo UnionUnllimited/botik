@@ -35,6 +35,7 @@ from core.enums import (
     OFFERED_DELIVERY_METHODS,
     DeliveryMethod,
     DeviceStatus,
+    OrderItemType,
     OrderStatus,
     PaymentProviderName,
     PaymentPurpose,
@@ -866,6 +867,18 @@ async def list_orders(
 
 ORDERS_PAGE_SIZE = 30
 
+PAYMENT_LABELS = {
+    "pending": "ждёт оплаты",
+    "waiting_for_capture": "деньги удержаны",
+    "succeeded": "оплачен",
+    "canceled": "отменён",
+    "failed": "не прошёл",
+    "refunded": "возвращён",
+    "expired": "просрочен",
+}
+"""Состояния платежа словами. Оператор читает эту таблицу при разборе
+«я оплатил, а заказ висит» — `succeeded` ему в этом не помощник."""
+
 
 def _manage_order_row(order: Order) -> dict:
     return {
@@ -961,8 +974,13 @@ async def manage_order_card(order_id: int, session: AsyncSession = Depends(get_s
             "cancel_reason": order.cancel_reason or "",
             "paid_at": order.paid_at.isoformat() if order.paid_at else None,
             "shipped_at": order.shipped_at.isoformat() if order.shipped_at else None,
+            "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
+            # Доставка идёт отдельной строкой ниже; в составе она была вторым
+            # разом и читалась как двойной счёт.
             "items": [
-                {"title": item.title, "total": str(item.total_price)} for item in (order.items or [])
+                {"title": item.title, "total": str(item.total_price)}
+                for item in (order.items or [])
+                if item.item_type is not OrderItemType.DELIVERY
             ],
         },
         "delivery": {
@@ -979,6 +997,7 @@ async def manage_order_card(order_id: int, session: AsyncSession = Depends(get_s
                 "id": payment.id,
                 "provider": str(payment.provider),
                 "status": str(payment.status),
+                "status_label": PAYMENT_LABELS.get(str(payment.status), str(payment.status)),
                 "amount": str(payment.amount),
                 "created_at": payment.created_at.isoformat() if payment.created_at else None,
             }
