@@ -489,6 +489,32 @@ async def register_client(payload: dict, session: AsyncSession = Depends(get_tra
     return {"ok": True, "id": user.id}
 
 
+@router.get("/my-router/available")
+async def my_router_available(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    """Есть ли клиенту что показывать на экране «Мой роутер».
+
+    Спрашивается при отрисовке главного меню, поэтому здесь только два
+    индексных запроса и ни одного обращения к панели: полный `/my-router`
+    ждёт от неё срок подписки до трёх секунд, и в меню это недопустимо.
+
+    Правило то же, что на самом экране: показывать, когда есть роутер или
+    заказ. Без того и другого кнопка вела к «роутера у вас нет» — клиент,
+    зашедший в бота впервые, получал экран про покупку, которой не было.
+    """
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        return {"show": False}
+    has_device = await session.scalar(
+        select(Device.id).where(Device.user_id == user.id).limit(1)
+    )
+    if has_device is not None:
+        return {"show": True}
+    has_order = await session.scalar(
+        select(Order.id).where(Order.user_id == user.id).limit(1)
+    )
+    return {"show": has_order is not None}
+
+
 @router.get("/my-router")
 async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
     """Экран «Мой роутер»: что с устройством и подпиской.

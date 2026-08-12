@@ -28,6 +28,15 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
     if key in ('btn_catalog', 'btn_my_orders', 'btn_my_router'):
         if str(app_conf.get('catalog_enabled', '1')) != '1':
             return None
+        # «Мой роутер» — только тем, у кого он есть или едет. Клиент, зашедший
+        # в бота впервые, жал её и попадал на экран про роутер, которого не
+        # покупал. Каталог и заказы показываем всем: там как раз покупают.
+        if key == 'btn_my_router':
+            if not user_id:
+                return None
+            from src import shop_api
+            if not await shop_api.my_router_available(user_id):
+                return None
         callback = {
             'btn_catalog': 'shop_catalog',
             'btn_my_orders': 'shop_orders',

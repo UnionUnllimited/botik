@@ -56,6 +56,11 @@ class TestAccess:
         response = client.post("/api/v1/catalog/validate", json={"field": "city", "value": "Москва"})
         assert response.status_code == 401
 
+    def test_my_router_availability_is_behind_the_same_gate(self, client, token):
+        """Ручку зовёт главное меню на каждой отрисовке — она не должна быть открытой."""
+        response = client.get("/api/v1/catalog/my-router/available", params={"tg_id": 1})
+        assert response.status_code == 401
+
 
 class TestFieldValidation:
     """Правила ввода живут у нас: разъехавшись, бот пропустил бы телефон,
