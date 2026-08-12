@@ -144,6 +144,11 @@ async def plans(*, include_hidden: bool = False) -> tuple[list[dict], str]:
     return data.get("plans", []), error
 
 
+async def sync_plans(tariffs: list[dict]) -> tuple[dict, str]:
+    """Отправляет тарифы бота в каталог: они там становятся сроками подписки."""
+    return await post("/api/v1/catalog/plans/sync", {"tariffs": tariffs})
+
+
 async def save_plan(plan_id: int, payload: dict) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/plans/{plan_id}", payload)
 

@@ -53,6 +53,7 @@ from src.subscription_handlers import register_subscription_handlers, show_trial
 from src.device_upgrade_handlers import register_device_upgrade_handlers
 from src.router_catalog import register_router_catalog_handlers, remember_client
 from src.shop_outbox import start_outbox
+from src.shop_sync import start_tariff_sync
 from src.maintenance.register import register_maintenance
 from src.channel_subscription import ChannelSubscriptionChecker, get_channel_checker
 from src.notifications import start_notification_tasks
@@ -8472,6 +8473,8 @@ async def main():
         # подтверждения оплаты и алерты оператору. Отправляем мы — токен
         # есть только у нас, и клиент разговаривает именно с этим ботом.
         start_outbox(bot)
+        # Тарифы — один список на систему: правятся здесь, считает по ним каталог.
+        start_tariff_sync()
         start_stale_payments_task(active_payment_checkers)
         start_expired_traffic_reset_task()
 

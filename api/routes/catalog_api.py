@@ -293,6 +293,69 @@ async def list_plans(
     return {"total": len(plans), "plans": [_plan_payload(plan) for plan in plans]}
 
 
+TARIFF_SLUG_PREFIX = "tariff-"
+"""Признак срока, приехавшего из тарифов бота. Свои когда-то заводились руками
+и различались бы только на глаз — префикс делает происхождение явным."""
+
+
+@router.post("/plans/sync")
+async def sync_plans(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Зеркалит тарифы бота в наши сроки подписки.
+
+    Единственное место правки — раздел «Тарифы» в админке бота. Наша цепочка
+    считает по `plans` (цена заказа, срок активации, продление), поэтому тарифы
+    приезжают сюда как есть и обновляются целиком.
+
+    Всё, чего в присланном списке нет, выключается — включая сроки, заведённые
+    здесь раньше руками: два источника цен на одно и то же расходятся в первый
+    же день. Не удаляем: на них ссылаются оплаченные заказы и подписки.
+    """
+    incoming = payload.get("tariffs")
+    if not isinstance(incoming, list):
+        return {"ok": False, "error": "Ожидается список тарифов."}
+
+    seen: set[str] = set()
+    created = updated = 0
+    for raw in incoming:
+        if not isinstance(raw, dict):
+            continue
+        tariff_id = _int(raw.get("id"))
+        days = _int(raw.get("days"))
+        if not tariff_id or days <= 0:
+            continue
+
+        slug = f"{TARIFF_SLUG_PREFIX}{tariff_id}"
+        seen.add(slug)
+        plan = await session.scalar(select(Plan).where(Plan.slug == slug))
+        if plan is None:
+            plan = Plan(slug=slug, title="", months=0, price=Decimal("0"))
+            session.add(plan)
+            created += 1
+        else:
+            updated += 1
+
+        plan.title = str(raw.get("name", "")).strip()[:200] or f"{days} дн."
+        plan.description = str(raw.get("description") or "").strip()
+        # Их тариф меряется днями, и переводить их в месяцы нельзя: «30 дней»
+        # и «месяц» — разные сроки в феврале.
+        plan.months = 0
+        plan.extra_days = days
+        plan.price = _decimal(raw.get("price"), "0")
+        plan.is_active = bool(raw.get("is_active", True))
+        plan.sort_order = _int(raw.get("sort_order"), 100)
+
+    stale = await session.scalars(
+        select(Plan).where(Plan.is_active.is_(True), Plan.slug.notin_(seen or {""}))
+    )
+    hidden = 0
+    for plan in stale:
+        plan.is_active = False
+        hidden += 1
+
+    log.info("catalog.plans_synced", created=created, updated=updated, hidden=hidden)
+    return {"ok": True, "created": created, "updated": updated, "hidden": hidden}
+
+
 @router.post("/plans/{plan_id}")
 async def save_plan(
     plan_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)

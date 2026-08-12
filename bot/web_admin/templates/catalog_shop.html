@@ -59,94 +59,56 @@
   </form>
 
   {% if not plans_error %}
-  <div class="tw-card p-5 space-y-4">
-    <div>
+  <div class="tw-card p-5 space-y-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
       <div class="text-[13px] font-semibold tw-text-base2">Сроки подписки</div>
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Клиент выбирает срок вместе с роутером — от него зависит и цена заказа,
-        и на сколько включится подписка, когда роутер доедет. Отсчёт начинается
-        с первого выхода на связь, дни доставки не сгорают.
-      </div>
+      <a href="{{ url_for('admin.tariffs_list') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="tag" class="w-3.5 h-3.5"></i><span>Править в тарифах</span>
+      </a>
+    </div>
+    <div class="text-[11px] tw-text-subtle2">
+      Список приходит из раздела «Тарифы» — там он и правится. Здесь показан,
+      чтобы было видно, что именно предлагает бот при покупке и продлении:
+      от срока зависит цена заказа и то, на сколько включится подписка, когда
+      роутер доедет. Отсчёт начинается с первого выхода на связь, дни доставки
+      не сгорают.
     </div>
 
     {% if plans %}
-    <div class="space-y-2">
-      {# Каждый срок — отдельная форма: строка таблицы формой быть не может,
-         браузер выносит её наружу и поля перестают отправляться. #}
-      {% for item in plans %}
-      <div class="flex items-end gap-2 flex-wrap border-t pt-2" style="border-color:var(--tw-line, #26262b)">
-        <form method="post" action="{{ url_for('admin.catalog_plan_save', plan_id=item.id) }}"
-              class="flex items-end gap-2 flex-wrap">
-          <div>
-            <label class="block text-[11px] tw-text-subtle2 mb-1">Название</label>
-            <input type="text" name="title" value="{{ item.title }}" class="tw-input" style="min-width:160px">
-          </div>
-          <div>
-            <label class="block text-[11px] tw-text-subtle2 mb-1">Месяцев</label>
-            <input type="number" name="months" value="{{ item.months }}" min="0" max="120"
-                   class="tw-input" style="width:90px">
-          </div>
-          <div>
-            <label class="block text-[11px] tw-text-subtle2 mb-1">Плюс дней</label>
-            <input type="number" name="extra_days" value="{{ item.extra_days }}" min="0"
-                   class="tw-input" style="width:90px">
-          </div>
-          <div>
-            <label class="block text-[11px] tw-text-subtle2 mb-1">Цена, ₽</label>
-            <input type="text" name="price" value="{{ item.price }}" class="tw-input" style="width:110px">
-          </div>
-          <label class="flex items-center gap-2 cursor-pointer select-none pb-2">
-            <input type="checkbox" name="is_active" class="w-4 h-4 cursor-pointer"
-                   {% if item.is_active %}checked{% endif %}>
-            <span class="text-[13px] tw-text-base2">В боте</span>
-          </label>
-          <input type="hidden" name="sort_order" value="{{ item.sort_order }}">
-          <button type="submit" class="tw-btn tw-btn-sm">Сохранить</button>
-        </form>
-        <form method="post" action="{{ url_for('admin.catalog_plan_delete', plan_id=item.id) }}"
-              onsubmit="return confirm('Удалить срок «{{ item.title }}»? Оплаченные подписки останутся.');">
-          <button type="submit" class="tw-btn tw-btn-sm" style="border-color:#b91c1c;color:#b91c1c">Удалить</button>
-        </form>
-        <span class="text-[11px] tw-text-subtle2 font-mono pb-2">{{ item.slug }}</span>
-      </div>
-      {% endfor %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-[13px]">
+        <thead>
+          <tr class="tw-text-muted2 text-left">
+            <th class="px-3 py-2 font-medium">Срок</th>
+            <th class="px-3 py-2 font-medium">Дней</th>
+            <th class="px-3 py-2 font-medium">Цена</th>
+            <th class="px-3 py-2 font-medium">В боте</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in plans %}
+          <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+            <td class="px-3 py-2">{{ item.title }}</td>
+            <td class="px-3 py-2">{{ item.months * 30 + item.extra_days }}</td>
+            <td class="px-3 py-2">{{ item.price }} ₽</td>
+            <td class="px-3 py-2">
+              {% if item.is_active %}
+                <span style="color:#16a34a">● показывается</span>
+              {% else %}
+                <span class="tw-text-muted2">○ скрыт</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
     {% else %}
     <div class="text-[13px] tw-text-muted2">
-      Сроков пока нет — без них бот не даст оформить заказ: подписке неоткуда взяться.
+      Сроков нет — заведите тариф в разделе «Тарифы», иначе бот не даст оформить
+      заказ: подписке неоткуда взяться.
     </div>
     {% endif %}
-
-    <form method="post" action="{{ url_for('admin.catalog_plan_save', plan_id=0) }}"
-          class="flex items-end gap-2 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
-      <div>
-        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Название</label>
-        <input type="text" name="title" required placeholder="3 месяца" class="tw-input" style="min-width:150px">
-      </div>
-      <div>
-        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Slug</label>
-        <input type="text" name="slug" required placeholder="m3" class="tw-input" style="width:110px">
-      </div>
-      <div>
-        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Месяцев</label>
-        <input type="number" name="months" value="3" min="0" max="120" class="tw-input" style="width:90px">
-      </div>
-      <div>
-        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Плюс дней</label>
-        <input type="number" name="extra_days" value="0" min="0" class="tw-input" style="width:90px">
-      </div>
-      <div>
-        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Цена, ₽</label>
-        <input type="text" name="price" required placeholder="1490" class="tw-input" style="width:110px">
-      </div>
-      <label class="flex items-center gap-2 cursor-pointer select-none pb-2">
-        <input type="checkbox" name="is_active" checked class="w-4 h-4 cursor-pointer">
-        <span class="text-[13px] tw-text-base2">Показывать</span>
-      </label>
-      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-        <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Добавить срок</span>
-      </button>
-    </form>
   </div>
   {% endif %}
 

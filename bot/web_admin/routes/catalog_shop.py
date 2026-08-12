@@ -15,7 +15,7 @@ import json
 from quart import flash, redirect, render_template, request, url_for
 
 from app_config import app_conf
-from src import shop_api
+from src import shop_api, shop_sync
 from src.shop_texts import CATALOG_SETTINGS
 
 SPECS_LIMIT_MAX = 30
@@ -57,6 +57,22 @@ def specs_to_text(specs: dict) -> str:
 
 
 def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func):
+    @admin_bp_instance.after_request
+    async def _push_tariffs_after_change(response):
+        """Правка тарифа уезжает в каталог сразу.
+
+        Ловим здесь, а не в десяти обработчиках тарифов: их добавление,
+        правка, удаление, массовые операции и переключение — всё это POST
+        в один раздел, и перечислять их поимённо значит забыть один при
+        следующем обновлении их кода.
+
+        Отправку не ждём: сохранение тарифа не должно тормозить из-за похода
+        по сети, а не доехавшее подберёт круг синхронизации.
+        """
+        if request.method == "POST" and "/tariffs" in request.path:
+            asyncio.create_task(shop_sync.sync_once())
+        return response
+
     @admin_bp_instance.route("/catalog")
     async def catalog_shop():
         products, error = await shop_api.products(include_hidden=True)
@@ -78,35 +94,6 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             catalog_enabled=str(app_conf.get("catalog_enabled", "1")) == "1",
             specs_limit=app_conf.get("catalog_specs_limit", 8),
         )
-
-    @admin_bp_instance.route("/catalog/plans/<int:plan_id>/save", methods=["POST"])
-    async def catalog_plan_save(plan_id: int):
-        """Срок подписки. `plan_id = 0` — создание нового.
-
-        Сроки продаются вместе с роутером: от выбранного зависит и цена заказа,
-        и то, на сколько включится подписка, когда роутер доедет до клиента.
-        """
-        form = await request.form
-        payload = {
-            "slug": (form.get("slug") or "").strip(),
-            "title": (form.get("title") or "").strip(),
-            "description": (form.get("description") or "").strip(),
-            "months": _form_int(form, "months", 1, low=0, high=120),
-            "extra_days": _form_int(form, "extra_days", 0, low=0, high=3650),
-            "price": _decimal_text(form.get("price", "")),
-            "old_price": _decimal_text(form.get("old_price", "")),
-            "sort_order": _form_int(form, "sort_order", 100, low=0, high=10000),
-            "is_active": form.get("is_active") == "on",
-        }
-        _, error = await shop_api.save_plan(plan_id, payload)
-        await flash(error or "Срок сохранён.", "danger" if error else "success")
-        return redirect(url_for("admin.catalog_shop"))
-
-    @admin_bp_instance.route("/catalog/plans/<int:plan_id>/delete", methods=["POST"])
-    async def catalog_plan_delete(plan_id: int):
-        _, error = await shop_api.delete_plan(plan_id)
-        await flash(error or "Срок удалён.", "danger" if error else "success")
-        return redirect(url_for("admin.catalog_shop"))
 
     @admin_bp_instance.route("/catalog/delivery", methods=["POST"])
     async def catalog_delivery_save():
