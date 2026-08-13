@@ -2,7 +2,11 @@
 {% block title %}{{ title }} — {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="tw-anim space-y-4 max-w-3xl">
+{# Ширина как у соседних страниц каталога (max-w-4xl): карточка была уже всех
+   остальных, и на широком экране форма жалась в левую треть. Два больших поля
+   на широком экране становятся рядом — иначе страница уезжала вниз на два
+   экрана при пустой правой половине. #}
+<div class="tw-anim space-y-4 max-w-4xl">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
     <div class="min-w-0">
@@ -90,6 +94,7 @@
       </div>
     </div>
 
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div>
       <label for="description" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
         Описание
@@ -112,6 +117,7 @@
       <div class="text-[11px] tw-text-subtle2 mt-1">
         По строке на характеристику, через двоеточие: «Название: значение».
       </div>
+    </div>
     </div>
 
     <div>
