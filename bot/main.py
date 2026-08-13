@@ -1123,6 +1123,19 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
         await _notify_payment_grant_failed(telegram_user_id)
         return False
 
+# Запасные тексты главного меню. Настройку можно стереть в админке, а ключа
+# может не быть в базе вовсе: у поставщика эти строки жили в поставляемой
+# базе и в код не попали. None тут разваливает .format() и склейку строк,
+# и падает не текст, а всё главное меню целиком.
+DEFAULT_WELCOME = "Здравствуйте, {user_name}! Это {project_name}. Выберите раздел ниже."
+DEFAULT_SUBSCRIPTION_INFO = """Подписка: {status}
+Действует до: {expiry_date}
+Трафик: {traffic}"""
+DEFAULT_SUBSCRIPTION_EXPIRED = "Подписка не активна. Продлите её, чтобы роутер снова вышел в сеть."
+DEFAULT_ABOUT_SERVICE = "{project_name} — роутеры с подпиской на сервис стабильного доступа к зарубежным ресурсам."
+DEFAULT_PROMO_SUCCESS = "Промокод {code} принят: добавлено дней — {days}. Подписка действует до {expiry_date}."
+
+
 async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message: bool = False):
     user_id = message_or_query.from_user.id
     user_name = (message_or_query.from_user.first_name or "")[:32]
@@ -1184,7 +1197,10 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
     kbd = await keyboards.get_main_keyboard(not is_trial_used and not has_active_sub, has_active_sub, sub_uuid=sub_uuid, user_id=user_id)
 
     safe_user_name = html.escape(user_name)
-    text_to_send = app_conf.get('text_welcome_message').format(user_name=safe_user_name, project_name=app_conf.get('project_name'))
+    welcome_tpl = app_conf.get('text_welcome_message') or DEFAULT_WELCOME
+    text_to_send = welcome_tpl.format(
+        user_name=safe_user_name, project_name=app_conf.get('project_name') or ''
+    )
     
     if active_sub:
         expiry_date = active_sub['subscription_end_date']
@@ -1215,7 +1231,10 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         uuid_sub = (active_sub.get('xui_client_uuid') or '').strip()
         sub_link = f"{base_sub}/sub/{uuid_sub}" if base_sub and uuid_sub else ""
 
-        sub_info_tpl = app_conf.get('text_subscription_info')
+        # Значение по умолчанию тут, а не только в базе: настройку можно
+        # стереть на странице текстов, и главное меню не должно от этого
+        # падать у всех, кто оплатил.
+        sub_info_tpl = app_conf.get('text_subscription_info') or DEFAULT_SUBSCRIPTION_INFO
         text_to_send += "\n\n" + sub_info_tpl.format(
             status="Активна ✅",
             expiry_date=formatted_expiry_date,
@@ -1225,7 +1244,7 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         )
     elif is_trial_used and not has_active_sub:
          # Показываем стандартный текст для пользователей без активной подписки
-         text_to_send += "\n\n" + app_conf.get('text_subscription_expired_main')
+         text_to_send += "\n\n" + (app_conf.get('text_subscription_expired_main') or DEFAULT_SUBSCRIPTION_EXPIRED)
     elif not is_trial_used and not has_active_sub:
         # Пробного периода нет — предлагать его нельзя: клиент нажмёт и ничего
         # не получит. Условие читает ту же настройку, поэтому решение обратимо.
@@ -2411,7 +2430,9 @@ async def cq_about_service(query: CallbackQuery):
     kbd = keyboards.get_about_service_keyboard()
         
     await query.message.edit_text(
-        app_conf.get('text_about_service').format(project_name=app_conf.get('project_name')),
+        (app_conf.get('text_about_service') or DEFAULT_ABOUT_SERVICE).format(
+            project_name=app_conf.get('project_name') or ''
+        ),
         reply_markup=kbd
     )
     await query.answer()
@@ -2888,7 +2909,7 @@ async def process_promo_code_activation(message: Message, state: FSMContext):
     if subscription_data:
         # Отдельной фиксации не требуется — redeem уже учёл использование и лимиты
         await message.answer(
-            app_conf.get('text_promo_code_success').format(
+            (app_conf.get('text_promo_code_success') or DEFAULT_PROMO_SUCCESS).format(
                 code=code, days=days_to_add, expiry_date=format_msk_date(subscription_data['expiry_date'])
             ),
             reply_markup=keyboards.get_back_to_main_keyboard()
