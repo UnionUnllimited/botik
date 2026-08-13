@@ -27,21 +27,12 @@ DEFAULT_HELP_TEXT = (
     "Готово ✅ Сервис заработает нажав кнопку подключиться."
 )
 
-# Кнопки инструкции. url_key — откуда берётся ссылка (настройка в «Ссылки приложений»):
-#   None        → ссылка не редактируется (генерируется/системная)
-#   'app_link_*'→ ссылка из соответствующей настройки
-# kind: 'link_app' (URL из настройки), 'happ' (авто-ссылка Happ), 'back' (в меню)
+# Кнопки инструкции. Ссылки на магазины приложений и «Добавить в Happ»
+# вырезаны вместе с группой «Подключение»: они ставили клиент на телефон,
+# а роутер получает подписку по SSH при активации. Экран помощи остался —
+# текст и картинку оператор наполняет сам на странице «Доп возможности».
+# kind: 'back' (в меню). url_key: None — ссылка не редактируется.
 HELP_BUTTON_DEFS: list[dict[str, Any]] = [
-    {"id": "ios",        "label": "iPhone (RU)",       "kind": "link_app", "url_key": "app_link_ios",
-     "text": "iPhone · 🇷🇺",            "icon": "5370722600668382252", "style": ""},
-    {"id": "ios_global", "label": "iPhone (Global)",   "kind": "link_app", "url_key": "app_link_ios_global",
-     "text": "iPhone · 🇪🇺",            "icon": "5370722600668382252", "style": ""},
-    {"id": "android",    "label": "Android (Play)",    "kind": "link_app", "url_key": "app_link_android",
-     "text": "Android",                  "icon": "5373130604147654226", "style": ""},
-    {"id": "android_apk","label": "Android (APK)",     "kind": "link_app", "url_key": "app_link_android_apk",
-     "text": "Android · APK",            "icon": "5346181118884331907", "style": ""},
-    {"id": "happ",       "label": "Добавить в Happ",   "kind": "happ",     "url_key": None,
-     "text": "Добавить подписку в Happ", "icon": "5438569593452926476", "style": "success"},
     {"id": "back",       "label": "В главное меню",    "kind": "back",     "url_key": None,
      "text": "⬅️ В главное меню",        "icon": "",                    "style": "danger"},
 ]

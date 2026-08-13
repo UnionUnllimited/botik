@@ -2165,11 +2165,9 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
 
     # ── Доп возможности (подписка / помощь клиенту) ─────────────────────────
 
-    _SUBSCRIPTION_APP_LINK_KEYS = (
-        'app_link_ios', 'app_link_ios_global', 'app_link_android', 'app_link_android_apk',
-        'app_link_windows', 'app_link_mac', 'app_link_linux',
-        'app_link_hiddify_ios', 'app_link_hiddify_android',
-    )
+    # Ссылки на магазины приложений вырезаны вместе с группой «Подключение»:
+    # роутеру клиент на телефон не нужен, ставить нечего.
+    _SUBSCRIPTION_APP_LINK_KEYS = ()
     _SUBSCRIPTION_EXTRA_KEYS = ('sub_extra_links_active', 'sub_vless_bac')
     _SUBSCRIPTION_HELP_KEYS = ('help_photo_file_id', 'help_photo_local', 'help_text', 'help_buttons')
 
@@ -2277,7 +2275,6 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             }
 
         grouped_settings = {
-            '🟦 Happ': [_setting_dict(k) for k in _SUBSCRIPTION_APP_LINK_KEYS],
             'Доп возможности': [_setting_dict(k) for k in _SUBSCRIPTION_EXTRA_KEYS],
         }
 

@@ -2,14 +2,10 @@
 {% block title %}Доп возможности · {{ super() }}{% endblock %}
 {% block content %}
 <div class="tw-anim space-y-4 pb-6 min-w-0 max-w-full">
-{# По историческим причинам в роуте /settings/subscription существуют две группы:
-   - Ссылки приложений Happ для кабинета на сайте (app_link_*)
-   - Доп возможности (sub_extra_links_active, sub_vless_bac)
-   Группу с HWID-лимитом мы оттуда убрали — она переехала в /settings/subpage. #}
+{# Ссылки на магазины приложений отсюда вырезаны вместе с группой
+   «Подключение»: роутеру клиент на телефон не нужен. Осталось то, что
+   к нему относится, — дополнительные ссылки в теле подписки и экран помощи. #}
 
-{% set group_links_raw = grouped_settings.get('🟦 Happ', []) %}
-{% set _hidden_link_keys = ['app_link_hiddify_ios', 'app_link_hiddify_android'] %}
-{% set group_links = group_links_raw | rejectattr('key', 'in', _hidden_link_keys) | list %}
 {% set group_extras = grouped_settings.get('Доп возможности', []) %}
 
 <form method="post" class="space-y-4" id="ss-form">
@@ -29,44 +25,6 @@
     </div>
   </div>
 
-  {# ── Группа: ссылки на приложения ──────────────────────────── #}
-  {% if group_links %}
-  <div class="ss-card">
-    <div class="ss-card-body">
-      <div class="ss-section-h">
-        <i data-lucide="package" class="w-4 h-4"></i>
-        Ссылки приложений в кабинете на сайте
-        <span class="ss-section-sub">{{ group_links|length }} платформ</span>
-      </div>
-      <div class="ss-grid-2">
-        {% for setting in group_links %}
-          <div class="ss-field">
-            <label for="{{ setting.key }}">
-              {% set k = setting.key %}
-              {% if   k == 'app_link_ios'             %}<i data-lucide="apple"      class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — iOS (RU)
-              {% elif k == 'app_link_ios_global'      %}<i data-lucide="apple"      class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — iOS (Global)
-              {% elif k == 'app_link_android'         %}<i data-lucide="smartphone" class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Android (Play)
-              {% elif k == 'app_link_android_apk'     %}<i data-lucide="package"    class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Android (APK)
-              {% elif k == 'app_link_windows'         %}<i data-lucide="monitor"    class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Windows
-              {% elif k == 'app_link_mac'             %}<i data-lucide="laptop"     class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — macOS
-              {% elif k == 'app_link_linux'           %}<i data-lucide="terminal"   class="w-4 h-4 text-[var(--admin-text-muted)]"></i> Happ — Linux
-              {% else %}{{ setting.description }}
-              {% endif %}
-              <span class="lbl-key">{{ setting.key }}</span>
-            </label>
-            <input type="url" class="ss-input"
-                   id="{{ setting.key }}" name="{{ setting.key }}"
-                   value="{{ setting.value }}" placeholder="https://...">
-          </div>
-        {% endfor %}
-      </div>
-      <div class="hint mt-3 text-xs text-[var(--admin-text-muted)]">
-        Эти ссылки появляются в личном кабинете пользователя на сайте — кнопки «Скачать» для каждой платформы.
-        Если поле пустое — кнопка не показывается.
-      </div>
-    </div>
-  </div>
-  {% endif %}
 
   {# ── Группа: дополнительные ссылки в подписке ───────────────── #}
   {% if group_extras %}
@@ -250,9 +208,7 @@
             <div class="btn-name">
               <div class="lbl">{{ b.label }}</div>
               <div class="key">
-                {% if b.kind == 'link_app' %}ссылка: {{ b.url_key }} (выше)
-                {% elif b.kind == 'happ' %}ссылка Happ — авто
-                {% else %}возврат в меню{% endif %}
+                возврат в меню
               </div>
             </div>
 

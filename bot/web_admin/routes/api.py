@@ -2305,66 +2305,25 @@ async def send_client_help(telegram_id: int):
         if not user:
             return jsonify({'ok': False, 'error': 'Пользователь не найден'}), 404
 
-        # Получаем настройки
-        app_link_ios         = app_conf.get('app_link_ios', '').strip()
-        app_link_ios_global  = app_conf.get('app_link_ios_global', '').strip()
-        app_link_android     = app_conf.get('app_link_android', '').strip()
-        app_link_android_apk = app_conf.get('app_link_android_apk', '').strip()
-        sub_page_url         = app_conf.get('sub_page_url', '').rstrip('/')
-
-        # Формируем авто-ссылку Happ
-        uuid = user.get('xui_client_uuid') or user.get('remnawave_short_uuid') or ''
-        happ_auto_link = None
-        if sub_page_url and uuid:
-            sub_url = f"{sub_page_url}/sub/{uuid}"
-            redirect_target = quote_plus(f"happ://add/{sub_url}")
-            happ_auto_link = f"{sub_page_url}/redirect_app?target={redirect_target}"
-
         # Текст сообщения (редактируется в админке: Доп возможности → Помощь клиенту)
         from web_admin.core.help_config import (
             DEFAULT_HELP_PHOTO_ID, DEFAULT_HELP_TEXT, get_effective_buttons,
         )
         text = (app_conf.get('help_text', '') or '').strip() or DEFAULT_HELP_TEXT
 
-        # Карта URL для кнопок-ссылок
-        url_map = {
-            'app_link_ios': app_link_ios,
-            'app_link_ios_global': app_link_ios_global,
-            'app_link_android': app_link_android,
-            'app_link_android_apk': app_link_android_apk,
-        }
-
-        buttons = get_effective_buttons(app_conf.get('help_buttons', '') or '')
-        # Резолвим конечный URL/callback и группируем в ряды (iOS, Android, Happ, Назад)
-        rows = {'ios': [], 'android': [], 'happ': [], 'back': []}
-        for b in buttons:
-            kw = {'text': b['text']}
+        # Кнопки магазинов приложений и «Добавить в Happ» вырезаны вместе
+        # с группой «Подключение»: они ставили клиент на телефон, а роутер
+        # получает подписку по SSH при активации. Осталась только «Назад».
+        builder = InlineKeyboardBuilder()
+        for b in get_effective_buttons(app_conf.get('help_buttons', '') or ''):
+            if b['kind'] != 'back':
+                continue
+            kw = {'text': b['text'], 'callback_data': 'back_to_main'}
             if b['icon']:
                 kw['icon_custom_emoji_id'] = b['icon']
             if b['style']:
                 kw['style'] = b['style']
-
-            if b['kind'] == 'link_app':
-                u = url_map.get(b['url_key'])
-                if not u:
-                    continue
-                kw['url'] = u
-                rows['ios' if b['id'].startswith('ios') else 'android'].append(
-                    InlineKeyboardButton(**kw)
-                )
-            elif b['kind'] == 'happ':
-                if not happ_auto_link:
-                    continue
-                kw['url'] = happ_auto_link
-                rows['happ'].append(InlineKeyboardButton(**kw))
-            elif b['kind'] == 'back':
-                kw['callback_data'] = 'back_to_main'
-                rows['back'].append(InlineKeyboardButton(**kw))
-
-        builder = InlineKeyboardBuilder()
-        for group in ('ios', 'android', 'happ', 'back'):
-            if rows[group]:
-                builder.row(*rows[group])
+            builder.row(InlineKeyboardButton(**kw))
 
         # Фото-инструкция. file_id берётся из настройки `help_photo_file_id`,
         # если её нет — используется значение по умолчанию (привязано к
