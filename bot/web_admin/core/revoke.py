@@ -25,7 +25,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from loguru import logger
 
 from app_config import app_conf
-from button_helpers import btn, connect_btn
+from button_helpers import btn
 from tg_sender import send_telegram_message
 from web_admin.async_db import async_query_db, async_execute_db
 
@@ -542,13 +542,10 @@ async def _send_user_notification(telegram_id: int, new_uuid: str) -> None:
         'Нажмите кнопку ниже, чтобы получить новые данные для подключения.',
     )
 
-    # Кнопка «Подключиться» наследует настройки из реестра btn_connect:
-    # текст, стиль, premium-эмодзи и режим открытия (url/webapp).
-    # Тумблер группы «Подключение» здесь игнорируем — нотификация после
-    # revoke обязательно должна давать пользователю способ открыть новую ссылку.
-    connect_button = connect_btn('btn_connect', target_url=full_url, respect_group_toggle=False)
+    # Кнопки «Подключиться» тут больше нет: она открывала ссылку в приложении
+    # на телефоне. Роутер получает подписку по SSH при активации, нажимать
+    # клиенту нечего — ссылка остаётся в тексте выше.
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [connect_button],
         [btn('btn_back_to_main', callback_data='back_to_main')],
     ])
     await send_telegram_message(

@@ -1,22 +1,13 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app_config import app_conf
-from button_helpers import btn, connect_btn
+from button_helpers import btn
 from button_registry import MAIN_MENU_LAYOUT_SETTING, parse_main_menu_layout
 from db_helpers import get_active_tariffs, get_user
 
 
-async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uuid, connect_urls):
+async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uuid):
     """Возвращает InlineKeyboardButton или None, если кнопку показывать не нужно."""
-    full_url, full_url_apple, full_url_android = connect_urls
-
-    if key == 'btn_connect':
-        return connect_btn('btn_connect', target_url=full_url)
-    if key == 'btn_iphone':
-        return connect_btn('btn_iphone', target_url=full_url_apple)
-    if key == 'btn_android':
-        return connect_btn('btn_android', target_url=full_url_android)
-
     if key == 'btn_website_access':
         if str(app_conf.get('show_website_button', '0')) == '1':
             return btn('btn_website_access', callback_data='website_access')
@@ -100,22 +91,13 @@ async def get_main_keyboard(is_trial_available: bool, has_active_sub: bool, sub_
 
     builder = InlineKeyboardBuilder()
 
-    connect_url = app_conf.get('sub_page_url', 'https://example.com')
-    if sub_uuid:
-        full_url = f"{connect_url.rstrip('/')}/sub/{sub_uuid}"
-    else:
-        full_url = f"{connect_url.rstrip('/')}/sub/"
-    full_url_apple = f"{full_url.rstrip('/')}/apple"
-    full_url_android = f"{full_url.rstrip('/')}/android"
-    connect_urls = (full_url, full_url_apple, full_url_android)
-
     layout = parse_main_menu_layout(app_conf.get(MAIN_MENU_LAYOUT_SETTING, ''))
 
     for row_keys in layout:
         row_buttons = []
         for key in row_keys:
             b = await _resolve_main_menu_button(key, user_id=user_id,
-                has_active_sub=has_active_sub, sub_uuid=sub_uuid, connect_urls=connect_urls)
+                has_active_sub=has_active_sub, sub_uuid=sub_uuid)
             if b is not None:
                 row_buttons.append(b)
         if row_buttons:

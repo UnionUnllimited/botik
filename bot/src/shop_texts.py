@@ -135,7 +135,6 @@ CATALOG_SETTINGS: list[tuple[str, str, str]] = [
 
 ROUTER_PROFILE: list[tuple[str, str, str]] = [
     ("trial_days", "0", "Пробный период: у роутера его нет — железо покупают"),
-    ("group_connect_enabled", "0", "Кнопки подключения для приложений: роутеру не нужны"),
     ("traffic_renewal_enabled", "0", "Докупка гигабайтов: тариф роутера меряется временем"),
 ]
 """Профиль роутеров: чего в этом продукте не должно быть.

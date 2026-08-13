@@ -24,23 +24,22 @@ ALLOWED_STYLES = ('', 'primary', 'success', 'danger')
 ALLOWED_KINDS = ('url', 'webapp')
 
 # Кнопки, у которых поддерживается переключение url/webapp.
-KIND_AWARE_KEYS: tuple[str, ...] = ('btn_iphone', 'btn_android', 'btn_router', 'btn_connect')
+# Группа «Подключение» вырезана вместе с кнопками: она отдавала конфиг
+# приложению на телефоне, а роутер настраивается сам по MAC при отгрузке.
+KIND_AWARE_KEYS: tuple[str, ...] = ()
 
 # Кнопки, у которых поддерживается отдельный тумблер видимости
 # (помимо тумблера всей группы). Хранится в settings под ключом `<key>__enabled`.
 # Значение '0' = скрыто; '1' (или нет ключа) = показывается.
-PER_BUTTON_TOGGLE_KEYS: tuple[str, ...] = ('btn_iphone', 'btn_android', 'btn_connect')
+PER_BUTTON_TOGGLE_KEYS: tuple[str, ...] = ()
 
 # Группа «Подключение» имеет один общий тумблер «включена / выключена»,
 # который скрывает весь ряд iPhone/Android/Connect.
-GROUP_TOGGLE_KEYS: dict[str, str] = {
-    # group_id -> settings key (значение '0' = группа отключена; '1' (или нет ключа) = включена)
-    'connect': 'group_connect_enabled',
-}
+GROUP_TOGGLE_KEYS: dict[str, str] = {}
+"""group_id -> ключ настройки ('0' = группа отключена)."""
 
 # Описание групп для UI админки.
 BUTTON_GROUPS = [
-    ('connect',   '📲 Подключение'),
     ('main_menu', '🏠 Главное меню'),
     ('shop',      '🛒 Каталог роутеров'),
     ('payment',   '💳 Оплата'),
@@ -66,10 +65,6 @@ def _b(key: str, group: str, label: str, default_text: str,
 
 # --- Реестр кнопок -----------------------------------------------------------
 BUTTON_REGISTRY: list[dict[str, Any]] = [
-    # 📲 Подключение (ряд под главным меню)
-    _b('btn_iphone',  'connect', 'iPhone',                 'iPhone',                                 default_kind='url'),
-    _b('btn_android', 'connect', 'Android',                'Android',                                default_kind='url'),
-    _b('btn_connect', 'connect', 'Подключиться (WebApp)',  'Подключиться',                           default_kind='webapp'),
 
     # 🏠 Главное меню
     _b('btn_renew_sub',       'main_menu', 'Продлить подписку',         '🔄 Продлить',                ''),
@@ -187,7 +182,6 @@ MAIN_MENU_LAYOUT_SETTING = 'main_menu_layout'
 
 # Ключи, которые можно размещать в раскладке главного меню.
 MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
-    'btn_connect', 'btn_iphone', 'btn_android',
     'btn_website_access',
     'btn_catalog', 'btn_my_router', 'btn_my_orders',
     'btn_renew_sub', 'btn_traffic_renewal',

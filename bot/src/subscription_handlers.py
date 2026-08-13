@@ -7,7 +7,7 @@ import pytz
 from app_config import app_conf
 import db_helpers
 import keyboards
-from button_helpers import btn, connect_btn
+from button_helpers import btn
 from subscription_manager import grant_subscription
 from loguru import logger
 
@@ -146,47 +146,21 @@ def register_subscription_handlers(dp: Dispatcher, check_user_blocked_func, send
             except Exception:
                 formatted_expiry = subscription_data['expiry_date'].strftime('%d.%m.%Y') if hasattr(subscription_data['expiry_date'], 'strftime') else ""
             
-            limit_ip_display = "∞" if current_limit_ip == 0 else str(current_limit_ip)
-            
-            # Получаем UUID клиента для формирования ссылки Mini App (как в keyboards.py)
-            # ВСЕГДА берем xui_client_uuid из БД, так как это основной идентификатор для страницы подписки
-            sub_uuid = None
-            try:
-                # Получаем последнюю подписку из БД
-                last_sub_db = await db_helpers.get_last_subscription(user_id)
-                if last_sub_db and last_sub_db.get('xui_client_uuid'):
-                    sub_uuid = last_sub_db['xui_client_uuid']
-            except Exception as e:
-                logger.warning(f"Не удалось получить xui_client_uuid из БД для пользователя {user_id}: {e}")
-            
+            # Запрос за UUID подписки убран вместе с кнопкой подключения:
+            # ссылку строили только для неё, а роутеру конфиг не выдают.
             success_text = (
                 f"✅ <b>Ваша подписка успешно продлена!</b>\n\n"
                 f"⏱ <b>Длительность:</b> {free_renewal_days} дней\n"
-                f"📱 <b>Лимит устройств:</b> {limit_ip_display}\n"
-                f"📅 <b>Действует до:</b> {formatted_expiry}\n\n"
-                f"<blockquote>Нажмите: <b>\"🔗 Подключиться\"</b> ниже, чтобы мгновенно получить доступ.</blockquote>"
+                f"📅 <b>Действует до:</b> {formatted_expiry}"
             )
-            
-            # Кнопка подключения (Mini App или URL — берётся из настроек btn_connect)
-            # и «Назад в главное меню». Стили/иконки/режим — из button_registry.
-            # respect_group_toggle=False — это нотификация об успехе, кнопка
-            # подключения обязательна даже если группа «Подключение» скрыта.
-            connect_url = app_conf.get('sub_page_url', 'https://example.com')
-            if sub_uuid:
-                full_url = f"{connect_url.rstrip('/')}/sub/{sub_uuid}"
-            else:
-                full_url = f"{connect_url.rstrip('/')}/sub/"
-                logger.warning(f"UUID не найден для пользователя {user_id}, используется общая страница подключения")
 
-            connect_button = connect_btn('btn_connect', target_url=full_url, respect_group_toggle=False)
-            back_button = btn('btn_back_to_main', callback_data='back_to_main')
-
-            buttons = []
-            if connect_button is not None:
-                buttons.append([connect_button])
-            buttons.append([back_button])
-
-            reply_markup = InlineKeyboardMarkup(inline_keyboard=buttons)
+            # Кнопки подключения тут больше нет: она отдавала конфиг приложению
+            # на телефоне. Роутер настраивается сам, по MAC при отгрузке,
+            # и нажимать клиенту нечего — предложение подключиться убрано
+            # из текста вместе с ней.
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+                [btn('btn_back_to_main', callback_data='back_to_main')],
+            ])
             
             await query.message.edit_text(
                 success_text,
