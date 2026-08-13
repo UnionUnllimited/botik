@@ -24,6 +24,11 @@
         <i data-lucide="plus" class="w-3.5 h-3.5"></i>
         <span>Новая линейка</span>
       </a>
+      <a href="{{ url_for('admin.traffic_topup_tariffs_list') }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Тарифы докупки трафика">
+        <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+        <span class="hidden sm:inline">Докупка трафика</span>
+      </a>
       <a href="{{ url_for('admin.tariffs_list', view='methods') }}"
          class="tw-btn tw-btn-secondary tw-btn-sm" title="Просмотр по методам оплаты">
         <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>

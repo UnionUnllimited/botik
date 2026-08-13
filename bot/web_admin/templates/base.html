@@ -576,12 +576,17 @@
             {# Тарифы #}
             {% if moderator_can_see('tariffs') %}
             {% set _tariffs_url = url_for('admin.tariffs_list') %}
+            {% set _topup_url = url_for('admin.traffic_topup_tariffs_list') %}
+            {% set on_topup = request.path.startswith(_topup_url) %}
             {% set on_renew = request.path.startswith(_tariffs_url) %}
-            {# «Докупить GB» и «Лимит устройств» вырезаны вместе со страницами:
-               тариф роутера меряется временем, а за роутером сидит вся домашняя
-               сеть — считать её поштучно и продавать гигабайты нечему. #}
+            {# «Лимит устройств» вырезан вместе со страницей: за роутером сидит
+               вся домашняя сеть, считать её поштучно нечему. Докупка гигабайтов
+               оставлена по решению заказчика, поэтому её страница на месте. #}
             <a href="{{ _tariffs_url }}" class="tw-nav-link {% if on_renew %}active{% endif %}">
                 <i data-lucide="tag" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Сроки подписки</span>
+            </a>
+            <a href="{{ _topup_url }}" class="tw-nav-link {% if on_topup %}active{% endif %}">
+                <i data-lucide="gauge" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Докупка гигабайтов</span>
             </a>
             {% endif %}
 

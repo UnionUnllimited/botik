@@ -648,3 +648,99 @@ def attach_tariff_routes(admin_bp_instance, query_db_func, execute_db_func):
             price_mismatch_methods=price_mismatch,
             all_methods_count=len(ALL_TARIFF_METHOD_SLUGS),
         )
+
+    # Роуты для тарифов докупки трафика
+    @admin_bp_instance.route('/traffic_topup_tariffs')
+    async def traffic_topup_tariffs_list():
+        from web_admin.async_db import async_query_db
+        tariffs = await async_query_db("SELECT * FROM traffic_topup_tariffs ORDER BY price ASC, traffic_gb ASC")
+        return await render_template('traffic_topup_tariffs_list.html', tariffs=tariffs)
+
+    @admin_bp_instance.route('/traffic_topup_tariffs/add', methods=['GET', 'POST'])
+    async def traffic_topup_tariff_add():
+        from web_admin.async_db import async_query_db, async_execute_db
+        if request.method == 'POST':
+            form = await request.form
+            name = (form.get('name') or '').strip()
+            traffic_gb = int(form.get('traffic_gb') or 0)
+            price = float(form.get('price') or 0)
+            description = (form.get('description') or '').strip()
+            sort_order = int(form.get('sort_order') or 0)
+
+            if not name or traffic_gb <= 0 or price <= 0:
+                await flash('Пожалуйста, заполните все обязательные поля корректно.', 'danger')
+                return await render_template('traffic_topup_tariff_form.html', tariff={}, title="Добавить тариф докупки")
+
+            await async_execute_db('''
+                INSERT INTO traffic_topup_tariffs (name, traffic_gb, price, description, sort_order, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+            ''', (name, traffic_gb, price, description, sort_order))
+
+            await flash(f'Тариф докупки "{name}" успешно добавлен!', 'success')
+            return redirect(url_for('admin.traffic_topup_tariffs_list'))
+        
+        return await render_template('traffic_topup_tariff_form.html', tariff={}, title="Добавить тариф докупки")
+
+    @admin_bp_instance.route('/traffic_topup_tariffs/edit/<int:tariff_id>', methods=['GET', 'POST'])
+    async def traffic_topup_tariff_edit(tariff_id):
+        from web_admin.async_db import async_query_db, async_execute_db
+        tariff = await async_query_db("SELECT * FROM traffic_topup_tariffs WHERE id = ?", (tariff_id,), one=True)
+        if not tariff:
+            await flash('Тариф не найден.', 'danger')
+            return redirect(url_for('admin.traffic_topup_tariffs_list'))
+
+        if request.method == 'POST':
+            form = await request.form
+            name = (form.get('name') or '').strip()
+            traffic_gb = int(form.get('traffic_gb') or 0)
+            price = float(form.get('price') or 0)
+            description = (form.get('description') or '').strip()
+            sort_order = int(form.get('sort_order') or 0)
+            is_active = bool(form.get('is_active'))
+
+            if not name or traffic_gb <= 0 or price <= 0:
+                await flash('Пожалуйста, заполните все обязательные поля корректно.', 'danger')
+                tariff = dict(tariff)
+                return await render_template('traffic_topup_tariff_form.html', tariff=tariff, title="Редактировать тариф докупки")
+
+            await async_execute_db('''
+                UPDATE traffic_topup_tariffs 
+                SET name = ?, traffic_gb = ?, price = ?, description = ?, 
+                    sort_order = ?, is_active = ?
+                WHERE id = ?
+            ''', (name, traffic_gb, price, description, sort_order, int(is_active), tariff_id))
+
+            await flash(f'Тариф докупки "{name}" успешно обновлен!', 'success')
+            return redirect(url_for('admin.traffic_topup_tariffs_list'))
+
+        tariff = dict(tariff)
+        return await render_template('traffic_topup_tariff_form.html', tariff=tariff, title="Редактировать тариф докупки")
+
+    @admin_bp_instance.route('/traffic_topup_tariffs/delete/<int:tariff_id>', methods=['POST'])
+    async def traffic_topup_tariff_delete(tariff_id):
+        from web_admin.async_db import async_query_db, async_execute_db
+        tariff = await async_query_db("SELECT * FROM traffic_topup_tariffs WHERE id = ?", (tariff_id,), one=True)
+        if not tariff:
+            await flash('Тариф не найден.', 'danger')
+            return redirect(url_for('admin.traffic_topup_tariffs_list'))
+
+        tariff = dict(tariff)
+        await async_execute_db("DELETE FROM traffic_topup_tariffs WHERE id = ?", (tariff_id,))
+        await flash(f'Тариф докупки "{tariff["name"]}" успешно удален!', 'success')
+        return redirect(url_for('admin.traffic_topup_tariffs_list'))
+
+    @admin_bp_instance.route('/traffic_topup_tariffs/toggle/<int:tariff_id>', methods=['POST'])
+    async def traffic_topup_tariff_toggle(tariff_id):
+        from web_admin.async_db import async_query_db, async_execute_db
+        tariff = await async_query_db("SELECT * FROM traffic_topup_tariffs WHERE id = ?", (tariff_id,), one=True)
+        if not tariff:
+            await flash('Тариф не найден.', 'danger')
+            return redirect(url_for('admin.traffic_topup_tariffs_list'))
+
+        tariff = dict(tariff)
+        new_status = not tariff['is_active']
+        await async_execute_db("UPDATE traffic_topup_tariffs SET is_active = ? WHERE id = ?", (int(new_status), tariff_id))
+
+        status_text = "активирован" if new_status else "деактивирован"
+        await flash(f'Тариф докупки "{tariff["name"]}" {status_text}!', 'success')
+        return redirect(url_for('admin.traffic_topup_tariffs_list'))
