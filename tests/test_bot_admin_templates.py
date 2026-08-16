@@ -259,7 +259,6 @@ PAGES = {
         ],
         "fleet_error": "",
         "auto_enabled": True,
-        "auto_days": 30,
     },
 }
 

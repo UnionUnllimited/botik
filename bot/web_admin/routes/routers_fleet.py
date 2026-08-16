@@ -106,7 +106,6 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             routers=data.get("routers", []),
             fleet_error=error,
             auto_enabled=options.get("auto_enabled", False),
-            auto_days=options.get("auto_days", 30),
         )
 
     @admin_bp_instance.route("/routers/settings", methods=["POST"])
@@ -114,7 +113,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         form = await request.form
         _, error = await _post(
             "/api/v1/fleet/settings",
-            {"auto_enabled": form.get("auto_enabled") == "on", "auto_days": form.get("auto_days", 30)},
+            {"auto_enabled": form.get("auto_enabled") == "on"},
         )
         await flash(error or "Настройки сохранены.", "danger" if error else "success")
         return redirect(url_for("admin.routers_fleet"))

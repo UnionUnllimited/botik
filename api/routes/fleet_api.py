@@ -564,26 +564,24 @@ async def unbind_client_router(
 
 @router.get("/settings", dependencies=[Depends(require_token)])
 async def fleet_settings_read(session: AsyncSession = Depends(get_session)) -> dict:
-    raw_days = await settings_service.get_setting(session, "activation.auto_days")
-    return {
-        "auto_enabled": await settings_service.get_bool(session, "activation.auto_enabled"),
-        "auto_days": int(raw_days) if str(raw_days).isdigit() else 30,
-    }
+    """Настройка автоактивации ровно одна — включена она или нет.
+
+    Числа дней тут больше нет: активация выдаёт срок, который клиент оплатил
+    при покупке, а не одинаковый для всех. Настройка существовала, хранилась
+    и показывалась оператору, но в активации не читалась ни разу — то есть
+    обещала не то, что происходило.
+    """
+    return {"auto_enabled": await settings_service.get_bool(session, "activation.auto_enabled")}
 
 
 @router.post("/settings", dependencies=[Depends(require_token)])
 async def fleet_settings_save(
     payload: dict, session: AsyncSession = Depends(get_transaction)
 ) -> dict:
-    try:
-        days = max(min(int(payload.get("auto_days", 30)), 3650), 1)
-    except (TypeError, ValueError):
-        days = 30
     await settings_service.set_setting(
         session, "activation.auto_enabled", bool(payload.get("auto_enabled"))
     )
-    await settings_service.set_setting(session, "activation.auto_days", days)
-    log.info("fleet.settings_saved", auto_enabled=bool(payload.get("auto_enabled")), days=days)
+    log.info("fleet.settings_saved", auto_enabled=bool(payload.get("auto_enabled")))
     return {"ok": True}
 
 

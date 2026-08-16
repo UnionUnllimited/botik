@@ -52,7 +52,6 @@ DEFAULTS: dict[str, Any] = {
     "support.contact": "",
     "support.working_hours": "ежедневно с 10:00 до 22:00 по Москве",
     "activation.auto_enabled": False,
-    "activation.auto_days": 30,
 }
 
 DESCRIPTIONS = {
@@ -62,7 +61,6 @@ DESCRIPTIONS = {
     "support.contact": "Контакт поддержки для текстов бота",
     "support.working_hours": "Часы работы поддержки",
     "activation.auto_enabled": "Активировать роутер сам, когда отгруженный заказ выходит на связь",
-    "activation.auto_days": "На сколько дней активировать автоматически",
 }
 
 
