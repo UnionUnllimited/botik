@@ -177,6 +177,19 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             return redirect(url_for("admin.router_card", device_id=device_id))
         return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
 
+    @admin_bp_instance.route("/routers/<int:device_id>/ssh-password", methods=["POST"])
+    async def router_ssh_password(device_id: int):
+        """Пароль root — по кнопке, ответом на запрос страницы.
+
+        Отдаём JSON, а не рисуем в карточке: пароль не должен лежать в HTML
+        у всех, кто открыл список. Считает его основное приложение — соль
+        только у него.
+        """
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/ssh-password", {})
+        if error:
+            return jsonify({"ok": False, "error": error}), 502
+        return jsonify({"ok": True, "password": data.get("password") or ""})
+
     @admin_bp_instance.route("/users/<int:telegram_id>/routers.json")
     async def client_routers_json(telegram_id: int):
         """Роутеры клиента для модальной карточки.

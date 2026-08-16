@@ -267,3 +267,32 @@ class TestStockAccess:
             "/api/v1/fleet/devices", headers={"Authorization": "Bearer not-the-token"}
         )
         assert response.status_code == 401
+
+
+class TestSshPasswordAccess:
+    """Пароль root отдаётся ручкой, а значит закрыт тем же секретом, что и парк.
+
+    Пароль выводится из MAC, а MAC написан на корпусе: единственное, чем схема
+    держится, — что соль знает только основное приложение. Открытая ручка
+    отдала бы её следствие любому, кто угадал `device_id`.
+    """
+
+    def test_disabled_without_token(self, client, monkeypatch):
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr(""))
+        response = client.post("/api/v1/fleet/routers/1/ssh-password")
+        assert response.status_code == 404
+
+    def test_wrong_token_rejected(self, client, token):
+        response = client.post(
+            "/api/v1/fleet/routers/1/ssh-password",
+            headers={"Authorization": "Bearer not-the-token"},
+        )
+        assert response.status_code == 401
+
+    def test_no_header_rejected(self, client, token):
+        assert client.post("/api/v1/fleet/routers/1/ssh-password").status_code == 401
+
+    def test_not_exposed_over_get(self, client, token):
+        """GET осел бы в истории браузера и в журнале прокси вместе с паролем."""
+        response = client.get("/api/v1/fleet/routers/1/ssh-password", headers=auth(token))
+        assert response.status_code == 405

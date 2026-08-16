@@ -743,6 +743,31 @@ async def panel_ticket_for(
     return {"ok": True, "url": f"{base}/panel/open?ticket={ticket}"}
 
 
+@router.post("/routers/{device_id}/ssh-password", dependencies=[Depends(require_token)])
+async def ssh_password_for(
+    device_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Пароль root на роутере — оператору, по кнопке.
+
+    Считаем его мы: пароль выводится из MAC и соли `FRP_SSH_PASSWORD_SALT`,
+    а соль есть только в нашем окружении. Их админка вывести его не может
+    даже зная MAC — потому это ручка, а не поле в карточке.
+
+    POST, а не GET, ровно по этой причине: пароль не должен оседать в истории
+    браузера, в журнале прокси и в `Referer` соседних запросов.
+
+    Показ пишется в журнал устройства. Пароль выводится из MAC, а тот написан
+    на корпусе и виден в эфире — единственное, чем схема держится, это что
+    её никто не проверял. Пока она не заменена на ключи, знать, кто и когда
+    смотрел, — это всё, что у нас есть.
+    """
+    device = await _device_or_404(session, device_id)
+    routers_service.add_event(
+        session, device_id=device.id, mac=device.mac, level="info", message="Показан пароль root"
+    )
+    return {"ok": True, "password": router_shell.password_for(device)}
+
+
 FORBIDDEN_COMMANDS = ("mkfs", "firstboot", "rm -rf /", "> /dev/mtd", "dd if=", "sysupgrade")
 """Перепрошивка и форматирование из веб-консоли — верный способ получить кирпич
 у клиента на другом конце страны. Список тот же, что был в нашей админке."""

@@ -24,6 +24,14 @@
           <i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>Открыть панель</span>
         </button>
       </form>
+      {# Пароль root показывается по кнопке и не попадает в разметку страницы:
+         в карточку заглядывают чаще, чем он нужен. Считает его основное
+         приложение — соль только у него. #}
+      <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="rcPassBtn"
+              data-url="{{ url_for('admin.router_ssh_password', device_id=device_id) }}">
+        <i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>Показать пароль</span>
+      </button>
+      <code id="rcPassValue" class="tw-kbd text-[12px] hidden select-all"></code>
       <form method="post" action="{{ url_for('admin.router_poll', device_id=device_id) }}">
         <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Опросить сейчас</span>
@@ -199,4 +207,41 @@
 
   {% endif %}
 </div>
+
+<script>
+// Пароль запрашивается по нажатию, а не рисуется в разметке: карточку
+// открывают ради показаний, а пароль нужен изредка. Повторное нажатие
+// прячет его обратно — чтобы не остался на экране при показе карточки.
+(function () {
+  const btn = document.getElementById('rcPassBtn');
+  const box = document.getElementById('rcPassValue');
+  if (!btn || !box) return;
+  const label = btn.querySelector('span');
+  const initial = label.textContent;
+
+  btn.addEventListener('click', async () => {
+    if (!box.classList.contains('hidden')) {
+      box.classList.add('hidden');
+      box.textContent = '';
+      label.textContent = initial;
+      return;
+    }
+    btn.disabled = true;
+    label.textContent = 'Запрашиваю…';
+    try {
+      const res = await fetch(btn.dataset.url, { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'не удалось получить пароль');
+      box.textContent = data.password;
+      box.classList.remove('hidden');
+      label.textContent = 'Скрыть пароль';
+    } catch (e) {
+      label.textContent = initial;
+      alert('Пароль не получен: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
 {% endblock %}
