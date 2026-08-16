@@ -177,6 +177,78 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             return redirect(url_for("admin.router_card", device_id=device_id))
         return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
 
+    # ── Списки доменов ────────────────────────────────────────────────────────
+
+    @admin_bp_instance.route("/lists")
+    async def domain_lists_page():
+        """Источники, свой список и итог прошлой сборки.
+
+        Всё считает основное приложение: сборка идёт в его worker'е, а списки
+        отдаются с его домена. Здесь только экран.
+        """
+        data, error = await _get("/api/v1/fleet/lists")
+        return await render_template(
+            "domain_lists.html",
+            fleet_error=error,
+            sources=data.get("sources") or [],
+            manual=data.get("manual") or {},
+            last_build=data.get("last_build"),
+        )
+
+    @admin_bp_instance.route("/lists/sources", methods=["POST"])
+    async def domain_source_add():
+        form = await request.form
+        _, error = await _post(
+            "/api/v1/fleet/lists/sources",
+            {
+                "url": (form.get("url") or "").strip(),
+                "title": (form.get("title") or "").strip(),
+                "kind": (form.get("kind") or "domain").strip(),
+            },
+        )
+        await flash(error or "Источник добавлен.", "danger" if error else "success")
+        return redirect(url_for("admin.domain_lists_page"))
+
+    @admin_bp_instance.route("/lists/sources/<int:source_id>/<action>", methods=["POST"])
+    async def domain_source_action(source_id: int, action: str):
+        if action not in ("toggle", "delete"):
+            return redirect(url_for("admin.domain_lists_page"))
+        _, error = await _post(f"/api/v1/fleet/lists/sources/{source_id}/{action}", {})
+        if error:
+            await flash(error, "danger")
+        return redirect(url_for("admin.domain_lists_page"))
+
+    @admin_bp_instance.route("/lists/manual/<kind>", methods=["POST"])
+    async def domain_manual_save(kind: str):
+        """Сохраняет свой список. Автора берём из сессии — журнала действий нет,
+        а «кто добавил домен» спросят первым делом."""
+        from web_admin.run import current_user
+
+        form = await request.form
+        data, error = await _post(
+            f"/api/v1/fleet/lists/manual/{kind}",
+            {"body": form.get("body") or "", "author": getattr(current_user, "username", "") or ""},
+        )
+        if error:
+            await flash(error, "danger")
+        else:
+            await flash(f"Сохранено, строк принято: {data.get('accepted', 0)}.", "success")
+        return redirect(url_for("admin.domain_lists_page"))
+
+    @admin_bp_instance.route("/lists/build", methods=["POST"])
+    async def domain_lists_build():
+        data, error = await _post("/api/v1/fleet/lists/build", {})
+        if error or not data.get("ok"):
+            await flash(error or data.get("error") or "Сборка не удалась.", "danger")
+        else:
+            failed = data.get("failed_sources") or 0
+            note = f", источников не ответило: {failed}" if failed else ""
+            await flash(
+                f"Собрано: доменов {data.get('domains', 0)}, подсетей {data.get('ips', 0)}{note}.",
+                "warning" if failed else "success",
+            )
+        return redirect(url_for("admin.domain_lists_page"))
+
     @admin_bp_instance.route("/routers/<int:device_id>/ssh-password", methods=["POST"])
     async def router_ssh_password(device_id: int):
         """Пароль root — по кнопке, ответом на запрос страницы.

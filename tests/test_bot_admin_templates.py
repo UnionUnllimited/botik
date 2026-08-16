@@ -168,6 +168,29 @@ PAGES = {
         "user_raw": {},
         "user_columns_meta": [],
     },
+    "domain_lists.html": {
+        "fleet_error": "",
+        "sources": [
+            {
+                "id": 1, "url": "https://example.com/block.lst", "title": "Заблокированное",
+                "kind": "domain", "is_enabled": True, "last_lines": 1200,
+                "last_error": "", "last_ok_at": "2026-08-13T15:00:00+00:00",
+            },
+            {
+                "id": 2, "url": "https://example.com/subnets.lst", "title": "",
+                "kind": "ip", "is_enabled": False, "last_lines": 0,
+                "last_error": "HTTP 404", "last_ok_at": None,
+            },
+        ],
+        "manual": {
+            "domain": {"body": "my.example.com", "updated_by": "union", "updated_at": None},
+            "ip": {"body": "", "updated_by": "", "updated_at": None},
+        },
+        "last_build": {
+            "domains": 51234, "ips": 812, "failed_sources": 1,
+            "finished_at": "2026-08-13T15:04:00+00:00", "error": "", "uploaded": False,
+        },
+    },
     "router_card.html": {
         "device_id": 1,
         "card": {},
@@ -266,6 +289,7 @@ OURS = {
     "devices_stock.html",
     "orders_shop.html",
     "orders_shop_card.html",
+    "domain_lists.html",
     "router_card.html",
     "routers_fleet.html",
 }

@@ -508,6 +508,10 @@
             <a href="{{ url_for('admin.routers_fleet') }}" class="tw-nav-link {% if request.path == url_for('admin.routers_fleet') %}active{% endif %}">
                 <i data-lucide="wifi" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
             </a>
+            <a href="{{ url_for('admin.domain_lists_page') }}"
+               class="tw-nav-link {% if request.path.startswith(url_for('admin.domain_lists_page')) %}active{% endif %}">
+                <i data-lucide="list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Списки доменов</span>
+            </a>
             {% endif %}
             {% if moderator_can_see('users') %}
             {# Каталог разложен по подпунктам: модели, доставка и настройки —

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Списки доменов · {{ super() }}{% endblock %}
+{% block content %}
+{# Источники и свой список правятся здесь, а качает и склеивает основное
+   приложение: списки отдаются с его домена, и разводить сборку по двум
+   процессам не за чем. Раньше всё это было массивом в скрипте на сервере. #}
+<div class="tw-anim space-y-4 max-w-4xl">
+
+  <div class="flex items-start justify-between gap-3 flex-wrap">
+    <div class="min-w-0">
+      <h1 class="text-lg font-semibold tw-text-base">Списки доменов</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        По ним роутер решает, что вести в туннель. Собираются из источников ниже
+        и вашего списка.
+      </p>
+    </div>
+    {% if not fleet_error %}
+    <form method="post" action="{{ url_for('admin.domain_lists_build') }}">
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Собрать сейчас</span>
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if fleet_error %}
+  <div class="tw-card p-4 text-[13px]" style="border-color: rgb(244 63 94 / .35);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 inline-block align-text-bottom"></i>
+    {{ fleet_error }}
+  </div>
+  {% else %}
+
+  {% if last_build %}
+  <div class="tw-card p-3.5 text-[12.5px] tw-text-base2">
+    Последняя сборка: доменов <b>{{ last_build.domains }}</b>,
+    подсетей <b>{{ last_build.ips }}</b>
+    {%- if last_build.finished_at %}, {{ last_build.finished_at[:16].replace('T', ' ') }}{% endif %}.
+    {% if last_build.failed_sources %}
+      <span class="text-amber-600">Источников не ответило: {{ last_build.failed_sources }}.</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Свой список ──────────────────────────────────────────────────────── #}
+  {% for kind, label, hint in [
+      ('domain', 'Свои домены', 'По домену на строку. Схему и путь уберём сами.'),
+      ('ip', 'Свои подсети', 'IPv4, с маской или без: 1.2.3.4 или 10.0.0.0/8.')] %}
+  <div class="tw-card p-4">
+    <form method="post" action="{{ url_for('admin.domain_manual_save', kind=kind) }}">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <label for="body_{{ kind }}" class="text-[13px] font-semibold tw-text-base2">{{ label }}</label>
+        {% set row = manual.get(kind) or {} %}
+        {% if row.updated_by %}
+        <span class="text-[11px] tw-text-subtle2">правил {{ row.updated_by }}</span>
+        {% endif %}
+      </div>
+      <textarea id="body_{{ kind }}" name="body" rows="6" class="tw-input"
+                style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical; font-family:ui-monospace,monospace;"
+                >{{ (manual.get(kind) or {}).get('body', '') }}</textarea>
+      <div class="flex items-center justify-between gap-2 mt-2">
+        <span class="text-[11px] tw-text-subtle2">{{ hint }}</span>
+        <button type="submit" class="tw-btn tw-btn-sm">Сохранить</button>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+
+  {# ── Источники ────────────────────────────────────────────────────────── #}
+  <div class="tw-card p-4">
+    <div class="text-[13px] font-semibold tw-text-base2 mb-1">Источники</div>
+    <p class="text-[11px] tw-text-subtle2 mb-3">
+      Выключенный источник остаётся в списке: категории включают сезонно,
+      а адрес файла через месяц не вспомнить.
+    </p>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-[12.5px]">
+        <tbody>
+          {% for s in sources %}
+          <tr class="border-t" style="border-color: var(--admin-border);">
+            <td class="py-2 pr-2 align-top">
+              <div class="{% if not s.is_enabled %}opacity-50{% endif %}">
+                <b>{{ s.title or s.url }}</b>
+                <span class="tw-kbd text-[10px] ml-1">{{ 'IP' if s.kind == 'ip' else 'домены' }}</span>
+              </div>
+              <div class="text-[11px] tw-text-subtle2 break-all">{{ s.url }}</div>
+              {% if s.last_error %}
+                <div class="text-[11px] text-rose-500">{{ s.last_error }}</div>
+              {% elif s.last_ok_at %}
+                <div class="text-[11px] tw-text-subtle2">строк в прошлый раз: {{ s.last_lines }}</div>
+              {% endif %}
+            </td>
+            <td class="py-2 align-top whitespace-nowrap text-right">
+              <form method="post" class="inline"
+                    action="{{ url_for('admin.domain_source_action', source_id=s.id, action='toggle') }}">
+                <button type="submit" class="tw-btn tw-btn-sm">
+                  {{ 'Выключить' if s.is_enabled else 'Включить' }}
+                </button>
+              </form>
+              <form method="post" class="inline"
+                    action="{{ url_for('admin.domain_source_action', source_id=s.id, action='delete') }}"
+                    onsubmit="return confirm('Удалить источник совсем? Чтобы временно убрать категорию, выключите его.');">
+                <button type="submit" class="tw-btn tw-btn-sm">Удалить</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="py-3 tw-text-muted2">Источников нет.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <form method="post" action="{{ url_for('admin.domain_source_add') }}"
+          class="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t"
+          style="border-color: var(--admin-border);">
+      <input type="url" name="url" required placeholder="https://…/list.lst" class="tw-input sm:col-span-2">
+      <input type="text" name="title" placeholder="Название" class="tw-input">
+      <div class="flex gap-2">
+        <select name="kind" class="tw-input">
+          <option value="domain">домены</option>
+          <option value="ip">подсети</option>
+        </select>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">Добавить</button>
+      </div>
+    </form>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}
