@@ -239,7 +239,13 @@ PAGES = {
         "console_command": "",
     },
     "routers_fleet.html": {
-        "fleet": {"total": 1, "online": 1},
+        "fleet": {
+            "fleet_total": 120,
+            "silent": 4,
+            "no_client": 7,
+            "total": 120,
+            "online": 116,
+        },
         "routers": [
             {
                 "id": 1,
@@ -259,6 +265,10 @@ PAGES = {
         ],
         "fleet_error": "",
         "auto_enabled": True,
+        "filters": {"q": "", "link": "", "client": ""},
+        "page": 1,
+        "pages": 3,
+        "total": 120,
     },
 }
 

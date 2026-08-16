@@ -10,6 +10,7 @@
 """
 
 import os
+from urllib.parse import urlencode
 
 import httpx
 from quart import flash, jsonify, redirect, render_template, request, url_for
@@ -84,8 +85,8 @@ async def _post(path: str, payload: dict) -> tuple[dict, str]:
     return (data, "") if data.get("ok") else ({}, data.get("error") or "Не получилось.")
 
 
-async def fetch_fleet() -> tuple[dict, str]:
-    return await _get("/api/v1/fleet/routers")
+async def fetch_fleet(query: str = "") -> tuple[dict, str]:
+    return await _get(f"/api/v1/fleet/routers{query}")
 
 
 def _days_from(form) -> int:
@@ -98,7 +99,19 @@ def _days_from(form) -> int:
 def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_func):
     @admin_bp_instance.route("/routers")
     async def routers_fleet():
-        data, error = await fetch_fleet()
+        # Фильтры считает основное приложение: список и подписки лежат у него,
+        # а тянуть сюда весь парк ради выборки нечего.
+        params = {
+            key: (request.args.get(key) or "").strip()
+            for key in ("q", "link", "client")
+        }
+        params = {key: value for key, value in params.items() if value}
+        try:
+            params["page"] = str(max(1, int(request.args.get("page", 1))))
+        except (TypeError, ValueError):
+            params["page"] = "1"
+        query = "?" + urlencode(params) if params else ""
+        data, error = await fetch_fleet(query)
         options, _ = await _get("/api/v1/fleet/settings")
         return await render_template(
             "routers_fleet.html",
@@ -106,6 +119,10 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             routers=data.get("routers", []),
             fleet_error=error,
             auto_enabled=options.get("auto_enabled", False),
+            filters={k: request.args.get(k, "") for k in ("q", "link", "client")},
+            page=data.get("page", 1),
+            pages=data.get("pages", 1),
+            total=data.get("total", 0),
         )
 
     @admin_bp_instance.route("/routers/settings", methods=["POST"])

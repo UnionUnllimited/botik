@@ -296,3 +296,29 @@ class TestSshPasswordAccess:
         """GET осел бы в истории браузера и в журнале прокси вместе с паролем."""
         response = client.get("/api/v1/fleet/routers/1/ssh-password", headers=auth(token))
         assert response.status_code == 405
+
+
+class TestRoutersFilters:
+    """Фильтры парка проверяются ручкой: сюда приходит что угодно из адреса."""
+
+    def test_unknown_link_value_rejected(self, client, token):
+        """Опечатка в адресе не должна молча отдавать весь парк."""
+        response = client.get(
+            "/api/v1/fleet/routers", params={"link": "onlin"}, headers=auth(token)
+        )
+        assert response.status_code == 422
+
+    def test_unknown_client_value_rejected(self, client, token):
+        response = client.get(
+            "/api/v1/fleet/routers", params={"client": "yes"}, headers=auth(token)
+        )
+        assert response.status_code == 422
+
+    def test_page_below_one_rejected(self, client, token):
+        """Нулевая страница дала бы отрицательный offset."""
+        response = client.get("/api/v1/fleet/routers", params={"page": 0}, headers=auth(token))
+        assert response.status_code == 422
+
+    # Проверки «пустой фильтр разрешён» тут нет намеренно: она доходит
+    # до обработчика, а базы в этой сборке тестов не поднимается. Пустое
+    # значение разрешено самим шаблоном `^(online|offline)?$`.

@@ -76,15 +76,72 @@ def _iso(value: dt.datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
+ROUTERS_PAGE_SIZE = 50
+"""Столько же, сколько на складе. Пока роутеров пять, страница не нужна;
+на первой партии список без неё станет нечитаемым, а ручка — тяжёлой:
+на каждый роутер идёт отдельный запрос за подпиской."""
+
+
 @router.get("/routers", dependencies=[Depends(require_token)])
-async def list_routers(session: AsyncSession = Depends(get_session)) -> dict:
-    """Список роутеров с показаниями и владельцем."""
+async def list_routers(
+    session: AsyncSession = Depends(get_session),
+    q: str = Query("", max_length=120),
+    link: str = Query("", pattern="^(online|offline)?$"),
+    client: str = Query("", pattern="^(with|without)?$"),
+    page: int = Query(1, ge=1),
+) -> dict:
+    """Список роутеров с показаниями и владельцем.
+
+    Фильтры считаются в SQL, а не по загруженному списку: иначе страница
+    на пятьдесят строк тянула бы весь парк и спрашивала подписку по каждому.
+
+    Связь — исключение: она складывается из флага туннеля и свежести
+    последнего ответа, то есть считается уже в Python. Поэтому по ней
+    фильтруем после выборки, а счётчики сверху считаем по всему парку —
+    им фильтр не нужен, они про парк целиком.
+    """
     now = utcnow()
-    devices = list(
-        await session.scalars(
-            select(Device).options(selectinload(Device.user)).order_by(Device.id.desc())
-        )
-    )
+
+    conditions = []
+    text = q.strip()
+    if text:
+        like = f"%{text}%"
+        conditions.append(or_(Device.mac.ilike(like), Device.model.ilike(like)))
+    if client == "with":
+        conditions.append(Device.user_id.is_not(None))
+    elif client == "without":
+        conditions.append(Device.user_id.is_(None))
+
+    statement = select(Device).options(selectinload(Device.user)).order_by(Device.id.desc())
+    if conditions:
+        statement = statement.where(*conditions)
+
+    # Фильтр по связи не ложится в SQL, поэтому при нём берём выборку целиком
+    # и режем на страницы уже после. На парке в тысячи это стоило бы дорого,
+    # но такой фильтр и нужен как раз чтобы найти молчащие — их единицы.
+    paginate_in_sql = not link
+    if paginate_in_sql:
+        total = await session.scalar(
+            select(func.count()).select_from(statement.subquery())
+        ) or 0
+        statement = statement.limit(ROUTERS_PAGE_SIZE).offset((page - 1) * ROUTERS_PAGE_SIZE)
+
+    devices = list(await session.scalars(statement))
+
+    if link:
+        devices = [
+            device
+            for device in devices
+            if (
+                device.frp_online
+                or device.is_online(
+                    threshold_min=settings.subscription.heartbeat_offline_min, now=now
+                )
+            )
+            is (link == "online")
+        ]
+        total = len(devices)
+        devices = devices[(page - 1) * ROUTERS_PAGE_SIZE : page * ROUTERS_PAGE_SIZE]
 
     items = []
     for device in devices:
@@ -122,11 +179,27 @@ async def list_routers(session: AsyncSession = Depends(get_session)) -> dict:
             }
         )
 
-    online_total = sum(1 for item in items if item["online"])
+    # Счётчики сверху — про весь парк, а не про страницу: оператор смотрит
+    # на них, чтобы понять состояние хозяйства, и «на связи 4 из 50 на этой
+    # странице» ответа на такой вопрос не даёт.
+    fleet = list(await session.scalars(select(Device)))
+    online_total = sum(
+        1
+        for device in fleet
+        if device.frp_online
+        or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now)
+    )
+    pages = max(1, (total + ROUTERS_PAGE_SIZE - 1) // ROUTERS_PAGE_SIZE)
     return {
         "generated_at": now.isoformat(),
-        "total": len(items),
+        "fleet_total": len(fleet),
         "online": online_total,
+        "silent": len(fleet) - online_total,
+        "no_client": sum(1 for device in fleet if device.user_id is None),
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "per_page": ROUTERS_PAGE_SIZE,
         "routers": items,
     }
 

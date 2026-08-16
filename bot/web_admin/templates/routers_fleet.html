@@ -27,7 +27,7 @@
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div class="tw-card p-4">
         <div class="text-[12px] tw-text-muted2">Всего роутеров</div>
-        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.total or 0 }}</div>
+        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.fleet_total or 0 }}</div>
       </div>
       <div class="tw-card p-4">
         <div class="text-[12px] tw-text-muted2">На связи</div>
@@ -35,13 +35,11 @@
       </div>
       <div class="tw-card p-4">
         <div class="text-[12px] tw-text-muted2">Молчат</div>
-        <div class="text-[22px] font-semibold tw-text-base2">{{ (fleet.total or 0) - (fleet.online or 0) }}</div>
+        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.silent or 0 }}</div>
       </div>
       <div class="tw-card p-4">
         <div class="text-[12px] tw-text-muted2">Без клиента</div>
-        <div class="text-[22px] font-semibold tw-text-base2">
-          {{ routers | rejectattr('client') | list | length }}
-        </div>
+        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.no_client or 0 }}</div>
       </div>
     </div>
 
@@ -72,6 +70,42 @@
         </button>
       </div>
     </form>
+
+    {# Фильтры и страницы: пока роутеров пять, они лишние, но на первой партии
+       список без них нечитаем. Считает их основное приложение — парк у него. #}
+    <form method="get" class="tw-card p-3 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+      <div class="ss-field sm:col-span-2">
+        <label for="q">Поиск</label>
+        <input type="search" id="q" name="q" value="{{ filters.q }}" class="tw-input"
+               placeholder="MAC или модель">
+      </div>
+      <div class="ss-field">
+        <label for="link">Связь</label>
+        <select id="link" name="link" class="tw-input">
+          <option value="">любая</option>
+          <option value="online" {% if filters.link == 'online' %}selected{% endif %}>на связи</option>
+          <option value="offline" {% if filters.link == 'offline' %}selected{% endif %}>молчит</option>
+        </select>
+      </div>
+      <div class="ss-field">
+        <label for="client">Клиент</label>
+        <div class="flex gap-2">
+          <select id="client" name="client" class="tw-input">
+            <option value="">любой</option>
+            <option value="with" {% if filters.client == 'with' %}selected{% endif %}>привязан</option>
+            <option value="without" {% if filters.client == 'without' %}selected{% endif %}>без клиента</option>
+          </select>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">Найти</button>
+        </div>
+      </div>
+    </form>
+
+    {% if filters.q or filters.link or filters.client %}
+    <div class="text-[12px] tw-text-muted2">
+      Найдено: <b>{{ total }}</b>.
+      <a href="{{ url_for('admin.routers_fleet') }}" class="underline">сбросить фильтры</a>
+    </div>
+    {% endif %}
 
     {% if routers %}
     <div class="tw-card overflow-x-auto">
@@ -125,6 +159,22 @@
     </div>
     {% else %}
     <div class="tw-card p-4 text-[13px] tw-text-muted2">Роутеров пока нет.</div>
+    {% endif %}
+
+    {% if pages > 1 %}
+    <div class="flex items-center justify-between gap-2 text-[12.5px]">
+      <span class="tw-text-muted2">Страница {{ page }} из {{ pages }}</span>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a class="tw-btn tw-btn-sm"
+           href="{{ url_for('admin.routers_fleet', q=filters.q, link=filters.link, client=filters.client, page=page-1) }}">Назад</a>
+        {% endif %}
+        {% if page < pages %}
+        <a class="tw-btn tw-btn-sm"
+           href="{{ url_for('admin.routers_fleet', q=filters.q, link=filters.link, client=filters.client, page=page+1) }}">Вперёд</a>
+        {% endif %}
+      </div>
+    </div>
     {% endif %}
 
   {% endif %}
