@@ -74,21 +74,37 @@ def clean_ips(raw: str) -> list[str]:
 CLEANERS = {"domain": clean_domains, "ip": clean_ips}
 
 
-async def fetch(client: httpx.AsyncClient, url: str) -> tuple[str, str]:
-    """Скачивает источник. Возвращает (тело, ошибка) — одно из двух пустое.
+NOT_MODIFIED = "not_modified"
+"""Признак, что источник не менялся с прошлого круга."""
+
+
+async def fetch(
+    client: httpx.AsyncClient, url: str, *, etag: str = ""
+) -> tuple[str, str, str]:
+    """Скачивает источник. Возвращает (тело, метку версии, ошибка).
+
+    С непустым `etag` уходит условный запрос: неизменившийся файл отвечает
+    `304` без тела, и такой круг почти ничего не стоит ни нам, ни отдающей
+    стороне. Ради этого опрос и может идти часто — безусловные запросы
+    к 26 файлам каждые несколько минут упёрлись бы в 429, и списки начали бы
+    собираться с дырами.
 
     Недоступный источник не роняет сборку: у поставщика периодически
     отваливаются отдельные файлы, а список без одной категории лучше,
-    чем отсутствие обновления вовсе. Ошибка запоминается у источника,
-    чтобы её было видно на странице, а не только в журнале.
+    чем отсутствие обновления вовсе.
     """
+    headers = {"If-None-Match": etag} if etag else {}
     try:
-        response = await client.get(url, timeout=FETCH_TIMEOUT_SEC, follow_redirects=True)
+        response = await client.get(
+            url, timeout=FETCH_TIMEOUT_SEC, follow_redirects=True, headers=headers
+        )
     except httpx.HTTPError as exc:
-        return "", f"{type(exc).__name__}: {exc}"[:255]
+        return "", etag, f"{type(exc).__name__}: {exc}"[:255]
+    if response.status_code == 304:
+        return "", etag, NOT_MODIFIED
     if response.status_code != 200:
-        return "", f"HTTP {response.status_code}"
-    return response.text, ""
+        return "", etag, f"HTTP {response.status_code}"
+    return response.text, (response.headers.get("ETag") or "")[:200], ""
 
 
 def merge(parts: list[list[str]], manual: str, kind: str) -> list[str]:
@@ -142,13 +158,20 @@ def write_list(kind: str, values: list[str]) -> None:
     tmp.replace(target)
 
 
-async def build(session: AsyncSession) -> DomainBuild:
-    """Пересобирает оба списка: качает включённые источники, чистит, склеивает.
+async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
+    """Пересобирает списки, если хоть один источник изменился.
 
-    Одна запись `DomainBuild` на сборку — по ней видно, когда собирали, сколько
-    вышло и сколько источников не ответило. Недоступный источник не роняет
-    сборку целиком: список без одной категории лучше, чем отсутствие
-    обновления вовсе.
+    Круг идёт часто, а меняются источники редко, поэтому первым проходом
+    спрашиваем условно: с `If-None-Match` неизменившийся файл отвечает `304`
+    без тела. Если так ответили все — пересобирать нечего, круг закрывается
+    записью `skipped`, и роутеры получают тот же файл, что и раньше.
+
+    Если изменился хоть один, остальные нужно докачать целиком: их содержимое
+    мы не храним, а склеить список из половины кусков нельзя. Это редкий
+    случай, и он стоит ровно одного лишнего круга запросов.
+
+    `force=True` — кнопка «Собрать сейчас»: оператор нажимает её как раз тогда,
+    когда хочет увидеть результат своей правки, а её `ETag` источников не знает.
     """
     record = DomainBuild()
     session.add(record)
@@ -161,29 +184,67 @@ async def build(session: AsyncSession) -> DomainBuild:
     ).all()
     manual = {row.kind: row.body for row in (await session.scalars(select(ManualList))).all()}
 
-    parts: dict[str, list[list[str]]] = {"domain": [], "ip": []}
+    bodies: dict[int, str] = {}
     failed = 0
+    changed = force
     gate = asyncio.Semaphore(MAX_PARALLEL)
 
     async with httpx.AsyncClient() as client:
 
-        async def one(source: DomainSource) -> None:
-            nonlocal failed
+        async def probe(source: DomainSource) -> None:
+            nonlocal failed, changed
             async with gate:
-                body, error = await fetch(client, source.url)
+                body, etag, error = await fetch(
+                    client, source.url, etag="" if force else source.etag
+                )
+            if error == NOT_MODIFIED:
+                source.last_error = ""
+                source.last_ok_at = utcnow()
+                return
             if error:
                 failed += 1
                 source.last_error = error
-                source.last_lines = 0
                 log.warning("domain_lists.source_failed", url=source.url, error=error)
                 return
-            values = CLEANERS[source.kind](body)
-            parts[source.kind].append(values)
-            source.last_error = ""
-            source.last_lines = len(values)
-            source.last_ok_at = utcnow()
+            changed = True
+            bodies[source.id] = body
+            source.etag = etag
 
-        await asyncio.gather(*(one(source) for source in sources))
+        await asyncio.gather(*(probe(source) for source in sources))
+
+        if not changed:
+            record.skipped = True
+            record.finished_at = utcnow()
+            log.info("domain_lists.unchanged", sources=len(sources))
+            return record
+
+        # Докачиваем то, что ответило «не менялось»: содержимое мы не храним,
+        # а склеить список из половины кусков нельзя.
+        async def refetch(source: DomainSource) -> None:
+            nonlocal failed
+            async with gate:
+                body, etag, error = await fetch(client, source.url)
+            if error:
+                failed += 1
+                source.last_error = error
+                return
+            bodies[source.id] = body
+            source.etag = etag
+
+        await asyncio.gather(
+            *(refetch(s) for s in sources if s.id not in bodies and not s.last_error)
+        )
+
+    parts: dict[str, list[list[str]]] = {"domain": [], "ip": []}
+    for source in sources:
+        body = bodies.get(source.id)
+        if body is None:
+            continue
+        values = CLEANERS[source.kind](body)
+        parts[source.kind].append(values)
+        source.last_lines = len(values)
+        source.last_error = ""
+        source.last_ok_at = utcnow()
 
     counts: dict[str, int] = {}
     built: dict[str, list[str]] = {}
@@ -214,13 +275,13 @@ def _s3_client():
     """
     import boto3
 
-    conf = settings.lists_s3
+    conf = settings.lists
     return boto3.client(
         "s3",
-        endpoint_url=conf.endpoint,
-        region_name=conf.region,
-        aws_access_key_id=conf.access_key.get_secret_value(),
-        aws_secret_access_key=conf.secret_key.get_secret_value(),
+        endpoint_url=conf.s3_endpoint,
+        region_name=conf.s3_region,
+        aws_access_key_id=conf.s3_access_key.get_secret_value(),
+        aws_secret_access_key=conf.s3_secret_key.get_secret_value(),
     )
 
 
@@ -234,7 +295,7 @@ async def upload(values_by_kind: dict[str, list[str]]) -> bool:
     Загрузка блокирующая (`boto3` синхронный), поэтому уходит в поток: держать
     ею event loop на паре мегабайт незачем.
     """
-    conf = settings.lists_s3
+    conf = settings.lists
     if not conf.is_configured:
         return False
 
@@ -243,8 +304,8 @@ async def upload(values_by_kind: dict[str, list[str]]) -> bool:
         for kind, values in values_by_kind.items():
             body = ("\n".join(values) + ("\n" if values else "")).encode()
             client.put_object(
-                Bucket=conf.bucket,
-                Key=f"{conf.prefix.lstrip('/')}{FILE_NAMES[kind]}",
+                Bucket=conf.s3_bucket,
+                Key=f"{conf.s3_prefix.lstrip('/')}{FILE_NAMES[kind]}",
                 Body=body,
                 ContentType="text/plain; charset=utf-8",
             )
@@ -254,5 +315,5 @@ async def upload(values_by_kind: dict[str, list[str]]) -> bool:
     except Exception as exc:  # noqa: BLE001 — причин у чужого хранилища много, все одинаково нефатальны
         log.warning("domain_lists.upload_failed", error=str(exc))
         return False
-    log.info("domain_lists.uploaded", bucket=conf.bucket)
+    log.info("domain_lists.uploaded", bucket=conf.s3_bucket)
     return True

@@ -198,10 +198,10 @@ class TestUpload:
         from core.config import settings
         from core.services import domain_lists
 
-        monkeypatch.setattr(settings.lists_s3, "bucket", "b")
-        monkeypatch.setattr(settings.lists_s3, "endpoint", "https://storage.example")
-        monkeypatch.setattr(settings.lists_s3, "access_key", SecretStr("k"))
-        monkeypatch.setattr(settings.lists_s3, "secret_key", SecretStr("s"))
+        monkeypatch.setattr(settings.lists, "s3_bucket", "b")
+        monkeypatch.setattr(settings.lists, "s3_endpoint", "https://storage.example")
+        monkeypatch.setattr(settings.lists, "s3_access_key", SecretStr("k"))
+        monkeypatch.setattr(settings.lists, "s3_secret_key", SecretStr("s"))
 
         def _boom():
             raise RuntimeError("хранилище недоступно")

@@ -110,11 +110,12 @@ def create_scheduler() -> AsyncIOScheduler:
         id="expire_unactivated",
         name="Сгорание неактивированных подписок",
     )
-    # Списки доменов: раз в час. Источники обновляются у поставщика редко,
-    # а чаще — значит без нужды долбить чужой GitHub с каждого выката.
+    # Списки доменов: часто и дёшево. Круг спрашивает источники условно,
+    # по `ETag`, и пересобирает только когда хоть один изменился — иначе это
+    # 26 запросов к чужому GitHub каждые несколько минут и 429 в ответ.
     scheduler.add_job(
         instrumented("rebuild_domain_lists", domain_lists.rebuild),
-        CronTrigger(minute=25),
+        IntervalTrigger(minutes=settings.lists.poll_interval_min),
         id="rebuild_domain_lists",
         name="Пересборка списков доменов",
     )

@@ -49,6 +49,11 @@ class DomainSource(BigIntPkMixin, Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
+    etag: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    """Метка версии от отдающей стороны. Уходит обратно в `If-None-Match`,
+    и неизменившийся файл отвечает `304` без тела — так частый круг перестаёт
+    быть долбёжом чужого GitHub."""
+
     last_ok_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     last_lines: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -109,6 +114,10 @@ class DomainBuild(BigIntPkMixin, Base):
     failed_sources: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     error: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    """Круг прошёл, но ни один источник не изменился — пересобирать было нечего.
+    Таких записей большинство, и по ним видно, что опрос идёт."""
+
     uploaded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     """Легла ли копия в объектное хранилище. Выкладка мягкая: список уже
     отдаётся с нашего домена, и падать из-за недоступного хранилища нельзя."""

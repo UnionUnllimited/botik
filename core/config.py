@@ -446,8 +446,8 @@ class SentrySettings(EnvSettings):
         return self
 
 
-class ListStorageSettings(EnvSettings):
-    """Объектное хранилище для собранных списков: Yandex, VK или любое S3.
+class ListsSettings(EnvSettings):
+    """Списки доменов: как часто собирать и куда класть копию.
 
     Списки тянет весь парк разом, и выкат нашего сервера не должен оставлять
     роутеры без обновления. Копия в хранилище это переживает.
@@ -459,22 +459,26 @@ class ListStorageSettings(EnvSettings):
     Пустой bucket выключает выкладку целиком.
     """
 
-    model_config = _CONFIG | SettingsConfigDict(env_prefix="LISTS_S3_")
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="LISTS_")
 
-    bucket: str = ""
-    endpoint: str = ""
-    region: str = "ru-central1"
-    access_key: SecretStr = SecretStr("")
-    secret_key: SecretStr = SecretStr("")
-    prefix: str = "lists/"
+    s3_bucket: str = ""
+    s3_endpoint: str = ""
+    s3_region: str = "ru-central1"
+    s3_access_key: SecretStr = SecretStr("")
+    s3_secret_key: SecretStr = SecretStr("")
+    s3_prefix: str = "lists/"
+    poll_interval_min: int = 10
+    """Как часто спрашивать источники. Круг условный: неизменившийся файл
+    отвечает 304 без тела, поэтому частота упирается не в трафик, а в вежливость
+    к отдающей стороне."""
 
     @property
     def is_configured(self) -> bool:
         return bool(
-            self.bucket
-            and self.endpoint
-            and self.access_key.get_secret_value()
-            and self.secret_key.get_secret_value()
+            self.s3_bucket
+            and self.s3_endpoint
+            and self.s3_access_key.get_secret_value()
+            and self.s3_secret_key.get_secret_value()
         )
 
 
@@ -492,7 +496,7 @@ class Settings(EnvSettings):
     platega: PlategaSettings = Field(default_factory=PlategaSettings)
     frp: FrpSettings = Field(default_factory=FrpSettings)
     remnawave: RemnawaveSettings = Field(default_factory=RemnawaveSettings)
-    lists_s3: ListStorageSettings = Field(default_factory=ListStorageSettings)
+    lists: ListsSettings = Field(default_factory=ListsSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
 
     @model_validator(mode="after")
