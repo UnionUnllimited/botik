@@ -129,3 +129,52 @@ class TestServing:
     def test_cacheable(self, client):
         """Парк тянет списки разом — без кеша это лишняя нагрузка на ровном месте."""
         assert "max-age" in client.get("/lists/ip.lst").headers.get("cache-control", "")
+
+
+class TestAdminEndpointsAccess:
+    """Правка списков — под тем же токеном, что весь парк.
+
+    Раздача открыта намеренно, а правка нет: домен, дописанный в свой список,
+    открывает доступ всему парку разом.
+    """
+
+    PATHS = (
+        ("get", "/api/v1/fleet/lists"),
+        ("post", "/api/v1/fleet/lists/sources"),
+        ("post", "/api/v1/fleet/lists/manual/domain"),
+        ("post", "/api/v1/fleet/lists/build"),
+    )
+
+    @pytest.mark.parametrize(("method", "path"), PATHS)
+    def test_disabled_without_token(self, client, monkeypatch, method, path):
+        """Пустой токен — ручки как будто нет, как и у остального парка."""
+        from pydantic import SecretStr
+
+        from core.config import settings
+
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr(""))
+        kwargs = {"json": {}} if method == "post" else {}
+        assert getattr(client, method)(path, **kwargs).status_code == 404
+
+    @pytest.mark.parametrize(("method", "path"), PATHS)
+    def test_wrong_token_rejected(self, client, monkeypatch, method, path):
+        from pydantic import SecretStr
+
+        from core.config import settings
+
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr("lists-token"))
+        kwargs = {"json": {}} if method == "post" else {}
+        response = getattr(client, method)(
+            path, headers={"Authorization": "Bearer not-the-token"}, **kwargs
+        )
+        assert response.status_code == 401
+
+    def test_serving_stays_open_when_editing_is_locked(self, client, monkeypatch):
+        """Токен закрывает правку, но не раздачу: за списком приходит прошивка."""
+        from pydantic import SecretStr
+
+        from core.config import settings
+
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr("lists-token"))
+        assert client.get("/api/v1/fleet/lists").status_code == 401
+        assert client.get("/lists/domains.lst").status_code == 200

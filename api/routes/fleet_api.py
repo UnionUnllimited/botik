@@ -30,9 +30,16 @@ from api.service_auth import require_token
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
-from core.models import Device, User
+from core.models import Device, DomainBuild, DomainSource, ListKind, ManualList, User
 from core.security import normalize_mac
-from core.services import activation, panel_ticket, remnawave, router_shell, settings_service
+from core.services import (
+    activation,
+    domain_lists,
+    panel_ticket,
+    remnawave,
+    router_shell,
+    settings_service,
+)
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
 from core.services.frp import RouterApi
@@ -805,3 +812,128 @@ async def console(
     )
     await session.commit()
     return {"ok": result.ok, "output": result.output[:20000], "command": command}
+
+
+# ── Списки доменов ────────────────────────────────────────────────────────────
+
+
+@router.get("/lists", dependencies=[Depends(require_token)])
+async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
+    """Состояние страницы списков: источники, свой список, итог прошлой сборки."""
+    sources = (
+        await session.scalars(select(DomainSource).order_by(DomainSource.sort_order, DomainSource.id))
+    ).all()
+    manual = {row.kind: row for row in (await session.scalars(select(ManualList))).all()}
+    last = await session.scalar(select(DomainBuild).order_by(DomainBuild.id.desc()).limit(1))
+    return {
+        "sources": [
+            {
+                "id": s.id,
+                "url": s.url,
+                "title": s.title,
+                "kind": s.kind,
+                "is_enabled": s.is_enabled,
+                "last_lines": s.last_lines,
+                "last_error": s.last_error,
+                "last_ok_at": s.last_ok_at.isoformat() if s.last_ok_at else None,
+            }
+            for s in sources
+        ],
+        "manual": {
+            kind: {
+                "body": row.body if row else "",
+                "updated_by": row.updated_by if row else "",
+                "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+            }
+            for kind, row in ((k, manual.get(k)) for k in ("domain", "ip"))
+        },
+        "last_build": (
+            {
+                "domains": last.domains,
+                "ips": last.ips,
+                "failed_sources": last.failed_sources,
+                "finished_at": last.finished_at.isoformat() if last.finished_at else None,
+                "error": last.error,
+                "uploaded": last.uploaded,
+            }
+            if last
+            else None
+        ),
+    }
+
+
+@router.post("/lists/sources", dependencies=[Depends(require_token)])
+async def source_add(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Добавляет источник. Адрес уникален — тот же список дважды не нужен."""
+    url = str(payload.get("url") or "").strip()
+    kind = str(payload.get("kind") or "domain").strip()
+    if not url.startswith(("http://", "https://")):
+        return {"ok": False, "error": "Адрес должен начинаться с http:// или https://"}
+    if kind not in ListKind.ALL:
+        return {"ok": False, "error": "Неизвестный вид списка."}
+    if await session.scalar(select(DomainSource.id).where(DomainSource.url == url)):
+        return {"ok": False, "error": "Такой источник уже заведён."}
+    session.add(
+        DomainSource(url=url, title=str(payload.get("title") or "").strip()[:120], kind=kind, sort_order=500)
+    )
+    return {"ok": True}
+
+
+@router.post("/lists/sources/{source_id}/toggle", dependencies=[Depends(require_token)])
+async def source_toggle(source_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Включает или выключает источник. Выключенный остаётся в таблице."""
+    source = await session.get(DomainSource, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Источник не найден")
+    source.is_enabled = not source.is_enabled
+    return {"ok": True, "is_enabled": source.is_enabled}
+
+
+@router.post("/lists/sources/{source_id}/delete", dependencies=[Depends(require_token)])
+async def source_delete(source_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Удаляет источник совсем — для заведённых по ошибке.
+
+    Обычный способ убрать категорию — выключить: адрес `.lst` через месяц
+    не вспомнить, а включают их сезонно.
+    """
+    source = await session.get(DomainSource, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Источник не найден")
+    await session.delete(source)
+    return {"ok": True}
+
+
+@router.post("/lists/manual/{kind}", dependencies=[Depends(require_token)])
+async def manual_save(kind: str, payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Сохраняет свой список целиком и запоминает, кто правил.
+
+    Чистка тут не делается намеренно: оператор должен видеть в поле ровно то,
+    что вставил, включая строки, которые сборка потом отбросит. Причёсывать
+    ввод на сохранении — верный способ незаметно потерять его правку.
+    """
+    if kind not in ListKind.ALL:
+        raise HTTPException(status_code=404, detail="Неизвестный вид списка")
+    row = await session.scalar(select(ManualList).where(ManualList.kind == kind))
+    if row is None:
+        row = ManualList(kind=kind)
+        session.add(row)
+    row.body = str(payload.get("body") or "")
+    row.updated_by = str(payload.get("author") or "")[:120]
+    values = domain_lists.CLEANERS[kind](row.body)
+    return {"ok": True, "accepted": len(values)}
+
+
+@router.post("/lists/build", dependencies=[Depends(require_token)])
+async def lists_build(session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Пересобирает списки сейчас, не дожидаясь круга по расписанию."""
+    try:
+        record = await domain_lists.build(session)
+    except Exception as exc:  # noqa: BLE001 — оператор должен увидеть причину, а не 500
+        log.error("fleet.lists_build_failed", error=str(exc))
+        return {"ok": False, "error": f"Сборка не удалась: {exc}"[:255]}
+    return {
+        "ok": True,
+        "domains": record.domains,
+        "ips": record.ips,
+        "failed_sources": record.failed_sources,
+    }
