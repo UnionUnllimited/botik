@@ -421,6 +421,11 @@ def my_router_text(data: dict) -> str:
         lines.append(f"⚠️ Подписка закончилась {human_date(router.get('until'))}")
     else:
         lines.append("Подписка настраивается — загляните через пару минут.")
+    # Адрес пишем и текстом: часть клиентов Telegram не открывает ссылки
+    # на адреса домашней сети, а скопировать строку можно всегда.
+    panel_url = (app_conf.get("router_panel_url", "") or "").strip()
+    if panel_url:
+        lines += ["", f"Админка роутера: <code>{_esc(panel_url)}</code> — из домашней сети."]
     return "\n".join(lines)
 
 
@@ -432,6 +437,12 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
     else:
         # Продлевать приходят сюда чаще, чем в главное меню: тут виден срок.
         builder.row(btn("btn_renew_sub", callback_data="shop_renew"))
+        # Админка роутера — адрес в домашней сети клиента, снаружи он не
+        # открывается. Ссылкой, а не кнопкой с обработчиком: открывать её
+        # должен браузер клиента, мы до этой сети не дотягиваемся.
+        panel_url = (app_conf.get("router_panel_url", "") or "").strip()
+        if panel_url:
+            builder.row(btn("btn_router_panel", url=panel_url))
     builder.row(btn("btn_my_orders", callback_data="shop_orders"))
     builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
     return builder.as_markup()

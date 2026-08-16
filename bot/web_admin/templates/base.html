@@ -7,6 +7,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{% block title %}{{ project_name|default('Панель') }}{% endblock %}</title>
     
+    <style>
+      /* Список у нативного select рисует браузер, и цвет пунктов он берёт
+         по наследству от .tw-input — то есть светлый текст темы. На белом
+         фоне системного списка это нечитаемо. Задаём пунктам цвета явно,
+         чтобы они не зависели ни от наследования, ни от color-scheme. */
+      select option,
+      select optgroup {
+        background-color: var(--admin-card, #fff);
+        color: var(--admin-text-base, #111);
+      }
+    </style>
     <!-- Скрипт инициализации темы: light / dark / auto (синхронизирует data-bs-theme и data-theme) -->
     <script>
     (function(){
