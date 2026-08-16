@@ -10,6 +10,7 @@ from core.models.device import (
     Heartbeat,
     SubscriptionAccessLog,
 )
+from core.models.domain_list import DomainBuild, DomainSource, ListKind, ManualList
 from core.models.node import Node, NodeAssignment, NodeGroup
 from core.models.order import Delivery, Order, OrderItem
 from core.models.payment import Payment
@@ -32,7 +33,11 @@ __all__ = [
     "Device",
     "DeviceCommand",
     "DeviceEvent",
+    "DomainBuild",
+    "DomainSource",
     "Heartbeat",
+    "ListKind",
+    "ManualList",
     "Node",
     "NodeAssignment",
     "NodeGroup",
