@@ -44,3 +44,5 @@ qrcode==8.2
 structlog==26.1.0
 prometheus-client==0.26.0
 sentry-sdk==2.66.1
+# Копия собранных списков в объектное хранилище (Yandex, VK — оба S3-совместимы).
+boto3==1.35.49

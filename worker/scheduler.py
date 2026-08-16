@@ -20,7 +20,14 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from core.config import settings
 from core.metrics import worker_job_errors_total, worker_job_seconds
-from worker.tasks import frpc_config, maintenance, payments, routers, subscriptions
+from worker.tasks import (
+    domain_lists,
+    frpc_config,
+    maintenance,
+    payments,
+    routers,
+    subscriptions,
+)
 
 log = structlog.get_logger("worker.scheduler")
 
@@ -102,6 +109,14 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=4, minute=10),
         id="expire_unactivated",
         name="Сгорание неактивированных подписок",
+    )
+    # Списки доменов: раз в час. Источники обновляются у поставщика редко,
+    # а чаще — значит без нужды долбить чужой GitHub с каждого выката.
+    scheduler.add_job(
+        instrumented("rebuild_domain_lists", domain_lists.rebuild),
+        CronTrigger(minute=25),
+        id="rebuild_domain_lists",
+        name="Пересборка списков доменов",
     )
     scheduler.add_job(
         instrumented("sync_routers", routers.sync_routers),

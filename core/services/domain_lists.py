@@ -186,14 +186,73 @@ async def build(session: AsyncSession) -> DomainBuild:
         await asyncio.gather(*(one(source) for source in sources))
 
     counts: dict[str, int] = {}
+    built: dict[str, list[str]] = {}
     for kind in ("domain", "ip"):
         values = merge(parts[kind], manual.get(kind, ""), kind)
         write_list(kind, values)
         counts[kind] = len(values)
+        built[kind] = values
 
+    record.uploaded = await upload(built)
     record.domains = counts["domain"]
     record.ips = counts["ip"]
     record.failed_sources = failed
     record.finished_at = utcnow()
     log.info("domain_lists.built", domains=record.domains, ips=record.ips, failed=failed)
     return record
+
+
+# ── Копия в объектном хранилище ───────────────────────────────────────────────
+
+
+def _s3_client():
+    """Клиент к S3-совместимому хранилищу. Один на оба провайдера.
+
+    Yandex и VK различаются только адресом, поэтому выбор — это `endpoint_url`
+    из настроек, а не два разных клиента. Импорт внутри: `boto3` нужен только
+    тут, а тянуть его при каждом старте API незачем.
+    """
+    import boto3
+
+    conf = settings.lists_s3
+    return boto3.client(
+        "s3",
+        endpoint_url=conf.endpoint,
+        region_name=conf.region,
+        aws_access_key_id=conf.access_key.get_secret_value(),
+        aws_secret_access_key=conf.secret_key.get_secret_value(),
+    )
+
+
+async def upload(values_by_kind: dict[str, list[str]]) -> bool:
+    """Кладёт копию списков в хранилище. Возвращает, получилось ли.
+
+    Выкладка мягкая: список уже собран и отдаётся с нашего домена, и падать
+    из-за недоступного хранилища нельзя — пропущенный круг повторит следующий.
+    Тот же размен, что с синхронизацией срока в панели.
+
+    Загрузка блокирующая (`boto3` синхронный), поэтому уходит в поток: держать
+    ею event loop на паре мегабайт незачем.
+    """
+    conf = settings.lists_s3
+    if not conf.is_configured:
+        return False
+
+    def _put() -> None:
+        client = _s3_client()
+        for kind, values in values_by_kind.items():
+            body = ("\n".join(values) + ("\n" if values else "")).encode()
+            client.put_object(
+                Bucket=conf.bucket,
+                Key=f"{conf.prefix.lstrip('/')}{FILE_NAMES[kind]}",
+                Body=body,
+                ContentType="text/plain; charset=utf-8",
+            )
+
+    try:
+        await asyncio.to_thread(_put)
+    except Exception as exc:  # noqa: BLE001 — причин у чужого хранилища много, все одинаково нефатальны
+        log.warning("domain_lists.upload_failed", error=str(exc))
+        return False
+    log.info("domain_lists.uploaded", bucket=conf.bucket)
+    return True

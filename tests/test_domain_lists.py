@@ -178,3 +178,33 @@ class TestAdminEndpointsAccess:
         monkeypatch.setattr(settings.api, "fleet_token", SecretStr("lists-token"))
         assert client.get("/api/v1/fleet/lists").status_code == 401
         assert client.get("/lists/domains.lst").status_code == 200
+
+
+class TestUpload:
+    """Выкладка мягкая: список уже отдаётся с нашего домена."""
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_not_configured(self):
+        """Пустой bucket выключает выкладку — это не ошибка сборки."""
+        from core.services import domain_lists
+
+        assert await domain_lists.upload({"domain": ["a.com"]}) is False
+
+    @pytest.mark.asyncio
+    async def test_broken_storage_does_not_raise(self, monkeypatch):
+        """Хранилище недоступно — сборка всё равно должна досчитаться."""
+        from pydantic import SecretStr
+
+        from core.config import settings
+        from core.services import domain_lists
+
+        monkeypatch.setattr(settings.lists_s3, "bucket", "b")
+        monkeypatch.setattr(settings.lists_s3, "endpoint", "https://storage.example")
+        monkeypatch.setattr(settings.lists_s3, "access_key", SecretStr("k"))
+        monkeypatch.setattr(settings.lists_s3, "secret_key", SecretStr("s"))
+
+        def _boom():
+            raise RuntimeError("хранилище недоступно")
+
+        monkeypatch.setattr(domain_lists, "_s3_client", _boom)
+        assert await domain_lists.upload({"domain": ["a.com"]}) is False

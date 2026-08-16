@@ -446,6 +446,38 @@ class SentrySettings(EnvSettings):
         return self
 
 
+class ListStorageSettings(EnvSettings):
+    """Объектное хранилище для собранных списков: Yandex, VK или любое S3.
+
+    Списки тянет весь парк разом, и выкат нашего сервера не должен оставлять
+    роутеры без обновления. Копия в хранилище это переживает.
+
+    Провайдеры S3-совместимы и различаются только адресом, поэтому клиент
+    один, а выбор — значение `endpoint_url`:
+      Yandex — https://storage.yandexcloud.net
+      VK     — https://hb.vkcs.cloud
+    Пустой bucket выключает выкладку целиком.
+    """
+
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="LISTS_S3_")
+
+    bucket: str = ""
+    endpoint: str = ""
+    region: str = "ru-central1"
+    access_key: SecretStr = SecretStr("")
+    secret_key: SecretStr = SecretStr("")
+    prefix: str = "lists/"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(
+            self.bucket
+            and self.endpoint
+            and self.access_key.get_secret_value()
+            and self.secret_key.get_secret_value()
+        )
+
+
 class Settings(EnvSettings):
     model_config = _CONFIG
 
@@ -460,6 +492,7 @@ class Settings(EnvSettings):
     platega: PlategaSettings = Field(default_factory=PlategaSettings)
     frp: FrpSettings = Field(default_factory=FrpSettings)
     remnawave: RemnawaveSettings = Field(default_factory=RemnawaveSettings)
+    lists_s3: ListStorageSettings = Field(default_factory=ListStorageSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
 
     @model_validator(mode="after")
