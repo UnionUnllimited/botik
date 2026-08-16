@@ -8,8 +8,17 @@
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
 from core.services.domain_lists import clean_domains, clean_ips, merge
+
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
+    from api.main import app
+
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class TestCleanDomains:
@@ -66,3 +75,57 @@ class TestMerge:
 
     def test_empty_everything_is_not_an_error(self):
         assert merge([], "", "domain") == []
+
+
+class TestStorage:
+    """Списки лежат файлом: за ними ходит весь парк, база тут лишняя."""
+
+    def test_write_then_read(self, tmp_path, monkeypatch):
+        from core.config import settings
+        from core.services import domain_lists
+
+        monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
+        domain_lists.write_list("domain", ["a.com", "b.com"])
+        assert domain_lists.read_list("domain") == "a.com\nb.com\n"
+
+    def test_missing_file_is_empty_not_error(self, tmp_path, monkeypatch):
+        """Сборки ещё не было — отдаём пустое, а не падаем."""
+        from core.config import settings
+        from core.services import domain_lists
+
+        monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
+        assert domain_lists.read_list("ip") == ""
+
+    def test_no_temp_file_left_behind(self, tmp_path, monkeypatch):
+        """Запись атомарная: роутер не должен получить половину списка."""
+        from core.config import settings
+        from core.services import domain_lists
+
+        monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
+        domain_lists.write_list("ip", ["1.2.3.4"])
+        leftovers = list((tmp_path / "lists").glob("*.tmp"))
+        assert leftovers == []
+
+    def test_empty_list_does_not_write_a_stray_newline(self, tmp_path, monkeypatch):
+        from core.config import settings
+        from core.services import domain_lists
+
+        monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
+        domain_lists.write_list("domain", [])
+        assert domain_lists.read_list("domain") == ""
+
+
+class TestServing:
+    """Раздача открыта: за списком приходит прошивка, а не наш процесс."""
+
+    def test_served_without_token(self, client):
+        assert client.get("/lists/domains.lst").status_code == 200
+        assert client.get("/lists/ip.lst").status_code == 200
+
+    def test_served_as_plain_text(self, client):
+        response = client.get("/lists/domains.lst")
+        assert response.headers["content-type"].startswith("text/plain")
+
+    def test_cacheable(self, client):
+        """Парк тянет списки разом — без кеша это лишняя нагрузка на ровном месте."""
+        assert "max-age" in client.get("/lists/ip.lst").headers.get("cache-control", "")

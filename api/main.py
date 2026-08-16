@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.routes import catalog_api, fleet_api, health, panel_proxy, webhooks
+from api.routes import catalog_api, fleet_api, health, lists_api, panel_proxy, webhooks
 from core.config import settings
 from core.db import check_database, dispose_engine
 from core.logging import configure_logging
@@ -121,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router)
     app.include_router(fleet_api.router)
     app.include_router(catalog_api.router)
+    app.include_router(lists_api.router)
     # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
     app.include_router(panel_proxy.router)
 

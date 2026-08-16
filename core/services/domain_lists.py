@@ -11,10 +11,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
+from pathlib import Path
 
 import httpx
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.config import settings
+from core.dates import utcnow
+from core.models import DomainBuild, DomainSource, ManualList
 
 log = structlog.get_logger(__name__)
 
@@ -96,3 +104,96 @@ def merge(parts: list[list[str]], manual: str, kind: str) -> list[str]:
         values.update(part)
     values.update(cleaner(manual))
     return sorted(values)
+
+
+# ── Сборка ────────────────────────────────────────────────────────────────────
+
+FILE_NAMES = {"domain": "domains.lst", "ip": "ip.lst"}
+"""Имена файлов, по которым роутер их забирает. Прежние `domenchik.lst`
+и `ipchik.lst` не переносим: адрес в прошивке всё равно меняется, а имя,
+по которому не догадаться о содержимом, стоило заменить сразу."""
+
+
+def lists_dir() -> Path:
+    """Каталог с собранными списками — в том же томе, что картинки товаров."""
+    return Path(settings.app.media_dir) / "lists"
+
+
+def read_list(kind: str) -> str:
+    """Отдаёт собранный список. Пусто — значит сборки ещё не было."""
+    path = lists_dir() / FILE_NAMES[kind]
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def write_list(kind: str, values: list[str]) -> None:
+    """Пишет список атомарно: через временный файл и переименование.
+
+    Роутеры тянут файл в произвольный момент, и запись «на месте» отдала бы
+    кому-то половину списка — то есть половину доступа.
+    """
+    directory = lists_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / FILE_NAMES[kind]
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text("\n".join(values) + ("\n" if values else ""), encoding="utf-8")
+    tmp.replace(target)
+
+
+async def build(session: AsyncSession) -> DomainBuild:
+    """Пересобирает оба списка: качает включённые источники, чистит, склеивает.
+
+    Одна запись `DomainBuild` на сборку — по ней видно, когда собирали, сколько
+    вышло и сколько источников не ответило. Недоступный источник не роняет
+    сборку целиком: список без одной категории лучше, чем отсутствие
+    обновления вовсе.
+    """
+    record = DomainBuild()
+    session.add(record)
+    await session.flush()
+
+    sources = (
+        await session.scalars(
+            select(DomainSource).where(DomainSource.is_enabled.is_(True)).order_by(DomainSource.sort_order)
+        )
+    ).all()
+    manual = {row.kind: row.body for row in (await session.scalars(select(ManualList))).all()}
+
+    parts: dict[str, list[list[str]]] = {"domain": [], "ip": []}
+    failed = 0
+    gate = asyncio.Semaphore(MAX_PARALLEL)
+
+    async with httpx.AsyncClient() as client:
+
+        async def one(source: DomainSource) -> None:
+            nonlocal failed
+            async with gate:
+                body, error = await fetch(client, source.url)
+            if error:
+                failed += 1
+                source.last_error = error
+                source.last_lines = 0
+                log.warning("domain_lists.source_failed", url=source.url, error=error)
+                return
+            values = CLEANERS[source.kind](body)
+            parts[source.kind].append(values)
+            source.last_error = ""
+            source.last_lines = len(values)
+            source.last_ok_at = utcnow()
+
+        await asyncio.gather(*(one(source) for source in sources))
+
+    counts: dict[str, int] = {}
+    for kind in ("domain", "ip"):
+        values = merge(parts[kind], manual.get(kind, ""), kind)
+        write_list(kind, values)
+        counts[kind] = len(values)
+
+    record.domains = counts["domain"]
+    record.ips = counts["ip"]
+    record.failed_sources = failed
+    record.finished_at = utcnow()
+    log.info("domain_lists.built", domains=record.domains, ips=record.ips, failed=failed)
+    return record
