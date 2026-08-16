@@ -2,6 +2,21 @@
 {% block title %}Роутеры — {{ super() }}{% endblock %}
 
 {% block content %}
+{% macro fleet_uptime(sec) -%}
+  {%- if not sec -%}—
+  {%- elif sec < 3600 -%}{{ (sec // 60) }} мин
+  {%- elif sec < 86400 -%}{{ (sec // 3600) }} ч
+  {%- else -%}{{ (sec // 86400) }} сут {{ ((sec % 86400) // 3600) }} ч
+  {%- endif -%}
+{%- endmacro %}
+{% macro fleet_bytes(value) -%}
+  {%- if not value -%}—
+  {%- elif value < 1048576 -%}{{ (value // 1024) }} КБ
+  {%- elif value < 1073741824 -%}{{ (value // 1048576) }} МБ
+  {%- else -%}{{ '%.1f' | format(value / 1073741824) }} ГБ
+  {%- endif -%}
+{%- endmacro %}
+
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
@@ -118,7 +133,10 @@
             <th class="px-3 py-2 font-medium">Подписка</th>
             <th class="px-3 py-2 font-medium">Клиентов</th>
             <th class="px-3 py-2 font-medium">CPU / ОЗУ</th>
+            <th class="px-3 py-2 font-medium">Аптайм</th>
+            <th class="px-3 py-2 font-medium">Трафик ↓ / ↑</th>
             <th class="px-3 py-2 font-medium">WAN IP</th>
+            <th class="px-3 py-2 font-medium">Туннель</th>
           </tr>
         </thead>
         <tbody>
@@ -126,7 +144,9 @@
           <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
             <td class="px-3 py-2">
               <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
-              <div class="tw-text-muted2 text-[12px]">{{ item.model or '—' }}</div>
+              <div class="tw-text-muted2 text-[12px]">
+                {{ item.model or item.status_label }}{% if item.fw_version %} · {{ item.fw_version }}{% endif %}
+              </div>
             </td>
             <td class="px-3 py-2">{{ item.client or '—' }}</td>
             <td class="px-3 py-2">
@@ -151,7 +171,17 @@
               {{ item.cpu_pct if item.cpu_pct is not none else '—' }}% /
               {{ item.ram_pct if item.ram_pct is not none else '—' }}%
             </td>
+            <td class="px-3 py-2 tw-text-muted2">{{ fleet_uptime(item.uptime_sec) }}</td>
+            <td class="px-3 py-2 tw-text-muted2">
+              {{ fleet_bytes(item.rx_bytes) }} / {{ fleet_bytes(item.tx_bytes) }}
+            </td>
             <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.wan_ip or '—' }}</td>
+            <td class="px-3 py-2 font-mono tw-text-muted2">
+              {{ item.visitor_port or '—' }}
+              {% if not item.online and item.last_seen %}
+                <div class="text-[11px]">молчит с {{ item.last_seen[:16].replace('T', ' ') }}</div>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
