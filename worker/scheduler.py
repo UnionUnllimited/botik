@@ -115,7 +115,7 @@ def create_scheduler() -> AsyncIOScheduler:
     # 26 запросов к чужому GitHub каждые несколько минут и 429 в ответ.
     scheduler.add_job(
         instrumented("rebuild_domain_lists", domain_lists.rebuild),
-        IntervalTrigger(minutes=settings.lists.poll_interval_min),
+        IntervalTrigger(seconds=domain_lists.TICK_SEC),
         id="rebuild_domain_lists",
         name="Пересборка списков доменов",
     )

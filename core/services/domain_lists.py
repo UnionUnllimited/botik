@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.dates import utcnow
 from core.models import DomainBuild, DomainSource, ManualList
+from core.services import settings_service
 
 log = structlog.get_logger(__name__)
 
@@ -254,7 +255,7 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
         counts[kind] = len(values)
         built[kind] = values
 
-    record.uploaded = await upload(built)
+    record.uploaded = await upload(built, await config(session))
     record.domains = counts["domain"]
     record.ips = counts["ip"]
     record.failed_sources = failed
@@ -266,7 +267,7 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
 # ── Копия в объектном хранилище ───────────────────────────────────────────────
 
 
-def _s3_client():
+def _s3_client(conf: dict[str, str]):
     """Клиент к S3-совместимому хранилищу. Один на оба провайдера.
 
     Yandex и VK различаются только адресом, поэтому выбор — это `endpoint_url`
@@ -275,17 +276,16 @@ def _s3_client():
     """
     import boto3
 
-    conf = settings.lists
     return boto3.client(
         "s3",
-        endpoint_url=conf.s3_endpoint,
-        region_name=conf.s3_region,
-        aws_access_key_id=conf.s3_access_key.get_secret_value(),
-        aws_secret_access_key=conf.s3_secret_key.get_secret_value(),
+        endpoint_url=conf["lists_s3_endpoint"],
+        region_name=conf.get("lists_s3_region") or "ru-central1",
+        aws_access_key_id=conf["lists_s3_access_key"],
+        aws_secret_access_key=conf["lists_s3_secret_key"],
     )
 
 
-async def upload(values_by_kind: dict[str, list[str]]) -> bool:
+async def upload(values_by_kind: dict[str, list[str]], conf: dict[str, str] | None = None) -> bool:
     """Кладёт копию списков в хранилище. Возвращает, получилось ли.
 
     Выкладка мягкая: список уже собран и отдаётся с нашего домена, и падать
@@ -295,17 +295,18 @@ async def upload(values_by_kind: dict[str, list[str]]) -> bool:
     Загрузка блокирующая (`boto3` синхронный), поэтому уходит в поток: держать
     ею event loop на паре мегабайт незачем.
     """
-    conf = settings.lists
-    if not conf.is_configured:
+    conf = conf or {}
+    if not (conf.get("lists_s3_bucket") and conf.get("lists_s3_endpoint")
+            and conf.get("lists_s3_access_key") and conf.get("lists_s3_secret_key")):
         return False
 
     def _put() -> None:
-        client = _s3_client()
+        client = _s3_client(conf)
         for kind, values in values_by_kind.items():
             body = ("\n".join(values) + ("\n" if values else "")).encode()
             client.put_object(
-                Bucket=conf.s3_bucket,
-                Key=f"{conf.s3_prefix.lstrip('/')}{FILE_NAMES[kind]}",
+                Bucket=conf["lists_s3_bucket"],
+                Key=f"{(conf.get('lists_s3_prefix') or 'lists/').lstrip('/')}{FILE_NAMES[kind]}",
                 Body=body,
                 ContentType="text/plain; charset=utf-8",
             )
@@ -315,5 +316,65 @@ async def upload(values_by_kind: dict[str, list[str]]) -> bool:
     except Exception as exc:  # noqa: BLE001 — причин у чужого хранилища много, все одинаково нефатальны
         log.warning("domain_lists.upload_failed", error=str(exc))
         return False
-    log.info("domain_lists.uploaded", bucket=conf.s3_bucket)
+    log.info("domain_lists.uploaded", bucket=conf["lists_s3_bucket"])
     return True
+
+# ── Настройки, правимые на странице ───────────────────────────────────────────
+
+SETTING_KEYS = (
+    "lists_poll_interval_min",
+    "lists_s3_bucket",
+    "lists_s3_endpoint",
+    "lists_s3_region",
+    "lists_s3_prefix",
+    "lists_s3_access_key",
+    "lists_s3_secret_key",
+)
+"""Живут в базе, а не только в окружении: оператор меняет их из панели,
+и требовать ради смены интервала правки `.env` с перезапуском — перебор.
+Значение из `.env` остаётся значением по умолчанию, пока в базе пусто."""
+
+SECRET_KEYS = frozenset({"lists_s3_access_key", "lists_s3_secret_key"})
+"""Наружу отдаются не значением, а признаком «задано»: страница открыта
+оператору, а ключ от хранилища ему смотреть незачем."""
+
+
+async def config(session: AsyncSession) -> dict[str, str]:
+    """Настройки списков: из базы, с падением на окружение."""
+    env = settings.lists
+    fallback = {
+        "lists_poll_interval_min": str(env.poll_interval_min),
+        "lists_s3_bucket": env.s3_bucket,
+        "lists_s3_endpoint": env.s3_endpoint,
+        "lists_s3_region": env.s3_region,
+        "lists_s3_prefix": env.s3_prefix,
+        "lists_s3_access_key": env.s3_access_key.get_secret_value(),
+        "lists_s3_secret_key": env.s3_secret_key.get_secret_value(),
+    }
+    out: dict[str, str] = {}
+    for key in SETTING_KEYS:
+        stored = await settings_service.get_setting(session, key)
+        out[key] = str(stored) if stored not in (None, "") else fallback[key]
+    return out
+
+
+async def save_config(session: AsyncSession, values: dict[str, str]) -> None:
+    """Сохраняет настройки. Пустой секрет не затирает прежний.
+
+    Страница не показывает ключи, поэтому пустое поле означает «не менял»,
+    а не «сотри»: иначе любое сохранение интервала обнуляло бы доступ
+    к хранилищу.
+    """
+    for key in SETTING_KEYS:
+        if key not in values:
+            continue
+        value = str(values[key]).strip()
+        if key in SECRET_KEYS and not value:
+            continue
+        if key == "lists_poll_interval_min":
+            try:
+                value = str(max(1, min(int(value or 10), 1440)))
+            except ValueError:
+                continue
+        await settings_service.set_setting(session, key, value)
+

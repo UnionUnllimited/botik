@@ -508,10 +508,6 @@
             <a href="{{ url_for('admin.routers_fleet') }}" class="tw-nav-link {% if request.path == url_for('admin.routers_fleet') %}active{% endif %}">
                 <i data-lucide="wifi" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
             </a>
-            <a href="{{ url_for('admin.domain_lists_page') }}"
-               class="tw-nav-link {% if request.path.startswith(url_for('admin.domain_lists_page')) %}active{% endif %}">
-                <i data-lucide="list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Списки доменов</span>
-            </a>
             {% endif %}
             {% if moderator_can_see('users') %}
             {# Каталог разложен по подпунктам: модели, доставка и настройки —
@@ -628,6 +624,10 @@
             {% if moderator_can_see('tools') %}
             {% set is_tools = request.path == url_for('admin.migrate_to_remnawave_page') or request.path == url_for('admin.tasks_list') or request.path.startswith(url_for('admin.reports_index')) or request.path == url_for('admin.news_templates_list') or request.path == url_for('admin.services_page') or request.path == url_for('admin.bulk_actions_page') or (moderator_can_see('updates') and request.path == url_for('admin.updates')) %}
             <div class="tw-nav-section tw-sidebar-label">Инструменты</div>
+            <a href="{{ url_for('admin.domain_lists_page') }}"
+               class="tw-nav-link {% if request.path.startswith(url_for('admin.domain_lists_page')) %}active{% endif %}">
+                <i data-lucide="list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Списки доменов</span>
+            </a>
             <div class="tw-nav-group {% if is_tools %}open{% endif %}" data-tw-group>
                 <div class="tw-nav-link {% if is_tools %}active{% endif %}" data-tw-toggle>
                     <i data-lucide="wrench" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Инструменты</span>

@@ -186,6 +186,15 @@ PAGES = {
             "domain": {"body": "my.example.com", "updated_by": "union", "updated_at": None},
             "ip": {"body": "", "updated_by": "", "updated_at": None},
         },
+        "config": {
+            "lists_poll_interval_min": "10",
+            "lists_s3_endpoint": "https://storage.yandexcloud.net",
+            "lists_s3_bucket": "router-lists",
+            "lists_s3_region": "ru-central1",
+            "lists_s3_prefix": "lists/",
+            "lists_s3_access_key": "задан",
+            "lists_s3_secret_key": "",
+        },
         "last_build": {
             "domains": 51234, "ips": 812, "failed_sources": 1,
             "finished_at": "2026-08-13T15:04:00+00:00", "error": "", "uploaded": False,

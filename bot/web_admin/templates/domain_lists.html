@@ -65,6 +65,72 @@
   </div>
   {% endfor %}
 
+  {# ── Настройки: круг и хранилище ──────────────────────────────────────── #}
+  <div class="tw-card p-4">
+    <form method="post" action="{{ url_for('admin.domain_lists_config') }}" class="space-y-3">
+      <div class="text-[13px] font-semibold tw-text-base2">Обновление и хранилище</div>
+
+      <div class="ss-field" style="max-width: 260px;">
+        <label for="lists_poll_interval_min">Интервал круга, минут</label>
+        <input type="number" min="1" max="1440" class="tw-input"
+               id="lists_poll_interval_min" name="lists_poll_interval_min"
+               value="{{ config.get('lists_poll_interval_min', '10') }}">
+        <div class="hint">
+          Круг спрашивает источники по метке версии: неизменившиеся отвечают
+          без тела, поэтому частота почти ничего не стоит. Пересборка идёт
+          только когда хоть один изменился.
+        </div>
+      </div>
+
+      <div class="text-[12px] tw-text-subtle2 pt-2 border-t" style="border-color: var(--admin-border);">
+        Копия списков в объектном хранилище. Нужна на случай, когда наш сервер
+        перезапускается выкатом, а парк приходит за обновлением. Пусто — выкладка
+        выключена, списки всё равно отдаются с нашего домена.
+        <br>Yandex: <code class="tw-kbd text-[11px]">https://storage.yandexcloud.net</code> ·
+        VK: <code class="tw-kbd text-[11px]">https://hb.vkcs.cloud</code>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="ss-field">
+          <label for="lists_s3_endpoint">Адрес хранилища</label>
+          <input type="text" class="tw-input" id="lists_s3_endpoint" name="lists_s3_endpoint"
+                 value="{{ config.get('lists_s3_endpoint', '') }}" placeholder="https://storage.yandexcloud.net">
+        </div>
+        <div class="ss-field">
+          <label for="lists_s3_bucket">Bucket</label>
+          <input type="text" class="tw-input" id="lists_s3_bucket" name="lists_s3_bucket"
+                 value="{{ config.get('lists_s3_bucket', '') }}">
+        </div>
+        <div class="ss-field">
+          <label for="lists_s3_region">Регион</label>
+          <input type="text" class="tw-input" id="lists_s3_region" name="lists_s3_region"
+                 value="{{ config.get('lists_s3_region', 'ru-central1') }}">
+        </div>
+        <div class="ss-field">
+          <label for="lists_s3_prefix">Префикс ключа</label>
+          <input type="text" class="tw-input" id="lists_s3_prefix" name="lists_s3_prefix"
+                 value="{{ config.get('lists_s3_prefix', 'lists/') }}">
+        </div>
+        <div class="ss-field">
+          <label for="lists_s3_access_key">Access key</label>
+          <input type="password" class="tw-input" id="lists_s3_access_key" name="lists_s3_access_key"
+                 autocomplete="new-password"
+                 placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_access_key') else 'не задан' }}">
+        </div>
+        <div class="ss-field">
+          <label for="lists_s3_secret_key">Secret key</label>
+          <input type="password" class="tw-input" id="lists_s3_secret_key" name="lists_s3_secret_key"
+                 autocomplete="new-password"
+                 placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_secret_key') else 'не задан' }}">
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button type="submit" class="tw-btn tw-btn-sm">Сохранить настройки</button>
+      </div>
+    </form>
+  </div>
+
   {# ── Источники ────────────────────────────────────────────────────────── #}
   <div class="tw-card p-4">
     <div class="text-[13px] font-semibold tw-text-base2 mb-1">Источники</div>

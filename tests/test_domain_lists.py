@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -183,28 +185,45 @@ class TestAdminEndpointsAccess:
 class TestUpload:
     """Выкладка мягкая: список уже отдаётся с нашего домена."""
 
+    CONF: ClassVar[dict[str, str]] = {
+        "lists_s3_bucket": "b",
+        "lists_s3_endpoint": "https://storage.example",
+        "lists_s3_access_key": "k",
+        "lists_s3_secret_key": "s",
+        "lists_s3_prefix": "lists/",
+    }
+
     @pytest.mark.asyncio
     async def test_skipped_when_not_configured(self):
         """Пустой bucket выключает выкладку — это не ошибка сборки."""
         from core.services import domain_lists
 
-        assert await domain_lists.upload({"domain": ["a.com"]}) is False
+        assert await domain_lists.upload({"domain": ["a.com"]}, {}) is False
+
+    @pytest.mark.asyncio
+    async def test_partial_config_is_not_enough(self):
+        """Адрес без ключей — это забытая настройка, а не выключенная выкладка."""
+        from core.services import domain_lists
+
+        half = {"lists_s3_bucket": "b", "lists_s3_endpoint": "https://storage.example"}
+        assert await domain_lists.upload({"domain": ["a.com"]}, half) is False
 
     @pytest.mark.asyncio
     async def test_broken_storage_does_not_raise(self, monkeypatch):
         """Хранилище недоступно — сборка всё равно должна досчитаться."""
-        from pydantic import SecretStr
-
-        from core.config import settings
         from core.services import domain_lists
 
-        monkeypatch.setattr(settings.lists, "s3_bucket", "b")
-        monkeypatch.setattr(settings.lists, "s3_endpoint", "https://storage.example")
-        monkeypatch.setattr(settings.lists, "s3_access_key", SecretStr("k"))
-        monkeypatch.setattr(settings.lists, "s3_secret_key", SecretStr("s"))
-
-        def _boom():
+        def _boom(_conf):
             raise RuntimeError("хранилище недоступно")
 
         monkeypatch.setattr(domain_lists, "_s3_client", _boom)
-        assert await domain_lists.upload({"domain": ["a.com"]}) is False
+        assert await domain_lists.upload({"domain": ["a.com"]}, self.CONF) is False
+
+
+class TestSecretsNotLeaked:
+    def test_keys_are_marked_secret(self):
+        """Страница открыта оператору, ключ от хранилища ему смотреть незачем."""
+        from core.services import domain_lists
+
+        assert "lists_s3_access_key" in domain_lists.SECRET_KEYS
+        assert "lists_s3_secret_key" in domain_lists.SECRET_KEYS

@@ -193,6 +193,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             sources=data.get("sources") or [],
             manual=data.get("manual") or {},
             last_build=data.get("last_build"),
+            config=data.get("config") or {},
         )
 
     @admin_bp_instance.route("/lists/sources", methods=["POST"])
@@ -233,6 +234,20 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             await flash(error, "danger")
         else:
             await flash(f"Сохранено, строк принято: {data.get('accepted', 0)}.", "success")
+        return redirect(url_for("admin.domain_lists_page"))
+
+    @admin_bp_instance.route("/lists/config", methods=["POST"])
+    async def domain_lists_config():
+        form = await request.form
+        _, error = await _post(
+            "/api/v1/fleet/lists/config",
+            {key: (form.get(key) or "") for key in (
+                "lists_poll_interval_min", "lists_s3_bucket", "lists_s3_endpoint",
+                "lists_s3_region", "lists_s3_prefix", "lists_s3_access_key",
+                "lists_s3_secret_key",
+            )},
+        )
+        await flash(error or "Настройки сохранены.", "danger" if error else "success")
         return redirect(url_for("admin.domain_lists_page"))
 
     @admin_bp_instance.route("/lists/build", methods=["POST"])

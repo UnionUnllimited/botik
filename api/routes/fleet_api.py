@@ -847,6 +847,12 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
             }
             for kind, row in ((k, manual.get(k)) for k in ("domain", "ip"))
         },
+        "config": {
+            key: ("задан" if value else "")
+            if key in domain_lists.SECRET_KEYS
+            else value
+            for key, value in (await domain_lists.config(session)).items()
+        },
         "last_build": (
             {
                 "domains": last.domains,
@@ -921,6 +927,13 @@ async def manual_save(kind: str, payload: dict, session: AsyncSession = Depends(
     row.updated_by = str(payload.get("author") or "")[:120]
     values = domain_lists.CLEANERS[kind](row.body)
     return {"ok": True, "accepted": len(values)}
+
+
+@router.post("/lists/config", dependencies=[Depends(require_token)])
+async def lists_config_save(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Интервал круга и доступ к хранилищу. Пустой секрет не затирает прежний."""
+    await domain_lists.save_config(session, {k: str(v) for k, v in payload.items()})
+    return {"ok": True}
 
 
 @router.post("/lists/build", dependencies=[Depends(require_token)])
