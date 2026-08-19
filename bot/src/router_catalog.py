@@ -432,8 +432,18 @@ def my_router_text(data: dict) -> str:
     if not router.get("activated"):
         return text("text_my_router_waiting")
 
+    routers = data.get("routers") or []
+    heading = "📡 <b>Мой роутер</b>"
+    if len(routers) > 1:
+        # Который из. Без этого на экране два одинаковых заголовка, и понять,
+        # чьи показания перед тобой, можно только по MAC ниже.
+        position = next(
+            (i + 1 for i, item in enumerate(routers) if item.get("id") == router.get("id")), 1
+        )
+        heading = f"📡 <b>Мой роутер {position} из {len(routers)}</b>"
+
     lines = [
-        "📡 <b>Мой роутер</b>",
+        heading,
         "",
         f"Модель: {_esc(router.get('model') or '—')}",
         f"MAC: <code>{_esc(router.get('mac'))}</code>",
@@ -462,7 +472,32 @@ def my_router_text(data: dict) -> str:
 
 def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(btn("btn_my_router_refresh", callback_data="shop_my_router"))
+    routers = data.get("routers") or []
+    current = (data.get("router") or {}).get("id")
+
+    builder.row(
+        btn(
+            "btn_my_router_refresh",
+            callback_data=f"shop_my_router:{current}" if current else "shop_my_router",
+        )
+    )
+
+    # Переключатель — только когда роутеров правда несколько: у большинства
+    # клиентов он один, и лишний ряд кнопок им ни о чём не говорит.
+    if len(routers) > 1:
+        for item in routers:
+            if item.get("id") == current:
+                continue
+            mark = "🟢" if item.get("online") else "○"
+            label = item.get("model") or item.get("mac", "")
+            builder.row(
+                btn(
+                    "btn_my_router_switch",
+                    text=f"{mark} {label}",
+                    callback_data=f"shop_my_router:{item.get('id')}",
+                )
+            )
+
     if data.get("router") is None:
         builder.row(btn("btn_catalog", callback_data="shop_catalog"))
     else:
@@ -898,7 +933,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         await query.answer(text("text_order_cancelled"))
         await show_catalog(query)
 
-    @dp.callback_query(F.data == "shop_my_router")
+    @dp.callback_query(F.data.startswith("shop_my_router"))
     async def cq_my_router(query: CallbackQuery, state: FSMContext):
         if await blocked(query):
             return
@@ -908,7 +943,16 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         await shop_api.register_client(
             query.from_user.id, query.from_user.username or "", query.from_user.first_name or ""
         )
-        data, error = await shop_api.my_router(query.from_user.id)
+        # `shop_my_router:{id}` — выбор роутера, когда их у клиента несколько.
+        # Без номера — первый по списку, как было до появления второго.
+        device_id = 0
+        if ":" in query.data:
+            try:
+                device_id = int(query.data.split(":", 1)[1])
+            except ValueError:
+                device_id = 0
+
+        data, error = await shop_api.my_router(query.from_user.id, device_id)
         if error:
             return await show_error(query, error)
         await edit_screen(

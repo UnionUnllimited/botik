@@ -528,19 +528,31 @@ async def my_router_available(tg_id: int, session: AsyncSession = Depends(get_se
 
 
 @router.get("/my-router")
-async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+async def my_router(
+    tg_id: int, device_id: int = 0, session: AsyncSession = Depends(get_session)
+) -> dict:
     """Экран «Мой роутер»: что с устройством и подпиской.
 
     Роутер привязывается к клиенту оператором при отгрузке — по MAC, который
     уходит в посылке. Поэтому здесь же показывается и состояние заказа: пока
     роутер в пути, это единственное, что клиенту интересно.
+
+    Роутеров у клиента может быть несколько: купил второй на дачу, поменял
+    по гарантии. Раньше отдавался только последний по номеру, и первый просто
+    исчезал с экрана вместе со своей подпиской. Теперь отдаётся список, а
+    `device_id` выбирает, чьи показания разворачивать.
+
+    Показания разворачиваются для одного: срок подписки знает панель, и спросить
+    её по каждому роутеру значит сложить их ожидания в одном экране.
     """
     user = await session.scalar(select(User).where(User.tg_id == tg_id))
     if user is None:
-        return {"has_client": False, "router": None, "order": None}
+        return {"has_client": False, "routers": [], "router": None, "order": None}
 
-    device = await session.scalar(
-        select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+    devices = list(
+        await session.scalars(
+            select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+        )
     )
     order = await session.scalar(
         select(Order)
@@ -549,35 +561,55 @@ async def my_router(tg_id: int, session: AsyncSession = Depends(get_session)) ->
         .options(selectinload(Order.delivery), selectinload(Order.items))
     )
 
+    now = utcnow()
+    current = None
+    if devices:
+        current = next((d for d in devices if d.id == device_id), devices[0])
+
     router_payload = None
-    if device is not None:
-        now = utcnow()
+    if current is not None:
         # Срок знает панель: подписку роутеру выдаёт она, а не мы.
         panel_until = None
         if settings.remnawave.is_configured:
             try:
-                account = await asyncio.wait_for(activation.panel_account_of(device), timeout=3)
+                account = await asyncio.wait_for(activation.panel_account_of(current), timeout=3)
                 panel_until = activation.panel_expiry_of(account)
             except TimeoutError:
-                log.warning("catalog.panel_timeout", device_id=device.id)
+                log.warning("catalog.panel_timeout", device_id=current.id)
 
         router_payload = {
-            "mac": device.mac,
-            "model": device.model or "",
-            "status": str(device.status),
-            "online": device.frp_online
-            or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
-            "activated": device.activated_at is not None,
-            "clients": (device.clients_wifi or 0) + (device.clients_dhcp or 0),
-            "uptime_sec": device.uptime_sec or 0,
-            "rx_bytes": device.rx_bytes or 0,
-            "tx_bytes": device.tx_bytes or 0,
+            "id": current.id,
+            "mac": current.mac,
+            "model": current.model or "",
+            "status": str(current.status),
+            "online": current.frp_online
+            or current.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
+            "activated": current.activated_at is not None,
+            "clients": (current.clients_wifi or 0) + (current.clients_dhcp or 0),
+            "uptime_sec": current.uptime_sec or 0,
+            "rx_bytes": current.rx_bytes or 0,
+            "tx_bytes": current.tx_bytes or 0,
             "until": panel_until.isoformat() if panel_until else None,
             "active": bool(panel_until and panel_until > now),
         }
 
     return {
         "has_client": True,
+        # Список — без обращения к панели: он нужен, чтобы нарисовать кнопки
+        # выбора, а срок разворачивается только у выбранного.
+        "routers": [
+            {
+                "id": device.id,
+                "mac": device.mac,
+                "model": device.model or "",
+                "online": device.frp_online
+                or device.is_online(
+                    threshold_min=settings.subscription.heartbeat_offline_min, now=now
+                ),
+                "activated": device.activated_at is not None,
+            }
+            for device in devices
+        ],
         "router": router_payload,
         "order": _order_payload(order) if order is not None else None,
     }

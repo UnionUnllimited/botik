@@ -242,8 +242,13 @@ async def register_client(tg_id: int, username: str, first_name: str) -> tuple[d
     )
 
 
-async def my_router(tg_id: int) -> tuple[dict, str]:
-    return await get("/api/v1/catalog/my-router", {"tg_id": tg_id})
+async def my_router(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
+    """Экран роутера. `device_id` выбирает, чьи показания разворачивать:
+    роутеров у клиента может быть несколько."""
+    params = {"tg_id": tg_id}
+    if device_id:
+        params["device_id"] = device_id
+    return await get("/api/v1/catalog/my-router", params)
 
 
 async def my_router_available(tg_id: int) -> bool:
