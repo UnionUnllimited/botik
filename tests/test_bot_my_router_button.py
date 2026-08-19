@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -142,11 +143,11 @@ class TestSeveralRouters:
     первого становилась невидимой: клиент не знал, что она кончается.
     """
 
-    ONE = {
+    ONE: ClassVar[dict] = {
         "routers": [{"id": 7, "mac": "AA:BB:CC:DD:EE:01", "model": "AX3000", "online": True}],
         "router": {"id": 7, "mac": "AA:BB:CC:DD:EE:01", "activated": True, "active": True},
     }
-    TWO = {
+    TWO: ClassVar[dict] = {
         "routers": [
             {"id": 7, "mac": "AA:BB:CC:DD:EE:01", "model": "AX3000", "online": True},
             {"id": 9, "mac": "AA:BB:CC:DD:EE:02", "model": "AX1800", "online": False},
