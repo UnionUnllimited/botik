@@ -18,10 +18,33 @@ import asyncio
 
 from loguru import logger
 
+import re
+
 import db_helpers
 from src import shop_api
 
 SYNC_INTERVAL_SEC = 300
+
+_DEVICE_LIMIT = re.compile(
+    # Длинный вариант первым: иначе «уст» съедало начало «устройства»
+    # и в названии оставался хвост «ройство».
+    r"\s*[|·-]?\s*\d+\s*(?:устройств\w*|устройство|уст\.?(?![а-яё]))\s*",
+    re.IGNORECASE,
+)
+"""Лимит устройств в названии тарифа: «30 дней | 1 уст.».
+
+Он достался от подписки для телефона, где слоты продавали поштучно.
+За роутером сидит вся домашняя сеть, и «1 уст.» на кнопке продления клиент
+читает как «работать будет одно устройство» — то есть как обман.
+
+Срезаем на переносе, а не правим названия руками: тарифы заводят в их
+админке, и следующий появится с тем же хвостом."""
+
+
+def strip_device_limit(name: str) -> str:
+    """Убирает «| 1 уст.» из названия тарифа, оставляя срок."""
+    cleaned = _DEVICE_LIMIT.sub(" ", name or "").strip()
+    return re.sub(r"\s{2,}", " ", cleaned).strip(" |·-").strip()
 
 
 def _clean(tariffs: list[dict]) -> list[dict]:
@@ -36,12 +59,13 @@ def _clean(tariffs: list[dict]) -> list[dict]:
         days = int(row.get("days") or 0)
         if days <= 0:
             continue
-        key = ((row.get("name") or "").strip(), days, float(row.get("price") or 0))
+        name = strip_device_limit(row.get("name") or "") or f"{days} дн."
+        key = (name, days, float(row.get("price") or 0))
         unique.setdefault(
             key,
             {
                 "id": row.get("id"),
-                "name": row.get("name") or f"{days} дн.",
+                "name": name,
                 "days": days,
                 "price": row.get("price") or 0,
                 "description": row.get("description") or "",
