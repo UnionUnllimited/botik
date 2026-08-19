@@ -350,3 +350,58 @@ class TestLocalPublish:
         busy = tmp_path / "file"
         busy.write_text("не каталог", encoding="utf-8")
         assert publish_local(str(busy), {"domain": ["a.com"]}) is False
+
+
+class TestListsAreSeparate:
+    """Домены и подсети — разные файлы по разным адресам.
+
+    Роутер берёт их порознь: правило для домена и правило для подсети
+    попадают в разные части его конфигурации.
+    """
+
+    def test_file_names_do_not_collide(self):
+        from core.services.domain_lists import FILE_NAMES
+
+        assert FILE_NAMES["domain"] != FILE_NAMES["ip"]
+        assert set(FILE_NAMES) == {"domain", "ip"}
+
+    def test_written_separately(self, tmp_path, monkeypatch):
+        """Запись одного вида не трогает файл другого."""
+        from core.config import settings
+        from core.services import domain_lists
+
+        monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
+        domain_lists.write_list("domain", ["a.com"])
+        domain_lists.write_list("ip", ["1.2.3.4"])
+        assert domain_lists.read_list("domain") == "a.com\n"
+        assert domain_lists.read_list("ip") == "1.2.3.4\n"
+
+        domain_lists.write_list("domain", ["a.com", "b.com"])
+        assert domain_lists.read_list("ip") == "1.2.3.4\n"
+
+    def test_served_at_different_urls(self, client):
+        first = client.get("/lists/domains.lst")
+        second = client.get("/lists/ip.lst")
+        assert first.status_code == 200
+        assert second.status_code == 200
+
+    def test_source_is_cleaned_by_its_own_kind(self):
+        """Источник, помеченный доменным, чистится доменными правилами.
+
+        Подсеть в списке доменов — правило, которое прошивка не применит.
+        Рубеж стоит в сборке: каждый кусок причёсывается чистильщиком своего
+        вида, и `merge` получает его уже разобранным. Проверяем сам чистильщик,
+        а не `merge`: тот принимает готовые значения и обещаний про вид не даёт.
+        """
+        from core.services.domain_lists import CLEANERS
+
+        assert CLEANERS["domain"]("1.2.3.4") == []
+        assert CLEANERS["ip"]("example.com") == []
+
+    def test_manual_list_is_cleaned_by_kind_in_merge(self):
+        """Свой список чистится внутри merge — он приходит сырым от человека."""
+        from core.services.domain_lists import merge
+
+        mixed = "1.2.3.4\nexample.com"
+        assert merge([], mixed, "domain") == ["example.com"]
+        assert merge([], mixed, "ip") == ["1.2.3.4"]

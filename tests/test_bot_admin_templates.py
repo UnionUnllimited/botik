@@ -232,6 +232,16 @@ PAGES = {
             "lists_s3_access_key": "задан",
             "lists_s3_secret_key": "",
         },
+        "files": [
+            {
+                "kind": "domain", "title": "Домены", "name": "domains.lst",
+                "url": "https://example.com/lists/domains.lst", "lines": 51234,
+            },
+            {
+                "kind": "ip", "title": "Подсети IPv4", "name": "ip.lst",
+                "url": "https://example.com/lists/ip.lst", "lines": 0,
+            },
+        ],
         "last_build": {
             "domains": 51234, "ips": 812, "failed_sources": 1,
             "finished_at": "2026-08-13T15:04:00+00:00", "error": "", "uploaded": False,

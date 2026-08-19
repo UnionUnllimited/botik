@@ -907,6 +907,7 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
     ).all()
     manual = {row.kind: row for row in (await session.scalars(select(ManualList))).all()}
     last = await session.scalar(select(DomainBuild).order_by(DomainBuild.id.desc()).limit(1))
+    base = settings.api.public_base_url.rstrip("/")
     return {
         "sources": [
             {
@@ -935,6 +936,19 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
             else value
             for key, value in (await domain_lists.config(session)).items()
         },
+        # Каждый список отдельной записью: домены и подсети — разные файлы
+        # по разным адресам, и на странице их надо видеть порознь, а не одной
+        # строкой «доменов N, подсетей M».
+        "files": [
+            {
+                "kind": kind,
+                "title": title,
+                "name": domain_lists.FILE_NAMES[kind],
+                "url": f"{base}/lists/{domain_lists.FILE_NAMES[kind]}",
+                "lines": len(domain_lists.read_list(kind).splitlines()),
+            }
+            for kind, title in (("domain", "Домены"), ("ip", "Подсети IPv4"))
+        ],
         "last_build": (
             {
                 "domains": last.domains,

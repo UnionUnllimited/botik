@@ -215,6 +215,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             sources=data.get("sources") or [],
             manual=data.get("manual") or {},
             last_build=data.get("last_build"),
+            files=data.get("files") or [],
             config=data.get("config") or {},
         )
 

@@ -30,13 +30,39 @@
   </div>
   {% else %}
 
+  {# Два списка — два разных файла по разным адресам. Роутер берёт их порознь,
+     и на странице они должны быть порознь: одна строка «доменов N, подсетей M»
+     не давала ни ссылки, ни понимания, что это вообще два файла. #}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    {% for file in files %}
+    <div class="tw-card p-4">
+      <div class="text-[12px] tw-text-muted2">{{ file.title }}</div>
+      <div class="text-[22px] font-semibold tw-text-base2">
+        {{ '{:,}'.format(file.lines).replace(',', ' ') }}
+        <span class="text-[12px] tw-text-muted2 font-normal">строк</span>
+      </div>
+      <a href="{{ file.url }}" target="_blank" rel="noopener"
+         class="text-[11.5px] font-mono break-all" style="color: rgb(var(--admin-accent))">
+        {{ file.name }}
+      </a>
+      {% if not file.lines %}
+      <div class="text-[11px] text-amber-600 mt-1">
+        Пусто — сборки ещё не было или все источники этого вида выключены.
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
   {% if last_build %}
   <div class="tw-card p-3.5 text-[12.5px] tw-text-base2">
-    Последняя сборка: доменов <b>{{ last_build.domains }}</b>,
-    подсетей <b>{{ last_build.ips }}</b>
-    {%- if last_build.finished_at %}, {{ last_build.finished_at[:16].replace('T', ' ') }}{% endif %}.
+    Последняя сборка{% if last_build.finished_at %}:
+    {{ last_build.finished_at[:16].replace('T', ' ') }}{% endif %}.
     {% if last_build.failed_sources %}
       <span class="text-amber-600">Источников не ответило: {{ last_build.failed_sources }}.</span>
+    {% endif %}
+    {% if last_build.uploaded %}
+      <span class="tw-text-subtle2">Копия в хранилище обновлена.</span>
     {% endif %}
   </div>
   {% endif %}
