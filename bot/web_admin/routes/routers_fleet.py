@@ -196,21 +196,36 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
     # ── Списки доменов ────────────────────────────────────────────────────────
 
     @admin_bp_instance.route("/lists")
-    async def domain_lists_page():
-        """Источники, свой список и итог прошлой сборки.
+    async def _render_lists(imported: dict | None = None):
+        """Собирает страницу списков.
 
-        Всё считает основное приложение: сборка идёт в его worker'е, а списки
-        отдаются с его домена. Здесь только экран.
+        `imported` — то, что приехало по ссылке и ещё не сохранено: его надо
+        показать в поле, чтобы человек увидел, что именно заменит его правку.
         """
         data, error = await _get("/api/v1/fleet/lists")
+        history = {}
+        if not error:
+            for kind in ("domain", "ip"):
+                got, _ = await _get(f"/api/v1/fleet/lists/manual/{kind}/history")
+                history[kind] = got.get("revisions") or []
         return await render_template(
             "domain_lists.html",
+            history=history,
+            imported=imported or {},
             fleet_error=error,
             sources=data.get("sources") or [],
             manual=data.get("manual") or {},
             last_build=data.get("last_build"),
             config=data.get("config") or {},
         )
+
+    async def domain_lists_page():
+        """Источники, свой список и итог прошлой сборки.
+
+        Всё считает основное приложение: сборка идёт в его worker'е, а списки
+        отдаются с его домена. Здесь только экран.
+        """
+        return await _render_lists()
 
     @admin_bp_instance.route("/lists/sources", methods=["POST"])
     async def domain_source_add():
@@ -249,7 +264,11 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         if error:
             await flash(error, "danger")
         else:
-            await flash(f"Сохранено, строк принято: {data.get('accepted', 0)}.", "success")
+            added, removed = data.get("added", 0), data.get("removed", 0)
+            changed = f" (+{added} / −{removed})" if (added or removed) else " (без изменений)"
+            await flash(
+                f"Сохранено, строк принято: {data.get('accepted', 0)}{changed}.", "success"
+            )
         return redirect(url_for("admin.domain_lists_page"))
 
     @admin_bp_instance.route("/lists/config", methods=["POST"])
@@ -264,6 +283,31 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             )},
         )
         await flash(error or "Настройки сохранены.", "danger" if error else "success")
+        return redirect(url_for("admin.domain_lists_page"))
+
+    @admin_bp_instance.route("/lists/manual/<kind>/import", methods=["POST"])
+    async def domain_manual_import(kind: str):
+        """Перенос своего списка из файла по ссылке — для переезда с GitHub.
+
+        Сразу не сохраняем: показываем в поле, что приехало. Молча подменить
+        чужим файлом то, что человек правил руками, нельзя.
+        """
+        form = await request.form
+        data, error = await _post(
+            f"/api/v1/fleet/lists/manual/{kind}/import", {"url": form.get("url", "")}
+        )
+        if error:
+            await flash(error, "danger")
+            return redirect(url_for("admin.domain_lists_page"))
+        await flash(
+            f"Загружено строк: {data.get('lines', 0)}. Проверьте и сохраните.", "success"
+        )
+        return await _render_lists(imported={kind: data.get("body", "")})
+
+    @admin_bp_instance.route("/lists/manual/<kind>/restore/<int:revision_id>", methods=["POST"])
+    async def domain_manual_restore(kind: str, revision_id: int):
+        _, error = await _post(f"/api/v1/fleet/lists/manual/{kind}/restore/{revision_id}", {})
+        await flash(error or "Список возвращён к прежней версии.", "danger" if error else "success")
         return redirect(url_for("admin.domain_lists_page"))
 
     @admin_bp_instance.route("/lists/build", methods=["POST"])

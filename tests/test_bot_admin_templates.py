@@ -201,9 +201,27 @@ PAGES = {
             },
         ],
         "manual": {
-            "domain": {"body": "my.example.com", "updated_by": "union", "updated_at": None},
+            "domain": {
+                "body": "my.example.com",
+                "updated_by": "union",
+                "updated_at": "2026-08-13T15:00:00+00:00",
+            },
             "ip": {"body": "", "updated_by": "", "updated_at": None},
         },
+        "history": {
+            "domain": [
+                {
+                    "id": 4, "author": "union", "added": 12, "removed": 0,
+                    "created_at": "2026-08-13T15:00:00+00:00",
+                },
+                {
+                    "id": 3, "author": "откат к версии 1", "added": 0, "removed": 0,
+                    "created_at": "2026-08-12T09:30:00+00:00",
+                },
+            ],
+            "ip": [],
+        },
+        "imported": {},
         "config": {
             "lists_poll_interval_min": "10",
             "lists_s3_endpoint": "https://storage.yandexcloud.net",

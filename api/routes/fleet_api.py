@@ -30,7 +30,15 @@ from api.service_auth import require_token
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
-from core.models import Device, DomainBuild, DomainSource, ListKind, ManualList, User
+from core.models import (
+    Device,
+    DomainBuild,
+    DomainSource,
+    ListKind,
+    ManualList,
+    ManualListRevision,
+    User,
+)
 from core.security import normalize_mac
 from core.services import (
     activation,
@@ -993,14 +1001,12 @@ async def manual_save(kind: str, payload: dict, session: AsyncSession = Depends(
     """
     if kind not in ListKind.ALL:
         raise HTTPException(status_code=404, detail="Неизвестный вид списка")
-    row = await session.scalar(select(ManualList).where(ManualList.kind == kind))
-    if row is None:
-        row = ManualList(kind=kind)
-        session.add(row)
-    row.body = str(payload.get("body") or "")
-    row.updated_by = str(payload.get("author") or "")[:120]
-    values = domain_lists.CLEANERS[kind](row.body)
-    return {"ok": True, "accepted": len(values)}
+    body = str(payload.get("body") or "")
+    added, removed = await domain_lists.save_manual(
+        session, kind, body, author=str(payload.get("author") or "")
+    )
+    values = domain_lists.CLEANERS[kind](body)
+    return {"ok": True, "accepted": len(values), "added": added, "removed": removed}
 
 
 @router.post("/lists/config", dependencies=[Depends(require_token)])
@@ -1008,6 +1014,65 @@ async def lists_config_save(payload: dict, session: AsyncSession = Depends(get_t
     """Интервал круга и доступ к хранилищу. Пустой секрет не затирает прежний."""
     await domain_lists.save_config(session, {k: str(v) for k, v in payload.items()})
     return {"ok": True}
+
+
+@router.get("/lists/manual/{kind}/history", dependencies=[Depends(require_token)])
+async def manual_history(kind: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """Когда список меняли, кто и насколько.
+
+    Тело прежней версии наружу не отдаём списком — оно нужно только при
+    откате, и таскать сотню килобайт ради таблицы из трёх колонок незачем.
+    """
+    if kind not in ListKind.ALL:
+        raise HTTPException(status_code=404, detail="Неизвестный вид списка")
+    return {
+        "revisions": [
+            {
+                "id": item.id,
+                "author": item.author,
+                "added": item.added,
+                "removed": item.removed,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in await domain_lists.revisions(session, kind)
+        ]
+    }
+
+
+@router.post("/lists/manual/{kind}/restore/{revision_id}", dependencies=[Depends(require_token)])
+async def manual_restore(
+    kind: str, revision_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Возвращает список к прежней версии.
+
+    Сам откат тоже попадает в историю — иначе «вернул и снова сломал»
+    не отследить, а именно так и выглядит вечер, когда что-то пошло не так.
+    """
+    if kind not in ListKind.ALL:
+        raise HTTPException(status_code=404, detail="Неизвестный вид списка")
+    revision = await session.get(ManualListRevision, revision_id)
+    if revision is None or revision.kind != kind:
+        raise HTTPException(status_code=404, detail="Версия не найдена")
+    await domain_lists.save_manual(
+        session, kind, revision.body, author=f"откат к версии {revision.id}"
+    )
+    return {"ok": True}
+
+
+@router.post("/lists/manual/{kind}/import", dependencies=[Depends(require_token)])
+async def manual_import(kind: str, payload: dict) -> dict:
+    """Тянет свой список из файла по ссылке — для переезда с GitHub.
+
+    Ничего не сохраняет: отдаёт причёсанное содержимое, чтобы оператор увидел
+    его в поле и решил, заменять целиком или дописать. Молча подменить чужим
+    файлом то, что человек правил руками, нельзя.
+    """
+    if kind not in ListKind.ALL:
+        raise HTTPException(status_code=404, detail="Неизвестный вид списка")
+    body, error = await domain_lists.import_from_url(str(payload.get("url") or "").strip(), kind)
+    if error:
+        return {"ok": False, "error": error}
+    return {"ok": True, "body": body, "lines": len(body.splitlines())}
 
 
 @router.post("/lists/build", dependencies=[Depends(require_token)])

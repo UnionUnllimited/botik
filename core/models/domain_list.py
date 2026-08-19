@@ -121,3 +121,35 @@ class DomainBuild(BigIntPkMixin, Base):
     uploaded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     """Легла ли копия в объектное хранилище. Выкладка мягкая: список уже
     отдаётся с нашего домена, и падать из-за недоступного хранилища нельзя."""
+
+
+class ManualListRevision(BigIntPkMixin, Base):
+    """Прежние версии своего списка: кто, когда и что поменял.
+
+    Список правится текстом целиком, и «убрал лишнее» здесь неотличимо
+    от «стёр половину и не заметил». Журнала действий у нас больше нет,
+    а домен в этом списке открывает доступ всему парку — вопрос «кто это
+    добавил и когда» задают первым же делом.
+
+    Хранится тело целиком, а не разница. Список — пара килобайт, версий
+    за год наберётся сотня; считать разницу на лету дешевле, чем собирать
+    состояние из цепочки правок и однажды собрать неверно.
+    """
+
+    __tablename__ = "manual_list_revisions"
+
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    author: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+
+    added: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    removed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    """Сколько строк прибавилось и убыло против прошлой версии. Считаем при
+    сохранении: на странице это первое, на что смотрят, и пересчитывать его
+    при каждой отрисовке ради экономии двух чисел незачем."""
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_manual_list_revisions_kind_id", "kind", "id"),)

@@ -10,7 +10,13 @@ from core.models.device import (
     Heartbeat,
     SubscriptionAccessLog,
 )
-from core.models.domain_list import DomainBuild, DomainSource, ListKind, ManualList
+from core.models.domain_list import (
+    DomainBuild,
+    DomainSource,
+    ListKind,
+    ManualList,
+    ManualListRevision,
+)
 from core.models.node import Node, NodeAssignment, NodeGroup
 from core.models.order import Delivery, Order, OrderItem
 from core.models.payment import Payment
@@ -38,6 +44,7 @@ __all__ = [
     "Heartbeat",
     "ListKind",
     "ManualList",
+    "ManualListRevision",
     "Node",
     "NodeAssignment",
     "NodeGroup",

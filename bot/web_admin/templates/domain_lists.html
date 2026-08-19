@@ -45,30 +45,85 @@
   {% for kind, label, hint in [
       ('domain', 'Свои домены', 'По домену на строку. Схему и путь уберём сами.'),
       ('ip', 'Свои подсети', 'IPv4, с маской или без: 1.2.3.4 или 10.0.0.0/8.')] %}
+  {% set row = manual.get(kind) or {} %}
+  {% set log = history.get(kind) or [] %}
   <div class="tw-card p-4">
     <form method="post" action="{{ url_for('admin.domain_manual_save', kind=kind) }}">
       <div class="flex items-center justify-between gap-2 mb-2">
         <label for="body_{{ kind }}" class="text-[13px] font-semibold tw-text-base2">{{ label }}</label>
-        {% set row = manual.get(kind) or {} %}
-        {% if row.updated_by %}
-        <span class="text-[11px] tw-text-subtle2">правил {{ row.updated_by }}</span>
-        {% endif %}
+        <span class="text-[11px] tw-text-subtle2">
+          {%- if row.updated_at %}правил {{ row.updated_by or 'кто-то' }},
+            {{ row.updated_at[:16].replace('T', ' ') }}{% endif -%}
+        </span>
       </div>
-      <textarea id="body_{{ kind }}" name="body" rows="6" class="tw-input"
+      <textarea id="body_{{ kind }}" name="body" rows="8" class="tw-input"
                 style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical; font-family:ui-monospace,monospace;"
-                >{{ (manual.get(kind) or {}).get('body', '') }}</textarea>
-      <div class="flex items-center justify-between gap-2 mt-2">
+                >{{ imported.get(kind, row.get('body', '')) }}</textarea>
+      <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
         <span class="text-[11px] tw-text-subtle2">{{ hint }}</span>
-        <button type="submit" class="tw-btn tw-btn-sm">Сохранить</button>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Сохранить</button>
       </div>
+      {% if imported.get(kind) %}
+      <div class="text-[11.5px] text-amber-600 mt-2">
+        Это загруженное по ссылке — оно ещё не сохранено. Нажмите «Сохранить»,
+        если всё верно, или просто уйдите со страницы.
+      </div>
+      {% endif %}
     </form>
+
+    {# Перенос из файла: список лежал в репозитории, и переписывать его руками
+       в поле — верный способ потерять пару строк. #}
+    <form method="post" action="{{ url_for('admin.domain_manual_import', kind=kind) }}"
+          class="flex gap-2 mt-3 pt-3 border-t" style="border-color: var(--admin-border);">
+      <input type="url" name="url" class="tw-input" placeholder="Перенести из файла по ссылке">
+      <button type="submit" class="tw-btn tw-btn-sm whitespace-nowrap">Загрузить</button>
+    </form>
+    <div class="text-[11px] tw-text-subtle2 mt-1">
+      Содержимое покажется в поле выше — сохранится только после нажатия «Сохранить».
+    </div>
+
+    {% if log %}
+    <details class="mt-3 pt-3 border-t" style="border-color: var(--admin-border);">
+      <summary class="text-[12px] tw-text-base2 cursor-pointer">
+        История правок — {{ log|length }}
+      </summary>
+      <table class="w-full text-[12px] mt-2">
+        <tbody>
+          {% for item in log %}
+          <tr class="border-t" style="border-color: var(--admin-border);">
+            <td class="py-1.5 pr-2 tw-text-subtle2 whitespace-nowrap">
+              {{ item.created_at[:16].replace('T', ' ') if item.created_at else '—' }}
+            </td>
+            <td class="py-1.5 pr-2">{{ item.author or '—' }}</td>
+            <td class="py-1.5 pr-2 whitespace-nowrap">
+              {% if item.added %}<span class="text-emerald-600">+{{ item.added }}</span>{% endif %}
+              {% if item.removed %}<span class="text-rose-500">−{{ item.removed }}</span>{% endif %}
+              {% if not item.added and not item.removed %}<span class="tw-text-subtle2">—</span>{% endif %}
+            </td>
+            <td class="py-1.5 text-right">
+              <form method="post" class="inline"
+                    action="{{ url_for('admin.domain_manual_restore', kind=kind, revision_id=item.id) }}"
+                    onsubmit="return confirm('Вернуть список к этой версии? Нынешний тоже попадёт в историю.');">
+                <button type="submit" class="tw-btn tw-btn-sm">Вернуть</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-[11px] tw-text-subtle2 mt-2">
+        Считаются строки после чистки: переставленные и записанные иначе
+        не считаются за изменение.
+      </p>
+    </details>
+    {% endif %}
   </div>
   {% endfor %}
 
-  {# ── Настройки: круг и хранилище ──────────────────────────────────────── #}
+  {# ── Настройки ────────────────────────────────────────────────────────── #}
   <div class="tw-card p-4">
     <form method="post" action="{{ url_for('admin.domain_lists_config') }}" class="space-y-3">
-      <div class="text-[13px] font-semibold tw-text-base2">Обновление и хранилище</div>
+      <div class="text-[13px] font-semibold tw-text-base2">Обновление</div>
 
       <div class="ss-field" style="max-width: 260px;">
         <label for="lists_poll_interval_min">Интервал круга, минут</label>
@@ -82,10 +137,25 @@
         </div>
       </div>
 
-      <div class="text-[12px] tw-text-subtle2 pt-2 border-t" style="border-color: var(--admin-border);">
-        Копия списков в объектном хранилище. Нужна на случай, когда наш сервер
-        перезапускается выкатом, а парк приходит за обновлением. Пусто — выкладка
-        выключена, списки всё равно отдаются с нашего домена.
+      {# Хранилище настраивают один раз и больше не трогают, а места оно
+         занимает больше всего остального. Поэтому свёрнуто. #}
+      <details class="pt-2 border-t" style="border-color: var(--admin-border);">
+        <summary class="text-[12.5px] font-semibold tw-text-base2 cursor-pointer">
+          Куда сливать копию списков
+          {% if config.get('lists_s3_bucket') %}
+            <span class="tw-kbd text-[10px] ml-1">{{ config.get('lists_s3_bucket') }}</span>
+          {% else %}
+            <span class="tw-kbd text-[10px] ml-1">выключено</span>
+          {% endif %}
+        </summary>
+
+      <div class="text-[12px] tw-text-subtle2 py-2">
+        Списки роутеры и так забирают с нашего домена:
+        <code class="tw-kbd text-[11px]">/lists/domains.lst</code> и
+        <code class="tw-kbd text-[11px]">/lists/ip.lst</code>.
+        Копия в объектном хранилище нужна на случай, когда наш сервер
+        перезапускается выкатом, а парк приходит за обновлением. Пусто —
+        выкладка выключена, на раздачу это не влияет.
         <br>Yandex: <code class="tw-kbd text-[11px]">https://storage.yandexcloud.net</code> ·
         VK: <code class="tw-kbd text-[11px]">https://hb.vkcs.cloud</code>
       </div>
@@ -124,6 +194,8 @@
                  placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_secret_key') else 'не задан' }}">
         </div>
       </div>
+
+      </details>
 
       <div class="flex justify-end">
         <button type="submit" class="tw-btn tw-btn-sm">Сохранить настройки</button>

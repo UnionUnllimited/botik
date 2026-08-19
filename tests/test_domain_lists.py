@@ -227,3 +227,65 @@ class TestSecretsNotLeaked:
 
         assert "lists_s3_access_key" in domain_lists.SECRET_KEYS
         assert "lists_s3_secret_key" in domain_lists.SECRET_KEYS
+
+
+class TestDiffCounts:
+    """История отвечает на «что изменилось», а не «сколько символов тронули»."""
+
+    def test_added_and_removed(self):
+        from core.services.domain_lists import diff_counts
+
+        assert diff_counts("a.com\nb.com", "b.com\nc.com", "domain") == (1, 1)
+
+    def test_reordering_is_not_a_change(self):
+        """Иначе перестановка строк давала бы «+40 −40» на правке одной буквы."""
+        from core.services.domain_lists import diff_counts
+
+        assert diff_counts("a.com\nb.com", "b.com\na.com", "domain") == (0, 0)
+
+    def test_case_and_scheme_are_not_a_change(self):
+        from core.services.domain_lists import diff_counts
+
+        assert diff_counts("a.com", "https://A.COM/path", "domain") == (0, 0)
+
+    def test_garbage_lines_do_not_count(self):
+        """Строку, которую сборка отбросит, история не считает добавленной."""
+        from core.services.domain_lists import diff_counts
+
+        assert diff_counts("a.com", "a.com\nне домен\n\n# коммент", "domain") == (0, 0)
+
+
+class TestImportFromUrl:
+    @pytest.mark.asyncio
+    async def test_rejects_non_http(self):
+        from core.services.domain_lists import import_from_url
+
+        body, error = await import_from_url("ftp://example.com/list.lst", "domain")
+        assert not body
+        assert "http" in error
+
+    @pytest.mark.asyncio
+    async def test_cleans_what_it_downloaded(self, monkeypatch):
+        """Файл приезжает как есть, а в поле должен лечь причёсанным."""
+        from core.services import domain_lists
+
+        async def _fetch(_client, _url, etag=""):
+            return "# заголовок\nhttps://A.COM/path\nмусор\nb.com\n", "", ""
+
+        monkeypatch.setattr(domain_lists, "fetch", _fetch)
+        body, error = await domain_lists.import_from_url("https://e.com/l.lst", "domain")
+        assert error == ""
+        assert body == "a.com\nb.com"
+
+    @pytest.mark.asyncio
+    async def test_empty_result_is_reported(self, monkeypatch):
+        """Скачали, а в файле ничего подходящего — это ошибка, а не пустой список."""
+        from core.services import domain_lists
+
+        async def _fetch(_client, _url, etag=""):
+            return "# только комментарии\n", "", ""
+
+        monkeypatch.setattr(domain_lists, "fetch", _fetch)
+        body, error = await domain_lists.import_from_url("https://e.com/l.lst", "domain")
+        assert not body
+        assert error

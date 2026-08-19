@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.dates import utcnow
-from core.models import DomainBuild, DomainSource, ManualList
+from core.models import DomainBuild, DomainSource, ManualList, ManualListRevision
 from core.services import settings_service
 
 log = structlog.get_logger(__name__)
@@ -378,3 +378,81 @@ async def save_config(session: AsyncSession, values: dict[str, str]) -> None:
                 continue
         await settings_service.set_setting(session, key, value)
 
+
+
+# ── История правок своего списка ──────────────────────────────────────────────
+
+
+def diff_counts(before: str, after: str, kind: str) -> tuple[int, int]:
+    """Сколько строк прибавилось и убыло. Считается по чистым значениям.
+
+    Сравнивать сырой текст нельзя: переставленные строки, регистр и лишний
+    пробел дали бы «+40 −40» на правке одной буквы, и история перестала бы
+    отвечать на вопрос «что изменилось».
+    """
+    cleaner = CLEANERS[kind]
+    old = set(cleaner(before))
+    new = set(cleaner(after))
+    return len(new - old), len(old - new)
+
+
+async def save_manual(
+    session: AsyncSession, kind: str, body: str, *, author: str = ""
+) -> tuple[int, int]:
+    """Сохраняет свой список и кладёт прежнюю версию в историю.
+
+    Версия пишется только при настоящем изменении: открыть страницу и нажать
+    «Сохранить» — обычное дело, и засорять этим историю нельзя, иначе в ней
+    не найти ту правку, из-за которой всё сломалось.
+    """
+    row = await session.scalar(select(ManualList).where(ManualList.kind == kind))
+    if row is None:
+        row = ManualList(kind=kind, body="")
+        session.add(row)
+        await session.flush()
+
+    before = row.body or ""
+    if before == body:
+        return (0, 0)
+
+    added, removed = diff_counts(before, body, kind)
+    session.add(
+        ManualListRevision(
+            kind=kind, body=before, author=row.updated_by or "", added=added, removed=removed
+        )
+    )
+    row.body = body
+    row.updated_by = author[:120]
+    log.info("domain_lists.manual_saved", kind=kind, added=added, removed=removed, author=author)
+    return added, removed
+
+
+async def revisions(session: AsyncSession, kind: str, limit: int = 20) -> list[ManualListRevision]:
+    """Последние версии. Их читают сверху вниз — новые первыми."""
+    return list(
+        await session.scalars(
+            select(ManualListRevision)
+            .where(ManualListRevision.kind == kind)
+            .order_by(ManualListRevision.id.desc())
+            .limit(limit)
+        )
+    )
+
+
+async def import_from_url(url: str, kind: str) -> tuple[str, str]:
+    """Тянет чужой файл, чтобы перенести свой список одним нажатием.
+
+    Ради переезда с GitHub: список лежал там, и переписывать его руками
+    в поле — верный способ потерять пару строк. Возвращает причёсанное
+    содержимое и текст ошибки, одно из двух пустое.
+    """
+    if not url.startswith(("http://", "https://")):
+        return "", "Адрес должен начинаться с http:// или https://"
+    async with httpx.AsyncClient() as client:
+        body, _etag, error = await fetch(client, url)
+    if error:
+        return "", f"Не удалось скачать: {error}"
+    values = CLEANERS[kind](body)
+    if not values:
+        return "", "В файле не нашлось ни одной подходящей строки."
+    return "\n".join(values), ""
