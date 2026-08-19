@@ -36,13 +36,15 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
         return btn(key, callback_data=callback)
 
     if key == 'btn_renew_sub':
-        # Продление ведёт в нашу цепочку, а не в родную: доступ роутеру выдан
-        # учётке `tg{id}_{mac}`, а родное продление двигает срок у `tg{id}` —
-        # подписки для приложения на телефоне. Клиент заплатил бы, а роутер
-        # отключился по старой дате. Каталог выключен — работает как раньше.
-        if str(app_conf.get('catalog_enabled', '1')) == '1':
-            return btn('btn_renew_sub', callback_data='shop_renew')
-        return btn('btn_renew_sub', callback_data='renew_choose_payment')
+        # Продление одно и наше. Родное двигает срок у учётки `tg{id}` —
+        # подписки для приложения на телефоне, — а роутеру доступ выдан
+        # учётке `tg{id}_{mac}`: клиент заплатил бы, а роутер отключился
+        # по старой дате.
+        #
+        # Раньше при выключенном каталоге кнопка падала в родную ветку.
+        # Это и был тот самый случай: выключить каталог значит перестать
+        # продавать железо, а не начать продавать подписку для телефона.
+        return btn('btn_renew_sub', callback_data='shop_renew')
 
     if key == 'btn_traffic_renewal':
         traffic_renewal_enabled = str(app_conf.get('traffic_renewal_enabled', '0')) == '1'

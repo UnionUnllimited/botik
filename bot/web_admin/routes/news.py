@@ -626,7 +626,7 @@ def attach_news_routes(admin_bp_instance, query_db_func, execute_db_func):
                             buttons = []
                             logger.info(f"[NEWS] Создание кнопок: add_renew_btn={add_renew_btn}, add_free_renew_btn={add_free_renew_btn}, add_referral_btn={add_referral_btn}")
                             if add_renew_btn:
-                                buttons.append([btn('btn_renew_sub', callback_data='renew_choose_payment')])
+                                buttons.append([btn('btn_renew_sub', callback_data='shop_renew')])
                             if add_free_renew_btn:
                                 buttons.append([btn('btn_free_renew', callback_data='admin_renew_subscription_free')])
                             if add_referral_btn:

@@ -69,6 +69,37 @@ class RouterOrder(StatesGroup):
     promo = State()
 
 
+async def render_renew(query: CallbackQuery) -> None:
+    """Экран продления. На уровне модуля, чтобы его мог позвать и `main.py`.
+
+    Продление в боте одно и наше: родное двигает срок у учётки `tg{id}` —
+    подписки для приложения на телефоне, — а роутеру доступ выдан учётке
+    `tg{id}_{mac}`. Клиент заплатил бы, а срок на роутере не сдвинулся.
+    """
+    data, error = await shop_api.renew_state(query.from_user.id)
+    if error:
+        logger.warning(f"[CATALOG] {error}")
+        await edit_screen(
+            query.message,
+            text("text_catalog_unavailable") + f"\n\n<i>{_esc(error)}</i>",
+            reply_markup=InlineKeyboardBuilder()
+            .row(btn("btn_back_to_main", callback_data="back_to_main"))
+            .as_markup(),
+        )
+        return await query.answer()
+
+    periods = data.get("plans", [])
+    if not periods:
+        return await query.answer(text("text_order_no_plans"), show_alert=True)
+    await edit_screen(
+        query.message,
+        renew_text(data),
+        reply_markup=renew_keyboard(periods),
+        link_preview_options=NO_PREVIEW,
+    )
+    await query.answer()
+
+
 def catalog_enabled() -> bool:
     return str(app_conf.get("catalog_enabled", "1")) == "1"
 
@@ -890,30 +921,10 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
 
     @dp.callback_query(F.data == "shop_renew")
     async def cq_renew(query: CallbackQuery, state: FSMContext):
-        """Продление подписки роутера.
-
-        Сюда же переведена их кнопка «Продлить»: их продление работает
-        с учёткой `tg{id}` — подпиской для приложения на телефоне, — а роутеру
-        доступ выдан учётке `tg{id}_{mac}`. Клиент заплатил бы, а срок
-        на роутере не сдвинулся.
-        """
         if await blocked(query):
             return
         await state.clear()
-        data, error = await shop_api.renew_state(query.from_user.id)
-        if error:
-            return await show_error(query, error)
-
-        periods = data.get("plans", [])
-        if not periods:
-            return await query.answer(text("text_order_no_plans"), show_alert=True)
-        await edit_screen(
-            query.message,
-            renew_text(data),
-            reply_markup=renew_keyboard(periods),
-            link_preview_options=NO_PREVIEW,
-        )
-        await query.answer()
+        await render_renew(query)
 
     @dp.callback_query(F.data.startswith("shop_renew_plan:"))
     async def cq_renew_plan(query: CallbackQuery):

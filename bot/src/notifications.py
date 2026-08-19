@@ -23,7 +23,7 @@ async def notify_expiring_subscriptions(bot: Bot) -> None:
             for user_id in users:
                 try:
                     reply_markup = InlineKeyboardMarkup(inline_keyboard=[
-                        [btn('btn_renew_sub', callback_data='renew_choose_payment')],
+                        [btn('btn_renew_sub', callback_data='shop_renew')],
                         [btn('btn_referral_free_days', callback_data='referral_program')],
                         [btn('btn_back_to_main', callback_data='back_to_main')],
                     ])
@@ -69,7 +69,7 @@ async def notify_expired_subscriptions(bot: Bot) -> None:
             for user_id in users:
                 try:
                     reply_markup = InlineKeyboardMarkup(inline_keyboard=[
-                        [btn('btn_renew_sub', callback_data='renew_choose_payment')],
+                        [btn('btn_renew_sub', callback_data='shop_renew')],
                         [btn('btn_referral_free_days', callback_data='referral_program')],
                         [btn('btn_back_to_main', callback_data='back_to_main')],
                     ])

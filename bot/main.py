@@ -3097,7 +3097,20 @@ async def cq_renew_choose_payment(query: CallbackQuery):
     if await check_user_blocked(query.from_user.id):
         await send_blocked_message(query.from_user.id, query)
         return
-    
+
+    # Продление одно и наше. Ни одна наша кнопка сюда больше не ведёт, но
+    # у клиентов в чатах висят сообщения, отправленные раньше: нажатие
+    # на такую увело бы в родную ветку и двинуло срок учётке `tg{id}` —
+    # подписке для приложения на телефоне. Клиент заплатил бы, а роутер
+    # отключился по старой дате. Поэтому старая кнопка приводит сюда же,
+    # куда и новая.
+    from src.router_catalog import catalog_enabled, render_renew
+
+    if catalog_enabled():
+        await render_renew(query)
+        return
+
+
     # Проверяем, включены ли основные методы оплаты
     yookassa_enabled = app_conf.get('show_payment_yookassa', '1') == '1'
     cryptobot_enabled = app_conf.get('show_payment_cryptobot', '1') == '1'
@@ -7027,7 +7040,7 @@ async def cq_website_access(query: CallbackQuery, state: FSMContext):
 
     if not sub_active:
         # Подписка истекла или отсутствует
-        kb_rows.append([btn('btn_renew_sub', callback_data='renew_choose_payment')])
+        kb_rows.append([btn('btn_renew_sub', callback_data='shop_renew')])
         kb_rows.append([btn('btn_back_to_main', callback_data='back_to_main')])
         await query.message.edit_text(
             setting_text(
