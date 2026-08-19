@@ -9,6 +9,8 @@
 с нами, и сообщение от другого бота он в лучшем случае не узнает.
 """
 
+from datetime import datetime
+
 from quart import flash, redirect, render_template, request, url_for
 
 from src import shop_api
@@ -52,6 +54,26 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             pages=data.get("pages", 1),
             orders_error=error,
         )
+
+    @admin_bp_instance.route("/orders/export")
+    async def orders_shop_export():
+        """Выгрузка в CSV — ровно то, что сейчас на экране: фильтр и поиск те же.
+
+        Файл собирает основное приложение, мы только передаём его браузеру.
+        Разбирать и пересобирать его здесь значило бы поломать BOM, на который
+        смотрит Excel, и переносы строк внутри адресов.
+        """
+        status = (request.args.get("status") or "").strip()
+        query = (request.args.get("q") or "").strip()
+        content, error = await shop_api.export_orders(status=status, query=query)
+        if error:
+            await flash(error, "danger")
+            return redirect(url_for("admin.orders_shop", status=status, q=query))
+        stamp = datetime.now().strftime("%Y-%m-%d")
+        return content, 200, {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": f'attachment; filename="orders-{stamp}.csv"',
+        }
 
     @admin_bp_instance.route("/orders/<int:order_id>")
     async def order_shop_card(order_id: int):

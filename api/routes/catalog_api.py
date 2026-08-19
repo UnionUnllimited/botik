@@ -16,13 +16,16 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import datetime as dt
+import io
 import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -31,7 +34,7 @@ from api.deps import get_session, get_transaction
 from api.service_auth import require_token
 from core import texts, validators
 from core.config import settings
-from core.dates import utcnow
+from core.dates import to_display, utcnow
 from core.enums import (
     OFFERED_DELIVERY_METHODS,
     DeliveryMethod,
@@ -1090,6 +1093,122 @@ async def manage_orders(
         "statuses": [str(item) for item in OrderStatus],
         "orders": [_manage_order_row(order) for order in orders],
     }
+
+
+ORDERS_CSV_COLUMNS = (
+    "Номер",
+    "Создан",
+    "Статус",
+    "Клиент",
+    "Телефон",
+    "Город",
+    "Доставка",
+    "Адрес",
+    "Трек-номер",
+    "Состав",
+    "Товары, ₽",
+    "Скидка, ₽",
+    "Доставка, ₽",
+    "Итого, ₽",
+    "Оплачен",
+    "Отправлен",
+    "Доставлен",
+    "Комментарий клиента",
+    "Заметка оператора",
+)
+
+
+def _csv_moment(value: dt.datetime | None) -> str:
+    """Дата для таблицы — в том же часовом поясе, что и на экранах админки."""
+    return f"{to_display(value):%d.%m.%Y %H:%M}" if value else ""
+
+
+def _order_csv_row(order: Order, carriers: dict[DeliveryMethod, str]) -> list[str]:
+    delivery = order.delivery
+    goods = [item for item in (order.items or []) if item.item_type is not OrderItemType.DELIVERY]
+    return [
+        order.public_number,
+        _csv_moment(order.created_at),
+        texts.ORDER_STATUS_TITLES.get(order.status, str(order.status)),
+        order.customer_name or (order.user.display_name if order.user else ""),
+        order.customer_phone or "",
+        order.customer_city or "",
+        # Только перевозчик: адрес идёт своей колонкой, и повторять его здесь
+        # значит мешать сортировку по способу доставки.
+        carriers.get(delivery.method, str(delivery.method)) if delivery else "",
+        (delivery.pvz_address or delivery.address or "") if delivery else "",
+        (delivery.tracking_number or "") if delivery else "",
+        "; ".join(f"{item.title} × {item.quantity}" for item in goods),
+        str(order.subtotal),
+        str(order.discount_total),
+        str(order.delivery_price),
+        str(order.total),
+        _csv_moment(order.paid_at),
+        _csv_moment(order.shipped_at),
+        _csv_moment(order.delivered_at),
+        order.comment or "",
+        order.admin_note or "",
+    ]
+
+
+@router.get("/manage/orders/export")
+async def manage_orders_export(
+    status_filter: str = Query(default="", alias="status"),
+    q: str = "",
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Выгрузка заказов в CSV — под теми же фильтрами, что и список.
+
+    Отдаём файлом, а не строкой в JSON: выгрузку открывают в таблице, и лишний
+    слой кодирования по дороге только ломает переносы строк в адресах.
+
+    Точка с запятой и BOM — ради Excel: с запятой он свалит строку в одну
+    ячейку, без BOM покажет кириллицу кракозябрами. Это выгрузка для человека
+    с таблицей, а не для другой программы.
+    """
+    query = (
+        select(Order)
+        .options(
+            selectinload(Order.user), selectinload(Order.delivery), selectinload(Order.items)
+        )
+        .order_by(Order.id.desc())
+    )
+    if status_filter:
+        query = query.where(Order.status == status_filter)
+    text = q.strip()
+    if text:
+        pattern = f"%{text}%"
+        query = query.where(
+            or_(
+                Order.public_number.ilike(pattern),
+                Order.customer_name.ilike(pattern),
+                Order.customer_phone.ilike(pattern),
+                Order.customer_city.ilike(pattern),
+            )
+        )
+
+    # Названия перевозчиков берём те, что оператор задал в настройках, а не
+    # коды из перечисления: в таблице он ищет «СДЭК», а не «cdek».
+    carriers = {
+        option.method: option.title
+        for option in await delivery_service.get_options(session, only_enabled=False)
+    }
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer.writerow(ORDERS_CSV_COLUMNS)
+    count = 0
+    for order in await session.scalars(query):
+        writer.writerow(_order_csv_row(order, carriers))
+        count += 1
+
+    log.info("catalog.orders_exported", count=count, status=status_filter or "все")
+    stamp = to_display(utcnow()).strftime("%Y-%m-%d")
+    return Response(
+        content="﻿" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="orders-{stamp}.csv"'},
+    )
 
 
 async def _order_or_404(session: AsyncSession, order_id: int) -> Order:

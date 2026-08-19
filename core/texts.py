@@ -41,6 +41,20 @@ ORDER_STATUS_TEXTS = {
     OrderStatus.REFUNDED: "💸 По заказу {number} оформлен возврат. {reason}",
 }
 
+ORDER_STATUS_TITLES = {
+    OrderStatus.NEW: "Новый",
+    OrderStatus.AWAITING_PAYMENT: "Ждёт оплаты",
+    OrderStatus.PAID: "Оплачен",
+    OrderStatus.PACKING: "Собираем",
+    OrderStatus.SHIPPED: "Отправлен",
+    OrderStatus.DELIVERED: "Доставлен",
+    OrderStatus.DONE: "Завершён",
+    OrderStatus.CANCELLED: "Отменён",
+    OrderStatus.REFUNDED: "Возврат",
+}
+"""Названия статусов для выгрузок и писем. У админки бота свой такой же
+словарь: она в другом процессе, с другим venv, и до `core` не дотягивается."""
+
 
 def money(value: Decimal | int | str) -> str:
     """1990.00 -> «1 990 ₽», 149.50 -> «149,50 ₽»."""

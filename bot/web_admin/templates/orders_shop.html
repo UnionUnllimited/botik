@@ -26,6 +26,11 @@
       <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
         <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
       </button>
+      {# Выгрузка забирает те же фильтры, что и список: «нашёл — выгрузил». #}
+      <a href="{{ url_for('admin.orders_shop_export', status=status_filter, q=query) }}"
+         class="tw-btn tw-btn-secondary tw-btn-sm" title="Выгрузить в CSV — откроется в Excel">
+        <i data-lucide="download" class="w-3.5 h-3.5"></i><span>Выгрузить</span>
+      </a>
     </form>
   </div>
 

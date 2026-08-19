@@ -90,6 +90,30 @@ async def get(path: str, params: dict | None = None) -> tuple[dict, str]:
     return await _request("GET", path, params=params or {})
 
 
+async def download(path: str, params: dict | None = None) -> tuple[bytes, str]:
+    """Файл как есть: содержимое и текст ошибки — одно из двух всегда пустое.
+
+    Отдельно от `get`, потому что тот разбирает ответ как JSON. Выгрузку надо
+    отдать браузеру байт в байт: перекодировав её по дороге, мы сломаем и BOM,
+    на который смотрит Excel, и переносы строк внутри адресов.
+    """
+    base, token = _config()
+    if not base or not token:
+        return b"", NO_CONFIG
+    try:
+        async with httpx.AsyncClient(timeout=WRITE_TIMEOUT_SEC) as client:
+            response = await client.get(
+                f"{base}{path}",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params or {},
+            )
+    except httpx.HTTPError as exc:
+        return b"", f"Основное приложение не ответило: {exc}"
+    if response.status_code != 200:
+        return b"", _explain(response, path)
+    return response.content, ""
+
+
 async def post(path: str, payload: dict) -> tuple[dict, str]:
     """Отказ по делу отделяем от обрыва связи: текст в `error` уже написан
     для человека, и добавлять к нему «сервис недоступен» неправильно."""
@@ -319,6 +343,13 @@ async def unbind_client_router(tg_id: int, device_id: int) -> tuple[dict, str]:
 async def manage_orders(*, status: str = "", query: str = "", page: int = 1) -> tuple[dict, str]:
     return await get(
         "/api/v1/catalog/manage/orders", {"status": status, "q": query, "page": page}
+    )
+
+
+async def export_orders(*, status: str = "", query: str = "") -> tuple[bytes, str]:
+    """Выгрузка заказов в CSV — под теми же фильтрами, что и список."""
+    return await download(
+        "/api/v1/catalog/manage/orders/export", {"status": status, "q": query}
     )
 
 
