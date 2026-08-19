@@ -142,3 +142,88 @@ class TestConfiguration:
         monkeypatch.setattr(settings.platega, "merchant_id", "", raising=False)
         monkeypatch.setattr(settings.platega, "secret", SecretStr(""), raising=False)
         assert PlategaProvider().is_configured is False
+
+
+class TestPartnerCallbackForwarding:
+    """Чужой колбэк передаётся боту, а не проглатывается.
+
+    Провайдер шлёт уведомления по одному адресу на мерчанта, а платежей два
+    вида: железо продаём мы, подписку — бот. Раньше чужое уведомление
+    получало голый 200: клиент платил за подписку, а она не включалась.
+    """
+
+    @pytest.mark.asyncio
+    async def test_forwards_body_and_auth_headers(self, monkeypatch):
+        from api.routes import webhooks
+        from core.config import settings
+
+        monkeypatch.setattr(
+            settings.platega, "partner_callback_url", "http://127.0.0.1:8081/platega/callback"
+        )
+        sent: dict = {}
+
+        class _Client:
+            def __init__(self, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            async def post(self, url, content=None, headers=None):
+                sent.update(url=url, content=content, headers=headers)
+                return type("R", (), {"status_code": 200})()
+
+        monkeypatch.setattr(webhooks.httpx, "AsyncClient", _Client)
+        await webhooks._forward_to_partner(
+            b'{"id":"x"}',
+            {"Content-Type": "application/json", "X-MerchantId": "m", "X-Secret": "s", "Host": "h"},
+        )
+
+        assert sent["url"].endswith("/platega/callback")
+        assert sent["content"] == b'{"id":"x"}'
+        assert sent["headers"]["X-MerchantId"] == "m"
+        assert sent["headers"]["X-Secret"] == "s"
+        # Host подставит клиент: чужой уронил бы запрос на несовпадении.
+        assert "Host" not in sent["headers"]
+
+    @pytest.mark.asyncio
+    async def test_empty_url_means_do_not_forward(self, monkeypatch):
+        from api.routes import webhooks
+        from core.config import settings
+
+        monkeypatch.setattr(settings.platega, "partner_callback_url", "")
+
+        def _boom(**_kwargs):
+            raise AssertionError("не должно было ходить никуда")
+
+        monkeypatch.setattr(webhooks.httpx, "AsyncClient", _boom)
+        await webhooks._forward_to_partner(b"{}", {})
+
+    @pytest.mark.asyncio
+    async def test_unreachable_partner_does_not_raise(self, monkeypatch):
+        """Провайдеру мы уже ответили 200 и обязаны отвечать: повторы вечны."""
+        import httpx as real_httpx
+
+        from api.routes import webhooks
+        from core.config import settings
+
+        monkeypatch.setattr(settings.platega, "partner_callback_url", "http://127.0.0.1:8081/x")
+
+        class _Client:
+            def __init__(self, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            async def post(self, *_args, **_kwargs):
+                raise real_httpx.ConnectError("бот перезапускается")
+
+        monkeypatch.setattr(webhooks.httpx, "AsyncClient", _Client)
+        await webhooks._forward_to_partner(b"{}", {})
