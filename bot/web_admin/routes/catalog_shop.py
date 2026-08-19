@@ -120,6 +120,62 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
         await flash(error or "Доставка сохранена.", "danger" if error else "success")
         return redirect(url_for("admin.catalog_delivery"))
 
+    @admin_bp_instance.route("/catalog/delivery/zones")
+    async def catalog_delivery_zones():
+        """Цены по тарифным зонам: до Тольятти и до Владивостока везут по-разному.
+
+        Отдельной страницей от общих настроек: там переключатели перевозчиков,
+        здесь длинные списки городов, и вместе они не читались.
+        """
+        data, error = await shop_api.delivery_zones()
+        if error:
+            await flash(error, "danger")
+        return await render_template(
+            "catalog_delivery_zones.html",
+            zones=data.get("zones", []),
+            methods=data.get("methods", []),
+            unknown=data.get("unknown", []),
+            zones_error=error,
+        )
+
+    @admin_bp_instance.route("/catalog/delivery/zones", methods=["POST"])
+    async def catalog_delivery_zones_save():
+        form = await request.form
+        methods = form.getlist("method")
+        zones = {
+            zone_id: {
+                "cities": form.get(f"cities_{zone_id}", ""),
+                "days": (form.get(f"days_{zone_id}") or "").strip(),
+                "prices": {
+                    method: {
+                        "pvz": _decimal_text(form.get(f"pvz_{zone_id}_{method}", "")),
+                        "courier": _decimal_text(form.get(f"courier_{zone_id}_{method}", "")),
+                    }
+                    for method in methods
+                },
+            }
+            for zone_id in form.getlist("zone")
+        }
+        _, error = await shop_api.save_delivery_zones(zones)
+        await flash(error or "Зоны сохранены.", "danger" if error else "success")
+        return redirect(url_for("admin.catalog_delivery_zones"))
+
+    @admin_bp_instance.route("/catalog/delivery/cities/<int:city_id>", methods=["POST"])
+    async def catalog_delivery_city(city_id: int):
+        """Разбор неопознанного города: в зону или из списка вон."""
+        form = await request.form
+        zone_id = _form_int(form, "zone_id", 0, low=0, high=10**9)
+        data, error = await shop_api.resolve_unknown_city(city_id, zone_id)
+        if error:
+            await flash(error, "danger")
+        elif not zone_id:
+            await flash("Город убран из списка.", "success")
+        elif data.get("added"):
+            await flash(f"Город добавлен в зону «{data.get('zone', '')}».", "success")
+        else:
+            await flash("Город уже был в этой зоне.", "success")
+        return redirect(url_for("admin.catalog_delivery_zones"))
+
     @admin_bp_instance.route("/catalog/promos")
     async def catalog_promos():
         """Промокоды на железо. У бота свои, на подписку, — это разные скидки."""

@@ -526,15 +526,20 @@
             {% set _catalog_url = url_for('admin.catalog_shop') %}
             {% set _catalog_delivery_url = url_for('admin.catalog_delivery') %}
             {% set _catalog_settings_url = url_for('admin.catalog_settings') %}
-            {% set on_catalog_delivery = request.path.startswith(_catalog_delivery_url) %}
+            {% set _catalog_zones_url = url_for('admin.catalog_delivery_zones') %}
+            {# Адрес зон лежит внутри адреса доставки, поэтому подсветку
+               считаем от частного к общему: иначе горели бы оба пункта. #}
+            {% set on_catalog_zones = request.path.startswith(_catalog_zones_url) %}
+            {% set on_catalog_delivery = request.path.startswith(_catalog_delivery_url)
+                                         and not on_catalog_zones %}
             {% set on_catalog_settings = request.path.startswith(_catalog_settings_url) %}
             {% set _catalog_promos_url = url_for('admin.catalog_promos') %}
             {% set on_catalog_promos = request.path.startswith(_catalog_promos_url) %}
             {% set on_catalog_models = request.path.startswith(_catalog_url)
                                        and not on_catalog_delivery and not on_catalog_settings
-                                       and not on_catalog_promos %}
+                                       and not on_catalog_promos and not on_catalog_zones %}
             {% set is_catalog = on_catalog_models or on_catalog_delivery or on_catalog_settings
-                                or on_catalog_promos %}
+                                or on_catalog_promos or on_catalog_zones %}
             <div class="tw-nav-group {% if is_catalog %}open{% endif %}" data-tw-group>
                 <div class="tw-nav-link {% if is_catalog %}active{% endif %}" data-tw-toggle>
                     <i data-lucide="package" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Каталог</span>
@@ -543,6 +548,7 @@
                 <div class="tw-nav-sub {% if is_catalog %}open{% endif %}">
                     <a href="{{ _catalog_url }}" class="{% if on_catalog_models %}active{% endif %}"><i data-lucide="boxes" class="w-3.5 h-3.5"></i> Модели</a>
                     <a href="{{ _catalog_delivery_url }}" class="{% if on_catalog_delivery %}active{% endif %}"><i data-lucide="package" class="w-3.5 h-3.5"></i> Доставка</a>
+                    <a href="{{ _catalog_zones_url }}" class="{% if on_catalog_zones %}active{% endif %}"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> Зоны доставки</a>
                     <a href="{{ _catalog_promos_url }}" class="{% if on_catalog_promos %}active{% endif %}"><i data-lucide="ticket-percent" class="w-3.5 h-3.5"></i> Промокоды</a>
                     <a href="{{ _catalog_settings_url }}" class="{% if on_catalog_settings %}active{% endif %}"><i data-lucide="settings" class="w-3.5 h-3.5"></i> Настройки</a>
                 </div>

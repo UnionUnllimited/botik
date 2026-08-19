@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Зоны доставки — {{ super() }}{% endblock %}
+
+{% block content %}
+{# Цены живут в основном приложении вместе с заказами: считает доставку оно,
+   а страница только правит числа. Города списком строк, а не таблицей, —
+   их правят целиком, вставкой из блокнота. #}
+<div class="tw-anim space-y-4 max-w-4xl">
+
+  <div class="pt-1">
+    <p class="text-[13px] tw-text-muted2 mb-1">
+      <a href="{{ url_for('admin.catalog_delivery') }}">← Доставка</a>
+    </p>
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Зоны доставки</h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">
+      Считаем от склада в Самаре. Цена и срок зависят от того, куда едет посылка:
+      в Тольятти и во Владивосток они разные. Если города нет ни в одной зоне,
+      бот не даёт оформить заказ и записывает город сюда.
+    </p>
+  </div>
+
+  {% if zones_error %}
+  <div class="tw-card p-4 text-[13px]" style="border-color: rgb(244 63 94 / .35);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 inline-block align-text-bottom"></i>
+    {{ zones_error }}
+  </div>
+  {% else %}
+
+  {% if unknown %}
+  {# Наверху, а не в конце страницы: это единственное, что требует действия
+     прямо сейчас — на том конце ждёт человек, которому не дали оформить. #}
+  <div class="tw-card p-5 space-y-3" style="border-color: rgb(245 158 11 / .45);">
+    <div class="text-[13px] font-semibold tw-text-base2">
+      Не знаем город <span class="tw-text-muted2 font-normal">· {{ unknown|length }}</span>
+    </div>
+    <div class="text-[11px] tw-text-subtle2">
+      Этим клиентам оформить заказ не дали. Добавьте город в зону — и напишите
+      человеку: он ждёт цену.
+    </div>
+
+    {% for city in unknown %}
+    <form method="post" action="{{ url_for('admin.catalog_delivery_city', city_id=city.id) }}"
+          class="flex items-end gap-3 flex-wrap border-t pt-3"
+          style="border-color: rgb(var(--admin-border));">
+      <div class="min-w-0 flex-1">
+        <div class="text-[13px] font-semibold tw-text-base2">{{ city.city }}</div>
+        <div class="text-[11px] tw-text-subtle2">
+          Просились {{ city.hits }} раз{% if city.last_seen_at %},
+          последний {{ city.last_seen_at[:16].replace('T', ' ') }}{% endif %}{% if city.tg_id %} ·
+          <a href="{{ url_for('admin.user_details', telegram_id=city.tg_id) }}">карточка клиента</a>{% endif %}
+        </div>
+      </div>
+      <div>
+        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">В какую зону</label>
+        <select name="zone_id" class="tw-input">
+          <option value="0">— убрать из списка —</option>
+          {% for zone in zones %}
+          <option value="{{ zone.id }}">{{ zone.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Применить</span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.catalog_delivery_zones_save') }}" class="space-y-4">
+    {% for method in methods %}
+    <input type="hidden" name="method" value="{{ method.method }}">
+    {% endfor %}
+
+    {% for zone in zones %}
+    <div class="tw-card p-5 space-y-4">
+      <input type="hidden" name="zone" value="{{ zone.id }}">
+
+      <div class="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <div class="text-[13px] font-semibold tw-text-base2">{{ zone.title }}</div>
+          <div class="text-[11px] tw-text-subtle2">{{ zone.cities_count }} городов</div>
+        </div>
+        <div class="max-w-[10rem]">
+          <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Срок</label>
+          <input type="text" name="days_{{ zone.id }}" value="{{ zone.days }}"
+                 placeholder="2–4 дня" class="tw-input">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {% for method in methods %}
+        <div class="space-y-2">
+          <div class="text-[12px] font-semibold tw-text-base2">{{ method.title }}</div>
+          <div>
+            <label class="block text-[11px] tw-text-subtle2 mb-1">В пункт выдачи, ₽</label>
+            <input type="text" name="pvz_{{ zone.id }}_{{ method.method }}"
+                   value="{{ zone.prices.get(method.method, {}).get('pvz', '') }}" class="tw-input">
+          </div>
+          <div>
+            <label class="block text-[11px] tw-text-subtle2 mb-1">Курьером, ₽</label>
+            <input type="text" name="courier_{{ zone.id }}_{{ method.method }}"
+                   value="{{ zone.prices.get(method.method, {}).get('courier', '') }}" class="tw-input">
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div>
+        <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Города — по одному в строке
+        </label>
+        <textarea name="cities_{{ zone.id }}" rows="6" class="tw-input font-mono text-[12px]"
+                  spellcheck="false">{{ zone.cities }}</textarea>
+        <div class="text-[11px] tw-text-subtle2 mt-1">
+          Регистр, «ё» и «г.» перед названием значения не имеют: «г. Королёв»
+          и «королев» — один город.
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="flex justify-end">
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить зоны</span>
+      </button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -133,6 +133,48 @@ PAGES = {
         "free_from": "0.00",
         "delivery_error": "",
     },
+    "catalog_delivery_zones.html": {
+        "zones": [
+            {
+                "id": 1,
+                "code": "home",
+                "title": "Самара и область",
+                "days": "1–2 дня",
+                "cities": "Самара\nТольятти",
+                "cities_count": 2,
+                "prices": {
+                    "cdek": {"pvz": "200.00", "courier": "350.00"},
+                    "yandex": {"pvz": "150.00", "courier": "300.00"},
+                },
+            },
+            # У дальней зоны нет цены Яндекса: перевозчика завели позже зон,
+            # и страница обязана нарисовать пустое поле, а не упасть.
+            {
+                "id": 6,
+                "code": "far_east",
+                "title": "Дальний Восток",
+                "days": "7–14 дней",
+                "cities": "Владивосток",
+                "cities_count": 1,
+                "prices": {"cdek": {"pvz": "950.00", "courier": "1200.00"}},
+            },
+        ],
+        "methods": [
+            {"method": "cdek", "title": "СДЭК"},
+            {"method": "yandex", "title": "Яндекс Go"},
+        ],
+        "unknown": [
+            {
+                "id": 3,
+                "city": "Урюпинск",
+                "hits": 4,
+                "tg_id": 614685408,
+                "last_seen_at": "2026-08-18T12:30:00+00:00",
+            },
+            {"id": 4, "city": "ъ", "hits": 1, "tg_id": 0, "last_seen_at": ""},
+        ],
+        "zones_error": "",
+    },
     "catalog_settings.html": {
         "catalog_enabled": True,
         "specs_limit": 8,
@@ -354,6 +396,7 @@ def env() -> jinja2.Environment:
 
 OURS = {
     "catalog_delivery.html",
+    "catalog_delivery_zones.html",
     "catalog_settings.html",
     "catalog_promos.html",
     "catalog_shop.html",

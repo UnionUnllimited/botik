@@ -725,9 +725,34 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         await query.answer()
 
     async def ask_carrier(target, state: FSMContext, *, edit: bool):
-        """Экран выбора перевозчика. Способов может не быть вовсе —
-        тогда заказ оформляется без доставки, а не упирается в пустой список."""
-        data, error = await shop_api.delivery_options()
+        """Экран выбора перевозчика с ценами для города клиента.
+
+        Способов может не быть вовсе — тогда заказ оформляется без доставки,
+        а не упирается в пустой список. А вот незнакомый город оформление
+        останавливает: см. ниже.
+        """
+        saved = await state.get_data()
+        user_id = getattr(getattr(target, "from_user", None), "id", 0)
+        data, error = await shop_api.delivery_options(saved.get("city", ""), user_id)
+
+        # Города нет ни в одной зоне. Цену наугад не называем: промахнёшься вверх —
+        # отпугнёшь клиента, вниз — повезёшь через полстраны себе в убыток.
+        # Основное приложение уже записало город оператору, он посчитает руками.
+        if data.get("unknown_city"):
+            await state.clear()
+            payload = {
+                "text": text("text_order_unknown_city"),
+                "reply_markup": InlineKeyboardBuilder()
+                .row(btn("btn_back_to_main", callback_data="back_to_main"))
+                .as_markup(),
+                "link_preview_options": NO_PREVIEW,
+            }
+            if edit:
+                await edit_screen(target.message, **payload)
+            else:
+                await target.answer(**payload)
+            return None
+
         options = data.get("options", [])
         if error or not options:
             if error:
@@ -831,13 +856,18 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         await query.answer()
 
     @dp.callback_query(F.data.startswith("shop_carrier:"))
-    async def cq_carrier(query: CallbackQuery):
+    async def cq_carrier(query: CallbackQuery, state: FSMContext):
         if await blocked(query):
             return
         method = query.data.split(":")[1]
-        data, error = await shop_api.delivery_options()
+        data, error = await shop_api.delivery_options(
+            (await state.get_data()).get("city", ""), query.from_user.id
+        )
         if error:
             return await show_error(query, error)
+        if data.get("unknown_city"):
+            # Город убрали из зоны, пока клиент выбирал перевозчика.
+            return await ask_carrier(query, state, edit=True)
         option = next((o for o in data.get("options", []) if o.get("method") == method), None)
         if option is None:
             return await query.answer("Этот способ доставки выключен", show_alert=True)

@@ -9,14 +9,18 @@
       <a href="{{ url_for('admin.catalog_shop') }}">← Каталог</a>
     </p>
     <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Доставка</h1>
-    <p class="text-[13px] tw-text-muted2 mt-1">Эти цены бот показывает при оформлении заказа и прибавляет к сумме. Выключенный способ клиенту не предлагается.</p>
+    <p class="text-[13px] tw-text-muted2 mt-1">
+      Кто возит и от какой суммы бесплатно. Выключенный способ клиенту не предлагается.
+      Цена берётся из <a href="{{ url_for('admin.catalog_delivery_zones') }}">зон</a> — по городу
+      клиента; здешние числа остаются на случай, если перевозчика в зоне ещё не завели.
+    </p>
   </div>
 
   {% if not delivery_error %}
   <form method="post" action="{{ url_for('admin.catalog_delivery_save') }}" class="tw-card p-5 space-y-4">
     <div class="text-[13px] font-semibold tw-text-base2">Доставка</div>
     <div class="text-[11px] tw-text-subtle2">
-      Эти цены бот показывает при оформлении и прибавляет к сумме заказа.
+      Запасные цены: их берут, только если у зоны нет цены этого перевозчика.
       Выключенный способ клиенту не предлагается.
     </div>
 

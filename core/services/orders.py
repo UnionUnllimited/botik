@@ -127,11 +127,15 @@ async def calculate_totals(
         totals.discount = totals.promo_result.discount
 
     if draft.delivery_method is not None and totals.product is not None:
+        # Город передаём: цена доставки зависит от зоны, а незнакомый город
+        # поднимет `UnknownCityError` и остановит оформление. Так и задумано —
+        # угадать цену значит либо отпугнуть клиента, либо повезти в убыток.
         totals.delivery = await delivery_service.calculate_price(
             session,
             method=draft.delivery_method,
             to_pvz=draft.delivery_to_pvz,
             goods_total=totals.subtotal - totals.discount,
+            city=draft.customer_city,
         )
 
     totals.subtotal = _round(totals.subtotal)

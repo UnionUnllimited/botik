@@ -15,6 +15,7 @@ from decimal import Decimal
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod
 from core.models import Delivery, DeliveryZone, DeliveryZonePrice, Order, UnknownCity
@@ -245,4 +246,68 @@ async def zone_prices(session: AsyncSession, zone: DeliveryZone) -> dict[Deliver
         select(DeliveryZonePrice).where(DeliveryZonePrice.zone_id == zone.id)
     )
     return {row.method: row for row in rows}
+
+
+async def list_zones(session: AsyncSession) -> list[DeliveryZone]:
+    """Зоны с ценами — для страницы настроек. Порядок от ближней к дальней."""
+    zones = await session.scalars(
+        select(DeliveryZone).options(selectinload(DeliveryZone.prices)).order_by(
+            DeliveryZone.sort_order, DeliveryZone.id
+        )
+    )
+    return list(zones)
+
+
+async def set_zone_price(
+    session: AsyncSession,
+    zone: DeliveryZone,
+    method: DeliveryMethod,
+    *,
+    pvz: Decimal,
+    courier: Decimal,
+) -> None:
+    """Заводит или правит цену перевозчика в зоне.
+
+    Перевозчика могли включить уже после того, как зоны завели, — тогда строки
+    цены ещё нет, и её надо создать, а не молча потерять введённое.
+    """
+    row = await session.scalar(
+        select(DeliveryZonePrice).where(
+            DeliveryZonePrice.zone_id == zone.id, DeliveryZonePrice.method == method
+        )
+    )
+    if row is None:
+        session.add(
+            DeliveryZonePrice(zone_id=zone.id, method=method, pvz_price=pvz, courier_price=courier)
+        )
+        return
+    row.pvz_price = pvz
+    row.courier_price = courier
+
+
+async def pending_cities(session: AsyncSession) -> list[UnknownCity]:
+    """Города, которых нет в зонах. Частые сверху: туда просятся чаще всего."""
+    rows = await session.scalars(
+        select(UnknownCity)
+        .where(UnknownCity.resolved.is_(False))
+        .order_by(UnknownCity.hits.desc(), UnknownCity.last_seen_at.desc())
+    )
+    return list(rows)
+
+
+async def add_city_to_zone(session: AsyncSession, zone: DeliveryZone, city: str) -> bool:
+    """Дописывает город в зону. `False` — он там уже есть.
+
+    Сравниваем нормализованно: оператор вобьёт «Ханты-Мансийск», а в списке
+    лежит «ханты мансийск» — это один город, и второй строкой он не нужен.
+    """
+    target = normalize_city(city)
+    if not target:
+        return False
+    lines = [line.strip() for line in (zone.cities or "").splitlines() if line.strip()]
+    if any(normalize_city(line) == target for line in lines):
+        return False
+    lines.append(city.strip())
+    zone.cities = "\n".join(lines)
+    return True
 
