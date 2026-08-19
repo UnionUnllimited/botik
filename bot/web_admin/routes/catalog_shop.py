@@ -120,6 +120,42 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
         await flash(error or "Доставка сохранена.", "danger" if error else "success")
         return redirect(url_for("admin.catalog_delivery"))
 
+    @admin_bp_instance.route("/catalog/promos")
+    async def catalog_promos():
+        """Промокоды на железо. У бота свои, на подписку, — это разные скидки."""
+        items, error = await shop_api.promos()
+        if error:
+            await flash(error, "danger")
+        return await render_template("catalog_promos.html", promos=items, promo_error=error)
+
+    @admin_bp_instance.route("/catalog/promos", methods=["POST"])
+    async def catalog_promo_create():
+        form = await request.form
+        _, error = await shop_api.promo_create(
+            {
+                "code": form.get("code", ""),
+                "description": form.get("description", ""),
+                "discount_type": form.get("discount_type", "percent"),
+                "value": form.get("value", "0"),
+                "min_amount": form.get("min_amount", "0"),
+                "max_uses": form.get("max_uses", "0"),
+                "per_user_limit": form.get("per_user_limit", "1"),
+                "valid_until": form.get("valid_until", ""),
+                "new_clients_only": form.get("new_clients_only") == "on",
+            }
+        )
+        await flash(error or "Промокод заведён.", "danger" if error else "success")
+        return redirect(url_for("admin.catalog_promos"))
+
+    @admin_bp_instance.route("/catalog/promos/<int:promo_id>/<action>", methods=["POST"])
+    async def catalog_promo_action(promo_id: int, action: str):
+        if action not in ("toggle", "delete"):
+            return redirect(url_for("admin.catalog_promos"))
+        _, error = await shop_api.promo_action(promo_id, action)
+        if error:
+            await flash(error, "danger")
+        return redirect(url_for("admin.catalog_promos"))
+
     @admin_bp_instance.route("/catalog/new")
     async def catalog_product_new():
         return await render_template(

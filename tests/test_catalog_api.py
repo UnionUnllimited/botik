@@ -322,3 +322,18 @@ class TestRoutersFilters:
     # Проверки «пустой фильтр разрешён» тут нет намеренно: она доходит
     # до обработчика, а базы в этой сборке тестов не поднимается. Пустое
     # значение разрешено самим шаблоном `^(online|offline)?$`.
+
+
+class TestPromoManagement:
+    """Промокоды каталога заводятся ручкой, а раньше — только запросом в базу."""
+
+    def test_listing_needs_token(self, client, token):
+        assert client.get("/api/v1/catalog/manage/promos").status_code == 401
+
+    def test_creating_needs_token(self, client, token):
+        response = client.post("/api/v1/catalog/manage/promos", json={"code": "X"})
+        assert response.status_code == 401
+
+    def test_disabled_without_token(self, client, monkeypatch):
+        monkeypatch.setattr(settings.api, "fleet_token", SecretStr(""))
+        assert client.get("/api/v1/catalog/manage/promos").status_code == 404

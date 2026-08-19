@@ -362,3 +362,23 @@ async def set_device_status(device_id: int, status: str) -> tuple[dict, str]:
 
 async def set_device_note(device_id: int, note: str) -> tuple[dict, str]:
     return await post(f"/api/v1/fleet/routers/{device_id}/note", {"note": note})
+
+
+# --- Промокоды каталога ------------------------------------------------------
+#
+# Скидки на железо считает основное приложение вместе с ценой заказа. У бота
+# свои промокоды, на подписку, и это разные вещи: один даёт скидку на роутер
+# в посылке, другой — дни к сроку.
+
+
+async def promos() -> tuple[list[dict], str]:
+    data, error = await get("/api/v1/catalog/manage/promos")
+    return data.get("promos", []), error
+
+
+async def promo_create(payload: dict) -> tuple[dict, str]:
+    return await post("/api/v1/catalog/manage/promos", payload)
+
+
+async def promo_action(promo_id: int, action: str) -> tuple[dict, str]:
+    return await post(f"/api/v1/catalog/manage/promos/{promo_id}/{action}", {})

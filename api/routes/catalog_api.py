@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -39,9 +40,20 @@ from core.enums import (
     OrderStatus,
     PaymentProviderName,
     PaymentPurpose,
+    PromoDiscountType,
     VatCode,
 )
-from core.models import Device, Notification, Order, Payment, Plan, Product, Subscription, User
+from core.models import (
+    Device,
+    Notification,
+    Order,
+    Payment,
+    Plan,
+    Product,
+    PromoCode,
+    Subscription,
+    User,
+)
 from core.security import normalize_mac
 from core.services import activation, media, settings_service
 from core.services import delivery as delivery_service
@@ -1238,4 +1250,125 @@ async def cancel_order(
 
     order_service.set_status(order, OrderStatus.CANCELLED, reason="Отменён клиентом в боте")
     log.info("catalog.order_cancelled", order_id=order.id, number=order.public_number)
+    return {"ok": True}
+
+
+# ── Промокоды каталога ────────────────────────────────────────────────────────
+#
+# Скидки на железо — наши: цену заказа считаем мы, и промокод участвует в этом
+# расчёте. У бота свои промокоды, на подписку, и это разные вещи: один даёт
+# скидку на роутер в посылке, другой — дни к сроку.
+#
+# Раздел удалён вместе с нашей админкой, и с тех пор промокод в боте применялся,
+# а завести его можно было только запросом в базу.
+
+
+def _promo_row(promo: PromoCode) -> dict:
+    return {
+        "id": promo.id,
+        "code": promo.code,
+        "description": promo.description,
+        "discount_type": str(promo.discount_type),
+        "value": str(promo.value),
+        "max_uses": promo.max_uses,
+        "used_count": promo.used_count,
+        "per_user_limit": promo.per_user_limit,
+        "min_amount": str(promo.min_amount),
+        "valid_until": promo.valid_until.isoformat() if promo.valid_until else None,
+        "new_clients_only": promo.new_clients_only,
+        "is_active": promo.is_active,
+    }
+
+
+@router.get("/manage/promos")
+async def manage_promos(session: AsyncSession = Depends(get_session)) -> dict:
+    """Промокоды каталога: список для страницы в админке."""
+    promos = await session.scalars(select(PromoCode).order_by(PromoCode.id.desc()))
+    return {"promos": [_promo_row(promo) for promo in promos]}
+
+
+@router.post("/manage/promos")
+async def manage_promo_create(
+    payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Заводит промокод. Код нормализуется — сравнение идёт по верхнему регистру."""
+    code = str(payload.get("code") or "").strip().upper()
+    if not code or len(code) > 32:
+        return {"ok": False, "error": "Код нужен, не длиннее 32 символов."}
+    if not code.replace("-", "").replace("_", "").isalnum():
+        return {"ok": False, "error": "В коде только латиница, цифры, дефис и подчёркивание."}
+    if await session.scalar(select(PromoCode.id).where(PromoCode.code == code)):
+        return {"ok": False, "error": "Такой код уже есть."}
+
+    discount_type = str(payload.get("discount_type") or "percent")
+    if discount_type not in (PromoDiscountType.PERCENT, PromoDiscountType.FIXED):
+        return {"ok": False, "error": "Тип скидки — процент или рубли."}
+    try:
+        value = Decimal(str(payload.get("value") or "0")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return {"ok": False, "error": "Размер скидки — число."}
+    if value <= 0:
+        return {"ok": False, "error": "Скидка должна быть больше нуля."}
+    if discount_type == PromoDiscountType.PERCENT and value > 100:
+        return {"ok": False, "error": "Процент не может быть больше 100."}
+
+    def _int(key: str, default: int) -> int:
+        try:
+            return max(0, int(payload.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    valid_until = None
+    raw_until = str(payload.get("valid_until") or "").strip()
+    if raw_until:
+        try:
+            valid_until = dt.datetime.fromisoformat(raw_until).replace(tzinfo=dt.UTC)
+        except ValueError:
+            return {"ok": False, "error": "Дата окончания — в виде ГГГГ-ММ-ДД."}
+
+    session.add(
+        PromoCode(
+            code=code,
+            description=str(payload.get("description") or "")[:255],
+            discount_type=PromoDiscountType(discount_type),
+            value=value,
+            max_uses=_int("max_uses", 0),
+            per_user_limit=_int("per_user_limit", 1),
+            min_amount=Decimal(str(payload.get("min_amount") or "0")).quantize(Decimal("0.01")),
+            valid_until=valid_until,
+            new_clients_only=bool(payload.get("new_clients_only")),
+        )
+    )
+    log.info("catalog.promo_created", code=code)
+    return {"ok": True}
+
+
+@router.post("/manage/promos/{promo_id}/toggle")
+async def manage_promo_toggle(
+    promo_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Включает и выключает код. Удаление отдельно: у кода есть история
+    применений, и снять его с продажи чаще нужно временно."""
+    promo = await session.get(PromoCode, promo_id)
+    if promo is None:
+        raise HTTPException(status_code=404, detail="Промокод не найден")
+    promo.is_active = not promo.is_active
+    return {"ok": True, "is_active": promo.is_active}
+
+
+@router.post("/manage/promos/{promo_id}/delete")
+async def manage_promo_delete(
+    promo_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Удаляет код вместе с историей применений.
+
+    Использованный код удалять не даём: на него ссылаются заказы, и «почему
+    здесь скидка» после удаления не восстановить.
+    """
+    promo = await session.get(PromoCode, promo_id)
+    if promo is None:
+        raise HTTPException(status_code=404, detail="Промокод не найден")
+    if promo.used_count:
+        return {"ok": False, "error": "Код уже применяли — его можно только выключить."}
+    await session.delete(promo)
     return {"ok": True}

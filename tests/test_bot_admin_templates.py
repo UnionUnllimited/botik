@@ -109,6 +109,24 @@ PAGES = {
         "next_statuses": ["packing", "cancelled"],
         "status_titles": {"packing": "Собираем", "cancelled": "Отменён", "paid": "Оплачен"},
     },
+    "catalog_promos.html": {
+        "promo_error": "",
+        "promos": [
+            {
+                "id": 1, "code": "ROUTER10", "description": "Рассылка на 12 августа",
+                "discount_type": "percent", "value": "10.00", "max_uses": 100,
+                "used_count": 3, "per_user_limit": 1, "min_amount": "5000.00",
+                "valid_until": "2026-09-01T00:00:00+00:00",
+                "new_clients_only": True, "is_active": True,
+            },
+            {
+                "id": 2, "code": "SALE500", "description": "",
+                "discount_type": "fixed", "value": "500.00", "max_uses": 0,
+                "used_count": 0, "per_user_limit": 0, "min_amount": "0.00",
+                "valid_until": None, "new_clients_only": False, "is_active": False,
+            },
+        ],
+    },
     "catalog_shop.html": {"products": [PRODUCT], "catalog_error": ""},
     "catalog_delivery.html": {
         "delivery": DELIVERY_OPTIONS,
@@ -308,6 +326,7 @@ def env() -> jinja2.Environment:
 OURS = {
     "catalog_delivery.html",
     "catalog_settings.html",
+    "catalog_promos.html",
     "catalog_shop.html",
     "catalog_shop_form.html",
     "devices_stock.html",
