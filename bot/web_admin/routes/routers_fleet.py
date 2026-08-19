@@ -195,7 +195,6 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
 
     # ── Списки доменов ────────────────────────────────────────────────────────
 
-    @admin_bp_instance.route("/lists")
     async def _render_lists(imported: dict | None = None):
         """Собирает страницу списков.
 
@@ -219,6 +218,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             config=data.get("config") or {},
         )
 
+    @admin_bp_instance.route("/lists")
     async def domain_lists_page():
         """Источники, свой список и итог прошлой сборки.
 
