@@ -24,6 +24,7 @@ from worker.tasks import (
     domain_lists,
     frpc_config,
     maintenance,
+    monitoring,
     payments,
     routers,
     subscriptions,
@@ -97,6 +98,14 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=30),
         id="refresh_subscription_statuses",
         name="Пересчёт статусов подписок",
+    )
+    # Сводка оператору — утром, вместе с напоминаниями клиентам: и то и другое
+    # про «кому сегодня звонить», и разносить их по разным часам незачем.
+    scheduler.add_job(
+        instrumented("fleet_daily_digest", monitoring.daily_digest),
+        CronTrigger(hour=7, minute=10),
+        id="fleet_daily_digest",
+        name="Сводка по парку оператору (10:10 МСК)",
     )
     scheduler.add_job(
         instrumented("subscription_reminders", subscriptions.send_reminders),
