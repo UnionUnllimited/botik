@@ -123,3 +123,43 @@ class TestSshPassword:
         from core.services.router_shell import derive_password
 
         assert derive_password("D4:0D:AB:03:4B:CE", "other") != "7600a1bd651d639c"
+
+
+class TestModelFromBoard:
+    """Модель показывают все экраны, а заполняла её до сих пор пустота.
+
+    Телеметрия приезжает с именем платы и складывалась в `board`, а экраны
+    читают `model` — в парке у каждого устройства стояло «—».
+    """
+
+    def _stats(self, board: str):
+        from core.services.routers import parse_stats
+
+        return parse_stats({"board": board})
+
+    def test_model_filled_from_board(self):
+        from core.models import Device
+        from core.services.routers import apply_stats
+
+        device = Device(mac="A0:B1:C2:D3:E4:F5", model="")
+        apply_stats(device, self._stats("zbt-z8103ax"))
+        assert device.model == "zbt-z8103ax"
+        assert device.board == "zbt-z8103ax"
+
+    def test_operator_name_is_not_overwritten(self):
+        """Оператор мог назвать устройство по-своему — опрос это не затирает."""
+        from core.models import Device
+        from core.services.routers import apply_stats
+
+        device = Device(mac="A0:B1:C2:D3:E4:F5", model="Роутер Basic (склад)")
+        apply_stats(device, self._stats("zbt-z8103ax"))
+        assert device.model == "Роутер Basic (склад)"
+        assert device.board == "zbt-z8103ax"
+
+    def test_empty_board_changes_nothing(self):
+        from core.models import Device
+        from core.services.routers import apply_stats
+
+        device = Device(mac="A0:B1:C2:D3:E4:F5", model="")
+        apply_stats(device, self._stats(""))
+        assert device.model == ""

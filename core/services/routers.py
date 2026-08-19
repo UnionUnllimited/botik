@@ -162,6 +162,12 @@ def apply_stats(device: Device, stats: RouterStats, *, now: dt.datetime | None =
     moment = now or utcnow()
     if stats.board:
         device.board = stats.board[:64]
+        # Модель показывают все экраны, а заполнял её до сих пор никто: имя
+        # платы приезжало в `board` и там оставалось. Пишем и в `model`, но
+        # только если он пуст — оператор мог назвать устройство по-своему,
+        # и затирать это телеметрией при каждом опросе нельзя.
+        if not device.model:
+            device.model = stats.board[:64]
     if stats.fw_version:
         device.fw_version = stats.fw_version[:32]
     device.uptime_sec = stats.uptime_sec or device.uptime_sec

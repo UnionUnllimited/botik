@@ -164,7 +164,7 @@ async def list_routers(
             {
                 "id": device.id,
                 "mac": device.mac,
-                "model": device.model or "",
+                "model": device.model or device.board or "",
                 "status": str(device.status),
                 "online": online,
                 "last_seen": _iso(max((value for value in seen if value), default=None)),
@@ -220,7 +220,7 @@ def _device_payload(device, *, now):
     return {
         "id": device.id,
         "mac": device.mac,
-        "model": device.model or "",
+        "model": device.model or device.board or "",
         "fw_version": device.fw_version or "",
         "status": str(device.status),
         "status_label": _label(str(device.status), DEVICE_LABELS),
@@ -525,7 +525,7 @@ def _client_router_row(device: Device, *, now) -> dict:
     return {
         "id": device.id,
         "mac": device.mac,
-        "model": device.model or "",
+        "model": device.model or device.board or "",
         "fw_version": device.fw_version or "",
         "status": str(device.status),
         "online": device.frp_online
@@ -578,7 +578,7 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
     return {
         "has_client": user is not None,
         "routers": [_client_router_row(device, now=now) for device in devices],
-        "free": [{"mac": device.mac, "model": device.model or ""} for device in free],
+        "free": [{"mac": device.mac, "model": device.model or device.board or ""} for device in free],
         "subscription": {
             "status": str(current.status) if current else "",
             "label": _label(str(current.status), SUBSCRIPTION_LABELS) if current else "",
@@ -734,7 +734,7 @@ async def stock_list(
             {
                 "id": device.id,
                 "mac": device.mac,
-                "model": device.model or "",
+                "model": device.model or device.board or "",
                 "serial": device.serial or "",
                 "status": str(device.status),
                 "client": device.user.display_name if device.user else "",
