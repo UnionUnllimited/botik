@@ -466,7 +466,7 @@ async def _admin_auth_guard():
                 ('/api/ip_lookup', 'users'),
                 ('/users', 'users'), ('/payments', 'payments'), ('/referral', 'bonuses'), ('/referrals', 'bonuses'), ('/partners', 'bonuses'), ('/promo', 'bonuses'),
                 ('/tariffs', 'tariffs'), ('/traffic-topup', 'tariffs'), ('/traffic_topup', 'tariffs'),
-                ('/migrate', 'tools'), ('/tasks', 'tools'), ('/reports', 'tools'),
+                ('/migrate', 'tools'), ('/tasks', 'tools'),
                 ('/news', 'tools'), ('/inbound-templates', 'tools'), ('/services', 'tools'),
                 ('/bulk-actions', 'tools'),
                 ('/updates', 'updates'),
@@ -1491,8 +1491,6 @@ from web_admin.routes.promotion import attach_promotion_routes
 attach_promotion_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.partners import attach_partners_routes
 attach_partners_routes(admin_bp, async_query_db, async_execute_db)
-from web_admin.routes.reports import attach_reports_routes
-attach_reports_routes(admin_bp, async_query_db, async_execute_db)
 from web_admin.routes.remnawave import attach_remnawave_routes
 attach_remnawave_routes(admin_bp)
 from web_admin.routes.pwa import attach_pwa_routes

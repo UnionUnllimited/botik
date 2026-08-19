@@ -228,29 +228,15 @@ def attach_tariff_routes(admin_bp_instance, query_db_func, execute_db_func):
             }
             total_row = await query_db_func("SELECT COUNT(*) AS c FROM tariffs", (), one=True)
             total_tariffs = int((dict(total_row).get('c') if total_row else 0) or 0)
-            enabled_row = await query_db_func(
-                "SELECT value FROM settings WHERE key = 'device_upgrade_enabled'", (), one=True,
-            )
-            device_upgrade_enabled = bool(
-                enabled_row and str(dict(enabled_row).get('value', '0')).strip() in _TRUTHY
-            )
             return await render_template(
                 'tariffs_methods.html',
                 counts=counts,
                 total_tariffs=total_tariffs,
-                device_upgrade_enabled=device_upgrade_enabled,
             )
 
         dashboard = await _build_tariff_dashboard(query_db_func)
-        enabled_row = await query_db_func(
-            "SELECT value FROM settings WHERE key = 'device_upgrade_enabled'", (), one=True,
-        )
-        device_upgrade_enabled = bool(
-            enabled_row and str(dict(enabled_row).get('value', '0')).strip() in _TRUTHY
-        )
         return await render_template(
             'tariffs_dashboard.html',
-            device_upgrade_enabled=device_upgrade_enabled,
             tariff_methods=TARIFF_PAYMENT_METHODS,
             **dashboard,
         )

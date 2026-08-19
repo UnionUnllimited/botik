@@ -1140,62 +1140,6 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                         'Личный кабинет: подписка истекла (кнопки «Открыть кабинет» и «Продлить» добавляются автоматически)',
                     ),
                 )
-            if 'text_device_upgrade_select' not in existing:
-                await async_execute_db(
-                    "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
-                    (
-                        'text_device_upgrade_select',
-                        '📱 <b>Расширение лимита устройств</b>\n\n'
-                        '📊 Текущий лимит: <b>{current_limit}</b>\n'
-                        '📅 Подписка до: <b>{subscription_end_date}</b>\n'
-                        '⏳ Осталось: <b>{days_left} {days_left_word}</b>\n\n'
-                        'Выберите новый лимит:',
-                        'Расширение лимита: выбор нового лимита. Переменные: {current_limit}, {subscription_end_date}, {days_left}, {days_left_word}',
-                    ),
-                )
-            if 'text_device_upgrade_confirm' not in existing:
-                await async_execute_db(
-                    "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
-                    (
-                        'text_device_upgrade_confirm',
-                        '📱 <b>Расширение лимита устройств</b>\n\n'
-                        '🔄 Лимит: {old_limit} → <b>{new_limit} {new_limit_word}</b>\n'
-                        '📅 Срок подписки: до <b>{subscription_end_date}</b>\n'
-                        '💰 К оплате: <b>{price}</b> (за {days_left} {days_left_word})\n'
-                        '{monthly_line}\n'
-                        'Выберите способ оплаты:',
-                        'Расширение лимита: после выбора лимита. Переменные: {old_limit}, {new_limit}, {new_limit_word}, {subscription_end_date}, {price}, {days_left}, {days_left_word}, {monthly_line}',
-                    ),
-                )
-            if 'text_device_upgrade_payment' not in existing:
-                await async_execute_db(
-                    "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
-                    (
-                        'text_device_upgrade_payment',
-                        '💳 <b>Оплата расширения лимита</b>\n\n'
-                        '🔄 Лимит: {old_limit} → <b>{new_limit} {new_limit_word}</b>\n'
-                        '💰 К оплате: <b>{price}</b>\n'
-                        '\nНажмите кнопку ниже для оплаты:',
-                        'Расширение лимита: экран оплаты (кнопка «Перейти к оплате» добавляется автоматически). Переменные: {old_limit}, {new_limit}, {new_limit_word}, {price}',
-                    ),
-                )
-            from src.texts import (
-                DEVICE_UPGRADE_REASON_DEFAULTS,
-                DEVICE_UPGRADE_REASON_DESCRIPTIONS,
-                DEVICE_UPGRADE_REASON_ORDER,
-                device_upgrade_reason_setting_key,
-            )
-            for reason_id in DEVICE_UPGRADE_REASON_ORDER:
-                reason_key = device_upgrade_reason_setting_key(reason_id)
-                if reason_key not in existing:
-                    await async_execute_db(
-                        "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
-                        (
-                            reason_key,
-                            DEVICE_UPGRADE_REASON_DEFAULTS[reason_id],
-                            f'Расширение лимита: отказ — {DEVICE_UPGRADE_REASON_DESCRIPTIONS[reason_id]}',
-                        ),
-                    )
             if 'text_traffic_renewal_payment' not in existing:
                 await async_execute_db(
                     "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
@@ -1248,7 +1192,6 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             "📘 О сервисе и инструкции": [],
             "💬 Поддержка": [],
             "🌐 Личный кабинет": [],
-            "📱 Расширение лимита устройств": [],
             "📈 Докупка трафика": [],
             "🤖 Защита от ботов": [],
         }
@@ -1270,19 +1213,6 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             'text_website_cabinet_expired',
         )
         cabinet_text_order = {k: i for i, k in enumerate(cabinet_text_keys)}
-        from src.texts import (
-            DEVICE_UPGRADE_REASON_DEFAULTS,
-            DEVICE_UPGRADE_REASON_DESCRIPTIONS,
-            DEVICE_UPGRADE_REASON_ORDER,
-            device_upgrade_reason_setting_key,
-        )
-        device_upgrade_text_keys = (
-            'text_device_upgrade_select',
-            'text_device_upgrade_confirm',
-            'text_device_upgrade_payment',
-            *(device_upgrade_reason_setting_key(rid) for rid in DEVICE_UPGRADE_REASON_ORDER),
-        )
-        device_upgrade_text_order = {k: i for i, k in enumerate(device_upgrade_text_keys)}
         traffic_renewal_text_keys = (
             'text_traffic_renewal_select',
             'text_traffic_renewal_confirm',
@@ -1314,13 +1244,11 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                 grouped_settings["💠 Партнёрская программа"].append(setting)
             elif key in cabinet_text_keys:
                 grouped_settings["🌐 Личный кабинет"].append(setting)
-            elif key in device_upgrade_text_keys:
-                grouped_settings["📱 Расширение лимита устройств"].append(setting)
             elif key in traffic_renewal_text_keys:
                 grouped_settings["📈 Докупка трафика"].append(setting)
             elif key in ('text_support',):
                 grouped_settings["💬 Поддержка"].append(setting)
-            elif key.startswith('text_about') or key.startswith('text_trial_success'):
+            elif key.startswith('text_about'):
                 grouped_settings["📘 О сервисе и инструкции"].append(setting)
         grouped_settings["🔔 Уведомления"].sort(
             key=lambda s: notification_text_order.get(s['key'], 99)
@@ -1330,9 +1258,6 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
         )
         grouped_settings["🌐 Личный кабинет"].sort(
             key=lambda s: cabinet_text_order.get(s['key'], 99)
-        )
-        grouped_settings["📱 Расширение лимита устройств"].sort(
-            key=lambda s: device_upgrade_text_order.get(s['key'], 99)
         )
         grouped_settings["📈 Докупка трафика"].sort(
             key=lambda s: traffic_renewal_text_order.get(s['key'], 99)

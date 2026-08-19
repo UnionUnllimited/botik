@@ -644,7 +644,7 @@
 
             {# Инструменты #}
             {% if moderator_can_see('tools') %}
-            {% set is_tools = request.path == url_for('admin.migrate_to_remnawave_page') or request.path == url_for('admin.tasks_list') or request.path.startswith(url_for('admin.reports_index')) or request.path == url_for('admin.news_templates_list') or request.path == url_for('admin.services_page') or request.path == url_for('admin.bulk_actions_page') or (moderator_can_see('updates') and request.path == url_for('admin.updates')) %}
+            {% set is_tools = request.path == url_for('admin.migrate_to_remnawave_page') or request.path == url_for('admin.tasks_list') or request.path == url_for('admin.news_templates_list') or request.path == url_for('admin.services_page') or request.path == url_for('admin.bulk_actions_page') or (moderator_can_see('updates') and request.path == url_for('admin.updates')) %}
             <div class="tw-nav-section tw-sidebar-label">Инструменты</div>
             <a href="{{ url_for('admin.domain_lists_page') }}"
                class="tw-nav-link {% if request.path.startswith(url_for('admin.domain_lists_page')) %}active{% endif %}">
@@ -658,7 +658,6 @@
                 <div class="tw-nav-sub {% if is_tools %}open{% endif %}">
                     <a href="{{ url_for('admin.migrate_to_remnawave_page') }}" class="{% if request.path == url_for('admin.migrate_to_remnawave_page') %}active{% endif %}"><i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i> Миграция</a>
                     <a href="{{ url_for('admin.tasks_list') }}" class="{% if request.path == url_for('admin.tasks_list') %}active{% endif %}"><i data-lucide="list-todo" class="w-3.5 h-3.5"></i> Задачи</a>
-                    <a href="{{ url_for('admin.reports_index') }}" class="{% if request.path.startswith(url_for('admin.reports_index')) %}active{% endif %}"><i data-lucide="clipboard-list" class="w-3.5 h-3.5"></i> Отчеты</a>
                     <a href="{{ url_for('admin.news_templates_list') }}" class="{% if request.path == url_for('admin.news_templates_list') %}active{% endif %}"><i data-lucide="megaphone" class="w-3.5 h-3.5"></i> Рассылка</a>
                     {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin.bulk_actions_page') }}"

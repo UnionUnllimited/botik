@@ -21,10 +21,6 @@ TEXT_SETTING_VARIABLES: dict[str, list[dict[str, str]]] = {
         {"name": "sub_link", "label": "Ссылка на страницу подписки"},
     ],
     "text_subscription_expired_main": [],
-    "text_trial_success": [
-        {"name": "days", "label": "Длительность пробного периода (дней)"},
-        {"name": "expiry_date", "label": "Дата окончания пробного периода"},
-    ],
     # 💳 Оплата
     "text_payment_success": [
         {"name": "days", "label": "Оплаченный срок (дней)"},
@@ -97,29 +93,6 @@ TEXT_SETTING_VARIABLES: dict[str, list[dict[str, str]]] = {
     "text_website_cabinet_no_email": [],
     "text_website_cabinet_active": [],
     "text_website_cabinet_expired": [],
-    # 📱 Расширение лимита устройств
-    "text_device_upgrade_select": [
-        {"name": "current_limit", "label": "Текущий лимит устройств"},
-        {"name": "subscription_end_date", "label": "Дата окончания подписки"},
-        {"name": "days_left", "label": "Дней до конца подписки"},
-        {"name": "days_left_word", "label": "Слово «день/дня/дней»"},
-    ],
-    "text_device_upgrade_confirm": [
-        {"name": "old_limit", "label": "Старый лимит"},
-        {"name": "new_limit", "label": "Новый лимит"},
-        {"name": "new_limit_word", "label": "Слово «устройство/устройства/устройств»"},
-        {"name": "subscription_end_date", "label": "Дата окончания подписки"},
-        {"name": "price", "label": "Сумма к оплате"},
-        {"name": "days_left", "label": "Дней до конца подписки"},
-        {"name": "days_left_word", "label": "Слово «день/дня/дней»"},
-        {"name": "monthly_line", "label": "Строка «≈ N ₽/мес» (может быть пустой)"},
-    ],
-    "text_device_upgrade_payment": [
-        {"name": "old_limit", "label": "Старый лимит"},
-        {"name": "new_limit", "label": "Новый лимит"},
-        {"name": "new_limit_word", "label": "Слово «устройство/устройства/устройств»"},
-        {"name": "price", "label": "Сумма к оплате"},
-    ],
     # 📈 Докупка трафика
     "text_traffic_renewal_select": [
         {"name": "traffic_info", "label": "Блок текущего трафика (может быть пустым)"},
@@ -153,8 +126,6 @@ def get_text_setting_variables(key: str) -> list[dict[str, str]] | None:
     """Возвращает список переменных для ключа или None, если ключ не описан."""
     if key in TEXT_SETTING_VARIABLES:
         return TEXT_SETTING_VARIABLES[key]
-    if key.startswith("text_device_upgrade_reason_"):
-        return []
     return None
 
 
@@ -171,9 +142,4 @@ def variables_hint_for_description(key: str) -> str | None:
 
 def all_text_setting_variables_for_admin() -> dict[str, Any]:
     """Словарь для шаблона админки: key → [{name, label}, …] или []."""
-    from src.texts import DEVICE_UPGRADE_REASON_ORDER, device_upgrade_reason_setting_key
-
-    out: dict[str, Any] = dict(TEXT_SETTING_VARIABLES)
-    for reason_id in DEVICE_UPGRADE_REASON_ORDER:
-        out[device_upgrade_reason_setting_key(reason_id)] = []
-    return out
+    return dict(TEXT_SETTING_VARIABLES)
