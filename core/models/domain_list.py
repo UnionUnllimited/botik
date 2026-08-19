@@ -114,6 +114,11 @@ class DomainBuild(BigIntPkMixin, Base):
     failed_sources: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     error: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    manual_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    """Отпечаток своего списка на момент сборки. Круг пропускается, когда
+    не изменились ни источники, ни он: без этого дописанный оператором домен
+    не доезжал до роутеров никогда — источники-то прежние."""
+
     skipped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     """Круг прошёл, но ни один источник не изменился — пересобирать было нечего.
     Таких записей большинство, и по ним видно, что опрос идёт."""

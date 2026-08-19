@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 from pathlib import Path
 
@@ -73,6 +74,19 @@ def clean_ips(raw: str) -> list[str]:
 
 
 CLEANERS = {"domain": clean_domains, "ip": clean_ips}
+
+
+def manual_fingerprint(manual: dict[str, str]) -> str:
+    """Отпечаток своего списка — по чистым значениям, а не по сырому тексту.
+
+    Переставленные строки и лишний пробел не должны считаться изменением:
+    иначе каждое сохранение запускало бы полную перекачку всех источников.
+    """
+    parts = []
+    for kind in sorted(CLEANERS):
+        values = CLEANERS[kind](manual.get(kind, ""))
+        parts.append(kind + ":" + ",".join(sorted(values)))
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
 
 NOT_MODIFIED = "not_modified"
@@ -145,6 +159,15 @@ def read_list(kind: str) -> str:
         return ""
 
 
+def _as_file(values: list[str]) -> str:
+    """Список в вид файла: строка на значение, перевод строки в конце.
+
+    Пустой список даёт пустой файл, а не одинокий перевод строки: прошивка
+    читает его построчно, и лишняя пустая строка — лишнее «правило».
+    """
+    return "\n".join(values) + ("\n" if values else "")
+
+
 def write_list(kind: str, values: list[str]) -> None:
     """Пишет список атомарно: через временный файл и переименование.
 
@@ -155,7 +178,7 @@ def write_list(kind: str, values: list[str]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / FILE_NAMES[kind]
     tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_text("\n".join(values) + ("\n" if values else ""), encoding="utf-8")
+    tmp.write_text(_as_file(values), encoding="utf-8")
     tmp.replace(target)
 
 
@@ -185,9 +208,20 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
     ).all()
     manual = {row.kind: row.body for row in (await session.scalars(select(ManualList))).all()}
 
+    fingerprint = manual_fingerprint(manual)
+    previous = await session.scalar(
+        select(DomainBuild)
+        .where(DomainBuild.id != record.id, DomainBuild.skipped.is_(False))
+        .order_by(DomainBuild.id.desc())
+        .limit(1)
+    )
+    record.manual_hash = fingerprint
+
     bodies: dict[int, str] = {}
     failed = 0
-    changed = force
+    # Свой список — такой же источник: правку в нём круг обязан заметить,
+    # иначе дописанный домен не доедет до роутеров никогда.
+    changed = force or previous is None or previous.manual_hash != fingerprint
     gate = asyncio.Semaphore(MAX_PARALLEL)
 
     async with httpx.AsyncClient() as client:
@@ -214,7 +248,12 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
         await asyncio.gather(*(probe(source) for source in sources))
 
         if not changed:
+            # Ничего не поменялось — списки на диске те же, и пересобирать их
+            # незачем. Числа берём из прошлой сборки: ноль здесь читался бы
+            # как «собрали пустоту», хотя роутеры получают прежний список.
             record.skipped = True
+            record.domains = previous.domains if previous else 0
+            record.ips = previous.ips if previous else 0
             record.finished_at = utcnow()
             log.info("domain_lists.unchanged", sources=len(sources))
             return record
@@ -255,13 +294,45 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
         counts[kind] = len(values)
         built[kind] = values
 
-    record.uploaded = await upload(built, await config(session))
+    conf = await config(session)
+    # Копия на диск — до хранилища: она дешевле и нужнее, если рядом стоит
+    # домен, раздающий те же файлы.
+    publish_local(conf.get("lists_local_dir", ""), built)
+    record.uploaded = await upload(built, conf)
     record.domains = counts["domain"]
     record.ips = counts["ip"]
     record.failed_sources = failed
     record.finished_at = utcnow()
     log.info("domain_lists.built", domains=record.domains, ips=record.ips, failed=failed)
     return record
+
+
+def publish_local(directory: str, values_by_kind: dict[str, list[str]]) -> bool:
+    """Кладёт копию списков в каталог на диске.
+
+    Ради домена, который отдаёт их своим веб-сервером: у нас это `/lists/...`,
+    а рядом может стоять другой сайт, раздающий те же файлы с диска. Пока
+    отгруженные роутеры ходят по старому адресу, копия там обязана обновляться.
+
+    Пишем тем же способом, что и основной список, — через временный файл:
+    роутер тянет его в произвольный момент, и запись на месте отдала бы
+    половину списка, то есть половину доступа.
+    """
+    if not directory:
+        return False
+    try:
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        for kind, values in values_by_kind.items():
+            path = target / FILE_NAMES[kind]
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(_as_file(values), encoding="utf-8")
+            tmp.replace(path)
+    except OSError as exc:
+        log.warning("domain_lists.local_publish_failed", directory=directory, error=str(exc))
+        return False
+    log.info("domain_lists.local_published", directory=directory)
+    return True
 
 
 # ── Копия в объектном хранилище ───────────────────────────────────────────────
@@ -323,6 +394,7 @@ async def upload(values_by_kind: dict[str, list[str]], conf: dict[str, str] | No
 
 SETTING_KEYS = (
     "lists_poll_interval_min",
+    "lists_local_dir",
     "lists_s3_bucket",
     "lists_s3_endpoint",
     "lists_s3_region",
@@ -344,6 +416,7 @@ async def config(session: AsyncSession) -> dict[str, str]:
     env = settings.lists
     fallback = {
         "lists_poll_interval_min": str(env.poll_interval_min),
+        "lists_local_dir": env.local_dir,
         "lists_s3_bucket": env.s3_bucket,
         "lists_s3_endpoint": env.s3_endpoint,
         "lists_s3_region": env.s3_region,
@@ -371,6 +444,10 @@ async def save_config(session: AsyncSession, values: dict[str, str]) -> None:
         value = str(values[key]).strip()
         if key in SECRET_KEYS and not value:
             continue
+        if key == "lists_local_dir" and value:
+            # Каталог, а не файл: имена мы задаём сами, и подставленный сюда
+            # `.lst` привёл бы к попытке писать внутрь файла.
+            value = value.rstrip("/") or "/"
         if key == "lists_poll_interval_min":
             try:
                 value = str(max(1, min(int(value or 10), 1440)))

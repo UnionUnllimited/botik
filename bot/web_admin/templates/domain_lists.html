@@ -137,6 +137,17 @@
         </div>
       </div>
 
+      <div class="ss-field">
+        <label for="lists_local_dir">Каталог на диске</label>
+        <input type="text" class="tw-input" id="lists_local_dir" name="lists_local_dir"
+               value="{{ config.get('lists_local_dir', '') }}" placeholder="/var/www/lists">
+        <div class="hint">
+          Копия списков рядом, на диске — для домена, который отдаёт их своим
+          веб-сервером. Пока отгруженные роутеры ходят по старому адресу, файлы
+          там должны обновляться. Пусто — не класть.
+        </div>
+      </div>
+
       {# Хранилище настраивают один раз и больше не трогают, а места оно
          занимает больше всего остального. Поэтому свёрнуто. #}
       <details class="pt-2 border-t" style="border-color: var(--admin-border);">

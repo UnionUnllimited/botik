@@ -289,3 +289,64 @@ class TestImportFromUrl:
         body, error = await domain_lists.import_from_url("https://e.com/l.lst", "domain")
         assert not body
         assert error
+
+
+class TestManualFingerprint:
+    """Свой список — такой же повод пересобрать, как новая версия источника.
+
+    Круг пропускался, если не изменился ни один источник, и дописанный
+    оператором домен не доезжал до роутеров никогда.
+    """
+
+    def test_change_moves_the_fingerprint(self):
+        from core.services.domain_lists import manual_fingerprint
+
+        before = manual_fingerprint({"domain": "a.com", "ip": ""})
+        after = manual_fingerprint({"domain": "a.com\nb.com", "ip": ""})
+        assert before != after
+
+    def test_reordering_does_not(self):
+        """Иначе каждое сохранение запускало бы перекачку всех источников."""
+        from core.services.domain_lists import manual_fingerprint
+
+        one = manual_fingerprint({"domain": "a.com\nb.com", "ip": ""})
+        two = manual_fingerprint({"domain": "b.com\na.com", "ip": ""})
+        assert one == two
+
+    def test_ip_list_counts_too(self):
+        from core.services.domain_lists import manual_fingerprint
+
+        before = manual_fingerprint({"domain": "a.com", "ip": ""})
+        after = manual_fingerprint({"domain": "a.com", "ip": "10.0.0.0/8"})
+        assert before != after
+
+
+class TestLocalPublish:
+    """Копия на диск — для домена, который отдаёт списки своим веб-сервером."""
+
+    def test_writes_both_files(self, tmp_path):
+        from core.services.domain_lists import publish_local
+
+        assert publish_local(str(tmp_path), {"domain": ["a.com"], "ip": ["1.2.3.4"]}) is True
+        assert (tmp_path / "domains.lst").read_text(encoding="utf-8") == "a.com\n"
+        assert (tmp_path / "ip.lst").read_text(encoding="utf-8") == "1.2.3.4\n"
+
+    def test_empty_path_means_do_not_publish(self, tmp_path):
+        from core.services.domain_lists import publish_local
+
+        assert publish_local("", {"domain": ["a.com"]}) is False
+
+    def test_no_temp_file_left_behind(self, tmp_path):
+        """Запись атомарная: роутер не должен получить половину списка."""
+        from core.services.domain_lists import publish_local
+
+        publish_local(str(tmp_path), {"domain": ["a.com"]})
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_unwritable_path_does_not_raise(self, tmp_path):
+        """Каталог пропал или прав нет — сборка всё равно должна досчитаться."""
+        from core.services.domain_lists import publish_local
+
+        busy = tmp_path / "file"
+        busy.write_text("не каталог", encoding="utf-8")
+        assert publish_local(str(busy), {"domain": ["a.com"]}) is False

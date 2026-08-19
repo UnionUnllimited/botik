@@ -277,7 +277,8 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         _, error = await _post(
             "/api/v1/fleet/lists/config",
             {key: (form.get(key) or "") for key in (
-                "lists_poll_interval_min", "lists_s3_bucket", "lists_s3_endpoint",
+                "lists_poll_interval_min", "lists_local_dir",
+                "lists_s3_bucket", "lists_s3_endpoint",
                 "lists_s3_region", "lists_s3_prefix", "lists_s3_access_key",
                 "lists_s3_secret_key",
             )},
@@ -318,10 +319,19 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         else:
             failed = data.get("failed_sources") or 0
             note = f", источников не ответило: {failed}" if failed else ""
-            await flash(
-                f"Собрано: доменов {data.get('domains', 0)}, подсетей {data.get('ips', 0)}{note}.",
-                "warning" if failed else "success",
-            )
+            if data.get("skipped"):
+                # Ничего не менялось: списки на диске прежние, и это не отказ.
+                await flash(
+                    f"Ничего не изменилось — списки прежние: доменов "
+                    f"{data.get('domains', 0)}, подсетей {data.get('ips', 0)}.",
+                    "success",
+                )
+            else:
+                await flash(
+                    f"Собрано: доменов {data.get('domains', 0)}, "
+                    f"подсетей {data.get('ips', 0)}{note}.",
+                    "warning" if failed else "success",
+                )
         return redirect(url_for("admin.domain_lists_page"))
 
     @admin_bp_instance.route("/routers/<int:device_id>/ssh-password", methods=["POST"])

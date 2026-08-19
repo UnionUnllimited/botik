@@ -1077,9 +1077,14 @@ async def manual_import(kind: str, payload: dict) -> dict:
 
 @router.post("/lists/build", dependencies=[Depends(require_token)])
 async def lists_build(session: AsyncSession = Depends(get_transaction)) -> dict:
-    """Пересобирает списки сейчас, не дожидаясь круга по расписанию."""
+    """Пересобирает списки сейчас, не дожидаясь круга по расписанию.
+
+    `force=True`: кнопку жмут как раз тогда, когда хотят увидеть результат,
+    а метки версий источников про это ничего не знают — с ними круг ответил бы
+    «ничего не изменилось» и не собрал ничего.
+    """
     try:
-        record = await domain_lists.build(session)
+        record = await domain_lists.build(session, force=True)
     except Exception as exc:  # noqa: BLE001 — оператор должен увидеть причину, а не 500
         log.error("fleet.lists_build_failed", error=str(exc))
         return {"ok": False, "error": f"Сборка не удалась: {exc}"[:255]}
@@ -1088,4 +1093,5 @@ async def lists_build(session: AsyncSession = Depends(get_transaction)) -> dict:
         "domains": record.domains,
         "ips": record.ips,
         "failed_sources": record.failed_sources,
+        "skipped": record.skipped,
     }

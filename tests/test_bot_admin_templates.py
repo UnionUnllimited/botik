@@ -224,6 +224,7 @@ PAGES = {
         "imported": {},
         "config": {
             "lists_poll_interval_min": "10",
+            "lists_local_dir": "/var/www/lists",
             "lists_s3_endpoint": "https://storage.yandexcloud.net",
             "lists_s3_bucket": "router-lists",
             "lists_s3_region": "ru-central1",
