@@ -195,7 +195,7 @@
               <input type="checkbox" name="ids" value="{{ item.id }}"
                      class="w-4 h-4 cursor-pointer" data-fleet-row>
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 whitespace-nowrap">
               <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
               <div class="tw-text-muted2 text-[12px]">
                 {{ item.model or item.status_label }}{% if item.fw_version %} · {{ item.fw_version }}{% endif %}
@@ -203,40 +203,44 @@
             </td>
             {# Телеграм, а не имя: по нему клиенту пишут, а тёзок среди имён
                сколько угодно. Имя из доставки — второй строкой. #}
-            <td class="px-3 py-2">
-              {{ item.client or '—' }}
+            <td class="px-3 py-2 whitespace-nowrap">
+              {% if item.client_tg_id %}
+                <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">{{ item.client }}</a>
+              {% else %}
+                {{ item.client or '—' }}
+              {% endif %}
               {% if item.client_name and item.client_name != item.client %}
               <div class="tw-text-muted2 text-[12px]">{{ item.client_name }}</div>
               {% endif %}
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 whitespace-nowrap">
               {% if item.online %}
                 <span style="color:#16a34a">● на связи</span>
               {% else %}
                 <span class="tw-text-muted2">○ молчит</span>
               {% endif %}
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 whitespace-nowrap">
               {% if item.subscription_status %}
                 {{ item.subscription_label or item.subscription_status }}
                 {% if not item.subscription_here %}
-                  <span class="tw-text-muted2 text-[12px]">(на другом роутере)</span>
+                  <div class="tw-text-muted2 text-[12px]">на другом роутере</div>
                 {% endif %}
               {% else %}
                 <span class="tw-text-muted2">нет</span>
               {% endif %}
             </td>
             <td class="px-3 py-2">{{ item.clients }}</td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 whitespace-nowrap">
               {{ item.cpu_pct if item.cpu_pct is not none else '—' }}% /
               {{ item.ram_pct if item.ram_pct is not none else '—' }}%
             </td>
-            <td class="px-3 py-2 tw-text-muted2">{{ fleet_uptime(item.uptime_sec) }}</td>
-            <td class="px-3 py-2 tw-text-muted2">
+            <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">{{ fleet_uptime(item.uptime_sec) }}</td>
+            <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
               {{ fleet_bytes(item.rx_bytes) }} / {{ fleet_bytes(item.tx_bytes) }}
             </td>
-            <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.wan_ip or '—' }}</td>
-            <td class="px-3 py-2 font-mono tw-text-muted2">
+            <td class="px-3 py-2 font-mono tw-text-muted2 whitespace-nowrap">{{ item.wan_ip or '—' }}</td>
+            <td class="px-3 py-2 font-mono tw-text-muted2 whitespace-nowrap">
               {{ item.visitor_port or '—' }}
               {% if not item.online and item.last_seen %}
                 <div class="text-[11px]">молчит с {{ item.last_seen[:16].replace('T', ' ') }}</div>
@@ -251,8 +255,16 @@
     <div class="tw-card p-3 flex items-end gap-2 flex-wrap">
       <div class="text-[12px] tw-text-muted2 mr-1" data-fleet-count>Ничего не отмечено</div>
 
+      {# Опрос и перезагрузка идут к самим роутерам через туннель: другого пути
+         к ним у нас нет. Молчащий роутер ответит отказом — и попадёт в список
+         несделанных, не отменяя остальных. #}
       <button type="submit" name="action" value="poll" class="tw-btn tw-btn-sm">
         <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Опросить</span>
+      </button>
+
+      <button type="submit" name="action" value="reboot" class="tw-btn tw-btn-sm"
+              onclick="return confirm('Перезагрузить отмеченные роутеры? Клиенты потеряют связь на пару минут.')">
+        <i data-lucide="power" class="w-3.5 h-3.5"></i><span>Перезагрузить</span>
       </button>
 
       <div class="ss-field">
@@ -323,24 +335,35 @@
     {% endif %}
 
     {% if pages > 1 %}
-    {# Ссылки страниц несут все фильтры разом: забытый в этой ссылке фильтр
-       молча сбрасывается на второй странице, и оператор видит не свой отбор. #}
+    {# Номера страниц — как в «Клиентах»: те же `pg-link`, первая и последняя
+       всегда видны, вокруг текущей окно в одну страницу, разрывы многоточием.
+       Ссылки несут все фильтры разом: забытый здесь фильтр молча сбрасывается
+       на второй странице, и оператор видит не свой отбор. #}
     {% set nav = dict(filters) %}
-    <div class="flex items-center justify-between gap-2 text-[12.5px]">
-      <span class="tw-text-muted2">
-        Страница {{ page }} из {{ pages }} · всего {{ total }}
-      </span>
-      <div class="flex gap-2">
-        {% if page > 1 %}
-        <a class="tw-btn tw-btn-sm"
-           href="{{ url_for('admin.routers_fleet', page=page-1, **nav) }}">Назад</a>
-        {% endif %}
-        {% if page < pages %}
-        <a class="tw-btn tw-btn-sm"
-           href="{{ url_for('admin.routers_fleet', page=page+1, **nav) }}">Вперёд</a>
-        {% endif %}
+    <nav class="flex justify-center pt-1">
+      <div class="flex items-center gap-1 flex-wrap">
+        <a href="{{ url_for('admin.routers_fleet', page=page-1, **nav) }}"
+           class="pg-link {% if page == 1 %}is-disabled{% endif %}" aria-label="Предыдущая">
+          <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+        </a>
+        {% set ns = namespace(last_printed=0) %}
+        {% for p in range(1, pages + 1) %}
+          {% if p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+            {% if p > ns.last_printed + 1 %}
+              <span class="pg-link is-disabled">…</span>
+            {% endif %}
+            <a href="{{ url_for('admin.routers_fleet', page=p, **nav) }}"
+               class="pg-link {% if p == page %}is-active{% endif %}">{{ p }}</a>
+            {% set ns.last_printed = p %}
+          {% endif %}
+        {% endfor %}
+        <a href="{{ url_for('admin.routers_fleet', page=page+1, **nav) }}"
+           class="pg-link {% if page == pages %}is-disabled{% endif %}" aria-label="Следующая">
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+        </a>
       </div>
-    </div>
+    </nav>
+    <div class="text-center text-[12px] tw-text-muted2">Всего роутеров в отборе: {{ total }}</div>
     {% endif %}
 
   {% endif %}

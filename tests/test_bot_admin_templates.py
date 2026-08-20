@@ -348,6 +348,7 @@ PAGES = {
                 "model": "AX3000",
                 "client": "@union",
                 "client_name": "Иванов Иван",
+                "client_tg_id": 614685408,
                 "online": True,
                 "subscription_status": "active",
                 "subscription_label": "активна",
@@ -374,9 +375,9 @@ PAGES = {
         "states": [{"value": "new", "title": "на складе"}, {"value": "active", "title": "работает"}],
         "page_sizes": [25, 50, 100, 200],
         "per_page": 50,
-        "page": 1,
-        "pages": 3,
-        "total": 120,
+        "page": 2,
+        "pages": 9,
+        "total": 420,
     },
 }
 

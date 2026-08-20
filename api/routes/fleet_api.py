@@ -245,6 +245,9 @@ async def list_routers(
                 "client": device.user.telegram_name if device.user else "",
                 "client_name": device.user.display_name if device.user else "",
                 "client_id": device.user_id,
+                # Карточку клиента админка открывает по telegram_id: у неё свои
+                # пользователи, и наш внутренний номер ей ничего не говорит.
+                "client_tg_id": (device.user.tg_id or 0) if device.user else 0,
                 "subscription_status": str(subscription.status) if subscription else "",
                 "subscription_label": _label(str(subscription.status), SUBSCRIPTION_LABELS)
                 if subscription
@@ -465,6 +468,31 @@ BULK_LIMIT = 200
 в панель, и запрос на весь парк упёрся бы в таймаут посреди работы, оставив
 половину сделанной."""
 
+REBOOT_COMMAND = "sleep 2 && reboot"
+"""Перезагрузка идёт по SSH через туннель — другого пути к роутеру у нас нет.
+
+`sleep 2` перед ней нужен, чтобы SSH успел закрыть сессию: без задержки
+роутер уходит в перезагрузку прямо в разговоре, клиент получает обрыв
+и считает команду неудавшейся, хотя она как раз сработала."""
+
+
+async def _reboot(session: AsyncSession, device: Device) -> None:
+    """Перезагружает роутер через туннель.
+
+    Ошибку не глотаем: наверху она станет строкой «MAC: причина» в списке
+    несделанных, и оператор увидит, какие роутеры остались.
+    """
+    if not device.frp_visitor_port:
+        await routers_service.ensure_frp_binding(session, device)
+    await router_shell.run(device, REBOOT_COMMAND)
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="warning",
+        message="Перезагрузка из админки",
+    )
+
 
 @router.post("/routers/bulk", dependencies=[Depends(require_token)])
 async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
@@ -491,7 +519,7 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
             target = DeviceStatus(str(payload.get("status", "")).strip())
         except ValueError:
             return {"ok": False, "error": "Неизвестное состояние."}
-    elif action not in {"poll", "unbind", "activate"}:
+    elif action not in {"poll", "unbind", "activate", "reboot"}:
         return {"ok": False, "error": "Неизвестное действие."}
 
     days = _days(payload)
@@ -518,6 +546,8 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
                 _unbind(session, device)
             elif action == "activate":
                 await activation.activate_manually(session, device=device, days=days)
+            elif action == "reboot":
+                await _reboot(session, device)
         except activation.ActivationError as exc:
             failed.append(f"{device.mac}: {exc}")
             continue

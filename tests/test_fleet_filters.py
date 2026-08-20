@@ -142,3 +142,60 @@ class TestBulkAndFilterWiring:
         body = api[api.index("async def bulk_routers") :]
         body = body[: body.index('return {"ok": True, "done"')]
         assert body.count("continue") >= 3, "отказ одного роутера должен пропускаться, а не ронять всё"
+
+    def test_reboot_goes_through_the_tunnel(self):
+        """Другого пути к роутеру нет: флаг в базе его не перезагрузит."""
+        api = self._source("api/routes/fleet_api.py")
+        body = api[api.index("async def _reboot") :]
+        body = body[: body.index("BULK_LIMIT") if "BULK_LIMIT" in body[10:] else len(body)]
+        assert "router_shell.run" in body
+        assert "ensure_frp_binding" in body, "без туннеля до роутера не дотянуться"
+
+    def test_reboot_lets_ssh_close_first(self):
+        """Без задержки роутер уходит в перезагрузку прямо в разговоре,
+        и сработавшая команда выглядит как оборванная."""
+        api = self._source("api/routes/fleet_api.py")
+        assert "sleep" in api[api.index("REBOOT_COMMAND") : api.index("REBOOT_COMMAND") + 200]
+
+    def test_client_column_links_to_the_client(self):
+        page = self._source("bot/web_admin/templates/routers_fleet.html")
+        assert "admin.user_details" in page
+        assert "client_tg_id" in page, (
+            "карточка клиента открывается по telegram_id: внутренний номер "
+            "админке бота ничего не говорит"
+        )
+
+
+class TestSelectPopupIsReadable:
+    """Выпадающий список рисует браузер, и цвета ему надо задать явно.
+
+    Правило ссылалось на `--admin-card`, которой в теме нет вовсе: фон молча
+    откатывался к белому, а цвет текста подставлялся честный — светлый, по
+    тёмной теме. Белым по белому список и выглядел.
+    """
+
+    ADMIN = Path(__file__).resolve().parents[1] / "bot" / "web_admin"
+
+    def _admin(self, relative: str) -> str:
+        return (self.ADMIN / relative).read_text(encoding="utf-8")
+
+    def _theme(self) -> str:
+        """Переменные темы разложены по нескольким файлам — читаем все."""
+        return "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in (self.ADMIN / "static" / "css").glob("*.css")
+        )
+
+    def test_option_colors_use_variables_that_exist(self):
+        base = self._admin("templates/base.html")
+        rule = base[base.index("select option") : base.index("select option") + 300]
+        theme = self._theme()
+        used = {name for name in ("--admin-bg-elevated", "--admin-text-base") if name in rule}
+        assert used == {"--admin-bg-elevated", "--admin-text-base"}
+        for name in used:
+            assert f"{name}:" in theme, f"{name} в правиле есть, а в теме не задана"
+
+    def test_the_missing_variable_is_gone(self):
+        base = self._admin("templates/base.html")
+        rule = base[base.index("select option") : base.index("select option") + 300]
+        assert "--admin-card" not in rule, "этой переменной в теме нет — фон снова станет белым"
