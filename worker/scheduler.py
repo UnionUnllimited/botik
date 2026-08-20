@@ -128,13 +128,26 @@ def create_scheduler() -> AsyncIOScheduler:
         id="rebuild_domain_lists",
         name="Пересборка списков доменов",
     )
+    # Присутствие и показания — разные круги. Первый спрашивает у frps, кто на
+    # связи, до роутеров не доходит и стоит копейки; на нём же автоактивация,
+    # поэтому он частый. Второй ходит по туннелям к каждому роутеру домой
+    # к клиенту, поэтому редкий.
     scheduler.add_job(
         instrumented("sync_routers", routers.sync_routers),
         IntervalTrigger(seconds=settings.frp.poll_interval_sec),
         id="sync_routers",
-        name="Опрос роутеров через frp",
+        name="Кто на связи (дашборд frps)",
         # Первый прогон сразу: иначе парк появится в админке только через минуту.
         next_run_time=dt.datetime.now(dt.UTC),
+    )
+    scheduler.add_job(
+        instrumented("poll_router_stats", routers.poll_router_stats),
+        IntervalTrigger(seconds=settings.frp.stats_interval_sec),
+        id="poll_router_stats",
+        name="Показания роутеров через туннели",
+        # Не сразу: пусть первый круг присутствия отметит, кто вообще на связи,
+        # иначе снимать показания не с кого.
+        next_run_time=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=30),
     )
     scheduler.add_job(
         instrumented("sync_frpc_config", frpc_config.sync_frpc_config),

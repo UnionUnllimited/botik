@@ -1,8 +1,17 @@
 """Опрос роутеров через frp.
 
-Раз в минуту спрашиваем у frps, кто на связи, и для каждого снимаем показания
-через его же туннель. Роутер при этом остаётся недоступен снаружи: наружу
-он ходит сам.
+Роутер наружу недоступен: он сам держит связь с frps, а мы ходим к нему
+обратно через туннель. Отсюда два разных круга, и путать их дорого.
+
+**Присутствие** — один запрос к дашборду frps: кто сейчас зарегистрирован.
+До роутеров не доходит вовсе, стоит копейки, поэтому идёт часто. Отсюда же
+«на связи» в админке и автоактивация отгруженного заказа: роутер вышел на
+связь — подписка включилась, и ждать этого полчаса нельзя.
+
+**Показания** — CPU, память, аптайм, трафик. Каждое означает настоящее
+соединение до роутера через туннель, и раз в минуту по всему парку это
+постоянный поток к каждому клиенту домой ради чисел, которые никто не
+смотрит чаще, чем раз в полчаса. Поэтому реже и отдельным кругом.
 """
 
 from __future__ import annotations
@@ -35,7 +44,11 @@ async def _poll_one(device_id: int, port: int) -> tuple[int, dict | None, str | 
 
 
 async def sync_routers() -> int:
-    """Синхронизирует статусы с frps и собирает телеметрию."""
+    """Кто на связи: спрашиваем у frps, до самих роутеров не ходим.
+
+    Здесь же автоактивация: отгруженный роутер вышел на связь — подписка
+    включается сразу, а не на следующем круге показаний через полчаса.
+    """
     if not settings.frp.is_configured:
         log.info("routers.frp_not_configured", missing=settings.frp.missing_keys)
         return 0
@@ -46,10 +59,8 @@ async def sync_routers() -> int:
         log.warning("routers.frps_unavailable", error=str(exc))
         return 0
 
-    polled = 0
     async with session_scope() as session:
         # 1. Отмечаем тех, кто на связи, и заводим незнакомых.
-        targets: list[tuple[int, int]] = []
         for mac, proxy in online.items():
             device, created = await router_service.get_or_create_by_mac(session, mac)
             if created:
@@ -63,8 +74,6 @@ async def sync_routers() -> int:
                 )
             await router_service.ensure_frp_binding(session, device)
             await router_service.mark_online(session, device, proxy)
-            if device.frp_visitor_port:
-                targets.append((device.id, device.frp_visitor_port))
 
             # Отгруженный заказ вышел на связь — значит роутер уже у клиента,
             # и подписку можно отдать без участия оператора. Всё, что не отгружено
@@ -82,7 +91,33 @@ async def sync_routers() -> int:
 
         await session.flush()
 
-        # 3. Снимаем показания параллельно, но не заваливая туннели.
+    log.info("routers.presence_synced", online=len(online))
+    return len(online)
+
+
+async def poll_router_stats() -> int:
+    """Снимает показания с тех, кто на связи.
+
+    Отдельно от присутствия и заметно реже: каждое снятие — соединение до
+    роутера домой к клиенту, а CPU и аптайм никто не смотрит чаще, чем раз
+    в полчаса. Между кругами в таблице показания прошлого круга, и это
+    честнее постоянного стука в дверь.
+    """
+    if not settings.frp.is_configured:
+        return 0
+
+    polled = 0
+    async with session_scope() as session:
+        targets = [
+            (device.id, device.frp_visitor_port)
+            for device in await session.scalars(
+                select(Device).where(
+                    Device.frp_online.is_(True), Device.frp_visitor_port.is_not(None)
+                )
+            )
+        ]
+
+        # Параллельно, но не заваливая туннели.
         semaphore = asyncio.Semaphore(CONCURRENCY)
 
         async def guarded(device_id: int, port: int):
@@ -103,7 +138,7 @@ async def sync_routers() -> int:
             router_service.record_metrics(session, device, stats)
             polled += 1
 
-    log.info("routers.synced", online=len(online), polled=polled)
+    log.info("routers.stats_polled", asked=len(targets), polled=polled)
     return polled
 
 
