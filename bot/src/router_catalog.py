@@ -881,7 +881,10 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             return await show_error(query, error)
         if data.get("unknown_city"):
             # Город убрали из зоны, пока клиент выбирал перевозчика.
-            return await ask_carrier(query, state, edit=True)
+            # `query.answer()` обязателен и здесь: без него кнопка в чате
+            # крутится до таймаута, и отказ выглядит как зависший бот.
+            await ask_carrier(query, state, edit=True)
+            return await query.answer()
         option = next((o for o in data.get("options", []) if o.get("method") == method), None)
         if option is None:
             return await query.answer("Этот способ доставки выключен", show_alert=True)

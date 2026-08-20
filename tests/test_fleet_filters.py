@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from api.routes.fleet_api import (
-    BULK_LIMIT,
+    BULK_LIMITS,
     EXPIRING_SOON_DAYS,
     ROUTERS_PAGE_SIZES,
     _matches_link,
@@ -132,24 +132,55 @@ class TestBulkAndFilterWiring:
         for key in ("sub", "state", "model", "per_page"):
             assert f'"{key}"' in route
 
-    def test_bulk_limit_is_enforced(self):
-        api = self._source("api/routes/fleet_api.py")
-        assert "BULK_LIMIT" in api and str(BULK_LIMIT) in api
+    def test_tunnel_actions_fit_into_the_page_timeout(self):
+        """Предел свой у каждого действия.
+
+        Общий в двести упирался в таймаут админки: перезагрузка десяти
+        молчащих роутеров занимает больше, чем она ждёт. Оператор видел
+        «приложение не ответило», роутеры при этом перезагружались, и второй
+        щелчок перезагружал их снова.
+        """
+        # Пятнадцать секунд на молчащий роутер, восемь одновременно —
+        # столько уложится в минуту с небольшим.
+        for action in ("poll", "reboot", "command"):
+            assert BULK_LIMITS[action] <= 40, f"{action}: слишком много за раз"
+        assert BULK_LIMITS["activate"] <= 10, "активация идёт до минуты на роутер"
+        assert BULK_LIMITS["status"] > BULK_LIMITS["poll"], (
+            "записи в базе мгновенные — держать их на пределе похода к роутеру незачем"
+        )
 
     def test_one_failure_does_not_cancel_the_rest(self):
-        """Половина парка молчит всегда — опрос тридцати не должен падать целиком."""
+        """Половина парка молчит всегда — опрос тридцати не должен падать целиком.
+
+        Отказ роутера ловится внутри обхода и возвращается строкой, а не
+        исключением наружу: иначе один молчащий отменил бы работу по всем.
+        """
         api = self._source("api/routes/fleet_api.py")
-        body = api[api.index("async def bulk_routers") :]
-        body = body[: body.index('return {"ok": True, "done"')]
-        assert body.count("continue") >= 3, "отказ одного роутера должен пропускаться, а не ронять всё"
+        walk = api[api.index("async def _over_the_tunnel") : api.index("@router.post(\"/routers/bulk\"")]
+        assert "except Exception" in walk, "отказ одного роутера должен оставаться внутри обхода"
+        assert "return device," in walk, "и возвращаться причиной, а не падением"
+
+    def test_tunnel_walk_touches_the_database_alone(self):
+        """Сессия базы одна на запрос, и трогать её из нескольких задач сразу
+        нельзя: туннели поднимаются до обхода, записи делаются после."""
+        api = self._source("api/routes/fleet_api.py")
+        walk = api[api.index("async def _over_the_tunnel") : api.index("@router.post(\"/routers/bulk\"")]
+        assert walk.index("ensure_frp_binding") < walk.index("asyncio.gather"), (
+            "туннели надо поднять до одновременного обхода, а не в нём"
+        )
 
     def test_reboot_goes_through_the_tunnel(self):
         """Другого пути к роутеру нет: флаг в базе его не перезагрузит."""
         api = self._source("api/routes/fleet_api.py")
-        body = api[api.index("async def _reboot") :]
-        body = body[: body.index("BULK_LIMIT") if "BULK_LIMIT" in body[10:] else len(body)]
-        assert "router_shell.run" in body
-        assert "ensure_frp_binding" in body, "без туннеля до роутера не дотянуться"
+        body = api[api.index("async def bulk_routers") :]
+        assert "router_shell.run(device, REBOOT_COMMAND)" in body
+
+    def test_own_command_reuses_the_console_guard(self):
+        """Массовая команда — тот же путь, что у консоли в карточке.
+        Перепрошивка на сорока роутерах разом — сорок кирпичей у клиентов."""
+        api = self._source("api/routes/fleet_api.py")
+        body = api[api.index("async def bulk_routers") :]
+        assert "FORBIDDEN_COMMANDS" in body
 
     def test_reboot_lets_ssh_close_first(self):
         """Без задержки роутер уходит в перезагрузку прямо в разговоре,

@@ -10,7 +10,7 @@
 """
 
 import os
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 from quart import flash, jsonify, redirect, render_template, request, url_for
@@ -89,6 +89,19 @@ async def fetch_fleet(query: str = "") -> tuple[dict, str]:
     return await _get(f"/api/v1/fleet/routers{query}")
 
 
+def _args_of(url: str) -> dict:
+    """Разбирает отбор из адреса, с которого пришёл POST.
+
+    После массовой команды страница рисуется на месте, а не редиректом, и
+    фильтры взять больше неоткуда: в форме их нет, они в строке запроса.
+    """
+    try:
+        query = urlparse(url).query
+    except ValueError:
+        return {}
+    return {key: values[0] for key, values in parse_qs(query).items() if values}
+
+
 FLEET_FILTER_KEYS = ("q", "link", "client", "sub", "state", "model", "per_page")
 """Что перечисляется в адресе страницы роутеров.
 
@@ -105,16 +118,19 @@ def _days_from(form) -> int:
 
 
 def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_func):
-    @admin_bp_instance.route("/routers")
-    async def routers_fleet():
+    async def _render_fleet(args, *, outputs=None):
+        """Страница парка. `args` — отбор оператора, `outputs` — вывод команды.
+
+        Отдельной функцией, потому что после массовой команды страницу рисуем
+        сразу, а не редиректом: вывод по сорока роутерам в уведомление
+        не помещается и в куку сессии тем более.
+        """
         # Фильтры считает основное приложение: список и подписки лежат у него,
         # а тянуть сюда весь парк ради выборки нечего.
-        params = {
-            key: (request.args.get(key) or "").strip() for key in FLEET_FILTER_KEYS
-        }
+        params = {key: (args.get(key) or "").strip() for key in FLEET_FILTER_KEYS}
         params = {key: value for key, value in params.items() if value}
         try:
-            params["page"] = str(max(1, int(request.args.get("page", 1))))
+            params["page"] = str(max(1, int(args.get("page", 1) or 1)))
         except (TypeError, ValueError):
             params["page"] = "1"
         query = "?" + urlencode(params) if params else ""
@@ -126,7 +142,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             routers=data.get("routers", []),
             fleet_error=error,
             auto_enabled=options.get("auto_enabled", False),
-            filters={key: request.args.get(key, "") for key in FLEET_FILTER_KEYS},
+            filters={key: args.get(key, "") or "" for key in FLEET_FILTER_KEYS},
             models=data.get("models", []),
             states=data.get("states", []),
             page_sizes=data.get("page_sizes", []),
@@ -134,29 +150,37 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             page=data.get("page", 1),
             pages=data.get("pages", 1),
             total=data.get("total", 0),
+            outputs=outputs or [],
         )
+
+    @admin_bp_instance.route("/routers")
+    async def routers_fleet():
+        return await _render_fleet(request.args)
 
     @admin_bp_instance.route("/routers/bulk", methods=["POST"])
     async def routers_fleet_bulk():
         """Одно действие над отмеченными строками.
 
-        Возвращаемся туда же, откуда пришли: оператор отобрал молчащие
+        Возвращаемся к тому же отбору, откуда пришли: оператор отобрал молчащие
         фильтром, и терять отбор после каждого действия — значит отбирать
         заново по кругу.
         """
         form = await request.form
         ids = [value for value in form.getlist("ids") if value.strip().isdigit()]
+        back = request.referrer or url_for("admin.routers_fleet")
         if not ids:
             await flash("Не отмечено ни одного роутера.", "danger")
-            return redirect(request.referrer or url_for("admin.routers_fleet"))
+            return redirect(back)
 
+        action = (form.get("action") or "").strip()
         data, error = await _post(
             "/api/v1/fleet/routers/bulk",
             {
-                "action": (form.get("action") or "").strip(),
+                "action": action,
                 "ids": ids,
                 "status": (form.get("status") or "").strip(),
                 "days": _days_from(form),
+                "command": form.get("command") or "",
             },
         )
         if error:
@@ -168,7 +192,13 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
                 await flash(line, "danger")
             if len(failed) > 10:
                 await flash(f"…и ещё {len(failed) - 10}.", "danger")
-        return redirect(request.referrer or url_for("admin.routers_fleet"))
+
+        outputs = (data or {}).get("outputs") or []
+        if outputs:
+            # Вывод рисуем сразу: ради него команду и запускали, а редирект
+            # его потеряет. Отбор восстанавливаем из адреса, с которого пришли.
+            return await _render_fleet(_args_of(back), outputs=outputs)
+        return redirect(back)
 
     @admin_bp_instance.route("/routers/settings", methods=["POST"])
     async def routers_fleet_settings():

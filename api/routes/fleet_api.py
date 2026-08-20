@@ -80,6 +80,21 @@ def _label(value: str, labels: dict[str, str]) -> str:
     return labels.get(value, value)
 
 
+def _elsewhere(subscription, device: Device) -> bool:
+    """Подписка клиента лежит на другом его роутере.
+
+    Не то же, что «не на этом»: у оплаченной, но не активированной подписки
+    роутера нет вовсе — она ждёт первого выхода на связь. Между отгрузкой
+    и активацией страница писала «оплачена, ждёт роутера · на другом роутере»,
+    и оператор шёл искать несуществующий второй роутер.
+    """
+    return bool(
+        subscription
+        and subscription.device_id is not None
+        and subscription.device_id != device.id
+    )
+
+
 def _matches_link(device: Device, link: str, *, now: dt.datetime) -> bool:
     if not link:
         return True
@@ -105,7 +120,10 @@ def _matches_sub(device: Device, sub: str, subs: dict, *, now: dt.datetime) -> b
         return False
     here = subscription.device_id == device.id
     if sub == "elsewhere":
-        return not here
+        # Именно на другом, а не «не на этом»: у оплаченной, но не
+        # активированной подписки роутера нет вовсе (`device_id` пуст),
+        # и звать её «на другом роутере» — врать оператору.
+        return subscription.device_id is not None and not here
     if sub == "active":
         return here
     if sub == "expiring":
@@ -254,7 +272,12 @@ async def list_routers(
                 else "",
                 "status_label": _label(str(device.status), DEVICE_LABELS),
                 "subscription_until": _iso(subscription.expires_at) if subscription else None,
-                "subscription_here": bool(subscription and subscription.device_id == device.id),
+                # Именно «на другом», а не «не на этом»: у оплаченной, но не
+                # активированной подписки роутера нет вовсе, и строка
+                # «оплачена, ждёт роутера · на другом роутере» — противоречие,
+                # которое страница показывала всё время между отгрузкой
+                # и первым выходом роутера на связь.
+                "subscription_elsewhere": _elsewhere(subscription, device),
             }
         )
 
@@ -351,6 +374,7 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
             "label": _label(str(subscription.status), SUBSCRIPTION_LABELS) if subscription else "",
             "until": _iso(subscription.expires_at) if subscription else None,
             "here": bool(subscription and subscription.device_id == device.id),
+            "elsewhere": _elsewhere(subscription, device),
         },
         "panel": {
             "username": activation.manual_username_for(device.mac),
@@ -463,10 +487,32 @@ def _unbind(session: AsyncSession, device: Device) -> None:
     )
 
 
-BULK_LIMIT = 200
-"""Больше за один раз не берём: каждое действие — это поход к роутеру или
-в панель, и запрос на весь парк упёрся бы в таймаут посреди работы, оставив
-половину сделанной."""
+BULK_LIMITS = {
+    # Записи в базе — мгновенные, тут предел только про здравый смысл.
+    "status": 200,
+    "unbind": 200,
+    # Поход к роутеру по туннелю: пятнадцать секунд на молчащий. Идут
+    # одновременно, поэтому сорок штук укладываются примерно в минуту.
+    "poll": 40,
+    "reboot": 40,
+    # Активация — это учётка в панели, ссылка по SSH и запись срока, до минуты
+    # на роутер, и всё это последовательно: параллелить многошаговую работу
+    # с одной сессией базы нельзя.
+    "activate": 5,
+    # Своя команда: тот же путь, что у консоли в карточке, только на многих.
+    "command": 40,
+}
+"""Свой предел на действие, а не общий.
+
+Общий в двести упирался в таймаут админки: перезагрузка десяти молчащих
+роутеров занимает больше, чем она готова ждать. Оператор видел «приложение
+не ответило», роутеры при этом перезагружались, и второй щелчок перезагружал
+их снова."""
+
+BULK_CONCURRENCY = 8
+"""Сколько роутеров опрашиваем одновременно. Это ожидание сети, а не работа,
+и последовательный обход сорока молчащих — десять минут вместо минуты.
+Предел нужен, чтобы не открыть сорок SSH-сессий разом через один туннель."""
 
 REBOOT_COMMAND = "sleep 2 && reboot"
 """Перезагрузка идёт по SSH через туннель — другого пути к роутеру у нас нет.
@@ -476,22 +522,34 @@ REBOOT_COMMAND = "sleep 2 && reboot"
 и считает команду неудавшейся, хотя она как раз сработала."""
 
 
-async def _reboot(session: AsyncSession, device: Device) -> None:
-    """Перезагружает роутер через туннель.
+async def _over_the_tunnel(
+    session: AsyncSession, devices: list[Device], work
+) -> list[tuple[Device, str]]:
+    """Гоняет `work(device)` по роутерам одновременно и возвращает отказы.
 
-    Ошибку не глотаем: наверху она станет строкой «MAC: причина» в списке
-    несделанных, и оператор увидит, какие роутеры остались.
+    Одновременно, потому что это ожидание сети: молчащий роутер держит
+    пятнадцать секунд, и сорок таких подряд — десять минут, за которые
+    админка успевает бросить запрос.
+
+    Туннели поднимаем до, а записи в журнал делаем после — всё это работа
+    с сессией базы, а её нельзя трогать из нескольких задач сразу.
     """
-    if not device.frp_visitor_port:
-        await routers_service.ensure_frp_binding(session, device)
-    await router_shell.run(device, REBOOT_COMMAND)
-    routers_service.add_event(
-        session,
-        device_id=device.id,
-        mac=device.mac,
-        level="warning",
-        message="Перезагрузка из админки",
-    )
+    for device in devices:
+        if not device.frp_visitor_port:
+            await routers_service.ensure_frp_binding(session, device)
+    await session.flush()
+
+    guard = asyncio.Semaphore(BULK_CONCURRENCY)
+
+    async def one(device: Device):
+        async with guard:
+            try:
+                return device, "", await work(device)
+            except Exception as exc:  # noqa: BLE001 — причину показываем как есть
+                log.warning("fleet.bulk_device_failed", device_id=device.id, error=str(exc))
+                return device, str(exc)[:120] or "не ответил", None
+
+    return list(await asyncio.gather(*(one(device) for device in devices)))
 
 
 @router.post("/routers/bulk", dependencies=[Depends(require_token)])
@@ -507,11 +565,6 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
     raw_ids = payload.get("ids") or []
     if not isinstance(raw_ids, list) or not raw_ids:
         return {"ok": False, "error": "Не выбрано ни одного роутера."}
-    if len(raw_ids) > BULK_LIMIT:
-        return {"ok": False, "error": f"За раз можно обработать не больше {BULK_LIMIT} роутеров."}
-
-    ids = [int(value) for value in raw_ids if str(value).strip().isdigit()]
-    devices = list(await session.scalars(select(Device).where(Device.id.in_(ids))))
 
     target: DeviceStatus | None = None
     if action == "status":
@@ -519,47 +572,114 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
             target = DeviceStatus(str(payload.get("status", "")).strip())
         except ValueError:
             return {"ok": False, "error": "Неизвестное состояние."}
-    elif action not in {"poll", "unbind", "activate", "reboot"}:
+    elif action not in BULK_LIMITS:
         return {"ok": False, "error": "Неизвестное действие."}
+
+    limit = BULK_LIMITS[action]
+    if len(raw_ids) > limit:
+        return {
+            "ok": False,
+            "error": (
+                f"За раз так можно обработать не больше {limit} роутеров — "
+                "иначе страница отвалится по времени раньше, чем работа кончится."
+            ),
+        }
+
+    ids = [int(value) for value in raw_ids if str(value).strip().isdigit()]
+    devices = list(await session.scalars(select(Device).where(Device.id.in_(ids))))
 
     days = _days(payload)
     done, failed = 0, []
-    for device in devices:
-        try:
+    outputs: list[dict] = []
+
+    command = str(payload.get("command", "")).strip()
+    if action == "command":
+        if not command:
+            return {"ok": False, "error": "Пустая команда."}
+        if any(bad in command.lower() for bad in FORBIDDEN_COMMANDS):
+            log.warning("fleet.bulk_forbidden", command=command[:120], asked=len(raw_ids))
+            return {"ok": False, "error": "Эта команда запрещена из веб-консоли."}
+
+    if action in {"poll", "reboot", "command"}:
+        if action == "reboot":
+
+            async def work(device: Device):
+                return await router_shell.run(device, REBOOT_COMMAND)
+        elif action == "command":
+
+            async def work(device: Device):
+                return await router_shell.run(device, command)
+        else:
+
+            async def work(device: Device):
+                return await RouterApi(device.frp_visitor_port or 0).stats()
+
+        for device, error, result in await _over_the_tunnel(session, devices, work):
+            if error:
+                failed.append(f"{device.mac}: {error}")
+                continue
+            # Записи в базу — после обхода и по одной: сессия одна на запрос.
             if action == "poll":
-                answer = await poll_router(device.id, session)
-                if not answer.get("ok"):
-                    failed.append(f"{device.mac}: {answer.get('error', 'не ответил')}")
-                    continue
-            elif action == "status":
-                if device.status is not target:
-                    was = str(device.status)
-                    device.status = target
-                    routers_service.add_event(
-                        session,
-                        device_id=device.id,
-                        mac=device.mac,
-                        level="warning" if target is DeviceStatus.BLOCKED else "info",
-                        message=f"Состояние: {was} → {target}",
-                    )
-            elif action == "unbind":
-                _unbind(session, device)
-            elif action == "activate":
-                await activation.activate_manually(session, device=device, days=days)
-            elif action == "reboot":
-                await _reboot(session, device)
-        except activation.ActivationError as exc:
-            failed.append(f"{device.mac}: {exc}")
-            continue
-        except Exception as exc:  # noqa: BLE001 — причину показываем как есть
-            log.warning("fleet.bulk_failed", device_id=device.id, action=action, error=str(exc))
-            failed.append(f"{device.mac}: {str(exc)[:120]}")
-            continue
-        done += 1
+                stats = routers_service.parse_stats(result)
+                routers_service.apply_stats(device, stats)
+                routers_service.record_metrics(session, device, stats)
+            elif action == "command":
+                # Вывод показываем целиком: ради него команду и запускали.
+                outputs.append(
+                    {"mac": device.mac, "ok": result.ok, "output": result.output[:4000]}
+                )
+                routers_service.add_event(
+                    session,
+                    device_id=device.id,
+                    mac=device.mac,
+                    level="info",
+                    message="Команда из админки: " + command[:120],
+                )
+            else:
+                routers_service.add_event(
+                    session,
+                    device_id=device.id,
+                    mac=device.mac,
+                    level="warning",
+                    message="Перезагрузка из админки",
+                )
+            done += 1
+    else:
+        for device in devices:
+            try:
+                if action == "status":
+                    if device.status is not target:
+                        was = str(device.status)
+                        device.status = target
+                        routers_service.add_event(
+                            session,
+                            device_id=device.id,
+                            mac=device.mac,
+                            level="warning" if target is DeviceStatus.BLOCKED else "info",
+                            message=f"Состояние: {was} → {target}",
+                        )
+                elif action == "unbind":
+                    _unbind(session, device)
+                elif action == "activate":
+                    await activation.activate_manually(session, device=device, days=days)
+            except activation.ActivationError as exc:
+                failed.append(f"{device.mac}: {exc}")
+                continue
+            except Exception as exc:  # noqa: BLE001 — причину показываем как есть
+                log.warning("fleet.bulk_failed", device_id=device.id, action=action, error=str(exc))
+                failed.append(f"{device.mac}: {str(exc)[:120]}")
+                continue
+            done += 1
 
     missing = len(ids) - len(devices)
     log.info("fleet.bulk", action=action, asked=len(ids), done=done, failed=len(failed))
-    return {"ok": True, "done": done, "failed": failed, "missing": missing}
+    return {
+        "ok": True,
+        "done": done,
+        "failed": failed,
+        "missing": missing,
+        "outputs": outputs,
+    }
 
 
 # --- Роутеры клиента ---------------------------------------------------------

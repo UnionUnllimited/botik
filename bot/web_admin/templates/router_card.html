@@ -96,7 +96,9 @@
             {% if subscription.status %}
               {{ subscription.label or subscription.status }}
               {% if subscription.until %}<span class="tw-text-muted2">до {{ subscription.until[:10] }}</span>{% endif %}
-              {% if not subscription.here %}<span class="tw-text-muted2">(активирована на другом роутере)</span>{% endif %}
+              {# «На другом», а не «не на этом»: оплаченная и ещё не
+                 активированная подписка не лежит ни на одном роутере. #}
+              {% if subscription.elsewhere %}<span class="tw-text-muted2">(активирована на другом роутере)</span>{% endif %}
             {% else %}
               <span class="tw-text-muted2">нет</span>
             {% endif %}

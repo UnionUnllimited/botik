@@ -322,6 +322,7 @@ PAGES = {
             "phone": "+79001234567",
         },
         "subscription": {
+            "elsewhere": False,
             "status": "active",
             "label": "активна",
             "until": "2026-09-04T10:00:00+00:00",
@@ -359,7 +360,7 @@ PAGES = {
                 "rx_bytes": 5_368_709_120,
                 "tx_bytes": 1_073_741_824,
                 "last_seen": "2026-08-13T15:04:00+00:00",
-                "subscription_here": True,
+                "subscription_elsewhere": False,
                 "clients": 3,
                 "cpu_pct": 12,
                 "ram_pct": 40,
@@ -378,6 +379,11 @@ PAGES = {
         "page": 2,
         "pages": 9,
         "total": 420,
+        # Вывод массовой команды: одна удачная, одна с ошибкой на роутере.
+        "outputs": [
+            {"mac": "A0:B1:C2:D3:E4:F5", "ok": True, "output": "wan up"},
+            {"mac": "A0:B1:C2:D3:E4:F6", "ok": False, "output": ""},
+        ],
     },
 }
 
