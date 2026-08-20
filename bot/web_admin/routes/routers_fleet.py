@@ -225,6 +225,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             subscription=data.get("subscription", {}),
             panel=data.get("panel", {}),
             events=data.get("events", []),
+            quick_commands=data.get("quick_commands", []),
             fleet_error=error,
             console_output=console_output,
             console_command=console_command,
@@ -233,6 +234,54 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
     @admin_bp_instance.route("/routers/<int:device_id>")
     async def router_card(device_id: int):
         return await _render_card(device_id)
+
+    @admin_bp_instance.route("/routers/<int:device_id>/quick/<name>", methods=["POST"])
+    async def router_quick(device_id: int, name: str):
+        """Готовый вопрос роутеру по кнопке. Вывод — там же, где у консоли."""
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/quick/{name}", {})
+        if error:
+            await flash(error, "danger")
+            return await _render_card(device_id)
+        return await _render_card(
+            device_id,
+            console_output=data.get("output") or "(пусто)",
+            console_command=data.get("command") or name,
+        )
+
+    @admin_bp_instance.route("/routers/<int:device_id>/events")
+    async def router_events(device_id: int):
+        """Полный журнал устройства. В карточке остались последние строки:
+        за месяц их набегают сотни, и карточка становилась лентой."""
+        params = {"page": request.args.get("page", "1")}
+        if request.args.get("level"):
+            params["level"] = request.args["level"]
+        data, error = await _get(
+            f"/api/v1/fleet/routers/{device_id}/events?{urlencode(params)}"
+        )
+        if error:
+            await flash(error, "danger")
+        return await render_template(
+            "router_events.html",
+            device_id=device_id,
+            device=data.get("device", {}),
+            events=data.get("events", []),
+            levels=data.get("levels", []),
+            level=request.args.get("level", ""),
+            page=data.get("page", 1),
+            pages=data.get("pages", 1),
+            total=data.get("total", 0),
+            retention_days=data.get("retention_days", 0),
+            fleet_error=error,
+        )
+
+    @admin_bp_instance.route("/routers/<int:device_id>/events/clear", methods=["POST"])
+    async def router_events_clear(device_id: int):
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/events/clear", {})
+        if error:
+            await flash(error, "danger")
+        else:
+            await flash(f"Журнал очищен: удалено {data.get('count', 0)}.", "success")
+        return redirect(url_for("admin.router_events", device_id=device_id))
 
     @admin_bp_instance.route("/routers/<int:device_id>/console", methods=["POST"])
     async def router_console(device_id: int):

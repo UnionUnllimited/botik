@@ -181,6 +181,21 @@
         запрещены: получить кирпич у клиента на другом конце страны легко,
         а вернуть его — нет.
       </p>
+      {# Готовые вопросы кнопками: это те же полдюжины команд каждый раз,
+         и набирать их руками — лишний повод опечататься в том, что уходит
+         на устройство клиента. Состояние туннеля здесь же: «на связи»
+         показывает frps, а работает связь через frpc на самом роутере. #}
+      {% if quick_commands %}
+      <div class="flex flex-wrap gap-2">
+        {% for item in quick_commands %}
+        <form method="post"
+              action="{{ url_for('admin.router_quick', device_id=device_id, name=item.name) }}">
+          <button type="submit" class="tw-btn tw-btn-sm">{{ item.title }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <form method="post" action="{{ url_for('admin.router_console', device_id=device_id) }}" class="space-y-2">
         <input name="command" required class="tw-input w-full font-mono"
                value="{{ console_command or '' }}" placeholder="logread | tail -n 50">
@@ -194,7 +209,15 @@
 
     {# ── Журнал ────────────────────────────────────────────────────────── #}
     <div class="tw-card p-4">
-      <h2 class="text-[15px] font-semibold tw-text-base2 mb-3">Журнал устройства</h2>
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h2 class="text-[15px] font-semibold tw-text-base2">Последнее в журнале</h2>
+        {# Полный журнал — своей страницей: здесь он рос до сотен строк
+           и топил под собой всё остальное в карточке. #}
+        <a href="{{ url_for('admin.router_events', device_id=device_id) }}"
+           class="tw-btn tw-btn-sm">
+          <i data-lucide="scroll-text" class="w-3.5 h-3.5"></i><span>Весь журнал</span>
+        </a>
+      </div>
       {% if events %}
       <table class="w-full text-[13px]">
         <tbody>

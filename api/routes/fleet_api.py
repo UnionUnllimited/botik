@@ -21,7 +21,7 @@ import datetime as dt
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +32,7 @@ from core.dates import utcnow
 from core.enums import DeviceStatus
 from core.models import (
     Device,
+    DeviceEvent,
     DomainBuild,
     DomainSource,
     ListKind,
@@ -149,6 +150,15 @@ ROUTERS_PAGE_SIZES = (25, 50, 100, 200)
 
 EXPIRING_SOON_DAYS = 7
 """«Истекает» — сколько дней до конца подписки считать поводом позвонить."""
+
+CARD_EVENTS = 10
+"""Столько строк журнала показывает карточка. Остальное — на своей странице:
+за месяц у роутера их набегают сотни, и карточка становилась лентой."""
+
+EVENTS_PAGE_SIZE = 100
+EVENTS_RETENTION_DAYS = 60
+"""Дольше журнал не держим. «Показан пароль root» за прошлый квартал не нужен
+никому, а таблица растёт с каждой командой и каждым обходом парка."""
 
 
 @router.get("/routers", dependencies=[Depends(require_token)])
@@ -381,9 +391,16 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
             "until": _iso(panel_expires_at),
             "active": bool(panel_expires_at and panel_expires_at > now),
         },
+        # Журнал в карточке — только последние строки. Полный лежит своей
+        # страницей: за месяц у роутера их набегают сотни, и карточка
+        # превращалась в ленту, где ничего не найти.
         "events": [
             {"at": _iso(event.created_at), "level": event.level, "message": event.message}
-            for event in events
+            for event in events[:CARD_EVENTS]
+        ],
+        "quick_commands": [
+            {"name": name, "title": title}
+            for name, (title, _command) in router_shell.QUICK_COMMANDS.items()
         ],
     }
 
@@ -1191,6 +1208,100 @@ async def console(
     )
     await session.commit()
     return {"ok": result.ok, "output": result.output[:20000], "command": command}
+
+
+@router.post("/routers/{device_id}/quick/{name}", dependencies=[Depends(require_token)])
+async def quick_command(
+    device_id: int, name: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Готовый вопрос роутеру: аптайм, память, туннель, лог.
+
+    Кнопкой, а не строкой в консоли: это те же полдюжины команд каждый раз,
+    и набирать их руками — лишний повод опечататься в том, что уходит
+    на устройство клиента.
+    """
+    device = await _device_or_404(session, device_id)
+    try:
+        result = await router_shell.run_quick(device, name)
+    except router_shell.ShellError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    title = router_shell.QUICK_COMMANDS[name][0]
+    routers_service.add_event(
+        session, device_id=device.id, mac=device.mac, level="info", message="Запрос: " + title
+    )
+    await session.commit()
+    return {"ok": result.ok, "output": result.output[:20000], "command": title}
+
+
+@router.get("/routers/{device_id}/events", dependencies=[Depends(require_token)])
+async def router_events(
+    device_id: int,
+    page: int = Query(1, ge=1),
+    level: str = Query("", max_length=16),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Полный журнал устройства своей страницей.
+
+    В карточке остались последние строки: за месяц их набегают сотни, и
+    карточка превращалась в ленту, где не найти ни привязку клиента, ни отказ
+    активации — то, ради чего в журнал и заходят.
+    """
+    device = await _device_or_404(session, device_id)
+    query = select(DeviceEvent).where(DeviceEvent.device_id == device.id)
+    if level:
+        query = query.where(DeviceEvent.level == level)
+
+    total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = await session.scalars(
+        query.order_by(DeviceEvent.id.desc())
+        .limit(EVENTS_PAGE_SIZE)
+        .offset((page - 1) * EVENTS_PAGE_SIZE)
+    )
+    return {
+        "device": {"id": device.id, "mac": device.mac, "model": device.model or ""},
+        "events": [
+            {
+                "at": _iso(row.created_at),
+                "level": row.level,
+                "message": row.message,
+                "payload": row.payload or {},
+            }
+            for row in rows
+        ],
+        "levels": sorted(
+            set(
+                await session.scalars(
+                    select(DeviceEvent.level).where(DeviceEvent.device_id == device.id).distinct()
+                )
+            )
+        ),
+        "total": total,
+        "page": page,
+        "pages": max(1, (total + EVENTS_PAGE_SIZE - 1) // EVENTS_PAGE_SIZE),
+        "retention_days": EVENTS_RETENTION_DAYS,
+    }
+
+
+@router.post("/routers/{device_id}/events/clear", dependencies=[Depends(require_token)])
+async def clear_router_events(
+    device_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Чистит журнал устройства целиком — по кнопке оператора."""
+    device = await _device_or_404(session, device_id)
+    result = await session.execute(
+        delete(DeviceEvent).where(DeviceEvent.device_id == device.id)
+    )
+    count = result.rowcount or 0
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="warning",
+        message=f"Журнал очищен, удалено записей: {count}",
+    )
+    log.info("fleet.events_cleared", device_id=device.id, count=count)
+    return {"ok": True, "count": count}
 
 
 # ── Списки доменов ────────────────────────────────────────────────────────────

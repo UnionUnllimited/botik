@@ -36,7 +36,25 @@ QUICK_COMMANDS: dict[str, tuple[str, str]] = {
     "clients": ("Клиенты в сети", "cat /tmp/dhcp.leases 2>/dev/null | tail -n 40"),
     "service_status": ("Статус сервиса доступа", "uci show passwall.@global[0] 2>/dev/null | head -n 20"),
     "processes": ("Процессы", "ps | head -n 30"),
+    # Туннель — первое, о чём спрашивают, когда роутер «на связи», а команды
+    # не доходят: связь показывает frps, а работает через frpc на роутере.
+    "frp_status": (
+        "Туннель: состояние",
+        "/etc/init.d/frpc status 2>&1; ps | grep -c '[f]rpc'",
+    ),
+    "frp_log": ("Туннель: лог", "logread -e frpc 2>/dev/null | tail -n 40"),
+    "frp_restart": ("Туннель: перезапустить", "/etc/init.d/frpc restart && sleep 1 && echo ok"),
+    "lists": (
+        "Списки на роутере",
+        "ls -la /etc/*.lst 2>/dev/null; wc -l /etc/*.lst 2>/dev/null",
+    ),
+    "log_tail": ("Системный лог", "logread | tail -n 60"),
 }
+"""Готовые команды под кнопками в карточке.
+
+Набор закрытый и в коде, а не в базе: это ровно те вопросы, которые задают
+роутеру каждый раз, и вводить их руками — лишний повод опечататься в том,
+что уходит на устройство клиента."""
 
 
 class ShellError(RuntimeError):

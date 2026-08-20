@@ -330,9 +330,38 @@ PAGES = {
         },
         "panel": {"username": "a0-b1-c2-d3-e4-f5", "until": None, "active": False},
         "events": [],
+        "quick_commands": [
+            {"name": "uptime", "title": "Аптайм и нагрузка"},
+            {"name": "frp_status", "title": "Туннель: состояние"},
+        ],
         "fleet_error": "",
         "console_output": "",
         "console_command": "",
+    },
+    "router_events.html": {
+        "device_id": 1,
+        "device": {"id": 1, "mac": "A0:B1:C2:D3:E4:F5", "model": "AX3000"},
+        "events": [
+            {
+                "at": "2026-08-20T17:20:00+00:00",
+                "level": "info",
+                "message": "Привязан клиент @union",
+                "payload": {},
+            },
+            {
+                "at": "2026-08-20T17:19:00+00:00",
+                "level": "warning",
+                "message": "Перезагрузка из админки",
+                "payload": {},
+            },
+        ],
+        "levels": ["info", "warning"],
+        "level": "",
+        "page": 1,
+        "pages": 4,
+        "total": 340,
+        "retention_days": 60,
+        "fleet_error": "",
     },
     "routers_fleet.html": {
         "fleet": {
@@ -426,6 +455,7 @@ OURS = {
     "orders_shop_card.html",
     "domain_lists.html",
     "router_card.html",
+    "router_events.html",
     "routers_fleet.html",
 }
 """Страницы, написанные нами. Их рисуем строго: обращение к непереданной

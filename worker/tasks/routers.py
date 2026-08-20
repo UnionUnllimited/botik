@@ -24,7 +24,7 @@ from sqlalchemy import delete, select
 
 from core.config import settings
 from core.db import session_scope
-from core.models import Device, Heartbeat
+from core.models import Device, DeviceEvent, Heartbeat
 from core.services import activation
 from core.services import routers as router_service
 from core.services.frp import FrpError, RouterApi, dashboard
@@ -152,4 +152,25 @@ async def cleanup_router_metrics() -> int:
     count = result.rowcount or 0
     if count:
         log.info("routers.metrics_cleaned", count=count)
+    return count
+
+
+EVENTS_RETENTION_DAYS = 60
+"""Дольше журнал устройств не держим.
+
+Он пишется на каждую команду, каждую привязку и каждый показ пароля, а читают
+его в пределах последних дней: «что было с этим роутером вчера». Без чистки
+таблица растёт вечно и страница журнала превращается в свалку."""
+
+
+async def cleanup_device_events() -> int:
+    """Убирает старые записи журнала устройств."""
+    threshold = dt.datetime.now(dt.UTC) - dt.timedelta(days=EVENTS_RETENTION_DAYS)
+    async with session_scope() as session:
+        result = await session.execute(
+            delete(DeviceEvent).where(DeviceEvent.created_at < threshold)
+        )
+    count = result.rowcount or 0
+    if count:
+        log.info("routers.events_cleaned", count=count, older_than_days=EVENTS_RETENTION_DAYS)
     return count

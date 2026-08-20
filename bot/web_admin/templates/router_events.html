@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Журнал {{ device.mac or '' }} — {{ super() }}{% endblock %}
+
+{% block content %}
+{# Журнал вынесен из карточки: он пишется на каждую команду, привязку и показ
+   пароля, и за месяц у роутера набегают сотни строк. В карточке остались
+   последние десять — этого хватает, чтобы понять, что было только что. #}
+<div class="tw-anim space-y-4">
+
+  <div class="pt-1">
+    <p class="text-[13px] tw-text-muted2 mb-1">
+      <a href="{{ url_for('admin.router_card', device_id=device_id) }}">← Карточка роутера</a>
+    </p>
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">
+      Журнал устройства
+    </h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">
+      <span class="font-mono">{{ device.mac or '—' }}</span>
+      {% if device.model %} · {{ device.model }}{% endif %}
+      {% if retention_days %} · записи старше {{ retention_days }} дней убираются сами{% endif %}
+    </p>
+  </div>
+
+  {% if fleet_error %}
+  <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">{{ fleet_error }}</div>
+  {% else %}
+
+  <div class="tw-card p-3 flex items-end gap-2 flex-wrap">
+    <form method="get" class="flex items-end gap-2">
+      <div class="ss-field">
+        <label for="level">Уровень</label>
+        <select id="level" name="level" class="tw-input" onchange="this.form.submit()">
+          <option value="">любой</option>
+          {% for item in levels %}
+          <option value="{{ item }}" {% if level == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+    <div class="text-[12px] tw-text-muted2 flex-1">Всего записей: {{ total }}</div>
+    {# Чистка руками — на случай, когда журнал забит отладкой и мешает
+       смотреть. Автоматическая всё равно работает по сроку. #}
+    <form method="post" action="{{ url_for('admin.router_events_clear', device_id=device_id) }}">
+      <button type="submit" class="tw-btn tw-btn-sm nav-accent-danger"
+              onclick="return confirm('Очистить журнал этого роутера целиком?')">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Очистить</span>
+      </button>
+    </form>
+  </div>
+
+  {% if events %}
+  <div class="tw-card overflow-x-auto">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="tw-text-muted2 text-left">
+          <th class="px-3 py-2 font-medium whitespace-nowrap">Когда</th>
+          <th class="px-3 py-2 font-medium whitespace-nowrap">Уровень</th>
+          <th class="px-3 py-2 font-medium">Событие</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+          <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
+            {{ event.at[:16].replace('T', ' ') if event.at else '—' }}
+          </td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if event.level == 'error' %}<span style="color:#dc2626">{{ event.level }}</span>
+            {% elif event.level == 'warning' %}<span class="text-amber-500">{{ event.level }}</span>
+            {% elif event.level == 'success' %}<span style="color:#16a34a">{{ event.level }}</span>
+            {% else %}<span class="tw-text-muted2">{{ event.level }}</span>{% endif %}
+          </td>
+          <td class="px-3 py-2">{{ event.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="tw-card p-4 text-[13px] tw-text-muted2">Записей нет.</div>
+  {% endif %}
+
+  {% if pages > 1 %}
+  <nav class="flex justify-center pt-1">
+    <div class="flex items-center gap-1 flex-wrap">
+      <a href="{{ url_for('admin.router_events', device_id=device_id, page=page-1, level=level) }}"
+         class="pg-link {% if page == 1 %}is-disabled{% endif %}" aria-label="Предыдущая">
+        <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+      </a>
+      {% set ns = namespace(last_printed=0) %}
+      {% for p in range(1, pages + 1) %}
+        {% if p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+          {% if p > ns.last_printed + 1 %}<span class="pg-link is-disabled">…</span>{% endif %}
+          <a href="{{ url_for('admin.router_events', device_id=device_id, page=p, level=level) }}"
+             class="pg-link {% if p == page %}is-active{% endif %}">{{ p }}</a>
+          {% set ns.last_printed = p %}
+        {% endif %}
+      {% endfor %}
+      <a href="{{ url_for('admin.router_events', device_id=device_id, page=page+1, level=level) }}"
+         class="pg-link {% if page == pages %}is-disabled{% endif %}" aria-label="Следующая">
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+      </a>
+    </div>
+  </nav>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

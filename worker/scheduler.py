@@ -158,6 +158,12 @@ def create_scheduler() -> AsyncIOScheduler:
         next_run_time=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=10),
     )
     scheduler.add_job(
+        instrumented("cleanup_device_events", routers.cleanup_device_events),
+        CronTrigger(hour=3, minute=40),
+        id="cleanup_device_events",
+        name="Чистка журнала устройств",
+    )
+    scheduler.add_job(
         instrumented("cleanup_router_metrics", routers.cleanup_router_metrics),
         CronTrigger(hour=3, minute=50),
         id="cleanup_router_metrics",
