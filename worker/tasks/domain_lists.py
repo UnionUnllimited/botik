@@ -34,6 +34,10 @@ async def rebuild() -> int:
     """
     async with session_scope() as session:
         conf = await service.config(session)
+        # Выключенный авторежим не отменяет кнопку «Собрать сейчас»: она зовёт
+        # сборку напрямую, минуя этот круг.
+        if str(conf.get("lists_auto_enabled", "1")) != "1":
+            return -1
         try:
             wanted = max(1, int(conf.get("lists_poll_interval_min") or 10))
         except ValueError:

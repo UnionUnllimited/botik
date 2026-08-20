@@ -341,6 +341,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             last_build=data.get("last_build"),
             files=data.get("files") or [],
             config=data.get("config") or {},
+            poll_intervals=data.get("poll_intervals") or [],
         )
 
     @admin_bp_instance.route("/lists")
@@ -402,7 +403,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         _, error = await _post(
             "/api/v1/fleet/lists/config",
             {key: (form.get(key) or "") for key in (
-                "lists_poll_interval_min", "lists_local_dir",
+                "lists_auto_enabled", "lists_poll_interval_min", "lists_local_dir",
                 "lists_s3_bucket", "lists_s3_endpoint",
                 "lists_s3_region", "lists_s3_prefix", "lists_s3_access_key",
                 "lists_s3_secret_key",

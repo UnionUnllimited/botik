@@ -641,6 +641,13 @@ async def my_router(
 
     return {
         "has_client": True,
+        # Инструкция лежит на самом роутере и открывается из домашней сети:
+        # так она не расходится с прошивкой и доступна ещё до того, как
+        # появится интернет, — а нужна она ровно в этот момент.
+        "instruction_url": str(
+            await settings_service.get_setting(session, "router.instruction_url")
+            or texts.DEFAULT_INSTRUCTION_URL
+        ),
         # Список — без обращения к панели: он нужен, чтобы нарисовать кнопки
         # выбора, а срок разворачивается только у выбранного.
         "routers": [
@@ -1284,7 +1291,7 @@ async def manage_order_card(order_id: int, session: AsyncSession = Depends(get_s
     }
 
 
-def _status_notice(order: Order, reason: str) -> str:
+def _status_notice(order: Order, reason: str, *, instruction_url: str = "") -> str:
     """Текст для клиента при смене статуса.
 
     Отправляет его их бот, а не мы: клиент разговаривает с ним, и сообщение
@@ -1300,6 +1307,13 @@ def _status_notice(order: Order, reason: str) -> str:
         notice += "\n\n" + texts.TRACK_INFO.format(track=delivery.tracking_number)
         if delivery.tracking_url:
             notice += "\n" + delivery.tracking_url
+    if order.status is OrderStatus.DELIVERED:
+        # Момент, когда человек держит коробку и не знает, что дальше.
+        # Инструкция лежит на самом роутере: она не может разойтись
+        # с прошивкой и открывается ещё до того, как появится интернет.
+        notice += "\n\n" + texts.DELIVERY_INSTRUCTION.format(
+            instruction=instruction_url or texts.DEFAULT_INSTRUCTION_URL
+        )
     return notice
 
 
@@ -1315,11 +1329,12 @@ async def manage_order_status(
         return {"ok": False, "error": str(exc)}
 
     await session.flush()
+    instruction_url = await settings_service.get_setting(session, "router.instruction_url")
     return {
         "ok": True,
         "status": str(order.status),
         "tg_id": order.user.tg_id if order.user else None,
-        "notice": _status_notice(order, reason),
+        "notice": _status_notice(order, reason, instruction_url=str(instruction_url or "")),
     }
 
 

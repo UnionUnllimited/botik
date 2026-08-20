@@ -264,7 +264,9 @@ PAGES = {
             "ip": [],
         },
         "imported": {},
+        "poll_intervals": [5, 10, 15, 30, 60, 180, 360, 720, 1440],
         "config": {
+            "lists_auto_enabled": "1",
             "lists_poll_interval_min": "10",
             "lists_local_dir": "/var/www/lists",
             "lists_s3_endpoint": "https://storage.yandexcloud.net",

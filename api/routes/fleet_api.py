@@ -1344,6 +1344,7 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
             else value
             for key, value in (await domain_lists.config(session)).items()
         },
+        "poll_intervals": list(domain_lists.POLL_INTERVALS),
         # Каждый список отдельной записью: домены и подсети — разные файлы
         # по разным адресам, и на странице их надо видеть порознь, а не одной
         # строкой «доменов N, подсетей M».

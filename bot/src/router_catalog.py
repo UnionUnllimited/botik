@@ -454,6 +454,12 @@ def my_router_text(data: dict) -> str:
                 f"Это {position} из {len(routers)}: {_esc(router.get('model') or '—')}",
                 f"MAC: <code>{_esc(router.get('mac'))}</code>",
             ]
+        # Инструкция нужна именно здесь: роутер ещё не работает, и человек
+        # ищет, что нажать. Она на самом роутере — подключился к его сети
+        # и открыл, интернет для этого не нужен.
+        instruction = (data.get("instruction_url") or "").strip()
+        if instruction:
+            lines += ["", f"Инструкция: <code>{_esc(instruction)}</code>"]
         return "\n".join(lines)
 
     lines = [
@@ -481,6 +487,9 @@ def my_router_text(data: dict) -> str:
     panel_url = (app_conf.get("router_panel_url", "") or "").strip()
     if panel_url:
         lines += ["", f"Админка роутера: <code>{_esc(panel_url)}</code> — из домашней сети."]
+    instruction = (data.get("instruction_url") or "").strip()
+    if instruction:
+        lines += [f"Инструкция: <code>{_esc(instruction)}</code> — она на самом роутере."]
     return "\n".join(lines)
 
 

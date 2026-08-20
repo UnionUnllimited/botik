@@ -393,6 +393,7 @@ async def upload(values_by_kind: dict[str, list[str]], conf: dict[str, str] | No
 # ── Настройки, правимые на странице ───────────────────────────────────────────
 
 SETTING_KEYS = (
+    "lists_auto_enabled",
     "lists_poll_interval_min",
     "lists_local_dir",
     "lists_s3_bucket",
@@ -406,6 +407,13 @@ SETTING_KEYS = (
 и требовать ради смены интервала правки `.env` с перезапуском — перебор.
 Значение из `.env` остаётся значением по умолчанию, пока в базе пусто."""
 
+POLL_INTERVALS = (5, 10, 15, 30, 60, 180, 360, 720, 1440)
+"""Из чего оператор выбирает частоту круга, в минутах.
+
+Списком, а не полем ввода: круг спрашивает источники условно, по метке
+версии, и осмысленных значений тут десяток. Полем же вводят «0» — и это
+круг без пауз по чужому GitHub, который отвечает на такое запретом."""
+
 SECRET_KEYS = frozenset({"lists_s3_access_key", "lists_s3_secret_key"})
 """Наружу отдаются не значением, а признаком «задано»: страница открыта
 оператору, а ключ от хранилища ему смотреть незачем."""
@@ -415,6 +423,9 @@ async def config(session: AsyncSession) -> dict[str, str]:
     """Настройки списков: из базы, с падением на окружение."""
     env = settings.lists
     fallback = {
+        # Включено по умолчанию: списки для того и собираются, чтобы роутеры
+        # получали свежие. Выключают их разве что на время разбирательств.
+        "lists_auto_enabled": "1",
         "lists_poll_interval_min": str(env.poll_interval_min),
         "lists_local_dir": env.local_dir,
         "lists_s3_bucket": env.s3_bucket,
@@ -448,9 +459,14 @@ async def save_config(session: AsyncSession, values: dict[str, str]) -> None:
             # Каталог, а не файл: имена мы задаём сами, и подставленный сюда
             # `.lst` привёл бы к попытке писать внутрь файла.
             value = value.rstrip("/") or "/"
+        if key == "lists_auto_enabled":
+            value = "1" if value in {"1", "on", "true", "yes"} else "0"
         if key == "lists_poll_interval_min":
+            # Из закрытого набора: интервал выбирают списком, и «0» или «99999»
+            # из подделанной формы означали бы либо круг без пауз, либо
+            # молчание на два месяца.
             try:
-                value = str(max(1, min(int(value or 10), 1440)))
+                value = str(min(POLL_INTERVALS, key=lambda option: abs(option - int(value or 10))))
             except ValueError:
                 continue
         await settings_service.set_setting(session, key, value)
