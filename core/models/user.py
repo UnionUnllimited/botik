@@ -92,6 +92,23 @@ class User(IntPkMixin, TimestampMixin, Base):
         # Клиент с сайта: имени из Telegram нет, до первого заказа известна одна почта.
         return self.email or f"id{self.tg_id or self.id}"
 
+    @property
+    def telegram_name(self) -> str:
+        """Как клиента зовут в Telegram — по нему с ним и связываются.
+
+        Отдельно от `display_name`: тот показывает имя из заказа, а тёзок среди
+        имён сколько угодно, и написать «Токареву Тимуру» из админки нельзя.
+        Разговор с клиентом идёт в Telegram, поэтому в списках стоит логин,
+        а имя из доставки — дополнением в карточке.
+        """
+        if self.username:
+            return f"@{self.username}"
+        if self.tg_id:
+            # Логина у клиента может не быть вовсе — Telegram его не требует.
+            # По идентификатору оператор найдёт человека в боте.
+            return f"id{self.tg_id}"
+        return self.email or f"id{self.id}"
+
 
 class AdminUser(IntPkMixin, TimestampMixin, Base):
     __tablename__ = "admin_users"

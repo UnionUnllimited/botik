@@ -80,6 +80,42 @@ def _label(value: str, labels: dict[str, str]) -> str:
     return labels.get(value, value)
 
 
+def _matches_link(device: Device, link: str, *, now: dt.datetime) -> bool:
+    if not link:
+        return True
+    online = device.frp_online or device.is_online(
+        threshold_min=settings.subscription.heartbeat_offline_min, now=now
+    )
+    return online is (link == "online")
+
+
+def _matches_sub(device: Device, sub: str, subs: dict, *, now: dt.datetime) -> bool:
+    """Подписка глазами оператора.
+
+    «Нет» и «на другом роутере» — разные беды: в первом случае клиент не платил,
+    во втором заплатил, но роутер этот срок не получил. Разводить их важно:
+    второй случай — это молча не активировавшийся второй роутер.
+    """
+    if not sub:
+        return True
+    subscription = subs.get(device.id)
+    if sub == "none":
+        return subscription is None
+    if subscription is None:
+        return False
+    here = subscription.device_id == device.id
+    if sub == "elsewhere":
+        return not here
+    if sub == "active":
+        return here
+    if sub == "expiring":
+        expires = subscription.expires_at
+        return bool(
+            here and expires and now <= expires <= now + dt.timedelta(days=EXPIRING_SOON_DAYS)
+        )
+    return True
+
+
 def _iso(value: dt.datetime | None) -> str | None:
     return value.isoformat() if value else None
 
@@ -89,6 +125,13 @@ ROUTERS_PAGE_SIZE = 50
 на первой партии список без неё станет нечитаемым, а ручка — тяжёлой:
 на каждый роутер идёт отдельный запрос за подпиской."""
 
+ROUTERS_PAGE_SIZES = (25, 50, 100, 200)
+"""Из чего оператор выбирает размер страницы. Список закрытый: иначе
+`per_page=100000` в адресе вернёт нас к тому, ради чего заводилась страница."""
+
+EXPIRING_SOON_DAYS = 7
+"""«Истекает» — сколько дней до конца подписки считать поводом позвонить."""
+
 
 @router.get("/routers", dependencies=[Depends(require_token)])
 async def list_routers(
@@ -96,19 +139,25 @@ async def list_routers(
     q: str = Query("", max_length=120),
     link: str = Query("", pattern="^(online|offline)?$"),
     client: str = Query("", pattern="^(with|without)?$"),
+    sub: str = Query("", pattern="^(active|none|expiring|elsewhere)?$"),
+    state: str = Query("", max_length=16),
+    model: str = Query("", max_length=120),
     page: int = Query(1, ge=1),
+    per_page: int = Query(ROUTERS_PAGE_SIZE),
 ) -> dict:
     """Список роутеров с показаниями и владельцем.
 
     Фильтры считаются в SQL, а не по загруженному списку: иначе страница
     на пятьдесят строк тянула бы весь парк и спрашивала подписку по каждому.
 
-    Связь — исключение: она складывается из флага туннеля и свежести
-    последнего ответа, то есть считается уже в Python. Поэтому по ней
-    фильтруем после выборки, а счётчики сверху считаем по всему парку —
-    им фильтр не нужен, они про парк целиком.
+    Связь и подписка — исключения: связь складывается из флага туннеля
+    и свежести последнего ответа, а подписка лежит отдельной таблицей и
+    спрашивается по клиенту. И то и другое считается в Python, поэтому по ним
+    фильтруем после выборки. Счётчики сверху считаем по всему парку — им
+    фильтр не нужен, они про парк целиком.
     """
     now = utcnow()
+    size = per_page if per_page in ROUTERS_PAGE_SIZES else ROUTERS_PAGE_SIZE
 
     conditions = []
     text = q.strip()
@@ -119,37 +168,52 @@ async def list_routers(
         conditions.append(Device.user_id.is_not(None))
     elif client == "without":
         conditions.append(Device.user_id.is_(None))
+    if state:
+        try:
+            conditions.append(Device.status == DeviceStatus(state))
+        except ValueError:
+            # Состояние из чужого адреса: показываем парк целиком, а не пустоту,
+            # иначе опечатка в ссылке читается как «роутеров нет».
+            log.info("fleet.unknown_state_filter", state=state)
+    if model.strip():
+        conditions.append(Device.model == model.strip())
 
     statement = select(Device).options(selectinload(Device.user)).order_by(Device.id.desc())
     if conditions:
         statement = statement.where(*conditions)
 
-    # Фильтр по связи не ложится в SQL, поэтому при нём берём выборку целиком
-    # и режем на страницы уже после. На парке в тысячи это стоило бы дорого,
-    # но такой фильтр и нужен как раз чтобы найти молчащие — их единицы.
-    paginate_in_sql = not link
-    if paginate_in_sql:
+    # Фильтры по связи и подписке не ложатся в SQL, поэтому при них берём
+    # выборку целиком и режем на страницы уже после. На парке в тысячи это
+    # стоило бы дорого, но такие фильтры и нужны, чтобы найти единицы:
+    # молчащие роутеры и тех, у кого кончается срок.
+    in_python = bool(link or sub)
+    if not in_python:
         total = await session.scalar(
             select(func.count()).select_from(statement.subquery())
         ) or 0
-        statement = statement.limit(ROUTERS_PAGE_SIZE).offset((page - 1) * ROUTERS_PAGE_SIZE)
+        statement = statement.limit(size).offset((page - 1) * size)
 
     devices = list(await session.scalars(statement))
 
-    if link:
+    # Подписку спрашиваем один раз на роутер и держим здесь: она нужна и
+    # фильтру, и строке таблицы, а второй запрос за тем же — лишний круг.
+    subs = {
+        device.id: (
+            await subscription_service.get_current(session, device.user_id)
+            if device.user_id
+            else None
+        )
+        for device in devices
+    }
+
+    if in_python:
         devices = [
             device
             for device in devices
-            if (
-                device.frp_online
-                or device.is_online(
-                    threshold_min=settings.subscription.heartbeat_offline_min, now=now
-                )
-            )
-            is (link == "online")
+            if _matches_link(device, link, now=now) and _matches_sub(device, sub, subs, now=now)
         ]
         total = len(devices)
-        devices = devices[(page - 1) * ROUTERS_PAGE_SIZE : page * ROUTERS_PAGE_SIZE]
+        devices = devices[(page - 1) * size : page * size]
 
     items = []
     for device in devices:
@@ -157,9 +221,7 @@ async def list_routers(
             threshold_min=settings.subscription.heartbeat_offline_min, now=now
         )
         seen = (device.last_heartbeat_at, device.last_poll_at, device.frp_last_seen_at)
-        subscription = (
-            await subscription_service.get_current(session, device.user_id) if device.user_id else None
-        )
+        subscription = subs.get(device.id)
         items.append(
             {
                 "id": device.id,
@@ -178,7 +240,10 @@ async def list_routers(
                 "uptime_sec": device.uptime_sec or 0,
                 "fw_version": device.fw_version or "",
                 "visitor_port": device.frp_visitor_port,
-                "client": device.user.display_name if device.user else "",
+                # В списке — телеграм: по нему клиенту пишут. Имя из доставки
+                # тёзок не различает и в карточке видно рядом.
+                "client": device.user.telegram_name if device.user else "",
+                "client_name": device.user.display_name if device.user else "",
                 "client_id": device.user_id,
                 "subscription_status": str(subscription.status) if subscription else "",
                 "subscription_label": _label(str(subscription.status), SUBSCRIPTION_LABELS)
@@ -200,7 +265,7 @@ async def list_routers(
         if device.frp_online
         or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now)
     )
-    pages = max(1, (total + ROUTERS_PAGE_SIZE - 1) // ROUTERS_PAGE_SIZE)
+    pages = max(1, (total + size - 1) // size)
     return {
         "generated_at": now.isoformat(),
         "fleet_total": len(fleet),
@@ -210,7 +275,12 @@ async def list_routers(
         "total": total,
         "page": page,
         "pages": pages,
-        "per_page": ROUTERS_PAGE_SIZE,
+        "per_page": size,
+        "page_sizes": list(ROUTERS_PAGE_SIZES),
+        # Модели для выпадающего списка — из парка, а не списком в коде:
+        # они приходят от самих роутеров и новую партию никто не впишет руками.
+        "models": sorted({device.model for device in fleet if device.model}),
+        "states": [{"value": value, "title": title} for value, title in DEVICE_LABELS.items()],
         "routers": items,
     }
 
@@ -268,6 +338,7 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
         "router": _device_payload(device, now=now),
         "client": {
             "id": device.user_id,
+            "telegram": device.user.telegram_name if device.user else "",
             "name": device.user.display_name if device.user else "",
             "email": (device.user.email or "") if device.user else "",
             "phone": (device.user.phone or "") if device.user else "",
@@ -377,12 +448,88 @@ async def bind_router(
 @router.post("/routers/{device_id}/unbind", dependencies=[Depends(require_token)])
 async def unbind_router(device_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
     device = await _device_or_404(session, device_id)
+    _unbind(session, device)
+    return {"ok": True}
+
+
+def _unbind(session: AsyncSession, device: Device) -> None:
     device.user_id = None
     device.status = DeviceStatus.NEW if device.activated_at is None else DeviceStatus.REVOKED
     routers_service.add_event(
         session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
     )
-    return {"ok": True}
+
+
+BULK_LIMIT = 200
+"""Больше за один раз не берём: каждое действие — это поход к роутеру или
+в панель, и запрос на весь парк упёрся бы в таймаут посреди работы, оставив
+половину сделанной."""
+
+
+@router.post("/routers/bulk", dependencies=[Depends(require_token)])
+async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Одно действие над несколькими роутерами: опрос, состояние, отвязка.
+
+    Каждый роутер обрабатывается отдельно, и отказ одного не отменяет
+    остальных: половина парка молчит всегда, и оператор, отметивший тридцать
+    строк, должен получить двадцать восемь сделанных и список из двух, а не
+    ошибку на всё разом.
+    """
+    action = str(payload.get("action", "")).strip()
+    raw_ids = payload.get("ids") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return {"ok": False, "error": "Не выбрано ни одного роутера."}
+    if len(raw_ids) > BULK_LIMIT:
+        return {"ok": False, "error": f"За раз можно обработать не больше {BULK_LIMIT} роутеров."}
+
+    ids = [int(value) for value in raw_ids if str(value).strip().isdigit()]
+    devices = list(await session.scalars(select(Device).where(Device.id.in_(ids))))
+
+    target: DeviceStatus | None = None
+    if action == "status":
+        try:
+            target = DeviceStatus(str(payload.get("status", "")).strip())
+        except ValueError:
+            return {"ok": False, "error": "Неизвестное состояние."}
+    elif action not in {"poll", "unbind", "activate"}:
+        return {"ok": False, "error": "Неизвестное действие."}
+
+    days = _days(payload)
+    done, failed = 0, []
+    for device in devices:
+        try:
+            if action == "poll":
+                answer = await poll_router(device.id, session)
+                if not answer.get("ok"):
+                    failed.append(f"{device.mac}: {answer.get('error', 'не ответил')}")
+                    continue
+            elif action == "status":
+                if device.status is not target:
+                    was = str(device.status)
+                    device.status = target
+                    routers_service.add_event(
+                        session,
+                        device_id=device.id,
+                        mac=device.mac,
+                        level="warning" if target is DeviceStatus.BLOCKED else "info",
+                        message=f"Состояние: {was} → {target}",
+                    )
+            elif action == "unbind":
+                _unbind(session, device)
+            elif action == "activate":
+                await activation.activate_manually(session, device=device, days=days)
+        except activation.ActivationError as exc:
+            failed.append(f"{device.mac}: {exc}")
+            continue
+        except Exception as exc:  # noqa: BLE001 — причину показываем как есть
+            log.warning("fleet.bulk_failed", device_id=device.id, action=action, error=str(exc))
+            failed.append(f"{device.mac}: {str(exc)[:120]}")
+            continue
+        done += 1
+
+    missing = len(ids) - len(devices)
+    log.info("fleet.bulk", action=action, asked=len(ids), done=done, failed=len(failed))
+    return {"ok": True, "done": done, "failed": failed, "missing": missing}
 
 
 # --- Роутеры клиента ---------------------------------------------------------

@@ -429,18 +429,32 @@ def my_router_text(data: dict) -> str:
                 lines.append(f"Трек-номер: <code>{_esc(order['tracking_number'])}</code>")
         return "\n".join(lines)
 
-    if not router.get("activated"):
-        return text("text_my_router_waiting")
-
     routers = data.get("routers") or []
+    position = next(
+        (i + 1 for i, item in enumerate(routers) if item.get("id") == router.get("id")), 1
+    )
     heading = "📡 <b>Мой роутер</b>"
     if len(routers) > 1:
         # Который из. Без этого на экране два одинаковых заголовка, и понять,
         # чьи показания перед тобой, можно только по MAC ниже.
-        position = next(
-            (i + 1 for i, item in enumerate(routers) if item.get("id") == router.get("id")), 1
-        )
         heading = f"📡 <b>Мой роутер {position} из {len(routers)}</b>"
+
+    if not router.get("activated"):
+        # Подписки на этом роутере ещё нет. Раньше тут в любом случае писалось
+        # «ещё не выходил на связь» — на роутере, который в эту секунду на
+        # связи, это читается как сломанный экран, а не как ответ. И понять,
+        # о каком из двух роутеров речь, было нельзя: заголовок с номером
+        # до этой ветки не доходил.
+        lines = [
+            text("text_my_router_not_activated" if router.get("online") else "text_my_router_waiting")
+        ]
+        if len(routers) > 1:
+            lines += [
+                "",
+                f"Это {position} из {len(routers)}: {_esc(router.get('model') or '—')}",
+                f"MAC: <code>{_esc(router.get('mac'))}</code>",
+            ]
+        return "\n".join(lines)
 
     lines = [
         heading,

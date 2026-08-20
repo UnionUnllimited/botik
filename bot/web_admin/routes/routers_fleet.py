@@ -89,6 +89,14 @@ async def fetch_fleet(query: str = "") -> tuple[dict, str]:
     return await _get(f"/api/v1/fleet/routers{query}")
 
 
+FLEET_FILTER_KEYS = ("q", "link", "client", "sub", "state", "model", "per_page")
+"""Что перечисляется в адресе страницы роутеров.
+
+Одним списком, а не перечислением в трёх местах: фильтр, забытый в ссылке
+пагинации, молча сбрасывается при переходе на вторую страницу — и оператор
+видит не то, что отобрал."""
+
+
 def _days_from(form) -> int:
     try:
         return max(min(int(form.get("days", 30)), 3650), 1)
@@ -102,8 +110,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         # Фильтры считает основное приложение: список и подписки лежат у него,
         # а тянуть сюда весь парк ради выборки нечего.
         params = {
-            key: (request.args.get(key) or "").strip()
-            for key in ("q", "link", "client")
+            key: (request.args.get(key) or "").strip() for key in FLEET_FILTER_KEYS
         }
         params = {key: value for key, value in params.items() if value}
         try:
@@ -119,11 +126,49 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             routers=data.get("routers", []),
             fleet_error=error,
             auto_enabled=options.get("auto_enabled", False),
-            filters={k: request.args.get(k, "") for k in ("q", "link", "client")},
+            filters={key: request.args.get(key, "") for key in FLEET_FILTER_KEYS},
+            models=data.get("models", []),
+            states=data.get("states", []),
+            page_sizes=data.get("page_sizes", []),
+            per_page=data.get("per_page", 0),
             page=data.get("page", 1),
             pages=data.get("pages", 1),
             total=data.get("total", 0),
         )
+
+    @admin_bp_instance.route("/routers/bulk", methods=["POST"])
+    async def routers_fleet_bulk():
+        """Одно действие над отмеченными строками.
+
+        Возвращаемся туда же, откуда пришли: оператор отобрал молчащие
+        фильтром, и терять отбор после каждого действия — значит отбирать
+        заново по кругу.
+        """
+        form = await request.form
+        ids = [value for value in form.getlist("ids") if value.strip().isdigit()]
+        if not ids:
+            await flash("Не отмечено ни одного роутера.", "danger")
+            return redirect(request.referrer or url_for("admin.routers_fleet"))
+
+        data, error = await _post(
+            "/api/v1/fleet/routers/bulk",
+            {
+                "action": (form.get("action") or "").strip(),
+                "ids": ids,
+                "status": (form.get("status") or "").strip(),
+                "days": _days_from(form),
+            },
+        )
+        if error:
+            await flash(error, "danger")
+        else:
+            done, failed = data.get("done", 0), data.get("failed") or []
+            await flash(f"Готово: {done} из {len(ids)}.", "success" if done else "danger")
+            for line in failed[:10]:
+                await flash(line, "danger")
+            if len(failed) > 10:
+                await flash(f"…и ещё {len(failed) - 10}.", "danger")
+        return redirect(request.referrer or url_for("admin.routers_fleet"))
 
     @admin_bp_instance.route("/routers/settings", methods=["POST"])
     async def routers_fleet_settings():

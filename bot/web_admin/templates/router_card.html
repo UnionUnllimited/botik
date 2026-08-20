@@ -81,8 +81,13 @@
       <div class="tw-card p-4 space-y-3">
         <h2 class="text-[15px] font-semibold tw-text-base2">Клиент</h2>
         {% if client.id %}
+          {# Телеграм первым: разговор с клиентом идёт там. Имя из доставки,
+             почта и телефон — дополнением. #}
           <div class="text-[13px]">
-            {{ client.name }}
+            {{ client.telegram or client.name }}
+            {% if client.name and client.name != client.telegram %}
+            <div class="tw-text-muted2">{{ client.name }}</div>
+            {% endif %}
             {% if client.email %}<div class="tw-text-muted2">{{ client.email }}</div>{% endif %}
             {% if client.phone %}<div class="tw-text-muted2">{{ client.phone }}</div>{% endif %}
           </div>
