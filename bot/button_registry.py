@@ -88,6 +88,7 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     _b('btn_my_router_refresh',    'shop', 'Обновить показания роутера',      '🔄 Обновить',           ''),
     _b('btn_my_router_switch',     'shop', 'Переключиться на другой роутер',  '📡 Другой роутер',      ''),
     _b('btn_router_panel',         'shop', 'Админка роутера (домашняя сеть)', '⚙️ Перейти в админку',  ''),
+    _b('btn_router_instruction',   'shop', 'Инструкция на роутере',           '📘 Инструкция',         ''),
     _b('btn_shop_buy',             'shop', 'Заказать модель',                 '🛒 Заказать',           ''),
     _b('btn_shop_back_to_list',    'shop', 'Назад к списку моделей',          '⬅️ К списку моделей',   ''),
     _b('btn_shop_cancel_order',    'shop', 'Отменить оформление',             '✖️ Отменить',           ''),

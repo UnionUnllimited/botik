@@ -29,6 +29,8 @@ ORDER = {
     "discount": "0.00",
     "delivery_price": "350.00",
     "customer": "Иванов Иван",
+    "customer_telegram": "@union",
+    "customer_tg_id": 614685408,
     "phone": "+79001234567",
     "city": "Москва",
     "comment": "",

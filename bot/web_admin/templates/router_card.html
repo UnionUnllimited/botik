@@ -103,10 +103,23 @@
               <span class="tw-text-muted2">нет</span>
             {% endif %}
           </div>
-          <form method="post" action="{{ url_for('admin.router_unbind', device_id=device_id) }}"
-                onsubmit="return confirm('Отвязать клиента от этого роутера?')">
-            <button type="submit" class="tw-btn tw-btn-sm">Отвязать клиента</button>
-          </form>
+          <div class="flex gap-2 flex-wrap">
+            <form method="post" action="{{ url_for('admin.router_unbind', device_id=device_id) }}"
+                  onsubmit="return confirm('Отвязать клиента от этого роутера?')">
+              <button type="submit" class="tw-btn tw-btn-sm">Отвязать клиента</button>
+            </form>
+            {# Отвязки мало, чтобы пройти путь заказа заново: она снимает
+               владельца, но оставляет отметку об активации и привязку
+               к заказу, а автоактивация начинается с «уже активирован —
+               не трогать». Сброс возвращает роутер в состояние «только
+               со склада». #}
+            <form method="post" action="{{ url_for('admin.router_reset', device_id=device_id) }}"
+                  onsubmit="return confirm('Вернуть роутер на склад? Снимутся клиент, заказ и активация. Оплаченная подписка не сгорит — вернётся в ожидание активации.')">
+              <button type="submit" class="tw-btn tw-btn-sm nav-accent-danger">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>Сбросить на склад</span>
+              </button>
+            </form>
+          </div>
         {% else %}
           <p class="text-[13px] tw-text-muted2">Клиент не привязан.</p>
           <form method="post" action="{{ url_for('admin.router_bind', device_id=device_id) }}" class="space-y-2">

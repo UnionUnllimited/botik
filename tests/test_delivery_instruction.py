@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from core import texts
 from core.enums import OrderStatus
 
@@ -69,8 +67,19 @@ class TestNoticeAssembly:
         bot = self._source("bot/src/router_catalog.py")
         assert "192.168." not in bot, "бот не должен знать адрес наизусть, он приходит с данными"
 
-    @pytest.mark.parametrize("marker", ['data.get("instruction_url")'])
-    def test_bot_shows_it_where_the_client_is_stuck(self, marker):
-        """Оба экрана: и когда роутер ещё не ожил, и когда уже работает."""
+    def test_bot_shows_it_as_a_button(self):
+        """Кнопкой, а не адресом в тексте: её ищут тогда, когда читать нечего.
+
+        Клавиатура одна на оба экрана — и на «роутер ещё не ожил»,
+        и на рабочий, — поэтому кнопка заводится в одном месте.
+        """
         bot = self._source("bot/src/router_catalog.py")
-        assert bot.count(marker) == 2
+        keyboard = bot[bot.index("def my_router_keyboard") :]
+        keyboard = keyboard[: keyboard.index("def orders_text")]
+        assert 'data.get("instruction_url")' in keyboard
+        assert "btn_router_instruction" in keyboard
+
+    def test_the_button_is_registered(self):
+        """Незарегистрированная кнопка покажет клиенту имя ключа."""
+        registry = self._source("bot/button_registry.py")
+        assert "btn_router_instruction" in registry

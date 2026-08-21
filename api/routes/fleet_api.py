@@ -29,7 +29,7 @@ from api.deps import get_session, get_transaction
 from api.service_auth import require_token
 from core.config import settings
 from core.dates import utcnow
-from core.enums import DeviceStatus
+from core.enums import DeviceStatus, SubscriptionStatus
 from core.models import (
     Device,
     DeviceEvent,
@@ -38,6 +38,7 @@ from core.models import (
     ListKind,
     ManualList,
     ManualListRevision,
+    Subscription,
     User,
 )
 from core.security import normalize_mac
@@ -494,6 +495,60 @@ async def unbind_router(device_id: int, session: AsyncSession = Depends(get_tran
     device = await _device_or_404(session, device_id)
     _unbind(session, device)
     return {"ok": True}
+
+
+@router.post("/routers/{device_id}/reset", dependencies=[Depends(require_token)])
+async def reset_router(device_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Возвращает роутер на склад: как будто его только завели.
+
+    «Отвязать клиента» для этого мало: он снимает владельца, но оставляет
+    отметку об активации и привязку к заказу, а автоактивация начинается
+    с проверки «уже активирован — не трогать». Повторно пройти путь
+    «заказ → отгрузка → роутер вышел на связь → подписка» после отвязки
+    было нельзя, и проверить его целиком — тоже.
+
+    Подписка, лежавшая на этом роутере, возвращается в ожидание активации:
+    клиент за неё заплатил, и сжигать её вместе со сбросом железа нельзя.
+    Срок пойдёт заново с того момента, когда роутер снова выйдет на связь.
+    """
+    device = await _device_or_404(session, device_id)
+
+    subscription = await session.scalar(
+        select(Subscription).where(Subscription.device_id == device.id)
+    )
+    returned = False
+    if subscription is not None:
+        subscription.device_id = None
+        subscription.status = SubscriptionStatus.PENDING
+        subscription.started_at = None
+        subscription.expires_at = None
+        subscription.grace_until = None
+        subscription.last_reminder_day = None
+        subscription.pending_expires_at = utcnow() + dt.timedelta(
+            days=settings.subscription.activation_deadline_days
+        )
+        returned = True
+
+    was_order = device.order_id
+    device.user_id = None
+    device.order_id = None
+    device.activated_at = None
+    device.status = DeviceStatus.NEW
+
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="warning",
+        message="Сброшен на склад"
+        + (f", заказ {was_order} отвязан" if was_order else "")
+        + (", подписка возвращена в ожидание активации" if returned else ""),
+    )
+    log.info("fleet.device_reset", device_id=device.id, mac=device.mac, subscription=returned)
+    # Учётку в панели не трогаем: удаления у клиента панели нет, а гасить её
+    # молча — значит оставить оператора гадать, почему роутер не работает.
+    # Она видна в карточке и убирается там же.
+    return {"ok": True, "subscription_returned": returned}
 
 
 def _unbind(session: AsyncSession, device: Device) -> None:

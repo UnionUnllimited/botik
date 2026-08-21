@@ -454,12 +454,6 @@ def my_router_text(data: dict) -> str:
                 f"Это {position} из {len(routers)}: {_esc(router.get('model') or '—')}",
                 f"MAC: <code>{_esc(router.get('mac'))}</code>",
             ]
-        # Инструкция нужна именно здесь: роутер ещё не работает, и человек
-        # ищет, что нажать. Она на самом роутере — подключился к его сети
-        # и открыл, интернет для этого не нужен.
-        instruction = (data.get("instruction_url") or "").strip()
-        if instruction:
-            lines += ["", f"Инструкция: <code>{_esc(instruction)}</code>"]
         return "\n".join(lines)
 
     lines = [
@@ -487,9 +481,6 @@ def my_router_text(data: dict) -> str:
     panel_url = (app_conf.get("router_panel_url", "") or "").strip()
     if panel_url:
         lines += ["", f"Админка роутера: <code>{_esc(panel_url)}</code> — из домашней сети."]
-    instruction = (data.get("instruction_url") or "").strip()
-    if instruction:
-        lines += [f"Инструкция: <code>{_esc(instruction)}</code> — она на самом роутере."]
     return "\n".join(lines)
 
 
@@ -520,6 +511,12 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
                     callback_data=f"shop_my_router:{item.get('id')}",
                 )
             )
+
+    # Инструкция — там же, где роутер: кнопкой рядом с админкой, а не строкой
+    # в тексте. Ищут её как раз тогда, когда читать нечего, а нажать хочется.
+    instruction_url = (data.get("instruction_url") or "").strip()
+    if instruction_url:
+        builder.row(btn("btn_router_instruction", url=instruction_url))
 
     if data.get("router") is None:
         builder.row(btn("btn_catalog", callback_data="shop_catalog"))

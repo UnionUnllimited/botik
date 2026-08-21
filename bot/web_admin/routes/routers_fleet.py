@@ -248,6 +248,19 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             console_command=data.get("command") or name,
         )
 
+    @admin_bp_instance.route("/routers/<int:device_id>/reset", methods=["POST"])
+    async def router_reset(device_id: int):
+        """Возврат роутера на склад — чтобы пройти путь заказа заново."""
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/reset", {})
+        if error:
+            await flash(error, "danger")
+        else:
+            message = "Роутер сброшен на склад."
+            if data.get("subscription_returned"):
+                message += " Подписка вернулась в ожидание активации."
+            await flash(message, "success")
+        return redirect(url_for("admin.router_card", device_id=device_id))
+
     @admin_bp_instance.route("/routers/<int:device_id>/events")
     async def router_events(device_id: int):
         """Полный журнал устройства. В карточке остались последние строки:

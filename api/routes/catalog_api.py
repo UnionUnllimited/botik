@@ -1051,6 +1051,11 @@ def _manage_order_row(order: Order) -> dict:
         "status": str(order.status),
         "total": str(order.total),
         "customer": order.customer_name or (order.user.display_name if order.user else ""),
+        # Телеграм покупателя: имя из доставки тёзок не различает, а связаться
+        # с человеком по заказу оператор может только там. Без него из карточки
+        # заказа нельзя было ни написать, ни открыть клиента.
+        "customer_telegram": order.user.telegram_name if order.user else "",
+        "customer_tg_id": (order.user.tg_id or 0) if order.user else 0,
         "phone": order.customer_phone or "",
         "city": order.customer_city or "",
         "created_at": order.created_at.isoformat() if order.created_at else None,
@@ -1106,6 +1111,7 @@ ORDERS_CSV_COLUMNS = (
     "Номер",
     "Создан",
     "Статус",
+    "Телеграм",
     "Клиент",
     "Телефон",
     "Город",
@@ -1137,6 +1143,9 @@ def _order_csv_row(order: Order, carriers: dict[DeliveryMethod, str]) -> list[st
         order.public_number,
         _csv_moment(order.created_at),
         texts.ORDER_STATUS_TITLES.get(order.status, str(order.status)),
+        # Телеграм отдельной колонкой: по нему с покупателем и связываются,
+        # а имя из доставки в таблице тёзок не различает.
+        order.user.telegram_name if order.user else "",
         order.customer_name or (order.user.display_name if order.user else ""),
         order.customer_phone or "",
         order.customer_city or "",

@@ -23,7 +23,16 @@
 
     <div class="tw-card p-5 space-y-2 text-[13px]">
       <div class="font-semibold tw-text-base2">Покупатель</div>
-      <div>{{ order.customer or '—' }}</div>
+      {# Телеграм первым: связаться с человеком по заказу можно только там,
+         а имя из доставки тёзок не различает. #}
+      {% if order.customer_tg_id %}
+      <div>
+        <a href="{{ url_for('admin.user_details', telegram_id=order.customer_tg_id) }}">
+          {{ order.customer_telegram or ('id' ~ order.customer_tg_id) }}
+        </a>
+      </div>
+      {% endif %}
+      <div{% if order.customer_tg_id %} class="tw-text-muted2"{% endif %}>{{ order.customer or '—' }}</div>
       <div class="tw-text-muted2">{{ order.phone or '' }}</div>
       <div class="tw-text-muted2">{{ order.city or '' }}</div>
       {% if order.comment %}
