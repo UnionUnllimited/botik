@@ -3,7 +3,6 @@
 from core.models.base import Base
 from core.models.catalog import Plan, Product
 from core.models.content import Article, Broadcast, BroadcastTarget
-from core.models.delivery_zone import DeliveryZone, DeliveryZonePrice, UnknownCity
 from core.models.device import (
     Device,
     DeviceCommand,
@@ -37,8 +36,6 @@ __all__ = [
     "Broadcast",
     "BroadcastTarget",
     "Delivery",
-    "DeliveryZone",
-    "DeliveryZonePrice",
     "Device",
     "DeviceCommand",
     "DeviceEvent",
@@ -66,6 +63,5 @@ __all__ = [
     "SubscriptionEvent",
     "Ticket",
     "TicketMessage",
-    "UnknownCity",
     "User",
 ]

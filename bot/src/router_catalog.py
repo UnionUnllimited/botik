@@ -55,7 +55,9 @@ STATUS_LABELS = {
     "refunded": "↩️ Возврат",
 }
 
-CARRIER_TITLES = {"cdek": "СДЭК", "post": "Почта России", "yandex": "Яндекс Go"}
+SPEED_TITLES = {"fast": "быстрая", "weekly": "по понедельникам"}
+"""Короткие названия для строки подтверждения. Полные названия и описания
+приходят с данными: их правит оператор, а не переписывает бот."""
 
 
 class RouterOrder(StatesGroup):
@@ -253,36 +255,40 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
 # --- Экраны заказа -----------------------------------------------------------
 
 
-def carrier_keyboard(options: list[dict]) -> InlineKeyboardMarkup:
+def speed_text(options: list[dict]) -> str:
+    """Экран выбора скорости.
+
+    Описания разворачиваем в тексте, а не прячем в кнопки: разница между
+    «выедет сегодня» и «выедет в понедельник» — единственное, что клиенту
+    здесь надо понять, а в подпись кнопки она не влезает.
+    """
+    lines = [text("text_order_ask_speed")]
+    for option in options:
+        lines += ["", f"<b>{_esc(option.get('title'))}</b>", _esc(option.get("description"))]
+    return "\n".join(lines)
+
+
+def speed_keyboard(options: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for option in options:
-        method = option.get("method", "")
-        title = option.get("title") or CARRIER_TITLES.get(method, method)
-        days = f" · {option['days']}" if option.get("days") else ""
         builder.row(
-            btn("btn_shop_carrier", text=f"{title}{days}", callback_data=f"shop_carrier:{method}")
+            btn(
+                "btn_shop_speed",
+                text=option.get("title") or option.get("speed", ""),
+                callback_data=f"shop_speed:{option.get('speed')}",
+            )
         )
     builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
     return builder.as_markup()
 
 
-def where_keyboard(method: str, option: dict) -> InlineKeyboardMarkup:
+def where_keyboard() -> InlineKeyboardMarkup:
+    """Пункт выдачи или курьер. Без цен: их называют после оформления,
+    а разница между ними всё равно есть, и оператору её надо знать."""
     builder = InlineKeyboardBuilder()
-    builder.row(
-        btn(
-            "btn_shop_to_pvz",
-            text=f"🏬 В пункт выдачи · {money(option.get('pvz_price'))}",
-            callback_data=f"shop_where:{method}:pvz",
-        )
-    )
-    builder.row(
-        btn(
-            "btn_shop_to_door",
-            text=f"🚪 Курьером до двери · {money(option.get('courier_price'))}",
-            callback_data=f"shop_where:{method}:door",
-        )
-    )
-    builder.row(btn("btn_shop_back_to_carrier", callback_data="shop_carriers"))
+    builder.row(btn("btn_shop_to_pvz", callback_data="shop_where:pvz"))
+    builder.row(btn("btn_shop_to_door", callback_data="shop_where:door"))
+    builder.row(btn("btn_shop_back_to_speed", callback_data="shop_speeds"))
     return builder.as_markup()
 
 
@@ -334,11 +340,6 @@ def confirm_text(quote: dict, data: dict) -> str:
         lines.append(f"Подписка: {_esc(plan.get('title'))} — {money(plan.get('price'))}")
     if quote.get("promo"):
         lines.append(f"Промокод {_esc(quote['promo'].get('code'))} — −{money(quote.get('discount'))}")
-    if data.get("delivery_method"):
-        carrier = CARRIER_TITLES.get(data["delivery_method"], data["delivery_method"])
-        where = "пункт выдачи" if data.get("delivery_to_pvz") else "курьером"
-        price = money(quote.get("delivery")) if is_positive(quote.get("delivery")) else "бесплатно"
-        lines.append(f"Доставка {_esc(carrier)}, {where} — {price}")
     lines += [
         "",
         f"<b>Итого: {money(quote.get('total'))}</b>",
@@ -347,6 +348,12 @@ def confirm_text(quote: dict, data: dict) -> str:
         f"Телефон: {_esc(data.get('phone'))}",
         f"Адрес: {_esc(data.get('city'))}, {_esc(data.get('address'))}",
     ]
+    # Доставка в сумму не входит и стоит отдельным абзацем — иначе «Итого»
+    # прочитается как окончательное, а к нему придёт ещё один счёт.
+    if data.get("delivery_speed"):
+        speed = SPEED_TITLES.get(data["delivery_speed"], data["delivery_speed"])
+        where = "в пункт выдачи" if data.get("delivery_to_pvz") else "курьером до двери"
+        lines += ["", f"Доставка: {_esc(speed)}, {where}.", text("text_order_delivery_later")]
     return "\n".join(lines)
 
 
@@ -567,6 +574,14 @@ def order_text(order: dict) -> str:
     lines += ["", f"<b>Итого: {money(order.get('total'))}</b>"]
     if order.get("delivery_summary") and order["delivery_summary"] != "—":
         lines.append(f"Доставка: {_esc(order['delivery_summary'])}")
+    # Доставка живёт отдельно от «Итого»: её считают после оформления
+    # и оплачивают вторым счётом. Молчать о ней нельзя — клиент решит,
+    # что заплатил за всё.
+    if order.get("awaiting_quote"):
+        lines.append("Стоимость доставки считаем — пришлём счёт сюда же.")
+    elif is_positive(order.get("delivery_price")):
+        paid = "оплачена" if order.get("delivery_paid") else "ждёт оплаты"
+        lines.append(f"Доставка: {money(order['delivery_price'])} — {paid}")
     if order.get("tracking_number"):
         lines.append(f"Трек-номер: <code>{_esc(order['tracking_number'])}</code>")
     return "\n".join(lines)
@@ -616,7 +631,7 @@ def draft_payload(user, data: dict) -> dict:
         "name": data.get("name", ""),
         "phone": data.get("phone", ""),
         "city": data.get("city", ""),
-        "delivery_method": data.get("delivery_method", ""),
+        "delivery_speed": data.get("delivery_speed", ""),
         "delivery_to_pvz": bool(data.get("delivery_to_pvz", True)),
         "address": data.get("address", ""),
         "promo_code": data.get("promo_code", ""),
@@ -744,46 +759,28 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         )
         await query.answer()
 
-    async def ask_carrier(target, state: FSMContext, *, edit: bool):
-        """Экран выбора перевозчика с ценами для города клиента.
+    async def ask_speed(target, state: FSMContext, *, edit: bool):
+        """Экран выбора скорости доставки.
 
-        Способов может не быть вовсе — тогда заказ оформляется без доставки,
-        а не упирается в пустой список. А вот незнакомый город оформление
-        останавливает: см. ниже.
+        Цен здесь нет: их называет оператор после оформления. Обещать сумму
+        заранее нечестно — она зависит от города и габаритов, а обещанная
+        и не сошедшаяся цена хуже честного «посчитаем и напишем».
+
+        Вариантов может не оказаться вовсе — тогда заказ оформляется без
+        доставки, а не упирается в пустой экран.
         """
-        saved = await state.get_data()
-        user_id = getattr(getattr(target, "from_user", None), "id", 0)
-        data, error = await shop_api.delivery_options(saved.get("city", ""), user_id)
-
-        # Города нет ни в одной зоне. Цену наугад не называем: промахнёшься вверх —
-        # отпугнёшь клиента, вниз — повезёшь через полстраны себе в убыток.
-        # Основное приложение уже записало город оператору, он посчитает руками.
-        if data.get("unknown_city"):
-            await state.clear()
-            payload = {
-                "text": text("text_order_unknown_city"),
-                "reply_markup": InlineKeyboardBuilder()
-                .row(btn("btn_back_to_main", callback_data="back_to_main"))
-                .as_markup(),
-                "link_preview_options": NO_PREVIEW,
-            }
-            if edit:
-                await edit_screen(target.message, **payload)
-            else:
-                await target.answer(**payload)
-            return None
-
+        data, error = await shop_api.delivery_options()
         options = data.get("options", [])
         if error or not options:
             if error:
                 logger.warning(f"[CATALOG] доставка недоступна: {error}")
-            await state.update_data(delivery_method="", address="")
+            await state.update_data(delivery_speed="", address="")
             return await ask_promo(target, state, edit=edit)
 
         await state.set_state(None)
         payload = {
-            "text": text("text_order_ask_carrier"),
-            "reply_markup": carrier_keyboard(options),
+            "text": speed_text(options),
+            "reply_markup": speed_keyboard(options),
             "link_preview_options": NO_PREVIEW,
         }
         if edit:
@@ -866,39 +863,24 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if not value:
             return
         await state.update_data(city=value)
-        await ask_carrier(message, state, edit=False)
+        await ask_speed(message, state, edit=False)
 
-    @dp.callback_query(F.data == "shop_carriers")
-    async def cq_carriers(query: CallbackQuery, state: FSMContext):
+    @dp.callback_query(F.data == "shop_speeds")
+    async def cq_speeds(query: CallbackQuery, state: FSMContext):
         if await blocked(query):
             return
-        await ask_carrier(query, state, edit=True)
+        await ask_speed(query, state, edit=True)
         await query.answer()
 
-    @dp.callback_query(F.data.startswith("shop_carrier:"))
-    async def cq_carrier(query: CallbackQuery, state: FSMContext):
+    @dp.callback_query(F.data.startswith("shop_speed:"))
+    async def cq_speed(query: CallbackQuery, state: FSMContext):
         if await blocked(query):
             return
-        method = query.data.split(":")[1]
-        data, error = await shop_api.delivery_options(
-            (await state.get_data()).get("city", ""), query.from_user.id
-        )
-        if error:
-            return await show_error(query, error)
-        if data.get("unknown_city"):
-            # Город убрали из зоны, пока клиент выбирал перевозчика.
-            # `query.answer()` обязателен и здесь: без него кнопка в чате
-            # крутится до таймаута, и отказ выглядит как зависший бот.
-            await ask_carrier(query, state, edit=True)
-            return await query.answer()
-        option = next((o for o in data.get("options", []) if o.get("method") == method), None)
-        if option is None:
-            return await query.answer("Этот способ доставки выключен", show_alert=True)
-
+        await state.update_data(delivery_speed=query.data.split(":")[1])
         await edit_screen(
             query.message,
             text("text_order_ask_where"),
-            reply_markup=where_keyboard(method, option),
+            reply_markup=where_keyboard(),
             link_preview_options=NO_PREVIEW,
         )
         await query.answer()
@@ -907,9 +889,8 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
     async def cq_where(query: CallbackQuery, state: FSMContext):
         if await blocked(query):
             return
-        _, method, where = query.data.split(":")
-        to_pvz = where == "pvz"
-        await state.update_data(delivery_method=method, delivery_to_pvz=to_pvz)
+        to_pvz = query.data.split(":")[1] == "pvz"
+        await state.update_data(delivery_to_pvz=to_pvz)
         await state.set_state(RouterOrder.address)
         await edit_screen(
             query.message,

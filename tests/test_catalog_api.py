@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from api.routes import fleet_api
 from api.routes.catalog_api import _draft, _product_payload, _specs
 from core.config import settings
-from core.enums import DeliveryMethod
+from core.enums import DeliverySpeed
 from core.models import Product
 from core.services.remnawave import RemnaUser
 
@@ -163,7 +163,7 @@ class TestDraft:
             "name": "  Иванов   Иван ",
             "phone": "89001234567",
             "city": "Москва",
-            "delivery_method": "cdek",
+            "delivery_speed": "fast",
             "address": "Ленина 1, кв 2",
         }
         base.update(extra)
@@ -185,12 +185,15 @@ class TestDraft:
         assert draft.delivery_address == "Ленина 1, кв 2"
         assert draft.pvz_address == ""
 
-    def test_known_delivery_method_parsed(self):
-        assert _draft(self._payload()).delivery_method is DeliveryMethod.CDEK
+    def test_chosen_speed_is_parsed(self):
+        """Клиент выбирает скорость, а не перевозчика: его ставит оператор."""
+        assert _draft(self._payload()).delivery_speed is DeliverySpeed.FAST
+        assert _draft(self._payload(delivery_speed="weekly")).delivery_speed is DeliverySpeed.WEEKLY
 
-    def test_unknown_delivery_method_drops_delivery(self):
-        """Заказ без доставки посчитается, заказ с выдуманным способом — нет."""
-        assert _draft(self._payload(delivery_method="teleport")).delivery_method is None
+    def test_unknown_speed_drops_delivery(self):
+        """Заказ оформится без доставки, а не упадёт на опечатке в чужом запросе."""
+        assert _draft(self._payload(delivery_speed="teleport")).delivery_speed is None
+        assert _draft(self._payload(delivery_speed="")).delivery_speed is None
 
     def test_source_marked_as_bot(self):
         assert _draft(self._payload()).utm_source == "bot"

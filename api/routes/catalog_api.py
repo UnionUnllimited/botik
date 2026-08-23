@@ -47,7 +47,6 @@ from core.enums import (
     VatCode,
 )
 from core.models import (
-    DeliveryZone,
     Device,
     Notification,
     Order,
@@ -56,7 +55,6 @@ from core.models import (
     Product,
     PromoCode,
     Subscription,
-    UnknownCity,
     User,
 )
 from core.security import normalize_mac
@@ -68,13 +66,6 @@ from core.services import promo as promo_service
 from core.services import subscriptions as subscription_service
 
 log = structlog.get_logger("api.catalog")
-
-UNKNOWN_CITY_MESSAGE = (
-    "Доставку в ваш город считаем вручную — тарифа на него у нас пока нет. "
-    "Мы уже получили запрос: оператор посчитает стоимость и свяжется с вами."
-)
-"""Отказ, а не средняя цена. Назвать цену наугад — либо отпугнуть клиента
-вдвое дороже настоящей, либо повезти себе в убыток через полстраны."""
 
 router = APIRouter(
     prefix="/api/v1/catalog",
@@ -435,55 +426,23 @@ async def delete_plan(plan_id: int, session: AsyncSession = Depends(get_transact
 
 
 @router.get("/delivery")
-async def delivery_options(
-    city: str = Query("", max_length=120),
-    tg_id: int = Query(0),
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    """Способы доставки с ценами — их показывает бот при оформлении.
+async def delivery_options(session: AsyncSession = Depends(get_session)) -> dict:
+    """Варианты доставки для экрана оформления — скорость, без цен.
 
-    Цена зависит от зоны, а зона от города. Без города отдаём общие цены:
-    так эту ручку зовёт админка, где заказ уже оформлен и город известен
-    из самого заказа.
-
-    Незнакомый город — отказ, а не средняя цена. Угадать значит либо отпугнуть
-    клиента вдвое дороже, либо повезти себе в убыток через полстраны; оператор
-    добавит город в зону и вернётся к человеку с настоящей ценой.
+    Цену называет оператор после того, как заказ оформлен: она зависит от
+    города и габаритов, и обещать её заранее нечестно. До этого была попытка
+    считать по тарифным зонам — цену всё равно перебивали руками, а город,
+    которого в зонах не оказалось, останавливал оформление у живого клиента.
     """
-    options = await delivery_service.get_options(session)
-    free_from = await settings_service.get_decimal(session, "delivery.free_from")
-
-    zone = None
-    if city.strip():
-        zone = await delivery_service.resolve_zone(session, city)
-        if zone is None:
-            await delivery_service.remember_unknown_city(session, city, tg_id=tg_id or None)
-            await session.commit()
-            return {"ok": False, "unknown_city": True, "city": city.strip(), "options": []}
-
-    prices = await delivery_service.zone_prices(session, zone) if zone else {}
-
-    def _price(option, *, to_pvz: bool) -> str:
-        row = prices.get(option.method)
-        if row is None:
-            return str(option.price_for(to_pvz=to_pvz))
-        return str(row.pvz_price if to_pvz else row.courier_price)
-
     return {
         "ok": True,
-        "free_from": str(free_from),
-        "zone": {"code": zone.code, "title": zone.title, "days": zone.days} if zone else None,
         "options": [
             {
-                "method": str(option.method),
+                "speed": str(option.speed),
                 "title": option.title,
-                "pvz_price": _price(option, to_pvz=True),
-                "courier_price": _price(option, to_pvz=False),
-                # Срок зоны точнее общего: до Владивостока и до Тольятти
-                # один и тот же перевозчик едет по-разному.
-                "days": (zone.days if zone and zone.days else option.days),
+                "description": option.description,
             }
-            for option in options
+            for option in await delivery_service.speed_options(session)
         ],
     }
 
@@ -864,11 +823,10 @@ async def _user_by_tg(session: AsyncSession, payload: dict, *, create: bool) -> 
 def _draft(payload: dict) -> order_service.OrderDraft:
     """Черновик из ответов клиента. Значения уже проверены `/validate`,
     но приходят от чужого процесса — приводим повторно."""
-    method_raw = str(payload.get("delivery_method", "")).strip()
-    try:
-        method = DeliveryMethod(method_raw) if method_raw else None
-    except ValueError:
-        method = None
+    # Скорость выбирает клиент, перевозчика ставит оператор при отгрузке.
+    # Незнакомое значение — не отказ: без скорости заказ просто оформится
+    # без доставки, а это тише, чем уронить оформление на опечатке.
+    speed = delivery_service.parse_speed(str(payload.get("delivery_speed", "")))
 
     to_pvz = bool(payload.get("delivery_to_pvz", True))
     return order_service.OrderDraft(
@@ -877,7 +835,7 @@ def _draft(payload: dict) -> order_service.OrderDraft:
         customer_name=validators.clean_full_name(str(payload.get("name", ""))),
         customer_phone=validators.clean_phone(str(payload.get("phone", ""))),
         customer_city=validators.clean_city(str(payload.get("city", ""))),
-        delivery_method=method,
+        delivery_speed=speed,
         delivery_to_pvz=to_pvz,
         delivery_address="" if to_pvz else validators.clean_address(str(payload.get("address", ""))),
         pvz_address=validators.clean_pvz(str(payload.get("address", ""))) if to_pvz else "",
@@ -914,12 +872,6 @@ async def quote_order(payload: dict, session: AsyncSession = Depends(get_session
         totals = await order_service.calculate_totals(
             session, draft=_draft(payload), user_id=user.id if user else 0
         )
-    except delivery_service.UnknownCityError:
-        await delivery_service.remember_unknown_city(
-            session, str(payload.get("city") or ""), tg_id=_int(payload.get("tg_id")) or None
-        )
-        await session.commit()
-        return {"ok": False, "unknown_city": True, "error": UNKNOWN_CITY_MESSAGE}
     except (order_service.OrderError, promo_service.PromoError) as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True, **_totals_payload(totals)}
@@ -947,6 +899,9 @@ def _order_payload(order: Order) -> dict:
             {"title": item.title, "total": str(item.total_price)} for item in (order.items or [])
         ],
         "delivery_summary": order_service.delivery_summary(order.delivery),
+        "delivery_price": str(order.delivery.price) if order.delivery else "0.00",
+        "awaiting_quote": delivery_service.awaiting_quote(order.delivery),
+        "delivery_paid": bool(order.delivery and order.delivery.paid_at),
         "tracking_number": (order.delivery.tracking_number or "") if order.delivery else "",
     }
 
@@ -964,11 +919,6 @@ async def create_order(payload: dict, session: AsyncSession = Depends(get_transa
 
     try:
         order = await order_service.create_order(session, user=user, draft=draft)
-    except delivery_service.UnknownCityError:
-        await delivery_service.remember_unknown_city(
-            session, draft.customer_city, tg_id=user.tg_id if user else None
-        )
-        return {"ok": False, "unknown_city": True, "error": UNKNOWN_CITY_MESSAGE}
     except (order_service.OrderError, promo_service.PromoError) as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -1061,6 +1011,10 @@ def _manage_order_row(order: Order) -> dict:
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "paid": order.paid_at is not None,
         "tracking_number": (order.delivery.tracking_number or "") if order.delivery else "",
+        # Заказ ждёт, пока оператор назовёт цену доставки. Отдельно от статуса:
+        # заказ при этом «Оплачен», и мешать одно с другим нельзя.
+        "awaiting_quote": delivery_service.awaiting_quote(order.delivery),
+        "delivery_paid": bool(order.delivery and order.delivery.paid_at),
     }
 
 
@@ -1274,6 +1228,11 @@ async def manage_order_card(order_id: int, session: AsyncSession = Depends(get_s
         },
         "delivery": {
             "method": str(delivery.method) if delivery else "",
+            "speed": str(delivery.speed) if delivery else "",
+            "speed_title": order_service.SPEED_SUMMARY.get(delivery.speed, "") if delivery else "",
+            "price": str(delivery.price) if delivery else "0.00",
+            "awaiting_quote": delivery_service.awaiting_quote(delivery),
+            "paid": bool(delivery and delivery.paid_at),
             "summary": order_service.delivery_summary(delivery),
             "address": (delivery.pvz_address or delivery.address or "") if delivery else "",
             "recipient": delivery.recipient_name if delivery else "",
@@ -1422,6 +1381,69 @@ async def manage_delivery_read(session: AsyncSession = Depends(get_session)) -> 
     }
 
 
+@router.post("/manage/orders/{order_id}/delivery-quote")
+async def manage_delivery_quote(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Оператор называет цену доставки — клиенту уходит счёт на неё.
+
+    Второй платёж по тому же заказу, а не пересчёт первого: роутер и подписку
+    клиент уже оплатил, и трогать оплаченную сумму нельзя — сверка и возвраты
+    считают по платежам, а не по тому, что сейчас написано в заказе.
+
+    Ноль — законная цена: доставку можно и подарить. Отличает «бесплатно»
+    от «ещё не считали» отметка `quoted_at`, а не сама сумма.
+    """
+    order = await _order_or_404(session, order_id)
+    if order.delivery is None:
+        return {"ok": False, "error": "У заказа нет доставки — цену назначать нечему."}
+
+    price = _decimal(payload.get("price"), "0")
+    if price < 0:
+        return {"ok": False, "error": "Цена доставки не может быть отрицательной."}
+
+    delivery_service.set_quote(order.delivery, price)
+    days = str(payload.get("days", "")).strip()[:40]
+
+    pay_url = ""
+    if price > 0 and order.user is not None:
+        try:
+            payment = await payment_service.start_payment(
+                session,
+                user=order.user,
+                provider_name=PaymentProviderName.PLATEGA,
+                amount=price,
+                purpose=PaymentPurpose.DELIVERY,
+                description=f"Доставка по заказу {order.public_number}",
+                order=order,
+            )
+            pay_url = payment.confirmation_url or ""
+        except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
+            log.warning("catalog.delivery_payment_failed", order_id=order.id, error=str(exc))
+            return {"ok": False, "error": f"Счёт выставить не вышло: {exc}"}
+    elif price == 0:
+        # Дарёную доставку платить не за что — отмечаем оплаченной сразу,
+        # иначе заказ навсегда останется «ждёт оплаты доставки».
+        order.delivery.paid_at = utcnow()
+
+    notice = texts.DELIVERY_QUOTE.format(
+        number=order.public_number,
+        price=f"{price:.2f}".rstrip("0").rstrip("."),
+        days=days or "уточним при отправке",
+    ) if price > 0 else texts.DELIVERY_FREE.format(number=order.public_number)
+
+    log.info(
+        "catalog.delivery_quoted", order_id=order.id, price=str(price), has_link=bool(pay_url)
+    )
+    return {
+        "ok": True,
+        "price": str(price),
+        "pay_url": pay_url,
+        "tg_id": order.user.tg_id if order.user else None,
+        "notice": notice,
+    }
+
+
 @router.post("/manage/delivery")
 async def manage_delivery_save(
     payload: dict, session: AsyncSession = Depends(get_transaction)
@@ -1452,119 +1474,6 @@ async def manage_delivery_save(
     )
     log.info("catalog.delivery_saved")
     return {"ok": True}
-
-
-@router.get("/manage/delivery/zones")
-async def manage_zones_read(session: AsyncSession = Depends(get_session)) -> dict:
-    """Зоны с ценами и список городов, которых мы не знаем.
-
-    Одной ручкой, а не двумя: на странице они рядом и правятся вместе —
-    оператор смотрит, куда просятся, и тут же дописывает город в зону.
-    """
-    zones = await delivery_service.list_zones(session)
-    options = await delivery_service.get_options(session, only_enabled=False)
-    return {
-        "methods": [{"method": str(o.method), "title": o.title} for o in options],
-        "zones": [
-            {
-                "id": zone.id,
-                "code": zone.code,
-                "title": zone.title,
-                "days": zone.days,
-                "cities": zone.cities,
-                "cities_count": len([c for c in (zone.cities or "").splitlines() if c.strip()]),
-                "prices": {
-                    str(price.method): {
-                        "pvz": str(price.pvz_price),
-                        "courier": str(price.courier_price),
-                    }
-                    for price in zone.prices
-                },
-            }
-            for zone in zones
-        ],
-        "unknown": [
-            {
-                "id": row.id,
-                "city": row.city,
-                "hits": row.hits,
-                "tg_id": row.tg_id or 0,
-                "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else "",
-            }
-            for row in await delivery_service.pending_cities(session)
-        ],
-    }
-
-
-@router.post("/manage/delivery/zones")
-async def manage_zones_save(
-    payload: dict, session: AsyncSession = Depends(get_transaction)
-) -> dict:
-    """Сохраняет города, сроки и цены зон одним разом — так их и правят.
-
-    Набор зон меняется кодом, а не формой: зона — это ещё и договорённость
-    с перевозчиком, а не строка на странице.
-    """
-    incoming = payload.get("zones")
-    if not isinstance(incoming, dict):
-        return {"ok": False, "error": "Ожидается объект с зонами."}
-
-    for zone in await delivery_service.list_zones(session):
-        raw = incoming.get(str(zone.id)) or incoming.get(zone.code)
-        if not isinstance(raw, dict):
-            continue
-        if "cities" in raw:
-            zone.cities = "\n".join(
-                line.strip() for line in str(raw["cities"]).splitlines() if line.strip()
-            )
-        if "days" in raw:
-            zone.days = str(raw["days"])[:32]
-        prices = raw.get("prices")
-        if not isinstance(prices, dict):
-            continue
-        for method in OFFERED_DELIVERY_METHODS:
-            block = prices.get(method.value)
-            if not isinstance(block, dict):
-                continue
-            current = next((p for p in zone.prices if p.method is method), None)
-            await delivery_service.set_zone_price(
-                session,
-                zone,
-                method,
-                pvz=_decimal(block.get("pvz"), str(current.pvz_price) if current else "0"),
-                courier=_decimal(
-                    block.get("courier"), str(current.courier_price) if current else "0"
-                ),
-            )
-    log.info("catalog.delivery_zones_saved")
-    return {"ok": True}
-
-
-@router.post("/manage/delivery/cities/{city_id}")
-async def manage_unknown_city(
-    city_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
-) -> dict:
-    """Разбирает город из списка неопознанных: в зону или просто с глаз долой.
-
-    Без `zone_id` строка только прячется — так убирают опечатки и «ъ»,
-    которые городом не были.
-    """
-    row = await session.get(UnknownCity, city_id)
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-
-    zone_id = _int(payload.get("zone_id"))
-    if not zone_id:
-        row.resolved = True
-        return {"ok": True, "added": False}
-
-    zone = await session.get(DeliveryZone, zone_id)
-    if zone is None:
-        return {"ok": False, "error": "Зона не найдена."}
-    added = await delivery_service.add_city_to_zone(session, zone, row.city)
-    row.resolved = True
-    log.info("catalog.unknown_city_resolved", city=row.city, zone=zone.code, added=added)
-    return {"ok": True, "added": added, "zone": zone.title}
 
 
 @router.get("/orders/{order_id}")

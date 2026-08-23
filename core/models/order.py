@@ -17,7 +17,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.enums import DeliveryMethod, DeliveryStatus, OrderItemType, OrderStatus, VatCode
+from core.enums import (
+    DeliveryMethod,
+    DeliverySpeed,
+    DeliveryStatus,
+    OrderItemType,
+    OrderStatus,
+    VatCode,
+)
 from core.models.base import MONEY, Base, IntPkMixin, TimestampMixin, enum_column
 
 if TYPE_CHECKING:
@@ -99,9 +106,15 @@ class Delivery(IntPkMixin, TimestampMixin, Base):
         ForeignKey("orders.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     method: Mapped[DeliveryMethod] = enum_column(DeliveryMethod, nullable=False)
+    """Кто повезёт. Выбирает оператор при отгрузке, а не клиент: перевозчик
+    зависит от города, веса и действующего договора."""
+
+    speed: Mapped[DeliverySpeed] = enum_column(
+        DeliverySpeed, nullable=False, default=DeliverySpeed.FAST
+    )
+    """Что выбрал клиент: быстро и дороже или дешевле, но ждать отправки."""
+
     status: Mapped[DeliveryStatus] = enum_column(DeliveryStatus, nullable=False, default=DeliveryStatus.NEW)
-    zone: Mapped[str] = mapped_column(String(32), default="", nullable=False)
-    """Тарифная зона доставки из настроек (msk / cfo / regions / far)."""
 
     city: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     address: Mapped[str | None] = mapped_column(Text)
@@ -113,6 +126,18 @@ class Delivery(IntPkMixin, TimestampMixin, Base):
     recipient_phone: Mapped[str] = mapped_column(String(20), default="", nullable=False)
 
     price: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"), nullable=False)
+    quoted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    """Когда оператор назвал цену доставки.
+
+    Отдельно от `price`: без этой отметки ноль читается как «бесплатно»,
+    а на деле означает «ещё не считали». Заказ ждёт цены именно по ней."""
+
+    paid_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    """Когда клиент оплатил доставку вторым платежом.
+
+    Полем, а не поиском успешного платежа по заказу: состояние доставки
+    читают списки и сводка, а тянуть туда платежи ради одного флага дорого."""
+
     tracking_number: Mapped[str | None] = mapped_column(String(64))
     tracking_url: Mapped[str | None] = mapped_column(String(512))
     shipped_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))

@@ -101,6 +101,45 @@
       {% if delivery.recipient %}<br>Получатель: {{ delivery.recipient }}, {{ delivery.phone }}{% endif %}
       {% if delivery.address %}<br>Адрес: {{ delivery.address }}{% endif %}
     </div>
+
+    {# Цену доставки называет оператор: она зависит от адреса и габаритов,
+       а при оформлении клиент платит только за роутер и подписку. Отправив
+       цену, шлём клиенту счёт — вторым платежом по тому же заказу. #}
+    {% if delivery.method %}
+    <div class="border-t pt-3" style="border-color: rgb(var(--admin-border));">
+      {% if delivery.awaiting_quote %}
+      <div class="text-[12px] text-amber-500 mb-2">
+        Цена доставки ещё не названа — клиент ждёт счёт.
+      </div>
+      {% else %}
+      <div class="text-[12px] tw-text-muted2 mb-2">
+        Названо: <b>{{ delivery.price }} ₽</b> ·
+        {% if delivery.paid %}оплачено{% else %}ждёт оплаты клиентом{% endif %}
+      </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('admin.order_shop_delivery_quote', order_id=order.id) }}"
+            class="flex items-end gap-2 flex-wrap">
+        <div class="ss-field">
+          <label for="delivery_price">Цена доставки, ₽</label>
+          <input type="text" id="delivery_price" name="price" value="{{ delivery.price }}"
+                 class="tw-input w-28">
+        </div>
+        <div class="ss-field">
+          <label for="delivery_days">Срок в пути</label>
+          <input type="text" id="delivery_days" name="days" placeholder="3–5 дней"
+                 class="tw-input w-40">
+        </div>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm"
+                onclick="return confirm('Отправить клиенту счёт на доставку?')">
+          <i data-lucide="send" class="w-3.5 h-3.5"></i><span>Назвать цену</span>
+        </button>
+      </form>
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Ноль — доставка за наш счёт: клиенту уйдёт сообщение без счёта.
+      </div>
+    </div>
+    {% endif %}
+
     {% if delivery.method %}
     <form method="post" action="{{ url_for('admin.order_shop_shipping', order_id=order.id) }}"
           class="flex items-center gap-2 flex-wrap">

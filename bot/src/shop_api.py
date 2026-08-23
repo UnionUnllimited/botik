@@ -181,18 +181,12 @@ async def delete_plan(plan_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/plans/{plan_id}/delete", {})
 
 
-async def delivery_options(city: str = "", tg_id: int = 0) -> tuple[dict, str]:
-    """Способы доставки с ценами для города: цена зависит от тарифной зоны.
+async def delivery_options() -> tuple[dict, str]:
+    """Варианты доставки: скорость и её описание, без цен.
 
-    Без города придут общие цены — так эту ручку зовёт админка, где город
-    уже известен из самого заказа.
-    """
-    params: dict = {}
-    if city:
-        params["city"] = city
-    if tg_id:
-        params["tg_id"] = tg_id
-    return await get("/api/v1/catalog/delivery", params)
+    Цену называет оператор после оформления — она зависит от города
+    и габаритов, и обещать её при заказе было бы нечестно."""
+    return await get("/api/v1/catalog/delivery")
 
 
 # --- Заказы ------------------------------------------------------------------
@@ -363,6 +357,14 @@ async def set_order_status(order_id: int, status: str, reason: str) -> tuple[dic
     )
 
 
+async def quote_delivery(order_id: int, price: str, days: str) -> tuple[dict, str]:
+    """Называет цену доставки: заводит счёт клиенту и текст уведомления."""
+    return await post(
+        f"/api/v1/catalog/manage/orders/{order_id}/delivery-quote",
+        {"price": price.replace(",", "."), "days": days},
+    )
+
+
 async def set_order_tracking(order_id: int, track: str) -> tuple[dict, str]:
     return await post(
         f"/api/v1/catalog/manage/orders/{order_id}/shipping", {"tracking_number": track}
@@ -385,20 +387,6 @@ async def delivery_settings() -> tuple[dict, str]:
 
 async def save_delivery_settings(payload: dict) -> tuple[dict, str]:
     return await post("/api/v1/catalog/manage/delivery", payload)
-
-
-async def delivery_zones() -> tuple[dict, str]:
-    """Тарифные зоны с ценами и города, которых нет ни в одной зоне."""
-    return await get("/api/v1/catalog/manage/delivery/zones")
-
-
-async def save_delivery_zones(zones: dict) -> tuple[dict, str]:
-    return await post("/api/v1/catalog/manage/delivery/zones", {"zones": zones})
-
-
-async def resolve_unknown_city(city_id: int, zone_id: int) -> tuple[dict, str]:
-    """Город в зону; `zone_id=0` — просто убрать из списка."""
-    return await post(f"/api/v1/catalog/manage/delivery/cities/{city_id}", {"zone_id": zone_id})
 
 
 # --- Склад устройств ---------------------------------------------------------

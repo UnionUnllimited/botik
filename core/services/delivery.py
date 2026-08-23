@@ -1,24 +1,32 @@
-"""Доставка: варианты, цены и создание записи к заказу.
+"""Доставка: что выбирает клиент и как считается её цена.
 
-Цены берутся из настроек (правятся в админке). Интеграция с API перевозчика
-вынесена за интерфейс `CarrierClient`: в v1 работает ручной режим, когда
-трек-номер вбивает логист.
+Цену доставки называет оператор после оформления заказа, а не бот при
+оформлении. Так решено 21 августа 2026, после недели жизни с тарифными зонами:
+по зонам цену всё равно перебивали руками, а город, которого в зонах не
+оказалось, останавливал оформление у живого клиента.
+
+Клиент выбирает не перевозчика и не зону, а скорость: быстро и дороже или
+дешевле, но ждать ближайшего понедельника. Перевозчик — забота оператора:
+он зависит от города, веса и действующего договора, и клиенту эта развилка
+ничего не объясняет.
+
+Интеграция с API перевозчика вынесена за интерфейс `CarrierClient`: в v1
+работает ручной режим, когда трек-номер вбивает логист.
 """
 
 from __future__ import annotations
 
-import re
+import datetime as dt
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod
-from core.models import Delivery, DeliveryZone, DeliveryZonePrice, Order, UnknownCity
+from core.dates import utcnow
+from core.enums import DeliveryMethod, DeliverySpeed
+from core.models import Delivery, Order
 from core.services import settings_service
 
 log = structlog.get_logger("services.delivery")
@@ -32,87 +40,78 @@ TRACKING_URLS = {
 
 
 @dataclass(frozen=True, slots=True)
-class DeliveryOption:
-    method: DeliveryMethod
-    title: str
-    pvz_price: Decimal
-    courier_price: Decimal
-    days: str
-    enabled: bool = True
+class SpeedOption:
+    """Как клиент видит выбор скорости.
 
-    def price_for(self, *, to_pvz: bool) -> Decimal:
-        return self.pvz_price if to_pvz else self.courier_price
-
-
-async def get_options(session: AsyncSession, *, only_enabled: bool = True) -> list[DeliveryOption]:
-    """Способы доставки в порядке перечисления.
-
-    `only_enabled=False` нужен админке: там показываются и выключенные,
-    иначе их нельзя было бы включить обратно.
+    Без цены: её называют после оформления. Обещать сумму заранее мы не можем —
+    она зависит от города и габаритов, а обещанная и не сошедшаяся цена хуже
+    честного «посчитаем и напишем».
     """
-    raw = await settings_service.get_setting(session, "delivery.methods") or {}
-    options: list[DeliveryOption] = []
-    for method in OFFERED_DELIVERY_METHODS:
-        config = raw.get(method.value)
-        if not isinstance(config, dict):
-            continue
-        # Ключа может не быть у настроек, сохранённых до появления переключателей.
-        enabled = bool(config.get("enabled", True))
-        if only_enabled and not enabled:
-            continue
+
+    speed: DeliverySpeed
+    title: str
+    description: str
+
+
+DEFAULT_SPEED_TITLES = {
+    DeliverySpeed.FAST: "🚀 Быстрая",
+    DeliverySpeed.WEEKLY: "🗓 Обычная",
+}
+
+DEFAULT_SPEED_DESCRIPTIONS = {
+    DeliverySpeed.FAST: (
+        "Отправляем в течение рабочего дня, курьерской службой. "
+        "Дороже, зато посылка выезжает сразу."
+    ),
+    DeliverySpeed.WEEKLY: (
+        "Отправляем партией по понедельникам. Дешевле, но если заказ сделан "
+        "во вторник, посылка выедет на следующей неделе."
+    ),
+}
+
+SPEED_SETTING_KEYS = {
+    DeliverySpeed.FAST: ("delivery.fast_title", "delivery.fast_description"),
+    DeliverySpeed.WEEKLY: ("delivery.weekly_title", "delivery.weekly_description"),
+}
+"""Названия и описания правятся в админке: это витрина, а не логика."""
+
+
+async def speed_options(session: AsyncSession) -> list[SpeedOption]:
+    """Варианты для экрана выбора. Порядок — от быстрого к дешёвому."""
+    options: list[SpeedOption] = []
+    for speed in (DeliverySpeed.FAST, DeliverySpeed.WEEKLY):
+        title_key, description_key = SPEED_SETTING_KEYS[speed]
+        title = await settings_service.get_setting(session, title_key)
+        description = await settings_service.get_setting(session, description_key)
         options.append(
-            DeliveryOption(
-                method=method,
-                title=str(config.get("title", method.value)),
-                pvz_price=Decimal(str(config.get("pvz", "0.00"))),
-                courier_price=Decimal(str(config.get("courier", "0.00"))),
-                days=str(config.get("days", "")),
-                enabled=enabled,
+            SpeedOption(
+                speed=speed,
+                title=str(title or DEFAULT_SPEED_TITLES[speed]),
+                description=str(description or DEFAULT_SPEED_DESCRIPTIONS[speed]),
             )
         )
     return options
 
 
-async def get_option(session: AsyncSession, method: DeliveryMethod) -> DeliveryOption | None:
-    for option in await get_options(session):
-        if option.method is method:
-            return option
-    return None
+def parse_speed(value: str) -> DeliverySpeed | None:
+    try:
+        return DeliverySpeed(str(value).strip())
+    except ValueError:
+        return None
 
 
-async def calculate_price(
-    session: AsyncSession,
-    *,
-    method: DeliveryMethod,
-    to_pvz: bool,
-    goods_total: Decimal,
-    city: str = "",
-) -> Decimal:
-    """Цена доставки. С городом — по его зоне, без города — по общей настройке.
+def awaiting_quote(delivery: Delivery | None) -> bool:
+    """Заказ ждёт, пока оператор назовёт цену доставки.
 
-    Город приходит пустым только из старых вызовов и из админки, где заказ
-    правят задним числом: там зона уже посчитана и лежит в самом заказе.
+    Смотрим на отметку, а не на цену: ноль в цене — это «бесплатно», а не
+    «ещё не считали», и по нему заказ уехал бы в сборку неоплаченным.
     """
-    option = await get_option(session, method)
-    if option is None:
-        return Decimal("0.00")
+    return delivery is not None and delivery.quoted_at is None
 
-    free_from = await settings_service.get_decimal(session, "delivery.free_from")
-    if free_from > 0 and goods_total >= free_from:
-        return Decimal("0.00")
 
-    if city:
-        zone = await resolve_zone(session, city)
-        if zone is None:
-            raise UnknownCityError(city)
-        prices = await zone_prices(session, zone)
-        row = prices.get(method)
-        if row is not None:
-            return Decimal(str(row.pvz_price if to_pvz else row.courier_price))
-        # Зона есть, а цены перевозчика в ней нет: перевозчика завели позже.
-        # Общая настройка тут лучше нуля — ноль это «бесплатно», а не «не знаю».
-        log.warning("delivery.zone_price_missing", zone=zone.code, method=str(method))
-    return option.price_for(to_pvz=to_pvz)
+def set_quote(delivery: Delivery, price: Decimal, *, now: dt.datetime | None = None) -> None:
+    delivery.price = price
+    delivery.quoted_at = now or utcnow()
 
 
 def tracking_url(method: DeliveryMethod, track: str) -> str | None:
@@ -123,8 +122,8 @@ def tracking_url(method: DeliveryMethod, track: str) -> str | None:
 def attach_delivery(
     order: Order,
     *,
+    speed: DeliverySpeed,
     method: DeliveryMethod,
-    price: Decimal,
     city: str,
     recipient_name: str,
     recipient_phone: str,
@@ -132,10 +131,12 @@ def attach_delivery(
     pvz_code: str | None = None,
     pvz_address: str | None = None,
 ) -> Delivery:
+    """Заводит доставку к заказу. Цена остаётся нулевой до расчёта оператором."""
     delivery = Delivery(
         order=order,
         method=method,
-        price=price,
+        speed=speed,
+        price=Decimal("0.00"),
         city=city,
         address=address,
         pvz_code=pvz_code,
@@ -171,143 +172,3 @@ class ManualCarrier(CarrierClient):
 
     async def get_status(self, tracking_number: str) -> str:
         return ""
-
-# ── Тарифные зоны ─────────────────────────────────────────────────────────────
-
-
-class UnknownCityError(Exception):
-    """Города нет ни в одной зоне — цену назвать нечем.
-
-    Оформление на этом останавливается намеренно: угадать цену значит либо
-    отпугнуть клиента вдвое дороже, либо повезти себе в убыток через полстраны.
-    """
-
-
-_CITY_PREFIXES = frozenset({"г", "гор", "город", "пос", "поселок", "с", "село", "п", "рп"})
-"""Слова, с которых начинают адрес, а не название: «г. Самара», «пос. Кинель».
-
-Отбрасываются уже после разбора на слова, а не шаблоном по строке: люди пишут
-и «г.Самара» без пробела, и «г . Самара» — по строке это разные случаи,
-по словам один.
-"""
-
-
-def normalize_city(value: str) -> str:
-    """Приводит написанное клиентом к сравнимому виду.
-
-    Люди пишут «г. Нижний Новгород», «нижний новгород», «Нижний-Новгород» —
-    и всё это один город. Букву «ё» сводим к «е»: половина клавиатур её
-    не набирает, а Королёв и Королев — не разные города.
-    """
-    text = (value or "").strip().lower().replace("ё", "е")
-    words = [word for word in re.split(r"[^а-яa-z0-9]+", text) if word]
-    while words and words[0] in _CITY_PREFIXES:
-        words.pop(0)
-    return " ".join(words)
-
-
-async def resolve_zone(session: AsyncSession, city: str) -> DeliveryZone | None:
-    """Ищет зону по названию города. `None` — города не знаем."""
-    target = normalize_city(city)
-    if not target:
-        return None
-    zones = await session.scalars(select(DeliveryZone).order_by(DeliveryZone.sort_order))
-    for zone in zones:
-        for line in (zone.cities or "").splitlines():
-            if normalize_city(line) == target:
-                return zone
-    return None
-
-
-async def remember_unknown_city(session: AsyncSession, city: str, *, tg_id: int | None) -> None:
-    """Запоминает город, которого нет в зонах.
-
-    Нужно оператору: он видит, куда просятся, добавляет город в зону и
-    возвращается к человеку с ценой. Счётчик показывает, какой город заводить
-    первым — тот, куда постучались десять раз, важнее случайного.
-    """
-    normalized = normalize_city(city)
-    if not normalized:
-        return
-    row = await session.scalar(select(UnknownCity).where(UnknownCity.normalized == normalized))
-    if row is None:
-        session.add(
-            UnknownCity(city=city.strip()[:120], normalized=normalized[:120], tg_id=tg_id)
-        )
-    else:
-        row.hits += 1
-        row.resolved = False
-        row.tg_id = tg_id or row.tg_id
-    log.info("delivery.unknown_city", city=city, tg_id=tg_id)
-
-
-async def zone_prices(session: AsyncSession, zone: DeliveryZone) -> dict[DeliveryMethod, DeliveryZonePrice]:
-    rows = await session.scalars(
-        select(DeliveryZonePrice).where(DeliveryZonePrice.zone_id == zone.id)
-    )
-    return {row.method: row for row in rows}
-
-
-async def list_zones(session: AsyncSession) -> list[DeliveryZone]:
-    """Зоны с ценами — для страницы настроек. Порядок от ближней к дальней."""
-    zones = await session.scalars(
-        select(DeliveryZone).options(selectinload(DeliveryZone.prices)).order_by(
-            DeliveryZone.sort_order, DeliveryZone.id
-        )
-    )
-    return list(zones)
-
-
-async def set_zone_price(
-    session: AsyncSession,
-    zone: DeliveryZone,
-    method: DeliveryMethod,
-    *,
-    pvz: Decimal,
-    courier: Decimal,
-) -> None:
-    """Заводит или правит цену перевозчика в зоне.
-
-    Перевозчика могли включить уже после того, как зоны завели, — тогда строки
-    цены ещё нет, и её надо создать, а не молча потерять введённое.
-    """
-    row = await session.scalar(
-        select(DeliveryZonePrice).where(
-            DeliveryZonePrice.zone_id == zone.id, DeliveryZonePrice.method == method
-        )
-    )
-    if row is None:
-        session.add(
-            DeliveryZonePrice(zone_id=zone.id, method=method, pvz_price=pvz, courier_price=courier)
-        )
-        return
-    row.pvz_price = pvz
-    row.courier_price = courier
-
-
-async def pending_cities(session: AsyncSession) -> list[UnknownCity]:
-    """Города, которых нет в зонах. Частые сверху: туда просятся чаще всего."""
-    rows = await session.scalars(
-        select(UnknownCity)
-        .where(UnknownCity.resolved.is_(False))
-        .order_by(UnknownCity.hits.desc(), UnknownCity.last_seen_at.desc())
-    )
-    return list(rows)
-
-
-async def add_city_to_zone(session: AsyncSession, zone: DeliveryZone, city: str) -> bool:
-    """Дописывает город в зону. `False` — он там уже есть.
-
-    Сравниваем нормализованно: оператор вобьёт «Ханты-Мансийск», а в списке
-    лежит «ханты мансийск» — это один город, и второй строкой он не нужен.
-    """
-    target = normalize_city(city)
-    if not target:
-        return False
-    lines = [line.strip() for line in (zone.cities or "").splitlines() if line.strip()]
-    if any(normalize_city(line) == target for line in lines):
-        return False
-    lines.append(city.strip())
-    zone.cities = "\n".join(lines)
-    return True
-

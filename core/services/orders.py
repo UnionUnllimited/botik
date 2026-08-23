@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.dates import to_display
-from core.enums import DeliveryMethod, OrderItemType, OrderStatus
+from core.enums import DeliveryMethod, DeliverySpeed, OrderItemType, OrderStatus
 from core.models import Delivery, Order, OrderItem, Plan, Product, User
 from core.services import delivery as delivery_service
 from core.services import promo as promo_service
@@ -55,7 +55,10 @@ class OrderDraft:
     customer_name: str = ""
     customer_phone: str = ""
     customer_city: str = ""
+    delivery_speed: DeliverySpeed | None = None
+    """Что выбрал клиент: быстро и дороже или дешевле, но ждать понедельника."""
     delivery_method: DeliveryMethod | None = None
+    """Перевозчик. Клиент его не выбирает — ставит оператор при отгрузке."""
     delivery_to_pvz: bool = True
     delivery_address: str = ""
     pvz_code: str = ""
@@ -126,17 +129,9 @@ async def calculate_totals(
         )
         totals.discount = totals.promo_result.discount
 
-    if draft.delivery_method is not None and totals.product is not None:
-        # Город передаём: цена доставки зависит от зоны, а незнакомый город
-        # поднимет `UnknownCityError` и остановит оформление. Так и задумано —
-        # угадать цену значит либо отпугнуть клиента, либо повезти в убыток.
-        totals.delivery = await delivery_service.calculate_price(
-            session,
-            method=draft.delivery_method,
-            to_pvz=draft.delivery_to_pvz,
-            goods_total=totals.subtotal - totals.discount,
-            city=draft.customer_city,
-        )
+    # Доставку в сумму заказа не кладём: её цену называет оператор после
+    # оформления, а до того честной суммы нет. Клиент платит за роутер
+    # и подписку, доставку — вторым платежом по нашей цене.
 
     totals.subtotal = _round(totals.subtotal)
     totals.discount = _round(totals.discount)
@@ -200,22 +195,15 @@ async def create_order(
                 meta={"months": totals.plan.months, "extra_days": totals.plan.extra_days},
             )
         )
-    if totals.delivery > 0:
-        order.items.append(
-            OrderItem(
-                item_type=OrderItemType.DELIVERY,
-                title="Доставка",
-                quantity=1,
-                unit_price=totals.delivery,
-                total_price=totals.delivery,
-            )
-        )
+    # Строки «Доставка» в составе нет: её цена появится позже и уедет
+    # отдельным платежом. Пустая строка на ноль рублей читалась бы как
+    # «доставка бесплатная».
 
-    if draft.delivery_method is not None and totals.product is not None:
+    if draft.delivery_speed is not None and totals.product is not None:
         delivery_service.attach_delivery(
             order,
-            method=draft.delivery_method,
-            price=totals.delivery,
+            speed=draft.delivery_speed,
+            method=draft.delivery_method or DeliveryMethod.CDEK,
             city=draft.customer_city,
             recipient_name=order.customer_name,
             recipient_phone=order.customer_phone,
@@ -309,10 +297,23 @@ async def list_user_orders(session: AsyncSession, user_id: int, *, limit: int = 
     return list(result)
 
 
+SPEED_SUMMARY = {
+    DeliverySpeed.FAST: "быстрая",
+    DeliverySpeed.WEEKLY: "по понедельникам",
+}
+
+
 def delivery_summary(delivery: Delivery | None) -> str:
+    """Строка доставки для карточек и выгрузки.
+
+    Скорость впереди перевозчика: её выбирал клиент, и по ней оператор
+    понимает, срочный это заказ или ждёт партии.
+    """
     if delivery is None:
         return "—"
     if delivery.method is DeliveryMethod.PICKUP:
         return "Самовывоз"
+    speed = SPEED_SUMMARY.get(delivery.speed, "")
     target = delivery.pvz_address or delivery.address or delivery.city
-    return f"{delivery.method.value.upper()}, {target}"
+    head = f"{speed}, {delivery.method.value.upper()}" if speed else delivery.method.value.upper()
+    return f"{head}, {target}"

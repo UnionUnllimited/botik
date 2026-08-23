@@ -73,6 +73,12 @@ class PaymentStatus(StrEnum):
 class PaymentPurpose(StrEnum):
     ORDER = "order"
     SUBSCRIPTION = "subscription"
+    DELIVERY = "delivery"
+    """Доставка оплачивается вторым платежом: её цену называют после заказа.
+
+    Отдельной целью, а не вторым платежом с целью `order`: возвраты, отчёты
+    и сверка считают их порознь — вернуть доставку, не трогая роутер, обычное
+    дело, а вернуть роутер вместе с уже оплаченной перевозчику доставкой нельзя."""
 
 
 class DeliveryMethod(StrEnum):
@@ -86,6 +92,18 @@ class DeliveryMethod(StrEnum):
 
 
 OFFERED_DELIVERY_METHODS = (DeliveryMethod.CDEK, DeliveryMethod.POST, DeliveryMethod.YANDEX)
+
+
+class DeliverySpeed(StrEnum):
+    """Что выбирает клиент при заказе — скорость, а не перевозчика.
+
+    Перевозчик — наша забота: он зависит от города, веса и того, с кем сейчас
+    договор. Клиенту эта развилка ничего не объясняет, а выбрать он должен
+    между «быстрее и дороже» и «дешевле, но ждать до понедельника».
+    """
+
+    FAST = "fast"
+    WEEKLY = "weekly"
 """Что показываем в боте. Остальное живёт в перечислении только ради истории."""
 
 

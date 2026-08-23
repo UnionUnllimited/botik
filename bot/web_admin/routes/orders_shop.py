@@ -14,6 +14,8 @@ from datetime import datetime
 from quart import flash, redirect, render_template, request, url_for
 
 from src import shop_api
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 from tg_sender import send_telegram_message
 
 STATUS_TITLES = {
@@ -114,6 +116,37 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
                 await flash("Клиенту отправлено уведомление.", "success")
             except Exception as exc:  # noqa: BLE001 — причину показываем оператору
                 await flash(f"Статус сохранён, но уведомление не ушло: {exc}", "warning")
+        return _back(order_id)
+
+    @admin_bp_instance.route("/orders/<int:order_id>/delivery-quote", methods=["POST"])
+    async def order_shop_delivery_quote(order_id: int):
+        """Оператор назвал цену доставки — клиенту уходит счёт.
+
+        Ссылка на оплату идёт кнопкой в том же сообщении: адрес платёжной
+        страницы длинный, и строкой в тексте её никто не нажмёт.
+        """
+        form = await request.form
+        data, error = await shop_api.quote_delivery(
+            order_id, (form.get("price") or "0").strip(), (form.get("days") or "").strip()
+        )
+        if error:
+            await flash(error, "danger")
+            return _back(order_id)
+
+        await flash("Цена доставки сохранена.", "success")
+        if data.get("tg_id") and data.get("notice"):
+            markup = None
+            if data.get("pay_url"):
+                markup = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="💳 Оплатить доставку", url=data["pay_url"])]
+                    ]
+                )
+            try:
+                await send_telegram_message(int(data["tg_id"]), data["notice"], markup)
+                await flash("Клиенту отправлен счёт на доставку.", "success")
+            except Exception as exc:  # noqa: BLE001 — причину показываем оператору
+                await flash(f"Цена сохранена, но сообщение не ушло: {exc}", "warning")
         return _back(order_id)
 
     @admin_bp_instance.route("/orders/<int:order_id>/shipping", methods=["POST"])

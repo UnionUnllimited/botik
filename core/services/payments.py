@@ -253,8 +253,21 @@ async def _apply_success(session: AsyncSession, payment: Payment) -> None:
     order: Order | None = None
     if payment.order_id:
         order = await session.scalar(
-            select(Order).where(Order.id == payment.order_id).options(selectinload(Order.items))
+            select(Order)
+            .where(Order.id == payment.order_id)
+            # Доставку тоже: успешная оплата доставки ставит на ней отметку,
+            # а ленивая подгрузка в асинхронной сессии — это исключение.
+            .options(selectinload(Order.items), selectinload(Order.delivery))
         )
+
+    if payment.purpose is PaymentPurpose.DELIVERY:
+        # Второй платёж по тому же заказу — только за доставку. Через общий
+        # путь его пускать нельзя: там по составу заказа находится тариф,
+        # и клиент получил бы вторую подписку за оплату перевозки.
+        if order is not None and order.delivery is not None:
+            order.delivery.paid_at = payment.paid_at
+        log.info("payment.delivery_paid", payment_id=payment.id, order_id=payment.order_id)
+        return
     if order is not None and order.status in (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT):
         order.status = OrderStatus.PAID
         order.paid_at = payment.paid_at

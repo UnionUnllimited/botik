@@ -7,14 +7,13 @@
 from __future__ import annotations
 
 import datetime as dt
-from decimal import Decimal
 
 import pytest
 
 from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod
 from core.models import User
 from core.services.activation import APPLY_SCRIPT, username_for
-from core.services.delivery import DeliveryOption, tracking_url
+from core.services.delivery import tracking_url
 
 
 def make_user(tg_id: int = 123456789) -> User:
@@ -129,27 +128,6 @@ class TestOfferedDelivery:
 
     def test_no_link_without_track_number(self):
         assert tracking_url(DeliveryMethod.CDEK, "") is None
-
-
-class TestDeliveryOption:
-    def _option(self, **overrides):
-        payload = {
-            "method": DeliveryMethod.CDEK,
-            "title": "СДЭК",
-            "pvz_price": Decimal("350.00"),
-            "courier_price": Decimal("550.00"),
-            "days": "3–7 дней",
-        }
-        payload.update(overrides)
-        return DeliveryOption(**payload)
-
-    def test_price_depends_on_target(self):
-        option = self._option()
-        assert option.price_for(to_pvz=True) == Decimal("350.00")
-        assert option.price_for(to_pvz=False) == Decimal("550.00")
-
-    def test_enabled_by_default(self):
-        assert self._option().enabled is True
 
 
 class TestPanelExpiry:
