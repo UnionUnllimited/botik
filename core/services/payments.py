@@ -420,17 +420,36 @@ async def sync_pending_payment(session: AsyncSession, payment: Payment) -> bool:
 
 
 async def expire_stale_payments(session: AsyncSession, *, now: dt.datetime | None = None) -> int:
-    """Платежи с истёкшей ссылкой переводим в canceled, чтобы не висели вечно."""
+    """Платежи с истёкшей ссылкой переводим в canceled, чтобы не висели вечно.
+
+    Но сперва спрашиваем провайдера. Клиент мог заплатить в последнюю минуту
+    жизни ссылки, а уведомление — задержаться или не дойти вовсе; погасив
+    такой платёж по своим часам, мы теряем оплаченный заказ и клиента вместе
+    с ним. Это тем важнее, когда колбэк уходит не к нам и статус мы узнаём
+    только опросом.
+
+    Провайдер не ответил — оставляем платёж висеть до следующего круга.
+    Вечно висящий платёж чинится глазами, потерянная оплата — скандалом.
+    """
     moment = now or utcnow()
-    stale = await session.scalars(
-        select(Payment).where(
-            Payment.status == PaymentStatus.PENDING,
-            Payment.expires_at.is_not(None),
-            Payment.expires_at < moment,
+    stale = list(
+        await session.scalars(
+            select(Payment).where(
+                Payment.status == PaymentStatus.PENDING,
+                Payment.expires_at.is_not(None),
+                Payment.expires_at < moment,
+            )
         )
     )
     count = 0
     for payment in stale:
+        try:
+            if await sync_pending_payment(session, payment):
+                log.info("payment.paid_at_the_last_moment", payment_id=payment.id)
+                continue
+        except Exception as exc:  # noqa: BLE001 — гасить вслепую дороже
+            log.warning("payment.expiry_check_failed", payment_id=payment.id, error=str(exc))
+            continue
         payment.status = PaymentStatus.CANCELED
         payment.error_message = "Истёк срок действия платёжной ссылки"
         count += 1

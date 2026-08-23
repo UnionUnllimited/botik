@@ -15,7 +15,16 @@ from core.services.notifier import notify_payment_result
 
 log = structlog.get_logger("worker.payments")
 
-MIN_AGE = dt.timedelta(minutes=2)
+MIN_AGE = dt.timedelta(seconds=45)
+"""Сколько платёж должен пожить, прежде чем спрашивать о нём провайдера.
+
+Секунды, а не минуты: колбэк PLATEGA настроен на другого бота, и статус мы
+узнаём только этим опросом. Каждая лишняя минута здесь — минута, которую
+клиент смотрит на «ждёт оплаты» после того, как заплатил.
+
+Совсем без задержки спрашивать незачем: ссылку только что выдали, клиент
+ещё не дошёл до страницы оплаты."""
+
 MAX_AGE = dt.timedelta(hours=24)
 BATCH = 50
 

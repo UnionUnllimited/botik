@@ -81,9 +81,13 @@ def create_scheduler() -> AsyncIOScheduler:
         id="fleet_summary",
         name="Сводка по устройствам",
     )
+    # Раз в минуту, а не раз в три: колбэк PLATEGA настроен на другого бота
+    # того же мерчанта, и об оплате мы узнаём только отсюда. Опрашиваются
+    # лишь висящие платежи за последние сутки — на нашем обороте это
+    # единицы запросов, а клиент ждёт подтверждения не пять минут, а одну.
     scheduler.add_job(
         instrumented("sync_pending_payments", payments.sync_pending_payments),
-        IntervalTrigger(minutes=3),
+        IntervalTrigger(minutes=1),
         id="sync_pending_payments",
         name="Досмотр висящих платежей",
     )
