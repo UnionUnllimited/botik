@@ -112,6 +112,10 @@ async def _forward_to_partner(body: bytes, headers: dict[str, str]) -> None:
     """
     url = settings.platega.partner_callback_url.strip()
     if not url:
+        # Молча терять чужой колбэк нельзя: клиент заплатил, подписка
+        # не включилась, и в журнале об этом не будет ни строчки. Адрес
+        # задаётся PLATEGA_PARTNER_CALLBACK_URL.
+        log.warning("webhook.partner_url_missing")
         return
 
     passthrough = {
