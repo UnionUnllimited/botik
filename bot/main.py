@@ -392,7 +392,22 @@ class ThrottlingMiddleware(BaseMiddleware):
             # Исключаем captcha и restart_deleted_user (они уже обрабатываются в UserExistsMiddleware)
             if callback_data.startswith("captcha_answer_") or callback_data == "restart_deleted_user":
                 return await handler(event, data)
-        
+
+        # Ответы в начатом диалоге — не флуд: их спросили мы сами. Оформление
+        # заказа это пять сообщений подряд (ФИО, телефон, город, адрес,
+        # промокод), и на общем лимите клиент упирался в «слишком много»
+        # раньше, чем доходил до адреса. Ограничение остаётся там, где оно
+        # и нужно: на сообщениях вне диалога.
+        state = data.get('state')
+        if state is not None:
+            try:
+                if await state.get_state() is not None:
+                    return await handler(event, data)
+            except Exception:
+                # Хранилище состояний не ответило — считаем обычным сообщением
+                # и проверяем лимит. Пропустить проверку молча нельзя.
+                pass
+
         # Получаем параметры лимита из настроек
         if is_callback:
             max_requests = int(app_conf.get('bot_rate_limit_callback_max', '30'))  # По умолчанию 30 запросов
