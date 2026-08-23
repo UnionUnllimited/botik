@@ -29,7 +29,7 @@
 | Обратный прокси | чужой Caddy в `/opt/remnawave/caddy/Caddyfile`, сеть `remnawave-network` |
 | Сервер frps | `vm171085`, домен `frp.pandora361.online`, порт 8443, дашборд 7500 |
 | Бот | сторонний продукт в `bot/`, ставится вне docker |
-| Оплата | PLATEGA, колбэк `https://vbotrouters.titanvps.click/webhooks/platega` |
+| Оплата | PLATEGA, мерчант общий с ботом на `bot-vp.pandora361.online`. Колбэк уходит туда, мы узнаём статус опросом |
 
 На нашем сервере рядом работают чужие сервисы: Caddy, Remnawave, kanboard.
 Порты 80 и 443 занимает Caddy, поэтому свои `nginx` и `certbot` выключены
