@@ -1184,6 +1184,7 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
         # Тексты кнопок (btn_*) теперь живут в /settings/buttons и здесь не показываются.
         grouped_settings = {
             "👋 Приветствие и подписка": [],
+            "🛒 Каталог, заказы и роутер": [],
             "🔔 Уведомления": [],
             "💳 Оплата и продление": [],
             "🎟️ Промокоды": [],
@@ -1195,6 +1196,10 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             "📈 Докупка трафика": [],
             "🤖 Защита от ботов": [],
         }
+        # Экраны каталога числились редактируемыми с самого их появления,
+        # но ни под один фильтр ниже не подпадали и на страницу не попадали.
+        from src.shop_texts import CATALOG_TEXTS
+        catalog_text_order = {key: i for i, (key, _, _) in enumerate(CATALOG_TEXTS)}
         notification_text_keys = (
             'text_subscription_expiring',
             'text_subscription_expired',
@@ -1228,7 +1233,9 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                 continue
             if not key.startswith('text_'):
                 continue
-            if key in notification_text_keys:
+            if key in catalog_text_order:
+                grouped_settings["🛒 Каталог, заказы и роутер"].append(setting)
+            elif key in notification_text_keys:
                 grouped_settings["🔔 Уведомления"].append(setting)
             elif (key.startswith('text_welcome') or key.startswith('text_sub') or key.startswith('text_no_active')
                     or key == 'text_subscription_expired_main'):
@@ -1250,6 +1257,9 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                 grouped_settings["💬 Поддержка"].append(setting)
             elif key.startswith('text_about'):
                 grouped_settings["📘 О сервисе и инструкции"].append(setting)
+        grouped_settings["🛒 Каталог, заказы и роутер"].sort(
+            key=lambda s: catalog_text_order.get(s['key'], 99)
+        )
         grouped_settings["🔔 Уведомления"].sort(
             key=lambda s: notification_text_order.get(s['key'], 99)
         )

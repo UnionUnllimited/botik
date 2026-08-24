@@ -32,9 +32,38 @@
       </div>
     </div>
 
+    <div>
+      <label for="router_model_names" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Имена моделей для клиента
+      </label>
+      <textarea id="router_model_names" name="router_model_names" rows="4"
+                class="tw-input font-mono text-[12px]"
+                placeholder="zbtlink,zbt-z8103ax-c: ZBT Z8103AX">{{ model_names }}</textarea>
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        По строке «код-платы: Название». Код приходит с роутера как есть
+        (поле board OpenWrt) и виден в карточке устройства; незнакомый код
+        бот приводит к читаемому виду сам.
+      </div>
+    </div>
+
+    <div>
+      <label for="order_status_labels" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Подписи статусов заказа
+      </label>
+      <textarea id="order_status_labels" name="order_status_labels" rows="4"
+                class="tw-input font-mono text-[12px]"
+                placeholder="paid: ✓ Оплачен">{{ status_labels }}</textarea>
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        По строке «код: подпись», пусто — стандартные. Первый знак подписи
+        становится бейджем на кнопке заказа. Коды: new, awaiting_payment,
+        paid, packing, shipped, delivered, done, cancelled, refunded.
+      </div>
+    </div>
+
     <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
       <div class="text-[11px] tw-text-subtle2">
-        Тексты экранов каталога правятся в «Настройки → Тексты».
+        Тексты экранов каталога правятся в «Настройки → Тексты»,
+        группа «Каталог, заказы и роутер».
       </div>
       <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
         <i data-lucide="check" class="w-3.5 h-3.5"></i>

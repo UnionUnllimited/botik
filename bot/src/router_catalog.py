@@ -44,16 +44,20 @@ _DEFAULT_TEXTS = {key: value for key, value, _ in CATALOG_TEXTS}
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 STATUS_LABELS = {
-    "new": "🆕 Новый",
-    "awaiting_payment": "⏳ Ждёт оплаты",
-    "paid": "✅ Оплачен",
-    "packing": "📦 Собираем",
-    "shipped": "🚚 Отправлен",
-    "delivered": "📬 Доставлен",
-    "done": "✅ Завершён",
-    "cancelled": "❌ Отменён",
-    "refunded": "↩️ Возврат",
+    "new": "• Новый",
+    "awaiting_payment": "○ Ждёт оплаты",
+    "paid": "✓ Оплачен",
+    "packing": "▸ Собираем",
+    "shipped": "▸ В пути",
+    "delivered": "✓ Доставлен",
+    "done": "✓ Завершён",
+    "cancelled": "✕ Отменён",
+    "refunded": "↩ Возврат",
 }
+
+HIDDEN_ORDER_STATUSES = ("cancelled", "refunded")
+"""Свёрнутые статусы в списке заказов: отменённое не должно засорять
+живые заказы, но достаётся кнопкой «Показать отменённые»."""
 
 SPEED_TITLES = {"fast": "быстрая", "weekly": "по понедельникам"}
 """Короткие названия для строки подтверждения. Полные названия и описания
@@ -110,6 +114,60 @@ def text(key: str) -> str:
     return app_conf.get(key, _DEFAULT_TEXTS.get(key, key))
 
 
+def format_text(key: str, **values) -> str:
+    """Шаблон из настроек правит оператор, и `{unknown}` или `{date:bogus}`
+    в нём — вопрос времени. Экран из-за этого падать не должен: сломанный
+    шаблон откатываем на дефолтный."""
+    try:
+        return text(key).format(**values)
+    except (KeyError, IndexError, ValueError, AttributeError, TypeError):
+        logger.warning(f"[CATALOG] настройка {key}: шаблон не форматируется, взят дефолт")
+        return _DEFAULT_TEXTS.get(key, key).format(**values)
+
+
+def _mapping_setting(key: str) -> dict[str, str]:
+    """Настройка-словарь: по строке «код: значение». Формат тот же, что у
+    характеристик в админке, — его пишут люди, и JSON тут ронял бы экран
+    из-за одной скобки."""
+    result: dict[str, str] = {}
+    for line in str(app_conf.get(key, "") or "").splitlines():
+        code, sep, value = line.partition(":")
+        if sep and code.strip() and value.strip():
+            result[code.strip()] = value.strip()
+    return result
+
+
+def status_label(code: str) -> str:
+    """Подпись статуса заказа: настройка `order_status_labels` поверх дефолтов."""
+    overrides = _mapping_setting("order_status_labels")
+    return overrides.get(code) or STATUS_LABELS.get(code, code)
+
+
+def status_glyph(code: str) -> str:
+    """Первый знак подписи — компактный бейдж для кнопок списка заказов."""
+    label = status_label(code)
+    return label.split()[0] if label.split() else ""
+
+
+def model_name(raw: str | None) -> str:
+    """Имя модели для клиента.
+
+    В `Device.model` лежит плата OpenWrt как есть — «zbtlink,zbt-z8103ax-c».
+    Известные коды переводит настройка `router_model_names`; незнакомые
+    приводим к читаемому виду сами, чтобы сырой код не доехал до экрана.
+    """
+    code = (raw or "").strip()
+    if not code:
+        return ""
+    known = _mapping_setting("router_model_names")
+    if code in known:
+        return known[code]
+    vendor, sep, board = code.partition(",")
+    if not sep:
+        return code
+    return f"{vendor.strip().capitalize()} {board.strip().upper()}".strip()
+
+
 def _esc(value) -> str:
     """Экранируем всё, что пришло из каталога: одна угловая скобка в описании
     роняет отправку целиком — Telegram разбирает текст как HTML."""
@@ -140,10 +198,10 @@ def is_positive(raw) -> bool:
 
 def stock_line(product: dict) -> str:
     if product.get("stock", 0) > 0:
-        return "✅ В наличии"
+        return "✓ В наличии"
     if product.get("allow_preorder"):
-        return "📦 Под заказ"
-    return "⛔️ Нет в наличии"
+        return "▸ Под заказ"
+    return "✕ Нет в наличии"
 
 
 async def edit_screen(message, text, *, reply_markup=None, link_preview_options=NO_PREVIEW):
@@ -181,9 +239,16 @@ def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
 
 
 def card_text(product: dict) -> str:
-    lines = [f"<b>{_esc(product.get('title'))}</b>"]
+    # Цена в заголовке: это первое, что ищут в карточке, и прятать её под
+    # список характеристик значит заставлять листать.
+    title = f"<b>{_esc(product.get('title'))} — {money(product.get('price'))}</b>"
+    if product.get("old_price"):
+        title += f"  <s>{money(product['old_price'])}</s>"
+    lines = [title, stock_line(product)]
     if product.get("subtitle"):
-        lines.append(_esc(product["subtitle"]))
+        # Подзаголовок — одна ключевая выгода, цитатой: так она читается
+        # раньше характеристик и не сливается с описанием.
+        lines += ["", f"<blockquote>{_esc(product['subtitle'])}</blockquote>"]
     if product.get("description"):
         lines += ["", _esc(product["description"])]
 
@@ -193,11 +258,6 @@ def card_text(product: dict) -> str:
         lines += ["", "<b>Характеристики</b>"]
         for name, value in list(specs.items())[:limit]:
             lines.append(f"• {_esc(name)}: {_esc(value)}")
-
-    price = f"💰 <b>{money(product.get('price'))}</b>"
-    if product.get("old_price"):
-        price += f"  <s>{money(product['old_price'])}</s>"
-    lines += ["", price, stock_line(product)]
     return "\n".join(lines)
 
 
@@ -294,15 +354,10 @@ def where_keyboard() -> InlineKeyboardMarkup:
 
 def renew_text(state: dict) -> str:
     subscription = state.get("subscription") or {}
-    lines = ["🔄 <b>Продление подписки</b>", ""]
     until = subscription.get("until")
     if until:
-        lines.append(f"Сейчас оплачено до {human_date(until)}.")
-        lines.append("Новый срок прибавится к этой дате, а не начнётся с сегодня.")
-    else:
-        lines.append("Срок ещё не идёт — он начнётся, когда роутер первый раз выйдет на связь.")
-    lines += ["", "Выберите, на сколько продлить:"]
-    return "\n".join(lines)
+        return format_text("text_renew_active", date=human_date(until))
+    return text("text_renew_pending")
 
 
 def renew_keyboard(plans: list[dict]) -> InlineKeyboardMarkup:
@@ -400,20 +455,6 @@ def human_bytes(value) -> str:
     return f"{number:.1f} ТБ"
 
 
-def human_uptime(seconds) -> str:
-    try:
-        total = int(seconds or 0)
-    except (TypeError, ValueError):
-        return "—"
-    if total < 60:
-        return "меньше минуты"
-    hours, minutes = divmod(total // 60, 60)
-    days, hours = divmod(hours, 24)
-    if days:
-        return f"{days} дн. {hours} ч."
-    return f"{hours} ч. {minutes} мин." if hours else f"{minutes} мин."
-
-
 def human_date(iso: str | None) -> str:
     """Дата из ISO без разбора часовых поясов: показываем как есть, до дня."""
     if not iso:
@@ -430,21 +471,19 @@ def my_router_text(data: dict) -> str:
     if router is None:
         lines = [text("text_my_router_none")]
         if order:
-            status = STATUS_LABELS.get(order.get("status", ""), order.get("status", ""))
-            lines += ["", f"Заказ <b>{_esc(order.get('number'))}</b> — {status}"]
+            lines += [
+                "",
+                f"Заказ <b>{_esc(order.get('number'))}</b> — "
+                f"{_esc(status_label(order.get('status', '')))}",
+            ]
             if order.get("tracking_number"):
-                lines.append(f"Трек-номер: <code>{_esc(order['tracking_number'])}</code>")
+                lines.append(f"Трек: <code>{_esc(order['tracking_number'])}</code>")
         return "\n".join(lines)
 
     routers = data.get("routers") or []
     position = next(
         (i + 1 for i, item in enumerate(routers) if item.get("id") == router.get("id")), 1
     )
-    heading = "📡 <b>Мой роутер</b>"
-    if len(routers) > 1:
-        # Который из. Без этого на экране два одинаковых заголовка, и понять,
-        # чьи показания перед тобой, можно только по MAC ниже.
-        heading = f"📡 <b>Мой роутер {position} из {len(routers)}</b>"
 
     if not router.get("activated"):
         # Подписки на этом роутере ещё нет. Раньше тут в любом случае писалось
@@ -458,36 +497,48 @@ def my_router_text(data: dict) -> str:
         if len(routers) > 1:
             lines += [
                 "",
-                f"Это {position} из {len(routers)}: {_esc(router.get('model') or '—')}",
-                f"MAC: <code>{_esc(router.get('mac'))}</code>",
+                f"Это {position} из {len(routers)}: {_esc(model_name(router.get('model'))) or '—'}",
+                f"MAC: <tg-spoiler><code>{_esc(router.get('mac'))}</code></tg-spoiler>",
             ]
         return "\n".join(lines)
 
-    lines = [
-        heading,
-        "",
-        f"Модель: {_esc(router.get('model') or '—')}",
-        f"MAC: <code>{_esc(router.get('mac'))}</code>",
-        f"Связь: {'✅ на связи' if router.get('online') else '○ не отвечает'}",
-    ]
-    if router.get("online"):
-        lines += [
-            f"Устройств в сети: {router.get('clients', 0)}",
-            f"Работает без перезагрузки: {human_uptime(router.get('uptime_sec'))}",
-            f"Трафик: ↓ {human_bytes(router.get('rx_bytes'))} · ↑ {human_bytes(router.get('tx_bytes'))}",
-        ]
-    lines += [""]
+    heading = "<b>Мой роутер</b>"
+    if len(routers) > 1:
+        # Который из. Без этого на экране два одинаковых заголовка, и понять,
+        # чьи показания перед тобой, можно только по MAC ниже.
+        heading = f"<b>Мой роутер {position} из {len(routers)}</b>"
+
+    # Вся суть экрана — одной строкой под заголовком: связь и срок подписки.
+    link = "✓ На связи" if router.get("online") else "○ Не отвечает"
     if router.get("active"):
-        lines.append(f"Подписка активна до <b>{human_date(router.get('until'))}</b>")
+        sub = f"подписка до <b>{human_date(router.get('until'))}</b>"
     elif router.get("until"):
-        lines.append(f"⚠️ Подписка закончилась {human_date(router.get('until'))}")
+        sub = f"⚠ подписка закончилась {human_date(router.get('until'))}"
     else:
-        lines.append("Подписка настраивается — загляните через пару минут.")
+        sub = "подписка настраивается, загляните через пару минут"
+    lines = [heading, f"{link} · {sub}", ""]
+
+    # Дальше только строки, за которыми есть данные: пустое поле — это не
+    # информация, а вопрос «а что тут должно быть?».
+    model = model_name(router.get("model"))
+    if model:
+        detail = _esc(model)
+        if router.get("online"):
+            detail += f" · в сети: {router.get('clients', 0)} устр."
+        lines.append(detail)
+    if router.get("online") and (router.get("rx_bytes") or router.get("tx_bytes")):
+        lines.append(
+            f"Трафик: ↓ {human_bytes(router.get('rx_bytes'))}"
+            f" · ↑ {human_bytes(router.get('tx_bytes'))}"
+        )
+    # MAC нужен только при разговоре с поддержкой — под спойлером он не
+    # мозолит глаза, но копируется одним нажатием.
+    lines.append(f"MAC: <tg-spoiler><code>{_esc(router.get('mac'))}</code></tg-spoiler>")
     # Адрес пишем и текстом: часть клиентов Telegram не открывает ссылки
     # на адреса домашней сети, а скопировать строку можно всегда.
     panel_url = (app_conf.get("router_panel_url", "") or "").strip()
     if panel_url:
-        lines += ["", f"Админка роутера: <code>{_esc(panel_url)}</code> — из домашней сети."]
+        lines.append(f"Админка: <code>{_esc(panel_url)}</code> — из домашней сети.")
     return "\n".join(lines)
 
 
@@ -503,14 +554,26 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
         )
     )
 
+    # Подписки нет — рядом с «Обновить» должен стоять ответ на вопрос,
+    # который в этот момент задаёт себе клиент. Длинное объяснение живёт
+    # на отдельном экране, а не четырьмя абзацами здесь.
+    router = data.get("router")
+    if router is not None and not router.get("activated") and router.get("online"):
+        builder.row(
+            btn(
+                "btn_shop_why_no_sub",
+                callback_data=f"shop_why_no_sub:{current}" if current else "shop_why_no_sub",
+            )
+        )
+
     # Переключатель — только когда роутеров правда несколько: у большинства
     # клиентов он один, и лишний ряд кнопок им ни о чём не говорит.
     if len(routers) > 1:
         for item in routers:
             if item.get("id") == current:
                 continue
-            mark = "🟢" if item.get("online") else "○"
-            label = item.get("model") or item.get("mac", "")
+            mark = "✓" if item.get("online") else "○"
+            label = model_name(item.get("model")) or item.get("mac", "")
             builder.row(
                 btn(
                     "btn_my_router_switch",
@@ -541,23 +604,37 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def orders_text(orders: list[dict]) -> str:
-    lines = ["📦 <b>Мои заказы</b>", ""]
-    for order in orders:
-        status = STATUS_LABELS.get(order.get("status", ""), order.get("status", ""))
-        lines.append(f"<b>{_esc(order.get('number'))}</b> — {money(order.get('total'))} · {status}")
-    return "\n".join(lines)
+def order_model(order: dict) -> str:
+    """Модель из состава заказа — ей заказ и называется для клиента."""
+    items = order.get("items") or []
+    return (items[0].get("title") or "").strip() if items else ""
 
 
-def orders_keyboard(orders: list[dict]) -> InlineKeyboardMarkup:
+def orders_keyboard(orders: list[dict], *, show_all: bool = False) -> InlineKeyboardMarkup:
+    """Список заказов — только кнопками: текст с теми же номерами и суммами
+    над ними дублировал каждую строку дважды."""
     builder = InlineKeyboardBuilder()
-    for order in orders:
+    visible = (
+        orders
+        if show_all
+        else [o for o in orders if o.get("status") not in HIDDEN_ORDER_STATUSES]
+    )
+    for order in visible:
+        name = f"#{order.get('id')} {order_model(order)}".strip()
         builder.row(
             btn(
                 "btn_shop_order",
-                text=f"{order.get('number')} · {money(order.get('total'))}",
+                # Подпись не длиннее 22 знаков — дальше Telegram режет её сам,
+                # и бейдж статуса пропадает первым.
+                text=f"{name[:18]} · {status_glyph(order.get('status', ''))}",
                 callback_data=f"shop_order:{order.get('id')}",
             )
+        )
+    hidden = len(orders) - len(visible)
+    if hidden > 0:
+        label = app_conf.get("btn_shop_orders_all", "Показать отменённые")
+        builder.row(
+            btn("btn_shop_orders_all", text=f"{label} ({hidden})", callback_data="shop_orders_all")
         )
     builder.row(btn("btn_catalog", callback_data="shop_catalog"))
     builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
@@ -565,15 +642,20 @@ def orders_keyboard(orders: list[dict]) -> InlineKeyboardMarkup:
 
 
 def order_text(order: dict) -> str:
-    status = STATUS_LABELS.get(order.get("status", ""), order.get("status", ""))
-    lines = [f"📦 <b>Заказ {_esc(order.get('number'))}</b>", "", f"Состояние: {status}", ""]
+    # «Заказ #12 — Cudy TR3000» вместо машинного «R-260823-0012»: номер для
+    # поддержки остаётся внизу, но заказ клиент узнаёт по модели.
+    heading = f"Заказ #{order.get('id')}"
+    model = order_model(order)
+    if model:
+        heading += f" — {_esc(model)}"
+    lines = [f"<b>{heading}</b>", _esc(status_label(order.get("status", ""))), ""]
     for item in order.get("items", []):
         lines.append(f"• {_esc(item.get('title'))} — {money(item.get('total'))}")
     if is_positive(order.get("discount")):
         lines.append(f"Скидка: −{money(order['discount'])}")
-    lines += ["", f"<b>Итого: {money(order.get('total'))}</b>"]
+    lines.append(f"<b>Итого: {money(order.get('total'))}</b>")
     if order.get("delivery_summary") and order["delivery_summary"] != "—":
-        lines.append(f"Доставка: {_esc(order['delivery_summary'])}")
+        lines += ["", f"Доставка: {_esc(order['delivery_summary'])}"]
     # Доставка живёт отдельно от «Итого»: её считают после оформления
     # и оплачивают вторым счётом. Молчать о ней нельзя — клиент решит,
     # что заплатил за всё.
@@ -583,7 +665,8 @@ def order_text(order: dict) -> str:
         paid = "оплачена" if order.get("delivery_paid") else "ждёт оплаты"
         lines.append(f"Доставка: {money(order['delivery_price'])} — {paid}")
     if order.get("tracking_number"):
-        lines.append(f"Трек-номер: <code>{_esc(order['tracking_number'])}</code>")
+        lines.append(f"Трек: <code>{_esc(order['tracking_number'])}</code>")
+    lines += ["", f"№ для поддержки: <code>{_esc(order.get('number'))}</code>"]
     return "\n".join(lines)
 
 
@@ -1003,6 +1086,28 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         )
         await query.answer()
 
+    @dp.callback_query(F.data.startswith("shop_why_no_sub"))
+    async def cq_why_no_sub(query: CallbackQuery, state: FSMContext):
+        """Отдельный экран с объяснением вместо четырёх абзацев в «Моём
+        роутере»: длинный текст нужен тому, кто задал вопрос, а не всем."""
+        if await blocked(query):
+            return
+        await state.clear()
+        device_id = ""
+        if ":" in query.data:
+            device_id = query.data.split(":", 1)[1]
+        back_cb = f"shop_my_router:{device_id}" if device_id else "shop_my_router"
+        await edit_screen(
+            query.message,
+            text("text_my_router_why_no_sub"),
+            reply_markup=InlineKeyboardBuilder()
+            .row(btn("btn_renew_sub", callback_data="shop_renew"))
+            .row(btn("btn_back", callback_data=back_cb))
+            .as_markup(),
+            link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
     @dp.callback_query(F.data == "shop_renew")
     async def cq_renew(query: CallbackQuery, state: FSMContext):
         if await blocked(query):
@@ -1030,9 +1135,8 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         logger.info(f"[CATALOG] продление {plan.get('title')} для {query.from_user.id}")
         await edit_screen(
             query.message,
-            "🔄 <b>Продление на "
-            + _esc(plan.get("title"))
-            + "</b>\n\n"
+            format_text("text_renew_selected", plan=_esc(plan.get("title")))
+            + "\n\n"
             + (
                 text("text_order_pay_hint")
                 if pay_url
@@ -1042,11 +1146,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             link_preview_options=NO_PREVIEW,
         )
 
-    @dp.callback_query(F.data == "shop_orders")
-    async def cq_orders(query: CallbackQuery, state: FSMContext):
-        if await blocked(query):
-            return
-        await state.clear()
+    async def show_orders(query: CallbackQuery, *, show_all: bool):
         orders, error = await shop_api.orders_of(query.from_user.id)
         if error:
             return await show_error(query, error)
@@ -1060,11 +1160,26 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             return await query.answer()
         await edit_screen(
             query.message,
-            orders_text(orders),
-            reply_markup=orders_keyboard(orders),
+            text("text_orders_intro"),
+            reply_markup=orders_keyboard(orders, show_all=show_all),
             link_preview_options=NO_PREVIEW,
         )
         await query.answer()
+
+    @dp.callback_query(F.data == "shop_orders")
+    async def cq_orders(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.clear()
+        await show_orders(query, show_all=False)
+
+    @dp.callback_query(F.data == "shop_orders_all")
+    async def cq_orders_all(query: CallbackQuery, state: FSMContext):
+        """Тот же список, но вместе со свёрнутыми отменёнными и возвратами."""
+        if await blocked(query):
+            return
+        await state.clear()
+        await show_orders(query, show_all=True)
 
     @dp.callback_query(F.data.startswith("shop_order:"))
     async def cq_order(query: CallbackQuery):
@@ -1098,7 +1213,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             return await query.answer("Ссылка не пришла, попробуйте позже.", show_alert=True)
         await edit_screen(
             query.message,
-            text("text_order_pay_delivery").format(price=money(data.get("price"))),
+            format_text("text_order_pay_delivery", price=money(data.get("price"))),
             reply_markup=InlineKeyboardBuilder()
             .row(btn("btn_payment_pay_link", url=pay_url))
             .row(btn("btn_shop_back_to_orders", callback_data="shop_orders"))

@@ -101,6 +101,8 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     _b('btn_shop_pay_delivery',    'shop', 'Оплатить доставку по заказу',     '💳 Оплатить доставку',  ''),
     _b('btn_shop_order_cancel',    'shop', 'Отменить заказ',                  '✖️ Отменить заказ',     ''),
     _b('btn_shop_back_to_orders',  'shop', 'Назад к списку заказов',          '⬅️ К моим заказам',     ''),
+    _b('btn_shop_orders_all',      'shop', 'Показать отменённые заказы',      'Показать отменённые',   ''),
+    _b('btn_shop_why_no_sub',      'shop', 'Почему нет подписки («Мой роутер»)', 'Почему нет подписки?', ''),
 
     # 💳 Оплата
     _b('btn_payment_yookassa',  'payment', 'YooKassa',          '💳 YooKassa',              ''),

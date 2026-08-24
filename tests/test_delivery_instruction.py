@@ -10,12 +10,24 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from core import texts
 from core.enums import OrderStatus
 
 ROOT = Path(__file__).resolve().parents[1]
+BOT_DIR = ROOT / "bot"
+
+
+def _catalog():
+    """Загружаем экран каталога, чтобы проверять собранные кнопки, а не исходник."""
+    bot_dir = str(BOT_DIR)
+    if bot_dir not in sys.path:
+        sys.path.insert(0, bot_dir)
+    from src import router_catalog
+
+    return router_catalog
 
 
 class TestInstructionText:
@@ -73,11 +85,17 @@ class TestNoticeAssembly:
         Клавиатура одна на оба экрана — и на «роутер ещё не ожил»,
         и на рабочий, — поэтому кнопка заводится в одном месте.
         """
-        bot = self._source("bot/src/router_catalog.py")
-        keyboard = bot[bot.index("def my_router_keyboard") :]
-        keyboard = keyboard[: keyboard.index("def orders_text")]
-        assert 'data.get("instruction_url")' in keyboard
-        assert "btn_router_instruction" in keyboard
+        markup = _catalog().my_router_keyboard(
+            {"router": None, "instruction_url": "http://192.168.1.1/instruction.html"}
+        )
+        instruction_buttons = [
+            button
+            for row in markup.inline_keyboard
+            for button in row
+            if button.url == "http://192.168.1.1/instruction.html"
+        ]
+
+        assert len(instruction_buttons) == 1
 
     def test_the_button_is_registered(self):
         """Незарегистрированная кнопка покажет клиенту имя ключа."""

@@ -56,6 +56,21 @@ def specs_to_text(specs: dict) -> str:
     return "\n".join(f"{name}: {value}" for name, value in (specs or {}).items())
 
 
+def _mapping_from_form(raw: str, field: str) -> tuple[str, str]:
+    """Настройки-словари («код: значение» построчно) — тот же формат, что
+    у характеристик. Возвращает нормализованный текст и текст ошибки."""
+    lines = []
+    for number, line in enumerate((raw or "").splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        code, sep, value = line.partition(":")
+        if not sep or not code.strip() or not value.strip():
+            return "", f"{field}, строка {number}: нужен формат «код: значение»."
+        lines.append(f"{code.strip()}: {value.strip()}")
+    return "\n".join(lines), ""
+
+
 def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func):
     @admin_bp_instance.after_request
     async def _push_tariffs_after_change(response):
@@ -100,6 +115,8 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             "catalog_settings.html",
             catalog_enabled=str(app_conf.get("catalog_enabled", "1")) == "1",
             specs_limit=app_conf.get("catalog_specs_limit", 8),
+            model_names=app_conf.get("router_model_names", ""),
+            status_labels=app_conf.get("order_status_labels", ""),
         )
 
     @admin_bp_instance.route("/catalog/delivery", methods=["POST"])
@@ -240,9 +257,21 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
     @admin_bp_instance.route("/catalog/settings", methods=["POST"])
     async def catalog_settings_save():
         form = await request.form
+        model_names, names_error = _mapping_from_form(
+            form.get("router_model_names", ""), "Имена моделей"
+        )
+        status_labels, labels_error = _mapping_from_form(
+            form.get("order_status_labels", ""), "Статусы заказов"
+        )
+        if names_error or labels_error:
+            await flash(names_error or labels_error, "danger")
+            return redirect(url_for("admin.catalog_settings"))
+
         values = {
             "catalog_enabled": "1" if form.get("catalog_enabled") == "on" else "0",
             "catalog_specs_limit": str(_form_int(form, "catalog_specs_limit", 8, low=1, high=SPECS_LIMIT_MAX)),
+            "router_model_names": model_names,
+            "order_status_labels": status_labels,
         }
         descriptions = {key: description for key, _, description in CATALOG_SETTINGS}
 

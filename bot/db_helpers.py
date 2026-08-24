@@ -440,12 +440,39 @@ async def populate_default_settings():
 
         # Каталог роутеров: экраны в боте и тумблер раздела. Тексты правятся
         # там же, где остальные, — на странице текстов в админке.
-        from src.shop_texts import PROFILE_MARK, ROUTER_PROFILE, catalog_defaults
+        from src.shop_texts import (
+            LEGACY_TEXTS,
+            PROFILE_MARK,
+            REDESIGN_MARK,
+            ROUTER_PROFILE,
+            catalog_defaults,
+        )
         for key, value, description in catalog_defaults():
             await db.execute(
                 "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
                 (key, value, description),
             )
+
+        # Редизайн 08.2026: на живой базе тексты уже засеяны старыми
+        # дефолтами, и «INSERT OR IGNORE» их не обновит. Меняем один раз и
+        # только совпадающие со старым дефолтом — текст, который оператор
+        # правил, остаётся его решением.
+        async with db.execute(
+            "SELECT 1 FROM settings WHERE key = ?", (REDESIGN_MARK,)
+        ) as cursor:
+            redesign_applied = await cursor.fetchone()
+        if not redesign_applied:
+            new_defaults = {key: value for key, value, _ in catalog_defaults()}
+            for key, legacy_value in LEGACY_TEXTS.items():
+                await db.execute(
+                    "UPDATE settings SET value = ? WHERE key = ? AND value = ?",
+                    (new_defaults.get(key, legacy_value), key, legacy_value),
+                )
+            await db.execute(
+                "INSERT INTO settings (key, value, description) VALUES (?, '1', ?)",
+                (REDESIGN_MARK, "Редизайн текстов каталога 08.2026 применён"),
+            )
+            logger.info("Редизайн текстов каталога: нетронутые дефолты обновлены")
 
         # Профиль роутеров: выключаем то, что осталось от подписки для телефона.
         # Один раз и с отметкой — иначе мы бы каждым запуском отменяли решение
