@@ -68,11 +68,11 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
 
     # 🏠 Главное меню
     _b('btn_renew_sub',       'main_menu', 'Продлить подписку',         '↻ Продлить подписку',        ''),
-    _b('btn_free_renew',      'main_menu', 'Продлить бесплатно (newsletter)', '🆓 Продлить подписку бесплатно', ''),
-    _b('btn_traffic_renewal', 'main_menu', 'Докупить гигабайты',        '📈 Докупить гигабайты',      ''),
-    _b('btn_website_access',     'main_menu', 'Личный кабинет (главное меню)', '🌐 Личный кабинет',         ''),
-    _b('btn_website_open',       'main_menu', 'Открыть личный кабинет (magic link)', '🌐 Открыть личный кабинет', ''),
-    _b('btn_website_link_email', 'main_menu', 'Привязать email (в кабинете)',  '📧 Привязать email',        ''),
+    _b('btn_free_renew',      'main_menu', 'Продлить бесплатно (newsletter)', 'Продлить бесплатно',       ''),
+    _b('btn_traffic_renewal', 'main_menu', 'Докупить гигабайты',        'Докупить трафик',            ''),
+    _b('btn_website_access',     'main_menu', 'Личный кабинет (главное меню)', 'Личный кабинет',          ''),
+    _b('btn_website_open',       'main_menu', 'Открыть личный кабинет (magic link)', 'Открыть кабинет',     ''),
+    _b('btn_website_link_email', 'main_menu', 'Привязать email (в кабинете)',  'Привязать email',          ''),
     _b('btn_support',         'main_menu', 'Поддержка',                 'Поддержка',                  ''),
     _b('btn_about_service',   'main_menu', 'О сервисе',                 'О сервисе',                  ''),
     _b('btn_bot_custom_url',  'main_menu', 'КастомURL',                 'КастомURL',                  ''),
@@ -105,41 +105,74 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     _b('btn_shop_why_no_sub',      'shop', 'Почему нет подписки («Мой роутер»)', 'Почему нет подписки?', ''),
 
     # 💳 Оплата
-    _b('btn_payment_yookassa',  'payment', 'YooKassa',          '💳 YooKassa',              ''),
-    _b('btn_payment_yoomoney',  'payment', 'YooMoney',          '💰 YooMoney',              ''),
-    _b('btn_payment_cryptobot', 'payment', 'CryptoBot',         '💎 CryptoBot',             ''),
-    _b('btn_payment_tgstar',    'payment', 'Telegram Stars',    '⭐️ TG Star',               ''),
-    _b('btn_payment_platega',   'payment', 'Platega (СБП)',     '🏦 Platega (СБП)',         ''),
-    _b('btn_payment_wata',      'payment', 'Wata',              '💳 Wata',                  ''),
-    _b('btn_payment_manual',    'payment', 'CloudTips (СБП)',   '💸 CloudTips(СБП-Картой)', ''),
-    _b('btn_activate_code',     'payment', 'Оплатить кодом',    '🎟️ Оплатить кодом',        ''),
+    _b('btn_payment_yookassa',  'payment', 'YooKassa',          'YooKassa',                 ''),
+    _b('btn_payment_yoomoney',  'payment', 'YooMoney',          'YooMoney',                 ''),
+    _b('btn_payment_cryptobot', 'payment', 'CryptoBot',         'CryptoBot',                ''),
+    _b('btn_payment_tgstar',    'payment', 'Telegram Stars',    'Telegram Stars',           ''),
+    _b('btn_payment_platega',   'payment', 'Platega (СБП)',     'Platega (СБП)',            ''),
+    _b('btn_payment_wata',      'payment', 'Wata',              'Wata',                     ''),
+    _b('btn_payment_manual',    'payment', 'CloudTips (СБП)',   'CloudTips (СБП)',          ''),
+    _b('btn_activate_code',     'payment', 'Оплатить кодом',    'Промокод',                 ''),
     # Единая кнопка перехода по ссылке на оплату (YooKassa, Platega, Wata, CryptoBot, YooMoney, расширение лимита)
-    _b('btn_payment_pay_link',  'payment', 'Перейти к оплате (ссылка)', '💳 Оплатить',              ''),
+    _b('btn_payment_pay_link',  'payment', 'Перейти к оплате (ссылка)', 'Оплатить',                 ''),
     # История платежей пользователя — открывает список последних транзакций
-    _b('btn_payment_history',   'payment', 'История платежей',  '📖 История платежей',      ''),
+    _b('btn_payment_history',   'payment', 'История платежей',  'История платежей',         ''),
 
     # ℹ️ Сервис и навигация
     _b('btn_back_to_main',        'service', 'Назад в главное меню',          '‹ В меню',                       ''),
     _b('btn_back',                'service', 'Назад (внутри подменю)',        '‹ Назад',                        ''),
-    _b('btn_user_agreement',      'service', 'Пользовательское соглашение',   '📄 Пользовательское соглашение', ''),
-    _b('btn_privacy_policy',      'service', 'Политика конфиденциальности',   '🔒 Политика конфиденциальности', ''),
-    _b('btn_support_link',        'service', 'Перейти в поддержку (ссылка)',  '💬 Перейти в поддержку',         ''),
-    _b('btn_support_custom_link', 'service', 'Кастомная ссылка поддержки',    '📞 Кастомная поддержка',         ''),
+    _b('btn_user_agreement',      'service', 'Пользовательское соглашение',   'Соглашение',                     ''),
+    _b('btn_privacy_policy',      'service', 'Политика конфиденциальности',   'Конфиденциальность',             ''),
+    _b('btn_support_link',        'service', 'Перейти в поддержку (ссылка)',  'Написать в поддержку',           ''),
+    _b('btn_support_custom_link', 'service', 'Кастомная ссылка поддержки',    'Другая поддержка',               ''),
 
     # 🎁 Рефералы и партнёры
     _b('btn_referral',          'referral', 'Реферальная программа',          'Реферальная программа',    ''),
-    _b('btn_referral_share',    'referral', 'Поделиться (рефералы)',          '📤 Поделиться',            ''),
-    _b('btn_referral_free_days','referral', 'Бесплатные дни (после оплаты)',  '🎁 Бесплатные дни',        ''),
-    _b('btn_my_referrals',      'referral', 'Мои рефералы (список)',          '👥 Мои рефералы',          ''),
-    _b('btn_partner_program',   'referral', 'Партнёрская программа',          '🤝 Партнёрская программа', ''),
-    _b('btn_partner_accruals',  'referral', 'История начислений (партнёрка)', '📜 История начислений',    ''),
-    _b('btn_partner_withdraw',  'referral', 'Запросить вывод (партнёрка)',    '💸 Запросить вывод',       ''),
+    _b('btn_referral_share',    'referral', 'Поделиться (рефералы)',          'Поделиться',               ''),
+    _b('btn_referral_free_days','referral', 'Бесплатные дни (после оплаты)',  'Бесплатные дни',           ''),
+    _b('btn_my_referrals',      'referral', 'Мои рефералы (список)',          'Мои рефералы',             ''),
+    _b('btn_partner_program',   'referral', 'Партнёрская программа',          'Партнёрская программа',    ''),
+    _b('btn_partner_accruals',  'referral', 'История начислений (партнёрка)', 'Начисления',               ''),
+    _b('btn_partner_withdraw',  'referral', 'Запросить вывод (партнёрка)',    'Запросить вывод',          ''),
 
     # 🔄 Продление (CloudTips quick links)
-    _b('btn_renew_30', 'renew', 'Продлить на 30 дней (CloudTips)', 'Продлить на 30 дней', ''),
-    _b('btn_renew_60', 'renew', 'Продлить на 60 дней (CloudTips)', 'Продлить на 60 дней', ''),
-    _b('btn_renew_90', 'renew', 'Продлить на 90 дней (CloudTips)', 'Продлить на 90 дней', ''),
+    _b('btn_renew_30', 'renew', 'Продлить на 30 дней (CloudTips)', '30 дней', ''),
+    _b('btn_renew_60', 'renew', 'Продлить на 60 дней (CloudTips)', '60 дней', ''),
+    _b('btn_renew_90', 'renew', 'Продлить на 90 дней (CloudTips)', '90 дней', ''),
 ]
+
+# Дословные подписи до редизайна оставшихся экранов. Используются только
+# одноразовой миграцией: операторские значения с любым отличием не меняются.
+REST_LEGACY_BUTTON_TEXTS: dict[str, str] = {
+    'btn_free_renew': '🆓 Продлить подписку бесплатно',
+    'btn_traffic_renewal': '📈 Докупить гигабайты',
+    'btn_website_access': '🌐 Личный кабинет',
+    'btn_website_open': '🌐 Открыть личный кабинет',
+    'btn_website_link_email': '📧 Привязать email',
+    'btn_payment_yookassa': '💳 YooKassa',
+    'btn_payment_yoomoney': '💰 YooMoney',
+    'btn_payment_cryptobot': '💎 CryptoBot',
+    'btn_payment_tgstar': '⭐️ TG Star',
+    'btn_payment_platega': '🏦 Platega (СБП)',
+    'btn_payment_wata': '💳 Wata',
+    'btn_payment_manual': '💸 CloudTips(СБП-Картой)',
+    'btn_activate_code': '🎟️ Оплатить кодом',
+    'btn_payment_pay_link': '💳 Оплатить',
+    'btn_payment_history': '📖 История платежей',
+    'btn_user_agreement': '📄 Пользовательское соглашение',
+    'btn_privacy_policy': '🔒 Политика конфиденциальности',
+    'btn_support_link': '💬 Перейти в поддержку',
+    'btn_support_custom_link': '📞 Кастомная поддержка',
+    'btn_referral_share': '📤 Поделиться',
+    'btn_referral_free_days': '🎁 Бесплатные дни',
+    'btn_my_referrals': '👥 Мои рефералы',
+    'btn_partner_program': '🤝 Партнёрская программа',
+    'btn_partner_accruals': '📜 История начислений',
+    'btn_partner_withdraw': '💸 Запросить вывод',
+    'btn_renew_30': 'Продлить на 30 дней',
+    'btn_renew_60': 'Продлить на 60 дней',
+    'btn_renew_90': 'Продлить на 90 дней',
+}
 
 BUTTON_REGISTRY_MAP: dict[str, dict[str, Any]] = {b['key']: b for b in BUTTON_REGISTRY}
 

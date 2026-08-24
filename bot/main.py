@@ -59,6 +59,7 @@ from src.notifications import start_notification_tasks
 from src.tasks import start_expired_traffic_reset_task, start_stale_payments_task
 from src.pay.wata import create_wata_payment_link
 from src.texts import (
+    REST_TEXT_DEFAULTS,
     TXT_USER_DELETED,
     TXT_BLOCKED,
     TXT_SUPPORT_FALLBACK,
@@ -258,7 +259,7 @@ class UserExistsMiddleware(BaseMiddleware):
                     
                     # Создаем клавиатуру с кнопкой "Старт"
                     start_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🚀 Старт", callback_data="restart_deleted_user")]
+                        [InlineKeyboardButton(text="Старт", callback_data="restart_deleted_user")]
                     ])
                     
                     # Пытаемся отредактировать сообщение, если это возможно
@@ -734,7 +735,7 @@ async def _filter_tariffs_by_user_limit(
                 hint = (
                     "\n\n<blockquote>"
                     "Другой лимит устройств — кнопка "
-                    "<b>📱 Изменить лимит устройств</b>.\n"
+                    "<b>Изменить лимит</b>.\n"
                     "<i>Понизить лимит через поддержку.</i>"
                     "</blockquote>"
                 )
@@ -759,8 +760,8 @@ async def _filter_tariffs_by_user_limit(
 def _format_device_limit_label(limit: int) -> str:
     """Подпись лимита устройств для кнопок продления."""
     if limit == 0:
-        return "♾️ Без лимита"
-    return f"📱 {limit} Лимит устройств"
+        return "Без лимита"
+    return f"Лимит: {limit}"
 
 
 def _no_tariffs_for_limit_text(target_limit: int | None) -> str:
@@ -772,9 +773,9 @@ def _no_tariffs_for_limit_text(target_limit: int | None) -> str:
     else:
         limit_str = "ваш лимит"
     return (
-        "❌ Нет подходящих тарифов для вашего лимита устройств "
-        f"(<b>{limit_str}</b>).\n\n"
-        "Обратитесь в поддержку — поможем подобрать вариант."
+        "<b>Продление подписки</b>\n"
+        f"✕ Нет вариантов для лимита <b>{limit_str}</b>\n\n"
+        "Напишите в поддержку — поможем подобрать срок."
     )
 
 # --- Хэш файла для инвалидации кеша file_id ---
@@ -856,7 +857,7 @@ async def send_blocked_message(user_id: int, query: CallbackQuery = None):
     blocked_text = TXT_BLOCKED
     support_link = app_conf.get('support_link')
     if support_link:
-        blocked_text += f"\n\n💬 <a href='{support_link}'>Связаться с поддержкой</a>"
+        blocked_text += f"\n\n<a href='{support_link}'>Написать в поддержку</a>"
     
     if query:
         try:
@@ -938,7 +939,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
                                                 remnawave_data.get('trafficLimitBytes', 0),
                                             )
                                             if traffic_info:
-                                                traffic_info = f"\n\n📊 Трафик: {traffic_info}"
+                                                traffic_info = f"\n\nТрафик: {traffic_info}"
                                     except Exception as e:
                                         logger.warning(f"Не удалось получить информацию о трафике: {e}")
                                 
@@ -948,7 +949,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
                                 try:
                                     await bot.send_message(
                                         telegram_user_id,
-                                        f"✅ Трафик успешно продлен! Добавлено {traffic_to_add_gb} GB{traffic_info}",
+                                        f"<b>Трафик добавлен</b>\n✓ Добавлено {traffic_to_add_gb} GB{traffic_info}",
                                         reply_markup=keyboards.get_back_to_main_keyboard()
                                     )
                                 except Exception as _tg_err:
@@ -1006,7 +1007,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
         user_data = await db_helpers.get_user(telegram_user_id)
         if not user_data:
             logger.error(f"Пользователь {telegram_user_id} не найден")
-            await bot.send_message(telegram_user_id, "❌ Ошибка: пользователь не найден")
+            await bot.send_message(telegram_user_id, "✕ Пользователь не найден")
             return False
         
         # Преобразуем Row в словарь
@@ -1014,7 +1015,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
         remnawave_uuid = user_dict.get('xui_client_uuid')
         if not remnawave_uuid:
             logger.error(f"Попытка продления трафика для пользователя {telegram_user_id} без UUID подписки")
-            await bot.send_message(telegram_user_id, "❌ Ошибка: не найден UUID подписки")
+            await bot.send_message(telegram_user_id, "✕ Подписка не найдена")
             return False
         
         # Получаем количество трафика для добавления из метаданных
@@ -1025,7 +1026,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
         
         if traffic_to_add_gb <= 0:
             logger.error(f"Не указано количество трафика для продления для пользователя {telegram_user_id}")
-            await bot.send_message(telegram_user_id, "❌ Ошибка: не указано количество трафика для продления")
+            await bot.send_message(telegram_user_id, "✕ Не указан объём трафика")
             return False
         
         # Продлеваем трафик (добавляем к текущему лимиту, без продления срока подписки)
@@ -1049,7 +1050,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
                             remnawave_data.get('trafficUsedBytes', 0),
                             remnawave_data.get('trafficLimitBytes', 0),
                         )
-                        traffic_info = f"\n\n📊 Трафик: {inline}" if inline else ""
+                        traffic_info = f"\n\nТрафик: {inline}" if inline else ""
                 except Exception as e:
                     logger.warning(f"Не удалось получить информацию о трафике: {e}")
             
@@ -1059,7 +1060,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
             try:
                 await bot.send_message(
                     telegram_user_id,
-                    f"✅ Трафик успешно продлен! Добавлено {traffic_to_add_gb} GB{traffic_info}",
+                    f"<b>Трафик добавлен</b>\n✓ Добавлено {traffic_to_add_gb} GB{traffic_info}",
                     reply_markup=keyboards.get_back_to_main_keyboard()
                 )
             except Exception as _tg_err:
@@ -1149,8 +1150,8 @@ DEFAULT_WELCOME = (
 )
 DEFAULT_SUBSCRIPTION_INFO = """✓ Подписка активна до <b>{expiry_date}</b>"""
 DEFAULT_SUBSCRIPTION_EXPIRED = "⚠ Подписка не активна\n\nПродлите её, чтобы роутер снова вышел в сеть."
-DEFAULT_ABOUT_SERVICE = "{project_name} — роутеры с подпиской на сервис стабильного доступа к зарубежным ресурсам."
-DEFAULT_PROMO_SUCCESS = "Промокод {code} принят: добавлено дней — {days}. Подписка действует до {expiry_date}."
+DEFAULT_ABOUT_SERVICE = REST_TEXT_DEFAULTS['text_about_service']
+DEFAULT_PROMO_SUCCESS = REST_TEXT_DEFAULTS['text_promo_code_success']
 
 
 def _filter_empty_menu_fields(text: str) -> str:
@@ -1185,7 +1186,7 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         blocked_text = TXT_BLOCKED
         support_link = app_conf.get('support_link')
         if support_link:
-            blocked_text += f"\n\n💬 <a href='{support_link}'>Связаться с поддержкой</a>"
+            blocked_text += f"\n\n<a href='{support_link}'>Написать в поддержку</a>"
         
         target_message = message_or_query.message if isinstance(message_or_query, CallbackQuery) else message_or_query
         
@@ -1219,7 +1220,7 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
 
     # --- Установка кнопки меню (Menu Button) ---
     try:
-        await bot.set_my_commands([BotCommand(command='start', description='🏠 Главное меню')], scope={'type': 'chat', 'chat_id': user_id})
+        await bot.set_my_commands([BotCommand(command='start', description='Главное меню')], scope={'type': 'chat', 'chat_id': user_id})
         await bot.set_chat_menu_button(chat_id=user_id, menu_button=MenuButtonCommands())
     except Exception as e:
         logger.error(f"Не удалось установить кнопку меню для {user_id}: {e}")
@@ -1282,7 +1283,7 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         # Пробного периода нет — предлагать его нельзя: клиент нажмёт и ничего
         # не получит. Условие читает ту же настройку, поэтому решение обратимо.
         if int(app_conf.get('trial_days', 3) or 0) > 0:
-            text_to_send += "\n\n" + "🎁 Вы можете получить пробный период, если еще не использовали его, или приобрести подписку."
+            text_to_send += "\n\n" + "Пробный период доступен в меню ниже."
         else:
             text_to_send += "\n\n" + "Выберите раздел ниже или напишите в поддержку."
 
@@ -1493,7 +1494,9 @@ async def handle_start(message: Message, state: FSMContext):
             )
             
             # Отправляем вопрос пользователю с кнопками (видео будет отправлено после успешного прохождения капчи)
-            protection_text = app_conf.get('bot_protection_text', '🤖 <b>Защита от ботов</b>\n\nДля продолжения решите простую задачу:\n\n<b>{question}</b>')
+            protection_text = app_conf.get(
+                'bot_protection_text', REST_TEXT_DEFAULTS['bot_protection_text']
+            )
             kbd = keyboards.get_captcha_keyboard(correct_answer, wrong_answers)
             await message.answer(
                 protection_text.format(question=question),
@@ -1621,10 +1624,14 @@ async def handle_start(message: Message, state: FSMContext):
                                     text_message = tpl.format(days=trial_days, expiry_date=formatted_expiry)
                                 except Exception as e:
                                     logger.warning(f"Ошибка форматирования text_trial_success: {e}, шаблон: {tpl}")
-                                    text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                                    text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                                        days=trial_days, expiry_date=formatted_expiry
+                                    )
                             else:
                                 logger.debug(f"text_trial_success не найден или пуст, используем дефолтный текст")
-                                text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                                text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                                    days=trial_days, expiry_date=formatted_expiry
+                                )
                             
                             # Отправляем видео-инструкцию вместе с текстом успешной активации (если видео доступно)
                             video_path = os.path.join(os.path.dirname(__file__), 'ins.mp4')
@@ -1693,7 +1700,10 @@ async def handle_start(message: Message, state: FSMContext):
                         logger.error(f"[HANDLER] handle_start: не удалось выдать триал для user_id={user_id}")
                         # Показываем сообщение об ошибке
                         await message.answer(
-                            app_conf.get('text_error_creating_user', '❌ <b>Ошибка создания пользователя</b>\n\nНе удалось создать пробный период. Попробуйте позже или обратитесь в поддержку.'),
+                            app_conf.get(
+                                'text_error_creating_user',
+                                REST_TEXT_DEFAULTS['text_error_creating_user'],
+                            ),
                             reply_markup=keyboards.get_back_to_main_keyboard()
                         )
                         return
@@ -1772,10 +1782,14 @@ async def handle_start(message: Message, state: FSMContext):
                                 text_message = tpl.format(days=trial_days, expiry_date=formatted_expiry)
                             except Exception as e:
                                 logger.warning(f"Ошибка форматирования text_trial_success: {e}, шаблон: {tpl}")
-                                text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                                text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                                    days=trial_days, expiry_date=formatted_expiry
+                                )
                         else:
                             logger.debug(f"text_trial_success не найден или пуст, используем дефолтный текст")
-                            text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                            text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                                days=trial_days, expiry_date=formatted_expiry
+                            )
                         
                         # Отправляем видео-инструкцию вместе с текстом успешной активации (если видео доступно)
                         video_path = os.path.join(os.path.dirname(__file__), 'ins.mp4')
@@ -1844,7 +1858,10 @@ async def handle_start(message: Message, state: FSMContext):
                     logger.error(f"[HANDLER] handle_start: не удалось выдать триал для user_id={user_id}")
                     # Показываем сообщение об ошибке
                     await message.answer(
-                        app_conf.get('text_error_creating_user', '❌ <b>Ошибка создания пользователя</b>\n\nНе удалось создать пробный период. Попробуйте позже или обратитесь в поддержку.'),
+                        app_conf.get(
+                            'text_error_creating_user',
+                            REST_TEXT_DEFAULTS['text_error_creating_user'],
+                        ),
                         reply_markup=keyboards.get_back_to_main_keyboard()
                     )
                     return
@@ -1916,7 +1933,7 @@ async def handle_captcha_answer(query: CallbackQuery, state: FSMContext):
             
             # Сразу отвечаем на callback query, чтобы кнопка не висела в загрузке
             try:
-                await query.answer("✅ Правильно! Создаем подписку...")
+                await query.answer("✓ Всё верно. Создаём подписку")
             except Exception:
                 pass
             
@@ -1954,10 +1971,14 @@ async def handle_captcha_answer(query: CallbackQuery, state: FSMContext):
                         logger.debug(f"[TRIAL] text_message сформирован из text_trial_success, длина: {len(text_message)}")
                     except Exception as e:
                         logger.warning(f"Ошибка форматирования text_trial_success: {e}, шаблон: {tpl}")
-                        text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                        text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                            days=trial_days, expiry_date=formatted_expiry
+                        )
                 else:
                     logger.debug(f"text_trial_success не найден или пуст, используем дефолтный текст")
-                    text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                    text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                        days=trial_days, expiry_date=formatted_expiry
+                    )
                 
                 # Отправляем видео-инструкцию вместе с текстом успешной активации (если видео доступно)
                 video_path = os.path.join(os.path.dirname(__file__), 'ins.mp4')
@@ -2091,7 +2112,7 @@ async def handle_captcha_answer(query: CallbackQuery, state: FSMContext):
                         pass
                 # Отвечаем на callback query, чтобы избежать зависания
                 try:
-                    await query.answer("❌ Ошибка создания подписки", show_alert=True)
+                    await query.answer("✕ Не удалось создать подписку", show_alert=True)
                 except Exception:
                     pass
                 # Очищаем состояние и выходим, не показывая главное меню
@@ -2126,7 +2147,9 @@ async def handle_captcha_answer(query: CallbackQuery, state: FSMContext):
         )
         
         # Отправляем новый вопрос
-        wrong_text = app_conf.get('bot_protection_wrong_text', '❌ <b>Неправильно!</b>\n\nПопробуйте еще раз:\n\n<b>{question}</b>')
+        wrong_text = app_conf.get(
+            'bot_protection_wrong_text', REST_TEXT_DEFAULTS['bot_protection_wrong_text']
+        )
         try:
             await query.message.edit_text(
                 wrong_text.format(question=question),
@@ -2234,17 +2257,17 @@ async def check_subscription_callback(query: CallbackQuery, state: FSMContext):
         
         # Пользователь подписан и может получить триал - выдаем триал
         try:
-            await query.answer("✅ Спасибо за подписку! Создаем подписку...")
+            await query.answer("✓ Проверка пройдена. Создаём подписку")
         except Exception:
             pass
         
         # Показываем прогресс ДО создания клиента
         try:
-            await query.message.edit_text("🌍 Выбираем лучший сервер.🔍")
+            await query.message.edit_text("<b>Подключение</b>\n○ Выбираем сервер.")
             await asyncio.sleep(0.3)
-            await query.message.edit_text("🌎 Выбираем лучший сервер..🔍")
+            await query.message.edit_text("<b>Подключение</b>\n○ Выбираем сервер..")
             await asyncio.sleep(0.3)
-            await query.message.edit_text("🌏 Выбираем лучший сервер...🔍")
+            await query.message.edit_text("<b>Подключение</b>\n○ Выбираем сервер...")
             await asyncio.sleep(0.3)
             await query.message.edit_text("⏳ Создаем вашу подписку...")
         except Exception:
@@ -2294,9 +2317,13 @@ async def check_subscription_callback(query: CallbackQuery, state: FSMContext):
                     text_message = tpl.format(days=trial_days, expiry_date=formatted_expiry)
                 except Exception as e:
                     logger.warning(f"Ошибка форматирования text_trial_success: {e}, шаблон: {tpl}")
-                    text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                    text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                        days=trial_days, expiry_date=formatted_expiry
+                    )
             else:
-                text_message = f'🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {trial_days} дней\n📅 <b>Действует до:</b> {formatted_expiry}'
+                text_message = REST_TEXT_DEFAULTS['text_trial_success'].format(
+                    days=trial_days, expiry_date=formatted_expiry
+                )
             
             # Отправляем видео-инструкцию (если доступно)
             video_path = os.path.join(os.path.dirname(__file__), 'ins.mp4')
@@ -2394,7 +2421,7 @@ async def check_subscription_callback(query: CallbackQuery, state: FSMContext):
                 except Exception:
                     pass
             try:
-                await query.answer("❌ Ошибка создания подписки", show_alert=True)
+                await query.answer("✕ Не удалось создать подписку", show_alert=True)
             except Exception:
                 pass
             await state.clear()
@@ -2410,7 +2437,7 @@ async def cq_restart_deleted_user(query: CallbackQuery, state: FSMContext):
     if not query.from_user or not query.message:
         logger.error(f"[HANDLER] cq_restart_deleted_user: query.from_user или query.message отсутствует")
         try:
-            await query.answer("❌ Ошибка: не удалось определить пользователя")
+            await query.answer("✕ Не удалось определить пользователя")
         except:
             pass
         return
@@ -2481,15 +2508,15 @@ async def cq_support(query: CallbackQuery):
     support_link = app_conf.get('support_link', '')
     
     # Формируем сообщение с инструкцией
-    user_id_text = f"Вот мой ID {user_id}"
+    user_id_text = str(user_id)
     # Получаем текст поддержки из настроек или используем значение по умолчанию
     support_text_template = app_conf.get('text_support', TXT_SUPPORT_FALLBACK)
     # Форматируем текст с подстановкой user_id
     try:
-        support_text = support_text_template.format(user_id=hcode(user_id_text))
+        support_text = support_text_template.format(user_id=html.escape(user_id_text))
     except (KeyError, ValueError):
         # Если в шаблоне нет {user_id}, просто используем шаблон как есть
-        support_text = support_text_template.replace('{user_id}', hcode(user_id_text))
+        support_text = support_text_template.replace('{user_id}', html.escape(user_id_text))
     
     # Создаем клавиатуру
     builder = InlineKeyboardBuilder()
@@ -2536,8 +2563,8 @@ async def cq_payment_history(query: CallbackQuery):
     
     if not payments:
         await query.message.edit_text(
-            "📖 <b>История платежей</b>\n\n"
-            "У вас пока нет успешных платежей.",
+            "<b>История платежей</b>\n"
+            "○ Успешных платежей пока нет",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [btn('btn_back', callback_data='renew_choose_payment')]
             ])
@@ -2546,7 +2573,7 @@ async def cq_payment_history(query: CallbackQuery):
         return
     
     # Формируем текст с историей платежей
-    text = "📖 <b>История успешных платежей</b>\n\n"
+    text = "<b>История платежей</b>\n✓ Последние оплаты\n\n"
     
     for i, payment in enumerate(payments[:10], 1):  # Показываем последние 10 платежей
         payment_id, telegram_id, amount, currency, status, created_at, metadata_json = payment
@@ -2558,7 +2585,7 @@ async def cq_payment_history(query: CallbackQuery):
         except:
             date_str = "Неизвестно"
         
-        text += f"{i}. ✅ <b>{amount} {currency}</b>\n"
+        text += f"{i}. ✓ <b>{amount} {currency}</b>\n"
         text += f"   ID: <code>{payment_id}</code>\n"
         text += f"   Дата: {date_str}\n\n"
     
@@ -2586,7 +2613,9 @@ async def cq_my_referrals(query: CallbackQuery):
     if not rows:
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         back_kbd = InlineKeyboardMarkup(inline_keyboard=[[btn('btn_back', callback_data='referral_program')]])
-        await query.message.edit_text("У вас пока нет рефералов.", reply_markup=back_kbd)
+        await query.message.edit_text(
+            "<b>Мои рефералы</b>\n○ Приглашённых пока нет", reply_markup=back_kbd
+        )
         await query.answer()
         return
 
@@ -2607,7 +2636,7 @@ async def cq_my_referrals(query: CallbackQuery):
     page_rows = rows[start:end]
 
     # Формируем текст
-    lines = ["👥 <b>Мои рефералы</b>", f"Всего: {total}", ""]
+    lines = ["<b>Мои рефералы</b>", f"✓ Всего: {total}", ""]
     for r in page_rows:
         tid = r.get('telegram_id') if isinstance(r, dict) else r[0]
         uname_raw = r.get('username') if isinstance(r, dict) else (r[1] or '')
@@ -2623,9 +2652,9 @@ async def cq_my_referrals(query: CallbackQuery):
     buttons = []
     nav = []
     if current_page > 1:
-        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"my_referrals:{current_page-1}"))
+        nav.append(InlineKeyboardButton(text="‹", callback_data=f"my_referrals:{current_page-1}"))
     if current_page < total_pages:
-        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"my_referrals:{current_page+1}"))
+        nav.append(InlineKeyboardButton(text="▸", callback_data=f"my_referrals:{current_page+1}"))
     if nav:
         buttons.append(nav)
     buttons.append([btn('btn_back', callback_data='referral_program')])
@@ -2792,7 +2821,7 @@ async def handle_cryptobot_invoice_paid(payment_id: str, payload_str: str) -> No
             if remnawave_traffic_info:
                 added_gb = remnawave_traffic_info.get("added_gb")
                 if added_gb:
-                    traffic_info_text = f"\n\n📊 Трафик: добавлено {added_gb} GB"
+                    traffic_info_text = f"\n\nТрафик: добавлено {added_gb} GB"
 
             tpl = (app_conf.get("text_payment_success") or "").replace("{sub_link}", "")
             success_message = tpl.format(days=days, expiry_date=expiry_date_str) + traffic_info_text
@@ -2815,7 +2844,7 @@ async def handle_cryptobot_invoice_paid(payment_id: str, payload_str: str) -> No
             try:
                 await bot.send_message(
                     paid_user_id,
-                    f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                    f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                     reply_markup=keyboards.get_back_to_main_keyboard(),
                 )
             except Exception as e2:
@@ -2929,7 +2958,10 @@ async def process_promo_code_activation(message: Message, state: FSMContext):
             return await message.answer(app_conf.get('text_promo_code_invalid'), reply_markup=keyboards.get_back_to_main_keyboard())
         if reason in ('inactive', 'limit_reached', 'already_used_by_user'):
             return await message.answer(app_conf.get('text_promo_code_already_used'), reply_markup=keyboards.get_back_to_main_keyboard())
-        return await message.answer(app_conf.get('text_error_general'), reply_markup=keyboards.get_back_to_main_keyboard())
+        return await message.answer(
+            app_conf.get('text_error_general') or REST_TEXT_DEFAULTS['text_error_general'],
+            reply_markup=keyboards.get_back_to_main_keyboard(),
+        )
 
     days_to_add = redeem.get('days') or app_conf.get('promo_code_subscription_days', 30)
     # Получаем текущий лимит устройств пользователя
@@ -2973,11 +3005,11 @@ async def cq_check_payment(query: CallbackQuery):
         )
     except asyncio.TimeoutError:
         logger.error(f"Таймаут при запросе статуса платежа YooKassa {payment_id}")
-        await safe_answer_callback(query, app_conf.get('text_error_general', 'Произошла ошибка') + " Сервис временно недоступен. Попробуйте позже.", show_alert=True)
+        await safe_answer_callback(query, "⚠ Сервис временно недоступен. Попробуйте позже.", show_alert=True)
         return
     except Exception as e:
         logger.error(f"Ошибка ручного запроса Yookassa для {payment_id}: {e}")
-        await safe_answer_callback(query, app_conf.get('text_error_general', 'Произошла ошибка') + " Попробуйте позже.", show_alert=True)
+        await safe_answer_callback(query, "⚠ Временная ошибка. Попробуйте позже.", show_alert=True)
         return
 
     if not payment_info_yk:
@@ -3103,7 +3135,7 @@ async def cq_renew_tariff_yookassa(query: CallbackQuery):
     except asyncio.TimeoutError:
         logger.error(f"Таймаут при создании платежа YooKassa для user {user_id}")
         await query.message.edit_text(
-            "⏰ Сервис оплаты временно недоступен. Пожалуйста, попробуйте позже или выберите другой способ оплаты.", 
+            "⚠ Сервис оплаты временно недоступен. Попробуйте позже или выберите другой способ.",
             reply_markup=keyboards.get_back_to_main_keyboard()
         )
         await safe_answer_callback(query)
@@ -3113,9 +3145,12 @@ async def cq_renew_tariff_yookassa(query: CallbackQuery):
         
         # Более понятное сообщение для пользователя
         if 'timeout' in error_msg or 'connection' in error_msg or 'network' in error_msg:
-            user_message = "⏰ Сервис оплаты временно недоступен. Пожалуйста, попробуйте позже или выберите другой способ оплаты."
+            user_message = "⚠ Сервис оплаты временно недоступен. Попробуйте позже или выберите другой способ."
         else:
-            user_message = app_conf.get('text_error_general', "Произошла ошибка, попробуйте позже.")
+            user_message = (
+                app_conf.get('text_error_general')
+                or REST_TEXT_DEFAULTS['text_error_general']
+            )
         
         await query.message.edit_text(
             user_message, 
@@ -3196,9 +3231,9 @@ async def cq_renew_choose_payment(query: CallbackQuery):
                 else:
                     days_text = "Меньше минуты"
             else:
-                days_text = "❌ Истекла"
+                days_text = "✕ Истекла"
         else:
-            days_text = "❌ Истекла"
+            days_text = "✕ Истекла"
         
         # Лимит устройств
         limit_ip = sub_info.get('limit_ip', 0) if isinstance(sub_info, dict) else 0
@@ -3232,7 +3267,9 @@ async def cq_renew_choose_payment(query: CallbackQuery):
     kbd = InlineKeyboardMarkup(inline_keyboard=payment_buttons)
     
     # Формируем полный текст сообщения
-    message_text = header_text + "💳 <b>Выберите способ оплаты:</b>"
+    message_text = (
+        "<b>Продление подписки</b>\n○ Выберите способ оплаты\n\n" + header_text
+    )
     
     await query.message.edit_text(message_text, reply_markup=kbd, parse_mode="HTML")
     await safe_answer_callback(query)
@@ -3339,7 +3376,10 @@ async def cq_renew_tariff_platega(query: CallbackQuery):
             data = resp.json()
     except Exception as e:
         logger.error(f"Platega v2: ошибка создания транзакции: {e}")
-        await query.message.edit_text(app_conf.get('text_error_general', 'Произошла ошибка, попробуйте позже.'), reply_markup=keyboards.get_back_to_main_keyboard())
+        await query.message.edit_text(
+            app_conf.get('text_error_general') or REST_TEXT_DEFAULTS['text_error_general'],
+            reply_markup=keyboards.get_back_to_main_keyboard(),
+        )
         await query.answer()
         return
 
@@ -3347,7 +3387,10 @@ async def cq_renew_tariff_platega(query: CallbackQuery):
     redirect_url = data.get('url') or data.get('redirect') or data.get('paymentLink')
     if not tx_id or not redirect_url:
         logger.error(f"Platega v2: неполный ответ: {data}")
-        await query.message.edit_text(app_conf.get('text_error_general', 'Не удалось получить ссылку оплаты.'), reply_markup=keyboards.get_back_to_main_keyboard())
+        await query.message.edit_text(
+            app_conf.get('text_error_general') or REST_TEXT_DEFAULTS['text_error_general'],
+            reply_markup=keyboards.get_back_to_main_keyboard(),
+        )
         await query.answer()
         return
 
@@ -3468,7 +3511,7 @@ async def cq_renew_tariff_wata(query: CallbackQuery):
         err = result.get("error") or "unknown"
         logger.error(f"Wata: create link failed: {err}")
         await query.message.edit_text(
-            app_conf.get("text_error_general", "Произошла ошибка, попробуйте позже."),
+            app_conf.get("text_error_general") or REST_TEXT_DEFAULTS['text_error_general'],
             reply_markup=keyboards.get_back_to_main_keyboard(),
         )
         await query.answer()
@@ -3477,7 +3520,7 @@ async def cq_renew_tariff_wata(query: CallbackQuery):
     pay_url = result.get("url")
     if not pay_url:
         await query.message.edit_text(
-            app_conf.get("text_error_general", "Не удалось получить ссылку оплаты."),
+            app_conf.get("text_error_general") or REST_TEXT_DEFAULTS['text_error_general'],
             reply_markup=keyboards.get_back_to_main_keyboard(),
         )
         await query.answer()
@@ -3531,10 +3574,9 @@ async def cq_renew_choose_manual(query: CallbackQuery):
     link60 = app_conf.get('manual_transfer_link_60')
     link90 = app_conf.get('manual_transfer_link_90')
     text = (
-        "💸 Оплата CloudTips\n\n"
-        "Скопируйте и вставьте <b>ваш ID</b> в комментарий к оплате, чтобы мы могли быстро продлить подписку.\n\n"
-        f"<blockquote>Ваш ID: <code>{uid}</code></blockquote>\n\n"
-        "Выберите один из вариантов оплаты ниже:"
+        "<b>Оплата CloudTips</b>\n○ Выберите срок\n\n"
+        f"Ваш ID: <code>{uid}</code>\n"
+        "Укажите ID в комментарии к оплате."
     )
     kb_rows = []
     if link30:
@@ -3544,7 +3586,7 @@ async def cq_renew_choose_manual(query: CallbackQuery):
     if link90:
         kb_rows.append([btn('btn_renew_90', url=link90)])
     # Кнопка подтверждения оплаты переводом
-    kb_rows.append([InlineKeyboardButton(text="✅ Я оплатил", callback_data="manual_i_paid")])
+    kb_rows.append([InlineKeyboardButton(text="Я оплатил", callback_data="manual_i_paid")])
     kb_rows.append([btn('btn_back', callback_data='renew_choose_payment')])
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
     await query.answer()
@@ -3560,8 +3602,8 @@ async def cq_manual_i_paid(query: CallbackQuery):
     support_link = app_conf.get('support_link')
     # Сообщение пользователю
     msg = (
-        "✅ Заявка принята!\n\n"
-        "Ожидайте продления в течение 30 минут.\n"
+        "<b>Заявка принята</b>\n✓ Проверим оплату\n\n"
+        "Подписка обновится в течение 30 минут.\n"
         + (f"Если продление не произошло — обратитесь в поддержку: {support_link}" if support_link else "Если продление не произошло — обратитесь в поддержку.")
     )
     try:
@@ -3648,16 +3690,15 @@ async def _render_renew_tariffs_for_method(query: CallbackQuery, method: str):
     for t in visible:
         try:
             price_val = float(t['price'])
-            price_str = int(price_val) if price_val.is_integer() else price_val
+            price_str = int(price_val) if price_val.is_integer() else f"{price_val:g}"
         except Exception:
             price_str = t.get('price', '-')
 
-        limit_ip = int(t.get('limit_ip', 0) or 0)
-        limit_text = f" ({limit_ip} устр.)" if limit_ip > 0 else " (без лимита)"
+        days = int(t.get('days', 0) or 0)
 
         rows.append([
             InlineKeyboardButton(
-                text=f"{t['name']} • {price_str} {t['currency']}{limit_text}",
+                text=f"{days} дней · {price_str} {t['currency']}",
                 callback_data=f"renew_tariff_{method}_{t['id']}",
             )
         ])
@@ -3671,7 +3712,7 @@ async def _render_renew_tariffs_for_method(query: CallbackQuery, method: str):
 
     if show_change_limit_btn:
         rows.append([InlineKeyboardButton(
-            text="📱 Изменить лимит устройств",
+            text="Изменить лимит",
             callback_data=f"renew_increase_limit_{method}",
         )])
 
@@ -3793,7 +3834,7 @@ async def cq_renew_increase_limit(query: CallbackQuery):
     for lim in sorted_limits:
         label = _format_device_limit_label(lim)
         if user_current_limit is not None and lim == user_current_limit:
-            label += " (текущий ⭐️)"
+            label += " · текущий"
 
         rows.append([InlineKeyboardButton(
             text=label,
@@ -3898,9 +3939,8 @@ async def cq_traffic_renewal_choose_payment(query: CallbackQuery):
         tariff_id = tariff.get('id')
         tariff_gb = tariff.get('traffic_gb', 0)
         tariff_price = tariff.get('price', 0)
-        tariff_name = tariff.get('name', f'{tariff_gb} GB')
         price_str = int(tariff_price) if tariff_price == int(tariff_price) else f"{tariff_price:.2f}"
-        button_text = f"{tariff_name} - {price_str} ₽"
+        button_text = f"{tariff_gb} GB · {price_str} ₽"
         payment_buttons.append([InlineKeyboardButton(text=button_text, callback_data=f"traffic_renewal_choose_tariff_{tariff_id}")])
     
     # Добавляем кнопку "Назад"
@@ -4270,7 +4310,7 @@ async def _create_traffic_renewal_platega_payment(query: CallbackQuery, user_id:
     if not tx_id or not redirect_url:
         logger.error(f"Platega v2 traffic_renewal: неполный ответ: {data_resp}")
         await query.message.edit_text(
-            app_conf.get('text_error_general', 'Не удалось получить ссылку оплаты.'),
+            app_conf.get('text_error_general') or REST_TEXT_DEFAULTS['text_error_general'],
             reply_markup=keyboards.get_back_to_main_keyboard()
         )
         await query.answer()
@@ -4383,7 +4423,7 @@ async def cq_traffic_renewal_choose_wata(query: CallbackQuery):
 
     if not result:
         await query.message.edit_text(
-            app_conf.get('text_error_general', 'Не удалось получить ссылку оплаты.'),
+            app_conf.get('text_error_general') or REST_TEXT_DEFAULTS['text_error_general'],
             reply_markup=keyboards.get_back_to_main_keyboard(),
         )
         await query.answer()
@@ -4797,7 +4837,7 @@ async def cq_traffic_renewal_choose_manual(query: CallbackQuery):
     text = txt_manual_traffic_renewal(default_traffic_limit_gb, price_str, user_id)
     
     kb_rows = [
-        [InlineKeyboardButton(text="✅ Я оплатил", callback_data="traffic_renewal_manual_i_paid")],
+        [InlineKeyboardButton(text="Я оплатил", callback_data="traffic_renewal_manual_i_paid")],
         [btn('btn_back', callback_data='traffic_renewal_choose_payment')]
     ]
     
@@ -4817,8 +4857,8 @@ async def cq_traffic_renewal_manual_i_paid(query: CallbackQuery):
     support_link = app_conf.get('support_link', '')
     
     msg = (
-        "✅ Заявка принята!\n\n"
-        "Ожидайте обработки в течение 30 минут.\n"
+        "<b>Заявка принята</b>\n✓ Проверим оплату\n\n"
+        "Трафик добавится в течение 30 минут.\n"
     )
     if support_link:
         msg += f"Если обработка не произошла — обратитесь в поддержку: {support_link}"
@@ -4882,7 +4922,7 @@ async def cq_renew_choose_by_limit(query: CallbackQuery):
     for t in filtered:
         try:
             price_val = float(t['price'])
-            price_str = int(price_val) if price_val.is_integer() else price_val
+            price_str = int(price_val) if price_val.is_integer() else f"{price_val:g}"
         except Exception:
             price_str = t.get('price', '-')
         days = int(t.get('days', 0) or 0)
@@ -4894,7 +4934,7 @@ async def cq_renew_choose_by_limit(query: CallbackQuery):
             callback_data = f"renew_tariff_{method}_{t['id']}"
 
         rows.append([InlineKeyboardButton(
-            text=f"{t['name']} • {price_str} {currency} ({days} дн.)",
+            text=f"{days} дней · {price_str} {currency}",
             callback_data=callback_data,
         )])
 
@@ -4966,9 +5006,9 @@ async def cq_renew_tariff_tgstar(query: CallbackQuery):
 
     await bot.send_message(
         chat_id=query.from_user.id,
-        text="⬆️ Счет для оплаты создан.\n\nЕсли вы передумали, нажмите кнопку ниже, чтобы вернуться к выбору тарифа.",
+        text="<b>Счёт создан</b>\n○ Ожидает оплаты\n\nВернуться к выбору срока можно по кнопке ниже.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад к выбору тарифа", callback_data="renew_choose_tgstar")]
+            [InlineKeyboardButton(text="‹ К выбору срока", callback_data="renew_choose_tgstar")]
         ])
     )
     
@@ -5066,7 +5106,7 @@ async def cq_check_yoomoney_payment(query: CallbackQuery):
         
     payment_id = query.data.replace("check_yoomoney_payment_", "")
     logger.info(f"YooMoney: Проверяем платеж {payment_id}")
-    await query.answer("🔍 Проверяем статус платежа...", show_alert=False)
+    await query.answer("Проверяем статус платежа", show_alert=False)
 
     token = app_conf.get('yoomoney_token')
     logger.info(f"YooMoney: Токен получен: {'Да' if token else 'Нет'}")
@@ -5087,7 +5127,7 @@ async def cq_check_yoomoney_payment(query: CallbackQuery):
         logger.info(f"YooMoney: Платеж найден в БД, статус: {db_payment[4]}")
         if db_payment[4] == 'succeeded':
             logger.info(f"YooMoney: Платеж {payment_id} уже был зачислен")
-            await query.answer("✅ Этот платеж уже был зачислен.", show_alert=True)
+            await query.answer("✓ Этот платёж уже зачислен.", show_alert=True)
             return
 
         # Поскольку API YooMoney не работает, используем упрощенную проверку
@@ -5100,7 +5140,7 @@ async def cq_check_yoomoney_payment(query: CallbackQuery):
         # Создаем клавиатуру с кнопкой проверки статуса
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(
-            text="🔍 Проверить статус", 
+            text="↻ Проверить статус",
             callback_data=f"confirm_yoomoney_payment_{payment_id}"
         ))
         builder.row(btn('btn_back_to_main', callback_data='back_to_main'))
@@ -5136,17 +5176,17 @@ async def cq_confirm_yoomoney_payment(query: CallbackQuery):
         
         if db_payment[4] == 'succeeded':
             logger.info(f"YooMoney: Платеж {payment_id} уже был зачислен")
-            await query.answer("✅ Этот платеж уже был зачислен.", show_alert=True)
+            await query.answer("✓ Этот платёж уже зачислен.", show_alert=True)
             return
         
         # Проверяем, был ли платеж действительно оплачен через webhook
         if db_payment[4] == 'pending':
-            await query.answer("⚠️ Платеж еще не получен. Пожалуйста, завершите оплату и подождите несколько минут.", show_alert=True)
+            await query.answer("⚠ Платёж ещё не получен. Завершите оплату и подождите несколько минут.", show_alert=True)
             return
         
         # Если платеж был обработан через webhook, показываем успех
         await query.message.edit_text(
-            f"✅ Оплата через YooMoney прошла успешно! Подписка активирована.",
+            "✓ Оплата через YooMoney прошла. Подписка активна.",
             reply_markup=keyboards.get_success_with_referral_keyboard()
         )
         logger.info(f"YooMoney: Платеж {payment_id} уже обработан через webhook.")
@@ -5342,7 +5382,7 @@ async def process_yoomoney_webhook_payment(payment_id, operation_id, amount, cur
                         if remnawave_traffic_info:
                             added_gb = remnawave_traffic_info.get('added_gb')
                             if added_gb:
-                                traffic_info_text = f"\n\n📊 Трафик: добавлено {added_gb} GB"
+                                traffic_info_text = f"\n\nТрафик: добавлено {added_gb} GB"
                         
                         tpl = (app_conf.get('text_payment_success') or '').replace('{sub_link}', '')
                         success_message = tpl.format(days=days, expiry_date=expiry_date_str) + traffic_info_text
@@ -5357,7 +5397,7 @@ async def process_yoomoney_webhook_payment(payment_id, operation_id, amount, cur
                         try:
                             await bot.send_message(
                                 user_id,
-                                f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                 reply_markup=keyboards.get_back_to_main_keyboard()
                             )
                         except Exception as e2:
@@ -5623,7 +5663,7 @@ async def platega_callback_handler(request: web.Request):
                                 if remnawave_traffic_info:
                                     added_gb = remnawave_traffic_info.get('added_gb')
                                     if added_gb:
-                                        traffic_info_text = f"\n\n📊 Трафик: добавлено {added_gb} GB"
+                                        traffic_info_text = f"\n\nТрафик: добавлено {added_gb} GB"
                                 
                                 tpl = (app_conf.get('text_payment_success') or '').replace('{sub_link}', '')
                                 success_message = tpl.format(days=days, expiry_date=expiry_date_str) + traffic_info_text
@@ -5638,7 +5678,7 @@ async def platega_callback_handler(request: web.Request):
                                 logger.warning(f"Platega webhook: subscription_data отсутствует для платежа {payment_id}, отправляем базовое сообщение")
                                 await bot.send_message(
                                     user_id,
-                                    f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                    f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                     reply_markup=keyboards.get_back_to_main_keyboard()
                                 )
                         except Exception as e:
@@ -5646,7 +5686,7 @@ async def platega_callback_handler(request: web.Request):
                             try:
                                 await bot.send_message(
                                     user_id,
-                                    f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                    f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                     reply_markup=keyboards.get_back_to_main_keyboard()
                                 )
                             except Exception as e2:
@@ -5812,7 +5852,7 @@ async def yookassa_webhook_handler(request: web.Request):
                                     if remnawave_traffic_info:
                                         added_gb = remnawave_traffic_info.get('added_gb')
                                         if added_gb:
-                                            traffic_info_text = f"\n\n📊 Трафик: добавлено {added_gb} GB"
+                                            traffic_info_text = f"\n\nТрафик: добавлено {added_gb} GB"
                                     
                                     tpl = (app_conf.get('text_payment_success') or '').replace('{sub_link}', '')
                                     success_message = tpl.format(days=days, expiry_date=expiry_date_str) + traffic_info_text
@@ -5831,7 +5871,7 @@ async def yookassa_webhook_handler(request: web.Request):
                                     if meta.get('registration_type') != 'site':
                                         await bot.send_message(
                                             user_id,
-                                            f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                            f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                             reply_markup=keyboards.get_back_to_main_keyboard()
                                         )
                             except Exception as e:
@@ -5840,7 +5880,7 @@ async def yookassa_webhook_handler(request: web.Request):
                                     if meta.get('registration_type') != 'site':
                                         await bot.send_message(
                                             user_id,
-                                            f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                            f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                             reply_markup=keyboards.get_back_to_main_keyboard()
                                         )
                                 except Exception as e2:
@@ -6158,7 +6198,7 @@ async def handle_traffic_exhausted(telegram_id: int, user_data):
         
         message_template = app_conf.get(
             'text_remnawave_traffic_exhausted',
-            '⚠️ <b>Трафик закончился</b>\n\n📊 Использовано: {used_gb:.2f} GB из {limit_gb:.2f} GB\n\nБезлимитные серверы все равно доступны.\n\nДля продолжения пользования:\n• Докупите GB\n• Продлите подписку\n\nДля продления вернитесь на главную.'
+            REST_TEXT_DEFAULTS['text_remnawave_traffic_exhausted'],
         )
         
         # Формируем сообщение с подстановкой переменных
@@ -6166,14 +6206,8 @@ async def handle_traffic_exhausted(telegram_id: int, user_data):
             message = message_template.format(used_gb=used_gb, limit_gb=limit_gb)
         except (KeyError, ValueError) as e:
             logger.warning(f"Remnawave webhook: ошибка форматирования сообщения: {e}, используем шаблон по умолчанию")
-            message = (
-                f"⚠️ <b>Трафик закончился</b>\n\n"
-                f"📊 Использовано: {used_gb:.2f} GB из {limit_gb:.2f} GB\n\n"
-                f"Безлимитные серверы все равно доступны.\n\n"
-                f"Для продолжения пользования:\n"
-                f"• Докупите GB\n"
-                f"• Продлите подписку\n\n"
-                f"Для продления вернитесь на главную."
+            message = REST_TEXT_DEFAULTS['text_remnawave_traffic_exhausted'].format(
+                used_gb=used_gb, limit_gb=limit_gb
             )
         
         # Создаем клавиатуру
@@ -6401,7 +6435,7 @@ async def wata_webhook_handler(request: web.Request):
                                 )
                                 if added_gb:
                                     traffic_info_text = (
-                                        f"\n\n📊 Трафик: добавлено {added_gb} GB"
+                                        f"\n\nТрафик: добавлено {added_gb} GB"
                                     )
 
                             tpl = (
@@ -6425,7 +6459,7 @@ async def wata_webhook_handler(request: web.Request):
                         else:
                             await bot.send_message(
                                 user_id,
-                                f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                 reply_markup=keyboards.get_back_to_main_keyboard(),
                             )
                     except Exception as e:
@@ -6436,7 +6470,7 @@ async def wata_webhook_handler(request: web.Request):
                         try:
                             await bot.send_message(
                                 user_id,
-                                f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                                f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                                 reply_markup=keyboards.get_back_to_main_keyboard(),
                             )
                         except Exception as e2:
@@ -6714,7 +6748,7 @@ async def cq_check_crypto_payment(query: CallbackQuery):
         return
 
     invoice_id = int(query.data.split("_")[-1])
-    await query.answer("🔍 Проверяем статус платежа...", show_alert=False)
+    await query.answer("Проверяем статус платежа", show_alert=False)
 
     token = app_conf.get('cryptobot_token')
     if not token:
@@ -6753,16 +6787,16 @@ async def cq_check_crypto_payment(query: CallbackQuery):
             if not payment_id or not row:
                 logger.error(f"CryptoBot: оплаченный invoice_id={invoice_id} не сопоставлен с БД")
                 await query.message.edit_text(
-                    "❌ Платёж не найден в базе. Обратитесь в поддержку.",
+                    "✕ Платёж не найден. Напишите в поддержку.",
                     reply_markup=keyboards.get_back_to_main_keyboard(),
                 )
                 return
             if row[4] == "succeeded":
-                await query.answer("✅ Этот платёж уже был зачислен.", show_alert=True)
+                await query.answer("✓ Этот платёж уже зачислен.", show_alert=True)
                 return
 
             await handle_cryptobot_invoice_paid(payment_id, payload_eff)
-            await query.answer("✅ Оплата зачислена.", show_alert=True)
+            await query.answer("✓ Оплата зачислена.", show_alert=True)
             return
 
         if status == "active":
@@ -6835,7 +6869,7 @@ async def process_tgstar_payment(message: Message):
             except (ValueError, IndexError):
                 logger.error(f"TG Star: Неверный user_id в payload: {payload}")
                 await message.answer(
-                    "❌ Произошла внутренняя ошибка (неверный ID пользователя). Обратитесь в поддержку.",
+                    "✕ Не удалось определить пользователя. Напишите в поддержку.",
                     reply_markup=keyboards.get_back_to_main_keyboard()
                 )
                 return
@@ -6843,7 +6877,7 @@ async def process_tgstar_payment(message: Message):
         if telegram_user_id is None:
             logger.error(f"TG Star: Не удалось определить user_id из payload: {payload}")
             await message.answer(
-                "❌ Произошла внутренняя ошибка (неверный ID пользователя). Обратитесь в поддержку.",
+                "✕ Не удалось определить пользователя. Напишите в поддержку.",
                 reply_markup=keyboards.get_back_to_main_keyboard()
             )
             return
@@ -6914,7 +6948,7 @@ async def process_tgstar_payment(message: Message):
     except ValueError:
         logger.error(f"TG Star: Неверный user_id в payload: {user_id}")
         await message.answer(
-            "❌ Произошла внутренняя ошибка (неверный ID пользователя). Обратитесь в поддержку.",
+            "✕ Не удалось определить пользователя. Напишите в поддержку.",
             reply_markup=keyboards.get_back_to_main_keyboard()
         )
         return
@@ -6979,7 +7013,7 @@ async def process_tgstar_payment(message: Message):
             if remnawave_traffic_info:
                 added_gb = remnawave_traffic_info.get('added_gb')
                 if added_gb:
-                    traffic_info_text = f"\n\n📊 Трафик: добавлено {added_gb} GB"
+                    traffic_info_text = f"\n\nТрафик: добавлено {added_gb} GB"
             
             tpl = (app_conf.get('text_payment_success') or '').replace('{sub_link}', '')
             success_message = tpl.format(days=days, expiry_date=expiry_date_str) + traffic_info_text
@@ -6993,7 +7027,7 @@ async def process_tgstar_payment(message: Message):
             logger.error(f"TG Star: ошибка отправки уведомления пользователю {telegram_user_id}: {e}", exc_info=True)
             try:
                 await message.answer(
-                    f"✅ Платеж успешно обработан! Подписка продлена на {days} дней.",
+                    f"✓ Платёж обработан. Подписка продлена на {days} дней.",
                     reply_markup=keyboards.get_back_to_main_keyboard()
                 )
             except Exception as e2:
@@ -7109,12 +7143,12 @@ async def cq_website_access(query: CallbackQuery, state: FSMContext):
 async def cq_website_link_email(query: CallbackQuery, state: FSMContext):
     """Предлагаем привязать реальный email."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="website_access")]
+        [InlineKeyboardButton(text="✕ Отмена", callback_data="website_access")]
     ])
     await query.message.edit_text(
-        "📧 <b>Привяжите email</b>\n\n"
-        "Введите ваш email — пришлём код подтверждения.\n"
-        "После этого сможете входить в кабинет с любого устройства.",
+        "<b>Привязать email</b>\n"
+        "○ Ожидаем адрес\n\n"
+        "Введите email — пришлём код подтверждения.",
         parse_mode="HTML",
         reply_markup=kb
     )
@@ -7128,14 +7162,14 @@ async def wsl_email_input(message: Message, state: FSMContext):
     import re as _re, secrets as _sec
     email = message.text.strip().lower()
     if not _re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
-        await message.answer("❌ Неверный формат email. Попробуйте ещё раз:")
+        await message.answer("✕ Неверный формат email. Попробуйте ещё раз:")
         return
 
     # Проверяем что email не занят другим пользователем
     existing = await db_helpers.get_web_user_by_email(email)
     if existing and existing.get('telegram_id') != message.from_user.id:
         await message.answer(
-            "❌ Этот email уже привязан к другому аккаунту.\n"
+            "✕ Этот email уже привязан к другому аккаунту.\n"
             "Введите другой email:"
         )
         return
@@ -7152,7 +7186,7 @@ async def wsl_email_input(message: Message, state: FSMContext):
     if not is_email_domain_allowed(
         email, wc_cfg, user_already_exists=await db_helpers.email_registered_in_db(email),
     ):
-        await message.answer(f"❌ {EMAIL_DOMAIN_REJECT_MESSAGE}\n\nВведите другой email:")
+        await message.answer(f"✕ {EMAIL_DOMAIN_REJECT_MESSAGE}\n\nВведите другой email:")
         return
 
     code = f"{_sec.randbelow(1000000):06d}"
@@ -7176,18 +7210,19 @@ async def wsl_email_input(message: Message, state: FSMContext):
         sent_ok = False
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_main")]
+        [InlineKeyboardButton(text="✕ Отмена", callback_data="back_to_main")]
     ])
     if sent_ok:
         await message.answer(
-            f"📨 Код отправлен на <code>{email}</code>\n\n"
-            "Введите 6-значный код из письма:",
+            "<b>Подтверждение email</b>\n"
+            f"✓ Код отправлен на <code>{email}</code>\n\n"
+            "Введите 6-значный код:",
             parse_mode="HTML",
             reply_markup=kb
         )
     else:
         await message.answer(
-            f"⚠️ Не удалось отправить письмо на <code>{email}</code>\n\n"
+            f"<b>Подтверждение email</b>\n⚠ Письмо на <code>{email}</code> не отправлено\n\n"
             "Проверьте адрес и попробуйте ещё раз или введите другой email:",
             parse_mode="HTML",
             reply_markup=kb
@@ -7205,9 +7240,9 @@ async def wsl_code_input(message: Message, state: FSMContext):
 
     if message.text.strip() != expected:
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="back_to_main")]
+            [InlineKeyboardButton(text="✕ Отмена", callback_data="back_to_main")]
         ])
-        await message.answer("❌ Неверный код. Попробуйте ещё раз:", reply_markup=kb)
+        await message.answer("✕ Неверный код. Попробуйте ещё раз:", reply_markup=kb)
         return
 
     from email_domain_policy import (
@@ -7223,7 +7258,7 @@ async def wsl_code_input(message: Message, state: FSMContext):
         email, wc_cfg, user_already_exists=await db_helpers.email_registered_in_db(email),
     ):
         await state.clear()
-        await message.answer(f"❌ {EMAIL_DOMAIN_REJECT_MESSAGE}")
+        await message.answer(f"✕ {EMAIL_DOMAIN_REJECT_MESSAGE}")
         return
 
     # Привязываем email
@@ -7232,13 +7267,13 @@ async def wsl_code_input(message: Message, state: FSMContext):
 
     site_url = _os.getenv('SITE_URL', '').strip() or (app_conf.get('website_url') or '').strip()
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 Открыть кабинет", url=site_url)],
-        [InlineKeyboardButton(text=app_conf.get('back_to_main', '⬅️ Назад'), callback_data="back_to_main")],
+        [InlineKeyboardButton(text="Открыть кабинет", url=site_url)],
+        [InlineKeyboardButton(text=app_conf.get('back_to_main', '‹ В меню'), callback_data="back_to_main")],
     ])
     await message.answer(
-        f"✅ <b>Email привязан!</b>\n\n"
-        f"📧 {email}\n\n"
-        f"Войдите на сайт по этому email — ваша подписка уже отображается в кабинете.",
+        "<b>Email привязан</b>\n"
+        f"✓ <code>{email}</code>\n\n"
+        "Подписка уже отображается в кабинете.",
         parse_mode="HTML",
         reply_markup=kb
     )
@@ -7262,8 +7297,9 @@ async def cq_referral_program(query: CallbackQuery):
     remaining_invites = max(0, max_per_day - referrals_today)
     
     # Получаем текст из настроек
-    text_template = app_conf.get('text_referral_program', 
-        '<b>🎁 Реферальная программа</b>\n\nПригласите друзей и получайте бонусы!\n\n<b>Ваша реферальная ссылка:</b>\n<code>{ref_link}</code>\n\n<b>Приглашения сегодня:</b> {used_invites}/{max_per_day} (осталось: {remaining_invites})\n\n• +{join_days} дня за первое подключение друга по вашей ссылке\n• +{payment_days} дней за первый платёж друга\n\nБонусы начисляются автоматически. Лимит обновляется каждый день!')
+    text_template = app_conf.get(
+        'text_referral_program', REST_TEXT_DEFAULTS['text_referral_program']
+    )
     
     # Формируем ссылку на сайт для реферальной программы
     import os as _os
@@ -7271,7 +7307,7 @@ async def cq_referral_program(query: CallbackQuery):
     ref_link_url = f"{_site_url}/?ref={user_id}" if _site_url else ''
 
     # Заполняем шаблон
-    text = text_template.format(
+    text = _filter_empty_menu_fields(text_template.format(
         ref_link=ref_link,
         ref_link_url=ref_link_url,
         used_invites=referrals_today,
@@ -7279,20 +7315,24 @@ async def cq_referral_program(query: CallbackQuery):
         max_per_day=max_per_day,
         join_days=app_conf.get('ref_bonus_on_join_days', 3),
         payment_days=app_conf.get('ref_bonus_on_payment_days', 7)
-    )
+    ))
     # Клавиатура: Поделиться, Мои рефералы, Назад
     from urllib.parse import quote
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     # Формируем текст приглашения без ссылки, а ссылку передаем отдельно через url — так не будет дубля
-    share_text_template = app_conf.get('text_referral_share', 'Присоединяйся!')
+    share_text_template = app_conf.get(
+        'text_referral_share', REST_TEXT_DEFAULTS['text_referral_share']
+    )
     try:
         share_text = share_text_template.format(ref_link=ref_link)
     except Exception:
-        share_text = app_conf.get('text_referral_share', 'Присоединяйся!')
+        share_text = app_conf.get(
+            'text_referral_share', REST_TEXT_DEFAULTS['text_referral_share']
+        )
     # Убираем ссылку из текста, если она туда попала
     share_text = (share_text or '').replace(ref_link, '').strip()
     if not share_text:
-        share_text = 'Присоединяйся!'
+        share_text = REST_TEXT_DEFAULTS['text_referral_share']
     share_url = f"https://t.me/share/url?url={quote(ref_link)}&text={quote(share_text)}"
     # Кнопки: Поделиться, (опционально) Партнёрская MiniApp, Мои рефералы, Назад
     buttons_rows = []
@@ -7447,15 +7487,15 @@ async def cq_partner_program(query: CallbackQuery):
 
     if code:
         partner_link = f"https://t.me/{bot_me.username}?start=par_{code}"
-        link_line = f"\n🔗 <b>Ваша ссылка в Telegram:</b>\n<code>{partner_link}</code>\n"
+        link_line = f"\nСсылка в Telegram: <code>{partner_link}</code>\n"
     else:
-        link_line = "\n⚠️ Не удалось создать ссылку. Попробуйте позже.\n"
+        link_line = "\n⚠ Не удалось создать ссылку. Попробуйте позже.\n"
 
     _site_url = os.getenv('SITE_URL', '').strip() or (app_conf.get('website_url') or '').strip()
     if _site_url:
         base = _site_url.rstrip('/')
         site_href = f"{base}/?ref=par_{code}" if code else base
-        link_line += f"\n🌐 <b>Сайт:</b>\n<code>{html.escape(site_href)}</code>\n"
+        link_line += f"Ссылка на сайт: <code>{html.escape(site_href)}</code>\n"
 
     balance_str = f"{stats['balance']:.2f}".rstrip('0').rstrip('.')
     pay_count = int(stats.get('pay_count', 0) or 0)
@@ -7484,9 +7524,12 @@ async def cq_partner_accruals(query: CallbackQuery):
     accruals = await db_helpers.get_partner_accruals(user_id, limit=15)
 
     if not accruals:
-        text = "📜 <b>История начислений</b>\n\nПока начислений нет.\nКак только ваш реферал совершит оплату — начисление появится здесь."
+        text = (
+            "<b>История начислений</b>\n○ Начислений пока нет\n\n"
+            "Первое появится после оплаты приглашённого."
+        )
     else:
-        lines = ["📜 <b>История начислений</b>\n"]
+        lines = ["<b>История начислений</b>\n✓ Последние начисления\n"]
         for i, a in enumerate(accruals, 1):
             try:
                 dt = datetime.fromisoformat(a['created_at'].replace('Z', '+00:00'))
@@ -7528,7 +7571,7 @@ async def cq_partner_withdraw(query: CallbackQuery):
 
     rows = []
     if support_url:
-        rows.append([InlineKeyboardButton(text='💬 Написать в поддержку', url=support_url)])
+        rows.append([InlineKeyboardButton(text='Написать в поддержку', url=support_url)])
     rows.append([btn('btn_back', callback_data='partner_program')])
 
     await query.message.edit_text(

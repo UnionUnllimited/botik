@@ -8,7 +8,14 @@ from contextlib import asynccontextmanager
 
 import os
 
-from src.texts import TXT_PAYMENT_GRANT_FAILED, TXT_PAYMENT_TRAFFIC_GRANT_FAILED
+from src.texts import (
+    REST_LEGACY_TEXTS,
+    REST_REDESIGN_MARK,
+    REST_TEXT_DEFAULTS,
+    REST_TEXTS,
+    TXT_PAYMENT_GRANT_FAILED,
+    TXT_PAYMENT_TRAFFIC_GRANT_FAILED,
+)
 
 from config import DATABASE_NAME, migrate_remnawave_db_if_needed
 
@@ -395,9 +402,9 @@ async def populate_default_settings():
         # Добавляем настройки для защиты от ботов
         bot_protection_settings = [
             ('bot_protection_enabled', '1', 'Включить защиту от ботов (0/1)'),
-            ('bot_protection_text', '🤖 <b>Защита от ботов</b>\n\nДля продолжения решите простую задачу:\n\n<b>{question}</b>', 'Текст для защиты от ботов'),
-            ('bot_protection_success_text', '✅ <b>Правильно!</b>\n\n⏳ Идет регистрация пробного периода, пожалуйста подождите...', 'Текст при правильном ответе'),
-            ('bot_protection_wrong_text', '❌ <b>Неправильно!</b>\n\nПопробуйте еще раз:\n\n<b>{question}</b>', 'Текст при неправильном ответе'),
+            ('bot_protection_text', REST_TEXT_DEFAULTS['bot_protection_text'], 'Текст для защиты от ботов'),
+            ('bot_protection_success_text', REST_TEXT_DEFAULTS['bot_protection_success_text'], 'Текст при правильном ответе'),
+            ('bot_protection_wrong_text', REST_TEXT_DEFAULTS['bot_protection_wrong_text'], 'Текст при неправильном ответе'),
         ]
         
         # Тексты и имя проекта, без которых главное меню падает на пустой базе:
@@ -423,10 +430,10 @@ async def populate_default_settings():
              '⚠ Подписка не активна\n\nПродлите её, чтобы роутер снова вышел в сеть.',
              'Текст в главном меню, когда активной подписки нет'),
             ('text_about_service',
-             '{project_name} — роутеры с подпиской на сервис стабильного доступа к зарубежным ресурсам.',
+             REST_TEXT_DEFAULTS['text_about_service'],
              'Экран «О сервисе». Доступен {project_name}'),
             ('text_promo_code_success',
-             'Промокод {code} принят: добавлено дней — {days}. Подписка действует до {expiry_date}.',
+             REST_TEXT_DEFAULTS['text_promo_code_success'],
              'Ответ на принятый промокод. Доступны {code}, {days}, {expiry_date}'),
         ]
         for key, value, description in base_texts:
@@ -434,6 +441,50 @@ async def populate_default_settings():
                 "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
                 (key, value, description),
             )
+
+        # Остальные клиентские экраны получают те же дефолты и на чистой БД,
+        # и после обновления старой поставляемой базы.
+        for key, value, description in REST_TEXTS:
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
+                (key, value, description),
+            )
+
+        from button_registry import (
+            BUTTON_REGISTRY,
+            BUTTON_REGISTRY_MAP,
+            REST_LEGACY_BUTTON_TEXTS,
+        )
+        for button in BUTTON_REGISTRY:
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)",
+                (
+                    button['key'],
+                    button['default_text'],
+                    f"Текст кнопки: {button['label']}",
+                ),
+            )
+
+        async with db.execute(
+            "SELECT 1 FROM settings WHERE key = ?", (REST_REDESIGN_MARK,)
+        ) as cursor:
+            rest_redesign_applied = await cursor.fetchone()
+        if not rest_redesign_applied:
+            for key, legacy_value in REST_LEGACY_TEXTS.items():
+                await db.execute(
+                    "UPDATE settings SET value = ? WHERE key = ? AND value = ?",
+                    (REST_TEXT_DEFAULTS[key], key, legacy_value),
+                )
+            for key, legacy_value in REST_LEGACY_BUTTON_TEXTS.items():
+                await db.execute(
+                    "UPDATE settings SET value = ? WHERE key = ? AND value = ?",
+                    (BUTTON_REGISTRY_MAP[key]['default_text'], key, legacy_value),
+                )
+            await db.execute(
+                "INSERT INTO settings (key, value, description) VALUES (?, '1', ?)",
+                (REST_REDESIGN_MARK, 'Редизайн остальных экранов 08.2026 применён'),
+            )
+            logger.info("Редизайн остальных экранов: нетронутые дефолты обновлены")
 
         # Каталог роутеров: экраны в боте и тумблер раздела. Тексты правятся
         # там же, где остальные, — на странице текстов в админке.
@@ -495,7 +546,7 @@ async def populate_default_settings():
         trial_settings = [
             ('trial_days', '3', 'Количество дней пробного периода'),
             ('trial_limit_ip', '1', 'Лимит устройств при пробном периоде (0 = без лимита)'),
-            ('text_trial_success', '🎉 <b>Пробный период активирован!</b>\n\n⏱ <b>Длительность:</b> {days} дней\n\n📅 <b>Действует до:</b> {expiry_date}\n\n💡 <b>Для продления подписки используйте кнопку "Продлить подписку"</b>', 'Текст успешной активации пробного периода. Переменные: {days}, {expiry_date}'),
+            ('text_trial_success', REST_TEXT_DEFAULTS['text_trial_success'], 'Текст успешной активации пробного периода. Переменные: {days}, {expiry_date}'),
         ]
         
         for key, value, description in bot_protection_settings:
@@ -506,7 +557,7 @@ async def populate_default_settings():
 
         maintenance_settings = [
             ('bot_maintenance_enabled', '0', 'Сервисный режим: бот отвечает заглушкой на сообщения и кнопки (0/1)'),
-            ('bot_maintenance_message', 'К сожалению, бот находится на технических работах. Попробуйте позже.', 'Текст заглушки сервисного режима'),
+            ('bot_maintenance_message', REST_TEXT_DEFAULTS['bot_maintenance_message'], 'Текст заглушки сервисного режима'),
         ]
         for key, value, description in maintenance_settings:
             await db.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, description))
@@ -595,7 +646,7 @@ async def populate_default_settings():
         # Добавляем настройки для реферальной системы
         referral_settings = [
             ('ref_bonus_on_join_days', '3', 'Количество дней бонуса за первое подключение приглашённого'),
-            ('text_ref_bonus_on_join', '🎁 <b>Реферальный бонус!</b>\n\nВы получили {days} дней бонуса за первое подключение приглашённого друга!', 'Текст уведомления пригласившему за первое подключение. Переменные: {days}'),
+            ('text_ref_bonus_on_join', REST_TEXT_DEFAULTS['text_ref_bonus_on_join'], 'Текст уведомления пригласившему за первое подключение. Переменные: {days}'),
         ]
         
         for key, value, description in referral_settings:
@@ -603,7 +654,7 @@ async def populate_default_settings():
         
         # Добавляем недостающие тексты
         missing_texts = [
-            ('text_error_creating_user', '❌ <b>Ошибка создания пользователя</b>\n\nНе удалось создать пробный период. Попробуйте позже или обратитесь в поддержку.', 'Текст ошибки создания пользователя'),
+            ('text_error_creating_user', REST_TEXT_DEFAULTS['text_error_creating_user'], 'Текст ошибки создания пользователя'),
             ('text_payment_grant_failed', TXT_PAYMENT_GRANT_FAILED, 'Оплата прошла, но подписку выдать не удалось (Remnawave недоступна и т.п.)'),
             ('text_payment_traffic_grant_failed', TXT_PAYMENT_TRAFFIC_GRANT_FAILED, 'Оплата прошла, но докупку GB в Remnawave применить не удалось'),
         ]

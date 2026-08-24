@@ -14,13 +14,17 @@ TEXT_SETTING_VARIABLES: dict[str, list[dict[str, str]]] = {
         {"name": "project_name", "label": "Название проекта"},
     ],
     "text_subscription_info": [
-        {"name": "status", "label": "Статус подписки (например «Активна ✅»)"},
+        {"name": "status", "label": "Статус подписки (например «активна»)"},
         {"name": "expiry_date", "label": "Дата окончания подписки"},
         {"name": "limit_ip", "label": "Лимит устройств или «Без лимита»"},
         {"name": "traffic", "label": "Строка трафика Remnawave или «—»"},
         {"name": "sub_link", "label": "Ссылка на страницу подписки"},
     ],
     "text_subscription_expired_main": [],
+    "text_trial_success": [
+        {"name": "days", "label": "Длительность пробного периода (дней)"},
+        {"name": "expiry_date", "label": "Дата окончания пробного периода"},
+    ],
     # 💳 Оплата
     "text_payment_success": [
         {"name": "days", "label": "Оплаченный срок (дней)"},

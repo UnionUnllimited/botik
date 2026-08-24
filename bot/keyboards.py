@@ -132,10 +132,13 @@ def get_about_service_keyboard():
 
     user_agreement_link = (app_conf.get('web_user_agreement_link') or '').strip()
     privacy_policy_link = (app_conf.get('web_privacy_policy_link') or '').strip()
+    document_buttons = []
     if user_agreement_link:
-        builder.row(btn('btn_user_agreement', url=user_agreement_link))
+        document_buttons.append(btn('btn_user_agreement', url=user_agreement_link))
     if privacy_policy_link:
-        builder.row(btn('btn_privacy_policy', url=privacy_policy_link))
+        document_buttons.append(btn('btn_privacy_policy', url=privacy_policy_link))
+    if document_buttons:
+        builder.row(*document_buttons)
 
     builder.row(btn('btn_back_to_main', callback_data='back_to_main'))
     return builder.as_markup()
