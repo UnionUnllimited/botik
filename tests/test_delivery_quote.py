@@ -287,3 +287,33 @@ class TestCarrierIsChosenInTheOrder:
         )
         assert "СДЭК" in delivery_summary(delivery)
         assert "CDEK" not in delivery_summary(delivery)
+
+
+class TestOrderWithoutDelivery:
+    """Заказ, у которого доставки нет вовсе, — так бывает у оформленных
+    до выбора скорости. Отправлять посылку всё равно надо."""
+
+    def _source(self, relative: str) -> str:
+        return (ROOT / relative).read_text(encoding="utf-8")
+
+    def test_quote_creates_the_delivery(self):
+        source = self._source("api/routes/catalog_api.py")
+        body = source[source.index("async def manage_delivery_quote") :]
+        body = body[: body.index("delivery_service.set_quote")]
+        assert "attach_delivery" in body
+        assert "нет доставки" not in body, "отказывать здесь нельзя — цену берут тут же"
+
+    def test_form_is_not_hidden_without_delivery(self):
+        """Блок прятался под `if delivery.method`, и у такого заказа
+        карточка показывала прочерк без единого поля."""
+        card = self._source("bot/web_admin/templates/orders_shop_card.html")
+        head = card[: card.index("delivery_price")]
+        assert "{% if delivery.method %}" not in head
+
+    def test_recipient_comes_from_the_order(self):
+        """Имя и телефон уже собраны при оформлении — переспрашивать нечего."""
+        source = self._source("api/routes/catalog_api.py")
+        body = source[source.index("async def manage_delivery_quote") :]
+        body = body[: body.index("delivery_service.set_quote")]
+        assert "order.customer_name" in body
+        assert "order.customer_phone" in body

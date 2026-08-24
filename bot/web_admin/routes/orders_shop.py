@@ -40,6 +40,13 @@ DELIVERY_STATE_TITLES = {
 за перевозку. Словарь свой, как и у статусов: админка в другом процессе
 и до `core/texts.py` не дотягивается."""
 
+SPEED_TITLES = {
+    "fast": "Быстрая",
+    "weekly": "По понедельникам",
+}
+"""Скорость выбирал клиент при заказе. Оператору она нужна на случай, когда
+доставки у заказа нет вовсе — тогда он заводит её здесь целиком."""
+
 CARRIER_TITLES = {
     "cdek": "СДЭК",
     "post": "Почта России",
@@ -115,6 +122,7 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             status_titles=STATUS_TITLES,
             delivery_titles=DELIVERY_STATE_TITLES,
             carriers=CARRIER_TITLES,
+            speeds=SPEED_TITLES,
         )
 
     def _back(order_id: int):
@@ -154,6 +162,7 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             (form.get("price") or "0").strip(),
             (form.get("days") or "").strip(),
             (form.get("method") or "").strip(),
+            (form.get("speed") or "").strip(),
         )
         if error:
             await flash(error, "danger")

@@ -104,10 +104,18 @@
 
     {# Цену доставки называет оператор: она зависит от адреса и габаритов,
        а при оформлении клиент платит только за роутер и подписку. Отправив
-       цену, шлём клиенту счёт — вторым платежом по тому же заказу. #}
-    {% if delivery.method %}
+       цену, шлём клиенту счёт — вторым платежом по тому же заказу.
+
+       Форма показывается всегда, даже когда доставки у заказа нет вовсе:
+       так бывает у заказов, оформленных до выбора скорости. Посылку всё
+       равно отправлять, и прятать от оператора единственное место, где
+       называют цену, — значит оставить его без выхода. #}
     <div class="border-t pt-3" style="border-color: rgb(var(--admin-border));">
-      {% if delivery.awaiting_quote %}
+      {% if not delivery.method %}
+      <div class="text-[12px] text-amber-500 mb-2">
+        Клиент не выбирал доставку — заведите её здесь: перевозчик, цена и срок.
+      </div>
+      {% elif delivery.awaiting_quote %}
       <div class="text-[12px] text-amber-500 mb-2">
         {{ delivery_titles.get('not_quoted', 'Доставка не посчитана') }} — клиент ждёт счёт.
       </div>
@@ -138,6 +146,14 @@
                  class="tw-input w-28">
         </div>
         <div class="ss-field">
+          <label for="delivery_speed">Скорость</label>
+          <select id="delivery_speed" name="speed" class="tw-select">
+            {% for code, title in speeds.items() %}
+            <option value="{{ code }}" {% if delivery.speed == code %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="ss-field">
           <label for="delivery_days">Срок в пути</label>
           <input type="text" id="delivery_days" name="days" placeholder="3–5 дней"
                  class="tw-input w-40">
@@ -151,7 +167,6 @@
         Ноль — доставка за наш счёт: клиенту уйдёт сообщение без счёта.
       </div>
     </div>
-    {% endif %}
 
     {% if delivery.method %}
     <form method="post" action="{{ url_for('admin.order_shop_shipping', order_id=order.id) }}"

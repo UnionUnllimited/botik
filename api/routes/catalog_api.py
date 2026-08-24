@@ -38,6 +38,7 @@ from core.dates import to_display, utcnow
 from core.enums import (
     OFFERED_DELIVERY_METHODS,
     DeliveryMethod,
+    DeliverySpeed,
     DeviceStatus,
     OrderItemType,
     OrderStatus,
@@ -1454,8 +1455,6 @@ async def manage_delivery_quote(
     от «ещё не считали» отметка `quoted_at`, а не сама сумма.
     """
     order = await _order_or_404(session, order_id)
-    if order.delivery is None:
-        return {"ok": False, "error": "У заказа нет доставки — цену назначать нечему."}
 
     price = _decimal(payload.get("price"), "0")
     if price < 0:
@@ -1464,6 +1463,7 @@ async def manage_delivery_quote(
     # Перевозчика выбирает оператор здесь же: он зависит от города, веса
     # и действующего договора, и клиент этой развилки не видел вовсе.
     raw_method = str(payload.get("method", "")).strip()
+    method: DeliveryMethod | None = None
     if raw_method:
         try:
             method = DeliveryMethod(raw_method)
@@ -1471,7 +1471,26 @@ async def manage_delivery_quote(
             return {"ok": False, "error": "Неизвестный перевозчик."}
         if method not in OFFERED_DELIVERY_METHODS:
             return {"ok": False, "error": "Этим перевозчиком мы больше не отправляем."}
-        order.delivery.method = method
+
+    speed = delivery_service.parse_speed(str(payload.get("speed", "")))
+
+    if order.delivery is None:
+        # Доставки у заказа может не быть вовсе: старые заказы, оформленные
+        # до выбора скорости, и те, где бот её не прислал. Отказывать здесь
+        # нельзя — посылку всё равно отправлять, и цену за неё берут тут же.
+        delivery_service.attach_delivery(
+            order,
+            speed=speed or DeliverySpeed.WEEKLY,
+            method=method or DeliveryMethod.CDEK,
+            city=order.customer_city,
+            recipient_name=order.customer_name,
+            recipient_phone=order.customer_phone,
+        )
+    else:
+        if method is not None:
+            order.delivery.method = method
+        if speed is not None:
+            order.delivery.speed = speed
 
     delivery_service.set_quote(order.delivery, price)
     days = str(payload.get("days", "")).strip()[:40]

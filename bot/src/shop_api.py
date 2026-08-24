@@ -392,7 +392,7 @@ async def set_order_status(order_id: int, status: str, reason: str) -> tuple[dic
 
 
 async def quote_delivery(
-    order_id: int, price: str, days: str, method: str = ""
+    order_id: int, price: str, days: str, method: str = "", speed: str = ""
 ) -> tuple[dict, str]:
     """Называет цену доставки: заводит счёт клиенту и текст уведомления.
 
@@ -401,7 +401,7 @@ async def quote_delivery(
     """
     return await post(
         f"/api/v1/catalog/manage/orders/{order_id}/delivery-quote",
-        {"price": price.replace(",", "."), "days": days, "method": method},
+        {"price": price.replace(",", "."), "days": days, "method": method, "speed": speed},
     )
 
 
