@@ -271,3 +271,121 @@ class TestSelectPopupIsReadable:
         base = self._admin("templates/base.html")
         rule = base[base.index("select option") : base.index("select option") + 300]
         assert "--admin-card" not in rule, "этой переменной в теме нет — фон снова станет белым"
+
+
+class TestSorting:
+    """Порядок строк по колонке.
+
+    Опасных мест два. Первое: пустые показания. Роутер, который ни разу
+    не ответил, не должен занимать верх списка, отсортированного по загрузке, —
+    ни при каком направлении. Второе: одинаковые значения. Без второго ключа
+    база вправе переставлять такие строки между запросами, и на второй странице
+    оператор увидит те же роутеры, что на первой.
+    """
+
+    DEFAULTS = {  # noqa: RUF012 — параметры ручки, а не изменяемое состояние
+        "q": "", "link": "", "client": "", "sub": "", "state": "", "model": "",
+        "page": 1, "per_page": 50,
+    }
+
+    async def _fleet(self, session, **kwargs):
+        from api.routes.fleet_api import list_routers
+
+        data = await list_routers(session=session, **(self.DEFAULTS | kwargs))
+        return [item["mac"] for item in data["routers"]], data
+
+    @pytest.fixture
+    async def session(self):
+        from sqlalchemy.dialects.postgresql import JSONB
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.compiler import compiles
+
+        from core.models import Device, User
+        from core.models.base import Base
+
+        @compiles(JSONB, "sqlite")
+        def _jsonb(_type, _compiler, **_kwargs) -> str:
+            return "JSON"
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            owner = User(tg_id=1, username="zebra")
+            session.add(owner)
+            await session.flush()
+            # Третий роутер без показаний вовсе — он и должен уходить вниз.
+            rows = (
+                ("A0:00:00:00:00:01", 100, 5, 5, owner.id),
+                ("A0:00:00:00:00:02", 900, 40, 1, None),
+                ("A0:00:00:00:00:03", 500, None, 9, None),
+            )
+            for mac, uptime, cpu, clients, user_id in rows:
+                session.add(
+                    Device(
+                        mac=mac, uptime_sec=uptime, cpu_pct=cpu, clients_wifi=clients,
+                        clients_dhcp=0, user_id=user_id, frp_online=False,
+                    )
+                )
+            await session.commit()
+            yield session
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_biggest_first(self, session):
+        order, _ = await self._fleet(session, sort="uptime", direction="desc")
+        assert order == ["A0:00:00:00:00:02", "A0:00:00:00:00:03", "A0:00:00:00:00:01"]
+
+    @pytest.mark.asyncio
+    async def test_smallest_first(self, session):
+        order, _ = await self._fleet(session, sort="uptime", direction="asc")
+        assert order == ["A0:00:00:00:00:01", "A0:00:00:00:00:03", "A0:00:00:00:00:02"]
+
+    @pytest.mark.asyncio
+    async def test_empty_readings_stay_at_the_bottom(self, session):
+        """И при «сначала большие», и при «сначала малые»."""
+        down, _ = await self._fleet(session, sort="cpu", direction="desc")
+        up, _ = await self._fleet(session, sort="cpu", direction="asc")
+        assert down[-1] == "A0:00:00:00:00:03"
+        assert up[-1] == "A0:00:00:00:00:03"
+
+    @pytest.mark.asyncio
+    async def test_client_column_sorts_too(self, session):
+        """Телеграм клиента — свойство модели, а не колонка: считается после
+        выборки. Роутеры без клиента всё равно внизу."""
+        order, _ = await self._fleet(session, sort="client", direction="asc")
+        assert order[0] == "A0:00:00:00:00:01"
+
+    @pytest.mark.asyncio
+    async def test_unknown_column_changes_nothing(self, session):
+        """Колонка из чужой ссылки не должна ни падать, ни рисовать стрелку
+        у заголовка, который ничего не сортирует."""
+        order, data = await self._fleet(session, sort="teleport")
+        assert data["sort"] == ""
+        assert order == ["A0:00:00:00:00:03", "A0:00:00:00:00:02", "A0:00:00:00:00:01"]
+
+    @pytest.mark.asyncio
+    async def test_pages_do_not_repeat_rows(self, session):
+        """Второй ключ по номеру: без него база вправе переставлять строки
+        с одинаковым значением, и роутер попадёт на обе страницы."""
+        first, _ = await self._fleet(session, sort="clients", page=1, per_page=25)
+        second, _ = await self._fleet(session, sort="clients", page=1, per_page=25)
+        assert first == second
+
+    def test_sorting_is_carried_between_pages(self):
+        """Забытая в ссылке сортировка сбрасывается на второй странице,
+        и оператор видит не тот порядок, который выбрал."""
+        source = (
+            Path(__file__).resolve().parents[1] / "bot/web_admin/routes/routers_fleet.py"
+        ).read_text(encoding="utf-8")
+        keys = source[source.index("FLEET_FILTER_KEYS = ") :]
+        keys = keys[: keys.index("\n")]
+        assert '"sort"' in keys and '"dir"' in keys
+
+    def test_headers_are_links(self):
+        page = (
+            Path(__file__).resolve().parents[1] / "bot/web_admin/templates/routers_fleet.html"
+        ).read_text(encoding="utf-8")
+        assert "sort_th(" in page
+        assert "{{ sort_th('uptime'" in page

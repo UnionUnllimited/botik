@@ -102,7 +102,7 @@ def _args_of(url: str) -> dict:
     return {key: values[0] for key, values in parse_qs(query).items() if values}
 
 
-FLEET_FILTER_KEYS = ("q", "link", "client", "sub", "state", "model", "per_page")
+FLEET_FILTER_KEYS = ("q", "link", "client", "sub", "state", "model", "per_page", "sort", "dir")
 """Что перечисляется в адресе страницы роутеров.
 
 Одним списком, а не перечислением в трёх местах: фильтр, забытый в ссылке
@@ -146,6 +146,8 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             models=data.get("models", []),
             states=data.get("states", []),
             quick_commands=data.get("quick_commands", []),
+            sort=data.get("sort", ""),
+            sort_dir=data.get("dir", "desc"),
             page_sizes=data.get("page_sizes", []),
             per_page=data.get("per_page", 0),
             page=data.get("page", 1),

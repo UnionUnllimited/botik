@@ -374,7 +374,10 @@ PAGES = {
         "auto_enabled": True,
         "filters": {
             "q": "", "link": "", "client": "", "sub": "", "state": "", "model": "", "per_page": "",
+            "sort": "uptime", "dir": "desc",
         },
+        "sort": "uptime",
+        "sort_dir": "desc",
         "models": ["AX3000", "cudy,tr3000-v1"],
         "states": [{"value": "new", "title": "на складе"}, {"value": "active", "title": "работает"}],
         "quick_commands": [

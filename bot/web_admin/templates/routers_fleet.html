@@ -17,6 +17,18 @@
   {%- endif -%}
 {%- endmacro %}
 
+{% macro sort_th(key, title, first='asc') -%}
+  {%- set active = (sort == key) -%}
+  {%- set next = (('asc' if sort_dir == 'desc' else 'desc') if active else first) -%}
+  {%- set nav = dict(filters, sort=key, dir=next) -%}
+  <th class="px-3 py-2 font-medium">
+    <a href="{{ url_for('admin.routers_fleet', **nav) }}"
+       class="inline-flex items-center gap-1 whitespace-nowrap {% if active %}tw-text-base2{% endif %}">
+      {{ title }}<span class="text-[11px]">{% if active %}{{ '↑' if sort_dir == 'asc' else '↓' }}{% else %}⇅{% endif %}</span>
+    </a>
+  </th>
+{%- endmacro %}
+
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
@@ -90,6 +102,10 @@
     {# Фильтры и страницы: пока роутеров пять, они лишние, но на первой партии
        список без них нечитаем. Считает их основное приложение — парк у него. #}
     <form method="get" class="tw-card p-3 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-2 items-end">
+      {# Сортировку несём скрытыми полями: «Найти» отправляет только свои
+         поля, и порядок сбрасывался бы на каждый поиск. #}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ sort_dir }}">
       <div class="ss-field sm:col-span-3 lg:col-span-2">
         <label for="q">Поиск</label>
         <input type="search" id="q" name="q" value="{{ filters.q }}" class="tw-input"
@@ -189,17 +205,20 @@
       <table class="w-full text-[13px]">
         <thead>
           <tr class="tw-text-muted2 text-left">
+            {# Заголовки сортируют. Первое нажатие даёт тот порядок, ради
+               которого в колонку и смотрят: у чисел — сначала большие,
+               у имён — по алфавиту. Повторное переворачивает. #}
             <th class="px-3 py-2 font-medium w-8"></th>
-            <th class="px-3 py-2 font-medium">Роутер</th>
-            <th class="px-3 py-2 font-medium">Клиент</th>
-            <th class="px-3 py-2 font-medium">Связь</th>
-            <th class="px-3 py-2 font-medium">Подписка</th>
-            <th class="px-3 py-2 font-medium">Клиентов</th>
-            <th class="px-3 py-2 font-medium">CPU / ОЗУ</th>
-            <th class="px-3 py-2 font-medium">Аптайм</th>
-            <th class="px-3 py-2 font-medium">Трафик ↓ / ↑</th>
-            <th class="px-3 py-2 font-medium">WAN IP</th>
-            <th class="px-3 py-2 font-medium">Туннель</th>
+            {{ sort_th('mac', 'Роутер') }}
+            {{ sort_th('client', 'Клиент') }}
+            {{ sort_th('link', 'Связь', 'desc') }}
+            {{ sort_th('sub', 'Подписка') }}
+            {{ sort_th('clients', 'Клиентов', 'desc') }}
+            {{ sort_th('cpu', 'CPU / ОЗУ', 'desc') }}
+            {{ sort_th('uptime', 'Аптайм', 'desc') }}
+            {{ sort_th('rx', 'Трафик ↓ / ↑', 'desc') }}
+            {{ sort_th('wan', 'WAN IP') }}
+            {{ sort_th('tunnel', 'Туннель') }}
           </tr>
         </thead>
         <tbody>

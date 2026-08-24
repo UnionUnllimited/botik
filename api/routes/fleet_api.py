@@ -106,6 +106,27 @@ def _matches_link(device: Device, link: str, *, now: dt.datetime) -> bool:
     return online is (link == "online")
 
 
+def _sort_key(device: Device, sort: str, subs: dict, *, now: dt.datetime):
+    """Ключ сортировки для колонок, которых нет в базе.
+
+    Всегда кортеж с признаком «пусто» первым числом: у роутера без клиента
+    сравнивать нечего, а `None` рядом со строкой роняет сортировку целиком.
+    Пустые уходят вниз при любом направлении — так же, как `nullslast` в SQL.
+    """
+    if sort == "link":
+        online = device.frp_online or device.is_online(
+            threshold_min=settings.subscription.heartbeat_offline_min, now=now
+        )
+        return (0, 1 if online else 0)
+    if sort == "sub":
+        subscription = subs.get(device.id)
+        if subscription is None:
+            return (1, "")
+        return (0, str(subscription.status))
+    name = device.user.telegram_name if device.user else ""
+    return (0, name.lower()) if name else (1, "")
+
+
 def _matches_sub(device: Device, sub: str, subs: dict, *, now: dt.datetime) -> bool:
     """Подписка глазами оператора.
 
@@ -162,6 +183,29 @@ EVENTS_RETENTION_DAYS = 60
 никому, а таблица растёт с каждой командой и каждым обходом парка."""
 
 
+SORT_COLUMNS = {
+    "mac": Device.mac,
+    "model": Device.model,
+    "clients": Device.clients_wifi + Device.clients_dhcp,
+    "cpu": Device.cpu_pct,
+    "ram": Device.ram_pct,
+    "uptime": Device.uptime_sec,
+    "rx": Device.rx_bytes,
+    "wan": Device.last_wan_ip,
+    "tunnel": Device.frp_visitor_port,
+}
+"""Колонки, по которым сортирует база. Их большинство, и это важно:
+сортировка в SQL позволяет отдать одну страницу, не читая парк целиком."""
+
+PYTHON_SORTS = ("link", "sub", "client")
+"""Колонки, которых в базе нет.
+
+Связь складывается из флага туннеля и свежести последнего ответа, подписка
+лежит в другой таблице и спрашивается по клиенту, а телеграм клиента —
+свойство модели, а не колонка. По ним сортируем после выборки, тем же
+путём, что и фильтруем, — и так же читая парк целиком."""
+
+
 @router.get("/routers", dependencies=[Depends(require_token)])
 async def list_routers(
     session: AsyncSession = Depends(get_session),
@@ -171,6 +215,8 @@ async def list_routers(
     sub: str = Query("", pattern="^(active|none|expiring|elsewhere)?$"),
     state: str = Query("", max_length=16),
     model: str = Query("", max_length=120),
+    sort: str = Query("", max_length=16),
+    direction: str = Query("desc", alias="dir", pattern="^(asc|desc)?$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(ROUTERS_PAGE_SIZE),
 ) -> dict:
@@ -207,7 +253,18 @@ async def list_routers(
     if model.strip():
         conditions.append(Device.model == model.strip())
 
-    statement = select(Device).options(selectinload(Device.user)).order_by(Device.id.desc())
+    descending = direction != "asc"
+    statement = select(Device).options(selectinload(Device.user))
+    column = SORT_COLUMNS.get(sort)
+    if column is not None:
+        # Пустые показания — в конец при любом направлении: роутер, который
+        # ни разу не отвечал, не должен занимать верх списка, отсортированного
+        # по загрузке. Номер вторым ключом, иначе одинаковые значения
+        # переставляются между страницами и строки задваиваются.
+        order = column.desc().nullslast() if descending else column.asc().nullslast()
+        statement = statement.order_by(order, Device.id.desc())
+    else:
+        statement = statement.order_by(Device.id.desc())
     if conditions:
         statement = statement.where(*conditions)
 
@@ -215,7 +272,7 @@ async def list_routers(
     # выборку целиком и режем на страницы уже после. На парке в тысячи это
     # стоило бы дорого, но такие фильтры и нужны, чтобы найти единицы:
     # молчащие роутеры и тех, у кого кончается срок.
-    in_python = bool(link or sub)
+    in_python = bool(link or sub or sort in PYTHON_SORTS)
     if not in_python:
         total = await session.scalar(
             select(func.count()).select_from(statement.subquery())
@@ -241,6 +298,14 @@ async def list_routers(
             for device in devices
             if _matches_link(device, link, now=now) and _matches_sub(device, sub, subs, now=now)
         ]
+        if sort in PYTHON_SORTS:
+            # Два прохода, а не один кортеж с reverse: перевернув кортеж целиком,
+            # мы подняли бы наверх как раз пустые — роутеры без клиента и без
+            # подписки. Сортировка в Python устойчива, поэтому второй проход
+            # только опускает пустые вниз, не трогая порядок остальных.
+            keys = {device.id: _sort_key(device, sort, subs, now=now) for device in devices}
+            devices.sort(key=lambda device: keys[device.id][1], reverse=descending)
+            devices.sort(key=lambda device: keys[device.id][0])
         total = len(devices)
         devices = devices[(page - 1) * size : page * size]
 
@@ -325,6 +390,10 @@ async def list_routers(
             {"name": name, "title": title}
             for name, (title, _command) in router_shell.QUICK_COMMANDS.items()
         ],
+        # Возвращаем как поняли: неизвестную колонку из чужой ссылки страница
+        # не должна показывать стрелкой у заголовка, которого не сортирует.
+        "sort": sort if (sort in SORT_COLUMNS or sort in PYTHON_SORTS) else "",
+        "dir": "asc" if not descending else "desc",
         "routers": items,
     }
 
