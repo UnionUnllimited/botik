@@ -368,9 +368,19 @@ async def unbind_client_router(tg_id: int, device_id: int) -> tuple[dict, str]:
 # --- Заказы: сторона оператора -----------------------------------------------
 
 
-async def manage_orders(*, status: str = "", query: str = "", page: int = 1) -> tuple[dict, str]:
+async def manage_orders(
+    *, status: str = "", query: str = "", page: int = 1, sort: str = "", direction: str = ""
+) -> tuple[dict, str]:
     return await get(
-        "/api/v1/catalog/manage/orders", {"status": status, "q": query, "page": page}
+        "/api/v1/catalog/manage/orders",
+        {"status": status, "q": query, "page": page, "sort": sort, "dir": direction},
+    )
+
+
+async def manage_payments(*, status: str = "", query: str = "", page: int = 1) -> tuple[dict, str]:
+    """Наши платежи: за роутеры и доставку. У бота свой раздел — там подписка."""
+    return await get(
+        "/api/v1/catalog/manage/payments", {"status": status, "q": query, "page": page}
     )
 
 
@@ -403,6 +413,11 @@ async def quote_delivery(
         f"/api/v1/catalog/manage/orders/{order_id}/delivery-quote",
         {"price": price.replace(",", "."), "days": days, "method": method, "speed": speed},
     )
+
+
+async def delete_order(order_id: int) -> tuple[dict, str]:
+    """Удаляет заказ насовсем. Оплаченные основное приложение не отдаст."""
+    return await post(f"/api/v1/catalog/manage/orders/{order_id}/delete", {})
 
 
 async def set_order_tracking(order_id: int, track: str) -> tuple[dict, str]:

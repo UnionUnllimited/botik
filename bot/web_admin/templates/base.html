@@ -564,7 +564,10 @@
             </a>
             {% endif %}
             {% if moderator_can_see('payments') %}
-            <a href="{{ url_for('admin.payments') }}" class="tw-nav-link {% if request.path == url_for('admin.payments') %}active{% endif %}">
+            {# Наш раздел, а не родной: оплата железа идёт через основное
+               приложение и в базу продукта не попадает вовсе. Родная страница
+               осталась по адресу /payments — там подписка для телефона. #}
+            <a href="{{ url_for('admin.payments_shop') }}" class="tw-nav-link {% if request.path == url_for('admin.payments_shop') %}active{% endif %}">
                 <i data-lucide="credit-card" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Платежи</span>
             </a>
             {% endif %}

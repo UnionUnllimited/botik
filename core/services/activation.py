@@ -24,12 +24,14 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import notifications, texts
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
 from core.models import Device, Order, Subscription, User
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
+from core.services import orders as order_service
 from core.services import remnawave, router_shell, routers, settings_service, subscriptions
 
 log = structlog.get_logger("services.activation")
@@ -147,11 +149,54 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
         message=f"Ручная активация на {days} дн., учётка {username}",
         payload={"username": username, "until": expire_at.isoformat(), "output": output[:500]},
     )
+    # Ручная активация обычно про стенд и подменные, но если роутер привязан
+    # к заказу — заказ тоже состоялся, и статус должен это показывать.
+    await mark_order_activated(session, device)
+
     log.info("activation.manual_done", mac=device.mac, username=username, days=days)
     return expire_at
 
 
-SHIPPED_STATUSES = (OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.DONE)
+async def mark_order_activated(session: AsyncSession, device: Device) -> bool:
+    """Переводит заказ роутера в «Активирован» и готовит письмо клиенту.
+
+    Это последний статус живого заказа, и ставит его не оператор: только
+    активация знает, что ссылка доехала до устройства. До неё «Отправлен»
+    висел до тех пор, пока кто-нибудь не вспомнит закрыть заказ руками,
+    а закрывать его никто не вспоминал.
+
+    Тихо ничего не делаем, если заказа нет или он уже закрыт: активация —
+    работа с роутером, и падать в ней из-за статуса заказа нельзя.
+    """
+    if device.order_id is None:
+        return False
+    order = await session.get(Order, device.order_id)
+    if order is None or not order_service.can_transition(order.status, OrderStatus.ACTIVATED):
+        return False
+
+    order_service.set_status(order, OrderStatus.ACTIVATED)
+    user = await session.get(User, order.user_id)
+    if user is not None:
+        # Сообщение шлёт их бот: клиент разговаривает с ним. Мы кладём текст
+        # в очередь — тем же способом, что и остальные наши уведомления.
+        await notifications.send_message(
+            user.tg_id,
+            texts.ORDER_STATUS_TEXTS[OrderStatus.ACTIVATED].format(
+                number=order.public_number, reason=""
+            ),
+            session=session,
+            kind="order_status",
+        )
+    log.info("activation.order_activated", order=order.public_number, mac=device.mac)
+    return True
+
+
+SHIPPED_STATUSES = (
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.ACTIVATED,
+    OrderStatus.DONE,
+)
 """«Уже у клиента». До отгрузки роутер лежит на столе и его прошивают —
 он тоже выходит на связь, и активировать его там нельзя: дни начнут гореть
 у мастера, а подписка уедет на устройство, которое ещё никому не отдали."""
@@ -467,5 +512,9 @@ async def activate(
         message=f"Активирован клиентом, учётка {username}",
         payload={"username": username, "output": output[:500]},
     )
+    # Заказ закрывается сам: ссылка доехала до устройства, и ждать, пока
+    # кто-нибудь вспомнит нажать «Доставлен», больше не нужно.
+    await mark_order_activated(session, device)
+
     log.info("activation.done", mac=mac, user_id=user.id, username=username)
     return device

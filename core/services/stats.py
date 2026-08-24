@@ -28,6 +28,7 @@ PAID_STATUSES = (
     OrderStatus.PACKING,
     OrderStatus.SHIPPED,
     OrderStatus.DELIVERED,
+    OrderStatus.ACTIVATED,
     OrderStatus.DONE,
 )
 

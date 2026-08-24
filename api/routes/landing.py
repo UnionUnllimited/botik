@@ -85,3 +85,19 @@ async def landing_page(request: Request, session: AsyncSession = Depends(get_ses
 
     content = await landing.page_content(session)
     return templates.TemplateResponse(request, "landing.html", content)
+
+
+@router.get("/instruction", response_class=HTMLResponse)
+async def instruction_page(request: Request) -> HTMLResponse:
+    """Что делать с приехавшим роутером.
+
+    Заглушка до настоящей инструкции: пять шагов, которые всё равно придётся
+    написать. Адрес постоянный — на него ведёт кнопка в боте, и менять его
+    вместе с текстом не придётся. Оператор может увести кнопку на свою
+    страницу настройкой `router.instruction_url`.
+    """
+    return templates.TemplateResponse(
+        request,
+        "instruction.html",
+        {"brand": settings.app.brand, "steps": landing.INSTRUCTION_STEPS, "bot_url": landing.bot_link()},
+    )

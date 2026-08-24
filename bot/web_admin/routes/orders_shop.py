@@ -25,6 +25,7 @@ STATUS_TITLES = {
     "packing": "Собираем",
     "shipped": "Отправлен",
     "delivered": "Доставлен",
+    "activated": "Активирован",
     "done": "Завершён",
     "cancelled": "Отменён",
     "refunded": "Возврат",
@@ -62,12 +63,16 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
     async def orders_shop():
         status = (request.args.get("status") or "").strip()
         query = (request.args.get("q") or "").strip()
+        sort = (request.args.get("sort") or "").strip()
+        direction = (request.args.get("dir") or "").strip()
         try:
             page = max(int(request.args.get("page", 1)), 1)
         except (TypeError, ValueError):
             page = 1
 
-        data, error = await shop_api.manage_orders(status=status, query=query, page=page)
+        data, error = await shop_api.manage_orders(
+            status=status, query=query, page=page, sort=sort, direction=direction
+        )
         if error:
             await flash(error, "danger")
         return await render_template(
@@ -79,10 +84,43 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             delivery_filters=data.get("delivery_filters", []),
             status_filter=status,
             query=query,
+            sort=data.get("sort", ""),
+            sort_dir=data.get("dir", "desc"),
             total=data.get("total", 0),
             page=data.get("page", page),
             pages=data.get("pages", 1),
             orders_error=error,
+        )
+
+    @admin_bp_instance.route("/payments-shop")
+    async def payments_shop():
+        """Наши платежи: роутеры и доставка.
+
+        У продукта есть свой раздел платежей, но там подписка для телефона —
+        оплата железа идёт через нас и в его базу не попадает вовсе. Оператор
+        искал платёж там и не находил.
+        """
+        status = (request.args.get("status") or "").strip()
+        query = (request.args.get("q") or "").strip()
+        try:
+            page = max(int(request.args.get("page", 1)), 1)
+        except (TypeError, ValueError):
+            page = 1
+
+        data, error = await shop_api.manage_payments(status=status, query=query, page=page)
+        if error:
+            await flash(error, "danger")
+        return await render_template(
+            "payments_shop.html",
+            payments=data.get("payments", []),
+            statuses=data.get("statuses", []),
+            status_filter=status,
+            query=query,
+            total=data.get("total", 0),
+            earned=data.get("earned", "0"),
+            page=data.get("page", page),
+            pages=data.get("pages", 1),
+            payments_error=error,
         )
 
     @admin_bp_instance.route("/orders/export")
@@ -124,6 +162,17 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             carriers=CARRIER_TITLES,
             speeds=SPEED_TITLES,
         )
+
+    @admin_bp_instance.route("/orders/<int:order_id>/delete", methods=["POST"])
+    async def order_shop_delete(order_id: int):
+        """Удаление заказа. Оплаченные основное приложение не отдаёт — они
+        уже история: платёж, чек и, скорее всего, уехавшее железо."""
+        data, error = await shop_api.delete_order(order_id)
+        if error:
+            await flash(error, "danger")
+            return redirect(url_for("admin.order_shop_card", order_id=order_id))
+        await flash(f"Заказ {data.get('number') or order_id} удалён.", "success")
+        return redirect(url_for("admin.orders_shop"))
 
     def _back(order_id: int):
         return redirect(url_for("admin.order_shop_card", order_id=order_id))

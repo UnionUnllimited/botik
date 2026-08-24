@@ -92,6 +92,22 @@
       {% if order.cancel_reason %} Причина: {{ order.cancel_reason }}{% endif %}
     </div>
     {% endif %}
+
+    {# Удаление — только для ошибочных и брошенных: оплаченный заказ это
+       платёж, чек и, скорее всего, уехавшее железо, и восстановить его
+       будет неоткуда. Отказ приходит с той стороны, здесь только кнопка. #}
+    {% if not order.paid %}
+    <form method="post" action="{{ url_for('admin.order_shop_delete', order_id=order.id) }}"
+          class="pt-3 border-t" style="border-color: rgb(var(--admin-border));">
+      <button type="submit" class="tw-btn tw-btn-sm" style="color:#f87171"
+              onclick="return confirm('Удалить заказ насовсем? Отменить это будет нельзя.')">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Удалить заказ</span>
+      </button>
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Насовсем и без следа. Оплаченные заказы удалить нельзя — их отменяют.
+      </div>
+    </form>
+    {% endif %}
   </div>
 
   <div class="tw-card p-5 space-y-4">
@@ -113,7 +129,7 @@
     <div class="border-t pt-3" style="border-color: rgb(var(--admin-border));">
       {% if not delivery.method %}
       <div class="text-[12px] text-amber-500 mb-2">
-        Клиент не выбирал доставку — заведите её здесь: перевозчик, цена и срок.
+        Доставки у заказа нет — заведите её здесь: перевозчик, скорость, цена и срок.
       </div>
       {% elif delivery.awaiting_quote %}
       <div class="text-[12px] text-amber-500 mb-2">

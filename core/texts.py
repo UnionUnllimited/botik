@@ -53,12 +53,6 @@ DELIVERY_REMINDER = (
 минут, и в напоминании она была бы уже мёртвой. Живую клиент получает
 в боте по кнопке, когда сам готов платить."""
 
-DEFAULT_INSTRUCTION_URL = "http://192.168.14.1/instruction.html"
-"""Инструкция лежит на самом роутере и открывается из домашней сети.
-
-Так она не может устареть относительно прошивки и доступна даже тогда, когда
-интернета ещё нет, — а это ровно тот момент, когда она и нужна."""
-
 DELIVERY_INSTRUCTION = (
     "Что делать дальше:\n"
     "1. Включите роутер в розетку и воткните интернет-кабель в порт WAN.\n"
@@ -89,6 +83,10 @@ ORDER_STATUS_TEXTS = {
     OrderStatus.PACKING: "📦 Заказ {number} собирается. Скоро передадим в доставку.",
     OrderStatus.SHIPPED: "🚚 Заказ {number} отправлен!",
     OrderStatus.DELIVERED: "📬 Заказ {number} доставлен!",
+    OrderStatus.ACTIVATED: (
+        "✅ Роутер по заказу {number} вышел на связь, подписка включена. "
+        "Пользуйтесь — интернет уже работает как надо."
+    ),
     OrderStatus.DONE: "✅ Заказ {number} закрыт. Спасибо, что выбрали нас!",
     OrderStatus.CANCELLED: "❌ Заказ {number} отменён. {reason}",
     OrderStatus.REFUNDED: "💸 По заказу {number} оформлен возврат. {reason}",
@@ -101,6 +99,7 @@ ORDER_STATUS_TITLES = {
     OrderStatus.PACKING: "Собираем",
     OrderStatus.SHIPPED: "Отправлен",
     OrderStatus.DELIVERED: "Доставлен",
+    OrderStatus.ACTIVATED: "Активирован",
     OrderStatus.DONE: "Завершён",
     OrderStatus.CANCELLED: "Отменён",
     OrderStatus.REFUNDED: "Возврат",

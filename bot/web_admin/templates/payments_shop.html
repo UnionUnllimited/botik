@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Платежи — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Платежи</h1>
+      {# Раздел про наши деньги: роутеры и доставка. Подписка для телефона
+         платится в другой продукт, и её платежей здесь нет — оператор искал
+         оплату железа там и не находил. #}
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Оплата роутеров и доставки. Нажмите на номер заказа, чтобы открыть карточку.
+      </p>
+    </div>
+    <form method="get" class="flex items-center gap-2 flex-wrap">
+      <select name="status" class="tw-select">
+        <option value="">Все состояния</option>
+        {% for item in statuses %}
+        <option value="{{ item.value }}" {% if status_filter == item.value %}selected{% endif %}>
+          {{ item.title }}
+        </option>
+        {% endfor %}
+      </select>
+      <input type="text" name="q" value="{{ query }}" placeholder="Заказ, клиент или id платежа"
+             class="tw-input" style="min-width:240px">
+      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
+      </button>
+    </form>
+  </div>
+
+  {% if payments_error %}
+    <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">
+      <div class="flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
+        <div>{{ payments_error }}</div>
+      </div>
+    </div>
+  {% else %}
+
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+    <div class="tw-card p-4">
+      <div class="text-[12px] tw-text-muted2">Принято всего</div>
+      <div class="text-[22px] font-semibold" style="color:#16a34a">{{ earned }} ₽</div>
+    </div>
+    <div class="tw-card p-4">
+      <div class="text-[12px] tw-text-muted2">Платежей в отборе</div>
+      <div class="text-[22px] font-semibold tw-text-base2">{{ total }}</div>
+    </div>
+  </div>
+
+  {% if payments %}
+  <div class="tw-card overflow-x-auto">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="tw-text-muted2 text-left">
+          <th class="px-3 py-2 font-medium">Заказ</th>
+          <th class="px-3 py-2 font-medium">Клиент</th>
+          <th class="px-3 py-2 font-medium">За что</th>
+          <th class="px-3 py-2 font-medium">Сумма</th>
+          <th class="px-3 py-2 font-medium">Состояние</th>
+          <th class="px-3 py-2 font-medium">Провайдер</th>
+          <th class="px-3 py-2 font-medium">Создан</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in payments %}
+        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if item.order_id %}
+            <a href="{{ url_for('admin.order_shop_card', order_id=item.order_id) }}" class="font-mono">
+              {{ item.order_number or ('#' ~ item.order_id) }}
+            </a>
+            {% else %}
+            <span class="tw-text-muted2">—</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if item.client_tg_id %}
+            <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">
+              {{ item.client or ('id' ~ item.client_tg_id) }}
+            </a>
+            {% else %}
+            {{ item.client or '—' }}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2">{{ item.purpose_label }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">{{ item.amount }} {{ item.currency }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if item.status == 'succeeded' %}
+            <span style="color:#16a34a">● {{ item.status_label }}</span>
+            {% elif item.status in ('pending', 'waiting_for_capture') %}
+            <span class="text-amber-500">○ {{ item.status_label }}</span>
+            {% else %}
+            <span class="tw-text-muted2">{{ item.status_label }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
+            {{ item.provider }}
+            {% if item.provider_payment_id %}
+            <div class="text-[11px] font-mono">{{ item.provider_payment_id[:18] }}</div>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
+            {{ item.created_at[:16].replace('T', ' ') if item.created_at else '—' }}
+            {% if item.paid_at %}
+            <div class="text-[11px]" style="color:#16a34a">оплачен {{ item.paid_at[11:16] }}</div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pages > 1 %}
+  <div class="flex items-center justify-center gap-3 text-[13px] tw-text-muted2">
+    {% if page > 1 %}
+    <a href="{{ url_for('admin.payments_shop', status=status_filter or None, q=query or None, page=page - 1) }}">← назад</a>
+    {% endif %}
+    <span>{{ page }} из {{ pages }}</span>
+    {% if page < pages %}
+    <a href="{{ url_for('admin.payments_shop', status=status_filter or None, q=query or None, page=page + 1) }}">вперёд →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="tw-card p-4 text-[13px] tw-text-muted2">
+    {% if query or status_filter %}Ничего не нашлось.{% else %}Платежей пока нет.{% endif %}
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

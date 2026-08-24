@@ -35,8 +35,13 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, tuple[OrderStatus, ...]] = {
     OrderStatus.AWAITING_PAYMENT: (OrderStatus.PAID, OrderStatus.CANCELLED),
     OrderStatus.PAID: (OrderStatus.PACKING, OrderStatus.SHIPPED, OrderStatus.CANCELLED, OrderStatus.REFUNDED),
     OrderStatus.PACKING: (OrderStatus.SHIPPED, OrderStatus.CANCELLED, OrderStatus.REFUNDED),
-    OrderStatus.SHIPPED: (OrderStatus.DELIVERED, OrderStatus.REFUNDED),
-    OrderStatus.DELIVERED: (OrderStatus.DONE, OrderStatus.REFUNDED),
+    # «Активирован» достижим прямо из «Отправлен»: роутер выходит на связь
+    # у клиента раньше, чем оператор отметит доставку, — а отметить её может
+    # и некому, трек-номер закрывается сам.
+    OrderStatus.SHIPPED: (OrderStatus.DELIVERED, OrderStatus.ACTIVATED, OrderStatus.REFUNDED),
+    OrderStatus.DELIVERED: (OrderStatus.ACTIVATED, OrderStatus.DONE, OrderStatus.REFUNDED),
+    # Дальше идти некуда: роутер у клиента и работает. Остаётся только возврат.
+    OrderStatus.ACTIVATED: (OrderStatus.REFUNDED,),
     OrderStatus.DONE: (OrderStatus.REFUNDED,),
     OrderStatus.CANCELLED: (),
     OrderStatus.REFUNDED: (),
@@ -200,7 +205,11 @@ async def create_order(
     # отдельным платежом. Пустая строка на ноль рублей читалась бы как
     # «доставка бесплатная».
 
-    if draft.delivery_speed is not None and totals.product is not None:
+    # Раньше здесь стояло ещё «и в заказе есть товар». Условие было лишним
+    # и вредным: заказ без строки товара (например, с нулевой ценой на акции)
+    # терял выбранную клиентом доставку целиком, а оператор видел в карточке
+    # прочерк там, где человек честно выбрал скорость и оставил адрес.
+    if draft.delivery_speed is not None:
         delivery_service.attach_delivery(
             order,
             speed=draft.delivery_speed,
@@ -265,6 +274,12 @@ def set_status(order: Order, target: OrderStatus, *, reason: str | None = None) 
             order.delivered_at = now
             if order.delivery is not None:
                 order.delivery.delivered_at = now
+        case OrderStatus.ACTIVATED:
+            # Отметку доставки ставим заодно, если её не было: роутер работает
+            # у клиента — значит посылка дошла, кто бы её ни отметил.
+            order.delivered_at = order.delivered_at or now
+            if order.delivery is not None:
+                order.delivery.delivered_at = order.delivery.delivered_at or now
         case OrderStatus.CANCELLED:
             order.cancelled_at = now
             order.cancel_reason = reason

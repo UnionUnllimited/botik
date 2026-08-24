@@ -2,6 +2,18 @@
 {% block title %}Заказы — {{ super() }}{% endblock %}
 
 {% block content %}
+{% macro sort_th(key, title, first='asc') -%}
+  {%- set active = (sort == key) -%}
+  {%- set next = (('asc' if sort_dir == 'desc' else 'desc') if active else first) -%}
+  <th class="px-3 py-2 font-medium">
+    <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, sort=key, dir=next) }}"
+       class="inline-flex items-center gap-1 whitespace-nowrap {% if active %}tw-text-base2{% endif %}">
+      {{ title }}<span class="text-[11px]">{% if active %}{{ '↑' if sort_dir == 'asc' else '↓' }}{% else %}⇅{% endif %}</span>
+    </a>
+  </th>
+{%- endmacro %}
+
+
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
@@ -32,6 +44,10 @@
         </optgroup>
         {% endif %}
       </select>
+      {# Сортировку несём скрытыми полями: «Найти» отправляет только свои
+         поля, и порядок сбрасывался бы на каждый поиск. #}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ sort_dir }}">
       <input type="text" name="q" value="{{ query }}" placeholder="Номер, имя, телефон или город"
              class="tw-input" style="min-width:240px">
       <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
@@ -57,11 +73,13 @@
     <table class="w-full text-[13px]">
       <thead>
         <tr class="tw-text-muted2 text-left">
-          <th class="px-3 py-2 font-medium">Заказ</th>
-          <th class="px-3 py-2 font-medium">Покупатель</th>
-          <th class="px-3 py-2 font-medium">Город</th>
-          <th class="px-3 py-2 font-medium">Сумма</th>
-          <th class="px-3 py-2 font-medium">Состояние</th>
+          {# Заголовки сортируют: у сумм и номеров сначала большие,
+             у имён по алфавиту. Повторное нажатие переворачивает. #}
+          {{ sort_th('number', 'Заказ', 'desc') }}
+          {{ sort_th('customer', 'Покупатель') }}
+          {{ sort_th('city', 'Город') }}
+          {{ sort_th('total', 'Сумма', 'desc') }}
+          {{ sort_th('status', 'Состояние') }}
           <th class="px-3 py-2 font-medium">Трек-номер</th>
         </tr>
       </thead>
@@ -111,11 +129,11 @@
     {% if pages > 1 %}
     <div class="flex items-center gap-3">
       {% if page > 1 %}
-        <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, page=page - 1) }}">← назад</a>
+        <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, sort=sort or None, dir=sort_dir or None, page=page - 1) }}">← назад</a>
       {% endif %}
       <span>{{ page }} из {{ pages }}</span>
       {% if page < pages %}
-        <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, page=page + 1) }}">вперёд →</a>
+        <a href="{{ url_for('admin.orders_shop', status=status_filter or None, q=query or None, sort=sort or None, dir=sort_dir or None, page=page + 1) }}">вперёд →</a>
       {% endif %}
     </div>
     {% endif %}

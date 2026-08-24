@@ -220,16 +220,32 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                         if old_password != value:
                             new_secret_key = os.urandom(32)
                             secret_key_b64 = base64.b64encode(new_secret_key).decode('utf-8')
-                            await async_execute_db("UPDATE settings SET value = ? WHERE key = ?", (secret_key_b64, 'web_admin_secret_key'))
+                            # Тоже вставкой: на базе без этой строки ключ
+                            # сессий не сменился бы, и старые куки остались
+                            # рабочими после смены пароля.
+                            await async_execute_db(
+                                "INSERT INTO settings (key, value) VALUES (?, ?) "
+                                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                                ('web_admin_secret_key', secret_key_b64),
+                            )
                             current_app.logger.info("[SETTINGS] Пароль админа изменен, секретный ключ сессий сброшен")
                     
-                    await async_execute_db("UPDATE settings SET value = ? WHERE key = ?", (value, key))
+                    # Не UPDATE: строки в базе может не быть вовсе — настройка
+                    # добавлена кодом позже, чем заводилась база. UPDATE по
+                    # отсутствующему ключу молча ничего не делает, и для
+                    # оператора это выглядит как «кнопка не работает».
+                    await async_execute_db(
+                        "INSERT INTO settings (key, value) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (key, value),
+                    )
 
             for key in toggle_button_keys:
-                if key in form:
-                    await async_execute_db("UPDATE settings SET value = ? WHERE key = ?", ('1', key))
-                else:
-                    await async_execute_db("UPDATE settings SET value = ? WHERE key = ?", ('0', key))
+                await async_execute_db(
+                    "INSERT INTO settings (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, '1' if key in form else '0'),
+                )
 
             # Перезагружаем кэш настроек после сохранения
             try:

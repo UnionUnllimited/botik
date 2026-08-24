@@ -30,6 +30,12 @@ class OrderStatus(StrEnum):
     PACKING = "packing"
     SHIPPED = "shipped"
     DELIVERED = "delivered"
+    ACTIVATED = "activated"
+    """Роутер вышел на связь у клиента и получил подписку — заказ состоялся.
+
+    Ставится сам, активацией, а не оператором: только она знает, что ссылка
+    доехала до устройства. Дальше идти некуда, поэтому это последний статус
+    живого заказа; `DONE` остался у заказов, закрытых до его появления."""
     DONE = "done"
     CANCELLED = "cancelled"
     REFUNDED = "refunded"

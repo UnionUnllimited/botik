@@ -50,6 +50,7 @@ STATUS_LABELS = {
     "packing": "▸ Собираем",
     "shipped": "▸ В пути",
     "delivered": "✓ Доставлен",
+    "activated": "✓ Роутер работает",
     "done": "✓ Завершён",
     "cancelled": "✕ Отменён",
     "refunded": "↩ Возврат",
@@ -732,6 +733,13 @@ def order_keyboard(order: dict, cancellable: bool) -> InlineKeyboardMarkup:
         builder.row(
             btn("btn_shop_pay_delivery", callback_data=f"shop_pay_delivery:{order.get('id')}")
         )
+    # Инструкция нужна ровно между «посылка едет» и «роутер ожил»: до отправки
+    # читать её нечего, после активации всё уже работает. Показывать её дальше
+    # значит держать на экране кнопку, отвечающую на решённый вопрос.
+    # Промежуток считает ручка — она же знает статус заказа.
+    instruction_url = (order.get("instruction_url") or "").strip()
+    if instruction_url:
+        builder.row(btn("btn_router_instruction", url=instruction_url))
     if cancellable:
         builder.row(
             btn("btn_shop_order_cancel", callback_data=f"shop_order_cancel:{order.get('id')}")

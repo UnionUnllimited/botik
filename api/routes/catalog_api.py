@@ -44,6 +44,7 @@ from core.enums import (
     OrderStatus,
     PaymentProviderName,
     PaymentPurpose,
+    PaymentStatus,
     PromoDiscountType,
     VatCode,
 )
@@ -625,13 +626,9 @@ async def my_router(
 
     return {
         "has_client": True,
-        # Инструкция лежит на самом роутере и открывается из домашней сети:
-        # так она не расходится с прошивкой и доступна ещё до того, как
-        # появится интернет, — а нужна она ровно в этот момент.
-        "instruction_url": str(
-            await settings_service.get_setting(session, "router.instruction_url")
-            or texts.DEFAULT_INSTRUCTION_URL
-        ),
+        # Тот же адрес, что и в карточке заказа: инструкция одна, и клиент
+        # не должен получать в сообщении одну ссылку, а на экране другую.
+        "instruction_url": await _instruction_url(session),
         # Список — без обращения к панели: он нужен, чтобы нарисовать кнопки
         # выбора, а срок разворачивается только у выбранного.
         "routers": [
@@ -907,7 +904,24 @@ _CANCELLABLE = (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT)
 деньги уже у нас, и отмена превращается в возврат."""
 
 
-def _order_payload(order: Order) -> dict:
+async def _instruction_url(session: AsyncSession) -> str:
+    """Куда ведёт кнопка «Инструкция по подключению».
+
+    Одно место чтения на весь модуль: адрес нужен и в сообщении о доставке,
+    и на экране «Мой роутер», и в карточке заказа. Разойдись эти чтения
+    умолчанием, клиент получил бы в сообщении один адрес, а на экране другой.
+
+    Настройка оператора важнее; пока она пуста, ведём на свою страницу
+    витрины — она всегда на месте и правится нами, а не оператором.
+    """
+    configured = str(await settings_service.get_setting(session, "router.instruction_url") or "")
+    ready = configured.strip()
+    if ready:
+        return ready
+    return f"{settings.api.public_base_url.rstrip('/')}/instruction"
+
+
+def _order_payload(order: Order, *, instruction_url: str = "") -> dict:
     """Заказ должен приходить сюда с загруженными составом и доставкой:
     ленивая подгрузка в асинхронной сессии — это исключение, а не запрос."""
     return {
@@ -931,6 +945,11 @@ def _order_payload(order: Order) -> dict:
         # показывать ли кнопку «Оплатить доставку» — и в карточке, и в списке.
         "delivery_state": delivery_service.state(order.delivery),
         "tracking_number": (order.delivery.tracking_number or "") if order.delivery else "",
+        # Инструкция нужна ровно в промежутке «посылка едет» — «роутер ожил»:
+        # до отправки читать её нечего, после активации всё уже работает.
+        "instruction_url": instruction_url
+        if order.status in (OrderStatus.SHIPPED, OrderStatus.DELIVERED)
+        else "",
     }
 
 
@@ -998,7 +1017,8 @@ async def list_orders(
         .limit(max(min(limit, 50), 1))
         .options(selectinload(Order.items), selectinload(Order.delivery))
     )
-    return {"orders": [_order_payload(order) for order in found]}
+    instruction = await _instruction_url(session)
+    return {"orders": [_order_payload(order, instruction_url=instruction) for order in found]}
 
 
 # --- Управление заказами из админки бота -------------------------------------
@@ -1088,10 +1108,25 @@ def _status_condition(status_filter: str):
     return Order.status == status_filter
 
 
+ORDERS_SORT_COLUMNS = {
+    "number": Order.public_number,
+    "customer": Order.customer_name,
+    "city": Order.customer_city,
+    "total": Order.total,
+    "status": Order.status,
+    "created": Order.created_at,
+}
+"""По чему сортируется список заказов. Трек-номер лежит в доставке —
+его здесь нет намеренно: сортировать по нему незачем, а join ради колонки,
+которую разглядывают глазами, лишний."""
+
+
 @router.get("/manage/orders")
 async def manage_orders(
     status_filter: str = Query(default="", alias="status"),
     q: str = "",
+    sort: str = "",
+    direction: str = Query(default="desc", alias="dir"),
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -1115,10 +1150,22 @@ async def manage_orders(
         query = query.where(search)
         counter = counter.where(search)
 
+    # Порядок: колонка, выбранная оператором, и номер вторым ключом. Без него
+    # заказы с одинаковой суммой переставлялись бы между страницами.
+    column = ORDERS_SORT_COLUMNS.get(sort)
+    descending = direction != "asc"
+    if column is None:
+        ordering = (Order.id.desc(),)
+    else:
+        ordering = (
+            column.desc().nullslast() if descending else column.asc().nullslast(),
+            Order.id.desc(),
+        )
+
     total = await session.scalar(counter) or 0
     orders = list(
         await session.scalars(
-            query.order_by(Order.id.desc())
+            query.order_by(*ordering)
             .limit(ORDERS_PAGE_SIZE)
             .offset((page - 1) * ORDERS_PAGE_SIZE)
         )
@@ -1128,6 +1175,8 @@ async def manage_orders(
         "page": page,
         "pages": max((total + ORDERS_PAGE_SIZE - 1) // ORDERS_PAGE_SIZE, 1),
         "statuses": [str(item) for item in OrderStatus],
+        "sort": sort if sort in ORDERS_SORT_COLUMNS else "",
+        "dir": "asc" if not descending else "desc",
         # Отбор по доставке тем же списком: оператор ищет «кто не оплатил
         # перевозку» так же, как искал бы статус.
         "delivery_filters": [
@@ -1378,12 +1427,12 @@ async def manage_order_status(
         return {"ok": False, "error": str(exc)}
 
     await session.flush()
-    instruction_url = await settings_service.get_setting(session, "router.instruction_url")
+    instruction_url = await _instruction_url(session)
     return {
         "ok": True,
         "status": str(order.status),
         "tg_id": order.user.tg_id if order.user else None,
-        "notice": _status_notice(order, reason, instruction_url=str(instruction_url or "")),
+        "notice": _status_notice(order, reason, instruction_url=instruction_url),
     }
 
 
@@ -1436,6 +1485,153 @@ async def manage_order_note(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     order.admin_note = str(payload.get("note", "")).strip()[:2000] or None
     return {"ok": True}
+
+
+PAYMENT_PURPOSE_LABELS = {
+    "order": "Заказ",
+    "delivery": "Доставка",
+    "subscription": "Подписка",
+    "renewal": "Продление",
+}
+"""За что платили. Доставка — второй платёж по тому же заказу, и в списке
+её надо отличать от оплаты железа: сверка считает по платежам, а не по заказу."""
+
+PAYMENTS_PAGE_SIZE = 30
+
+
+@router.get("/manage/payments")
+async def manage_payments(
+    status_filter: str = Query(default="", alias="status"),
+    q: str = "",
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Наши платежи: за роутеры и за доставку.
+
+    У бота свой раздел платежей и своя таблица — там подписка для телефона.
+    Оплата железа проходит через нас и в его базе не появляется вовсе,
+    поэтому оператор искал её там и не находил.
+    """
+    page = max(page, 1)
+    query = select(Payment).options(selectinload(Payment.user), selectinload(Payment.order))
+    counter = select(func.count()).select_from(Payment)
+
+    if status_filter:
+        query = query.where(Payment.status == status_filter)
+        counter = counter.where(Payment.status == status_filter)
+
+    text = q.strip()
+    if text:
+        pattern = f"%{text}%"
+        search = or_(
+            Payment.provider_payment_id.ilike(pattern),
+            Payment.description.ilike(pattern),
+            Payment.order.has(Order.public_number.ilike(pattern)),
+            Payment.user.has(User.username.ilike(pattern)),
+        )
+        if text.lstrip("-").isdigit():
+            search = or_(search, Payment.user.has(User.tg_id == int(text)))
+        query = query.where(search)
+        counter = counter.where(search)
+
+    total = await session.scalar(counter) or 0
+    payments = list(
+        await session.scalars(
+            query.order_by(Payment.id.desc())
+            .limit(PAYMENTS_PAGE_SIZE)
+            .offset((page - 1) * PAYMENTS_PAGE_SIZE)
+        )
+    )
+
+    # Итоги — по всем успешным, а не по странице: оператор смотрит на них,
+    # чтобы понять, сколько собрали, и «за эту страницу» ответа не даёт.
+    earned = await session.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.status == PaymentStatus.SUCCEEDED
+        )
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "pages": max((total + PAYMENTS_PAGE_SIZE - 1) // PAYMENTS_PAGE_SIZE, 1),
+        "earned": str(earned or 0),
+        "statuses": [
+            {"value": value, "title": title} for value, title in PAYMENT_LABELS.items()
+        ],
+        "payments": [
+            {
+                "id": payment.id,
+                "provider": str(payment.provider),
+                "provider_payment_id": payment.provider_payment_id or "",
+                "status": str(payment.status),
+                "status_label": PAYMENT_LABELS.get(str(payment.status), str(payment.status)),
+                "purpose": str(payment.purpose),
+                "purpose_label": PAYMENT_PURPOSE_LABELS.get(
+                    str(payment.purpose), str(payment.purpose)
+                ),
+                "amount": str(payment.amount),
+                "currency": payment.currency,
+                "description": payment.description or "",
+                "order_id": payment.order_id,
+                "order_number": payment.order.public_number if payment.order else "",
+                "client": payment.user.telegram_name if payment.user else "",
+                "client_tg_id": (payment.user.tg_id or 0) if payment.user else 0,
+                "created_at": _iso_dt(payment.created_at),
+                "paid_at": _iso_dt(payment.paid_at),
+            }
+            for payment in payments
+        ],
+    }
+
+
+DELETABLE_ORDER_STATUSES = (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED)
+"""Что можно стереть насовсем.
+
+Только заказы, по которым не было денег: оплаченный заказ — это платёж,
+чек и, скорее всего, отгруженное железо. Стерев его, мы потеряем и сверку
+с провайдером, и историю клиента, а восстановить будет неоткуда. Ошибочные
+и брошенные заказы удаляются, остальные закрываются отменой или возвратом.
+"""
+
+
+@router.post("/manage/orders/{order_id}/delete")
+async def manage_order_delete(
+    order_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Удаление заказа. Тестовые и брошенные — насовсем, оплаченные — никогда."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    if order.paid_at is not None or order.status not in DELETABLE_ORDER_STATUSES:
+        return {
+            "ok": False,
+            "error": (
+                "Такой заказ удалить нельзя: по нему были деньги или он уже в работе. "
+                "Отмените его или оформите возврат — история останется."
+            ),
+        }
+
+    payments = await session.scalar(
+        select(func.count()).select_from(Payment).where(Payment.order_id == order.id)
+    )
+    if payments:
+        # Платёж мог остаться и у неоплаченного заказа — висящая ссылка.
+        # Стерев заказ, мы оставим платёж без хозяина, а сверку — без ответа.
+        return {
+            "ok": False,
+            "error": "К заказу привязаны платежи. Отмените заказ вместо удаления.",
+        }
+
+    # Роутер со склада не должен уехать вместе с заказом: он вещь, а не запись.
+    await session.execute(
+        update(Device).where(Device.order_id == order.id).values(order_id=None)
+    )
+    number = order.public_number
+    await session.delete(order)
+    log.info("catalog.order_deleted", order_id=order_id, number=number)
+    return {"ok": True, "number": number}
 
 
 # --- Настройки доставки ------------------------------------------------------
@@ -1543,7 +1739,11 @@ async def order_card(
     order = await order_service.get_order(session, order_id)
     if order is None or order.user is None or order.user.tg_id != tg_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    return {"order": _order_payload(order), "cancellable": order.status in _CANCELLABLE}
+    instruction = await _instruction_url(session)
+    return {
+        "order": _order_payload(order, instruction_url=instruction),
+        "cancellable": order.status in _CANCELLABLE,
+    }
 
 
 @router.post("/orders/{order_id}/delivery-payment")

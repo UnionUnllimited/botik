@@ -28,6 +28,9 @@ DEFAULTS: dict[str, Any] = {
     # по адресу и весу. Прейскурант по зонам прожил неделю — цену по нему всё
     # равно перебивали руками. Названия перевозчиков — в `core/texts.py`.
     "order.shipping_days": "1–2 рабочих дня",
+    # Пусто — витрина отдаст свою страницу с инструкцией. Оператор может
+    # заменить адрес на любой другой, не трогая код.
+    "router.instruction_url": "",
     "support.contact": "",
     "support.working_hours": "ежедневно с 10:00 до 22:00 по Москве",
     "activation.auto_enabled": False,
@@ -42,6 +45,7 @@ DEFAULTS: dict[str, Any] = {
 
 DESCRIPTIONS = {
     "order.shipping_days": "Срок отправки заказа после оплаты",
+    "router.instruction_url": "Ссылка на инструкцию по подключению роутера",
     "support.contact": "Контакт поддержки для текстов бота",
     "support.working_hours": "Часы работы поддержки",
     "activation.auto_enabled": "Активировать роутер сам, когда отгруженный заказ выходит на связь",

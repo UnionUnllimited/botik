@@ -53,3 +53,34 @@ def test_endpoint_has_a_route(endpoint):
         f"`url_for('admin.{endpoint}')` есть в {where}, но маршрут не заведён. "
         "Это роняет base.html, а с ним всю админку."
     )
+
+
+class TestSettingsSaveCreatesMissingRows:
+    """«Сохранить все настройки» должна сохранять и то, чего в базе ещё нет.
+
+    Настройки заводятся при создании базы, а код добавляет новые со временем.
+    `UPDATE ... WHERE key = ?` по отсутствующему ключу молча ничего не делает,
+    и для оператора это выглядит как «кнопка не работает»: страница
+    перезагрузилась, «успешно обновлены» показано, значение прежнее.
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "bot/web_admin/routes/settings.py"
+    ).read_text(encoding="utf-8")
+
+    def _save_block(self) -> str:
+        start = self.SOURCE.index("for key, value in form.items():")
+        return self.SOURCE[start : self.SOURCE.index("# Перезагружаем кэш настроек")]
+
+    def test_values_are_upserted(self):
+        block = self._save_block()
+        assert "ON CONFLICT(key) DO UPDATE" in block
+        assert "UPDATE settings SET value = ? WHERE key = ?" not in block, (
+            "обновление по отсутствующему ключу теряет настройку без единого слова"
+        )
+
+    def test_toggles_are_upserted_too(self):
+        """Тумблеры пишутся отдельным кругом — и той же ловушкой страдали."""
+        block = self._save_block()
+        toggles = block[block.index("for key in toggle_button_keys:") :]
+        assert "ON CONFLICT(key) DO UPDATE" in toggles
