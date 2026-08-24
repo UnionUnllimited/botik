@@ -117,6 +117,8 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             specs_limit=app_conf.get("catalog_specs_limit", 8),
             model_names=app_conf.get("router_model_names", ""),
             status_labels=app_conf.get("order_status_labels", ""),
+            main_menu_photo_url=app_conf.get("main_menu_photo_url", "") or "",
+            router_panel_url=app_conf.get("router_panel_url", "") or "",
         )
 
     @admin_bp_instance.route("/catalog/delivery", methods=["POST"])
@@ -272,6 +274,10 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             "catalog_specs_limit": str(_form_int(form, "catalog_specs_limit", 8, low=1, high=SPECS_LIMIT_MAX)),
             "router_model_names": model_names,
             "order_status_labels": status_labels,
+            # Адреса, которые видит клиент. Пустая строка — законное значение:
+            # так картинка и кнопка админки просто не показываются.
+            "main_menu_photo_url": (form.get("main_menu_photo_url") or "").strip(),
+            "router_panel_url": (form.get("router_panel_url") or "").strip(),
         }
         descriptions = {key: description for key, _, description in CATALOG_SETTINGS}
 

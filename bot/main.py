@@ -16,7 +16,7 @@ import pytz
 
 # Импортируем необходимые модули aiogram для работы с Telegram Bot API
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp, MenuButtonDefault, MenuButtonCommands, BotCommand, ErrorEvent
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp, MenuButtonDefault, MenuButtonCommands, BotCommand, ErrorEvent, LinkPreviewOptions
 from aiogram.types.input_file import FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandStart, StateFilter, ExceptionTypeFilter
@@ -1167,6 +1167,24 @@ def _filter_empty_menu_fields(text: str) -> str:
     return "\n".join(filtered_lines).strip()
 
 
+def main_menu_preview() -> LinkPreviewOptions:
+    """Картинка над главным меню.
+
+    Ссылкой на изображение, а не отдельным фото-сообщением: главный экран
+    правится на месте (`edit_text`), а превратить текстовое сообщение
+    в сообщение с фото Telegram не даёт — пришлось бы удалять старое
+    и слать новое, и экран прыгал бы при каждом «В главное меню».
+
+    Адрес задаётся настройкой `main_menu_photo_url` и должен быть виден
+    снаружи: картинку тянет Telegram, а не мы. Пусто — превью выключено,
+    как было раньше.
+    """
+    url = (app_conf.get('main_menu_photo_url', '') or '').strip()
+    if not url:
+        return LinkPreviewOptions(is_disabled=True)
+    return LinkPreviewOptions(url=url, prefer_large_media=True, show_above_text=True)
+
+
 async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message: bool = False):
     user_id = message_or_query.from_user.id
     user_name = (message_or_query.from_user.first_name or "")[:32]
@@ -1288,16 +1306,17 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
             text_to_send += "\n\n" + "Выберите раздел ниже или напишите в поддержку."
 
     target_message = message_or_query.message if isinstance(message_or_query, CallbackQuery) else message_or_query
-    
+    preview = main_menu_preview()
+
     if edit_message and isinstance(message_or_query, CallbackQuery):
         try:
-            await target_message.edit_text(text_to_send, reply_markup=kbd, disable_web_page_preview=True)
+            await target_message.edit_text(text_to_send, reply_markup=kbd, link_preview_options=preview)
         except Exception as e:
             if "message is not modified" not in str(e).lower():
                 logger.warning(f"Не удалось отредактировать сообщение для {user_id}: {e}. Отправка нового.")
-                await bot.send_message(user_id, text_to_send, reply_markup=kbd, disable_web_page_preview=True)
+                await bot.send_message(user_id, text_to_send, reply_markup=kbd, link_preview_options=preview)
     else:
-        await target_message.answer(text_to_send, reply_markup=kbd, disable_web_page_preview=True)
+        await target_message.answer(text_to_send, reply_markup=kbd, link_preview_options=preview)
 
     if isinstance(message_or_query, CallbackQuery):
         try: await message_or_query.answer()

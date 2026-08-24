@@ -201,6 +201,13 @@ CATALOG_SETTINGS: list[tuple[str, str, str]] = [
         "Коды: new, awaiting_payment, paid, packing, shipped, delivered, "
         "done, cancelled, refunded",
     ),
+    (
+        "main_menu_photo_url",
+        "",
+        "Картинка над главным меню: прямая ссылка на изображение. "
+        "Пусто — картинки нет. Адрес должен открываться снаружи: "
+        "картинку тянет Telegram, а не бот",
+    ),
 ]
 
 LEGACY_TEXTS: dict[str, str] = {

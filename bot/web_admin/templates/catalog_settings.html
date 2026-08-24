@@ -60,6 +60,35 @@
       </div>
     </div>
 
+    {# Картинку показываем ссылкой, а не файлом: главный экран правится
+       на месте, а превратить текстовое сообщение в сообщение с фото
+       Telegram не даёт — экран прыгал бы при каждом возврате в меню. #}
+    <div class="pt-2 border-t" style="border-color: rgb(var(--admin-border));">
+      <label for="main_menu_photo_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Картинка над главным меню
+      </label>
+      <input type="url" id="main_menu_photo_url" name="main_menu_photo_url"
+             value="{{ main_menu_photo_url }}" class="tw-input"
+             placeholder="https://example.com/banner.jpg">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Прямая ссылка на изображение — картинку тянет Telegram, а не бот,
+        поэтому адрес должен открываться снаружи. Пусто — картинки нет.
+        Годится и ссылка на фото товара из каталога.
+      </div>
+    </div>
+
+    <div>
+      <label for="router_panel_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Адрес админки роутера
+      </label>
+      <input type="text" id="router_panel_url" name="router_panel_url"
+             value="{{ router_panel_url }}" class="tw-input"
+             placeholder="http://192.168.14.1/">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Открывается из домашней сети клиента. Пусто — кнопки в «Моём роутере» нет.
+      </div>
+    </div>
+
     <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
       <div class="text-[11px] tw-text-subtle2">
         Тексты экранов каталога правятся в «Настройки → Тексты»,

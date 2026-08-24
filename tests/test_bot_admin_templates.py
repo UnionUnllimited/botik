@@ -145,6 +145,8 @@ PAGES = {
     "catalog_settings.html": {
         "catalog_enabled": True,
         "specs_limit": 8,
+        "main_menu_photo_url": "https://shop.example/media/banner.jpg",
+        "router_panel_url": "http://192.168.14.1/",
     },
     "catalog_shop_form.html": {
         "product": PRODUCT,
