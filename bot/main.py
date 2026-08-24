@@ -1143,19 +1143,27 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
 # базе и в код не попали. None тут разваливает .format() и склейку строк,
 # и падает не текст, а всё главное меню целиком.
 DEFAULT_WELCOME = (
-    "Здравствуйте, {user_name}!\n\n"
-    "{project_name} — роутеры, которые работают сразу: включили в розетку, "
-    "воткнули кабель, и зарубежные сервисы открываются как обычные. "
-    "Ни приложений, ни настроек, ни логинов.\n\n"
-    "Подписка начинается с первого выхода роутера на связь — дни доставки не сгорают.\n\n"
-    "Выберите раздел ниже."
+    "<b>{project_name}</b>\n\n"
+    "Роутер работает сразу: включили в розетку — и зарубежные сервисы "
+    "открываются как обычные."
 )
-DEFAULT_SUBSCRIPTION_INFO = """Подписка: {status}
-Действует до: {expiry_date}
-Трафик: {traffic}"""
-DEFAULT_SUBSCRIPTION_EXPIRED = "Подписка не активна. Продлите её, чтобы роутер снова вышел в сеть."
+DEFAULT_SUBSCRIPTION_INFO = """✓ Подписка активна до <b>{expiry_date}</b>"""
+DEFAULT_SUBSCRIPTION_EXPIRED = "⚠ Подписка не активна\n\nПродлите её, чтобы роутер снова вышел в сеть."
 DEFAULT_ABOUT_SERVICE = "{project_name} — роутеры с подпиской на сервис стабильного доступа к зарубежным ресурсам."
 DEFAULT_PROMO_SUCCESS = "Промокод {code} принят: добавлено дней — {days}. Подписка действует до {expiry_date}."
+
+
+def _filter_empty_menu_fields(text: str) -> str:
+    """Убирает из операторского шаблона поля без подставленного значения."""
+    filtered_lines: list[str] = []
+    for line in text.splitlines():
+        plain_line = re.sub(r"<[^>]+>", "", line).strip()
+        if plain_line == "—":
+            continue
+        if ":" in plain_line and plain_line.split(":", 1)[1].strip() in {"", "—"}:
+            continue
+        filtered_lines.append(line)
+    return "\n".join(filtered_lines).strip()
 
 
 async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message: bool = False):
@@ -1257,13 +1265,16 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         # стереть на странице текстов, и главное меню не должно от этого
         # падать у всех, кто оплатил.
         sub_info_tpl = app_conf.get('text_subscription_info') or DEFAULT_SUBSCRIPTION_INFO
-        text_to_send += "\n\n" + sub_info_tpl.format(
-            status="Активна ✅",
+        sub_info = sub_info_tpl.format(
+            status="активна",
             expiry_date=formatted_expiry_date,
             limit_ip=limit_ip_display,
             traffic=traffic_display if traffic_display else "—",
             sub_link=sub_link,
         )
+        sub_info = _filter_empty_menu_fields(sub_info)
+        if sub_info:
+            text_to_send += "\n\n" + sub_info
     elif is_trial_used and not has_active_sub:
          # Показываем стандартный текст для пользователей без активной подписки
          text_to_send += "\n\n" + (app_conf.get('text_subscription_expired_main') or DEFAULT_SUBSCRIPTION_EXPIRED)

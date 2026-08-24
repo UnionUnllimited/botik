@@ -408,22 +408,19 @@ async def populate_default_settings():
             # Фигурных скобок, кроме двух подстановок, тут быть не должно:
             # текст уходит в `.format()`, и лишняя скобка уронит главное меню.
             ('text_welcome_message',
-             'Здравствуйте, {user_name}!\n\n'
-             '{project_name} — роутеры, которые работают сразу: включили в розетку, '
-             'воткнули кабель, и зарубежные сервисы открываются как обычные. '
-             'Ни приложений, ни настроек, ни логинов.\n\n'
-             'Подписка начинается с первого выхода роутера на связь — дни доставки не сгорают.\n\n'
-             'Выберите раздел ниже.',
+             '<b>{project_name}</b>\n\n'
+             'Роутер работает сразу: включили в розетку — и зарубежные сервисы '
+             'открываются как обычные.',
              'Приветствие в главном меню. Доступны {user_name} и {project_name}'),
             # Ветка с подпиской не выполнялась, пока подписок в базе бота не было
             # вовсе, — и отсутствие этих двух ключей никого не беспокоило. Как
             # только подписки стали зеркалиться сюда, главное меню начало падать
             # у каждого, кто оплатил: `None.format(...)` и `str + None`.
             ('text_subscription_info',
-             'Подписка: {status}\nДействует до: {expiry_date}\nТрафик: {traffic}',
+             '✓ Подписка активна до <b>{expiry_date}</b>',
              'Блок подписки в главном меню. Доступны {status}, {expiry_date}, {limit_ip}, {traffic}, {sub_link}'),
             ('text_subscription_expired_main',
-             'Подписка не активна. Продлите её, чтобы роутер снова вышел в сеть.',
+             '⚠ Подписка не активна\n\nПродлите её, чтобы роутер снова вышел в сеть.',
              'Текст в главном меню, когда активной подписки нет'),
             ('text_about_service',
              '{project_name} — роутеры с подпиской на сервис стабильного доступа к зарубежным ресурсам.',
@@ -547,6 +544,53 @@ async def populate_default_settings():
         ]
         for key, value, description in layout_seed_settings:
             await db.execute("INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)", (key, value, description))
+
+        # Редизайн главного меню 08.2026: обновляем только нетронутые старые
+        # дефолты. Операторские тексты и раскладка с любым другим значением
+        # остаются без изменений.
+        menu_redesign_mark = 'ui_redesign_2026_08_menu'
+        async with db.execute(
+            "SELECT 1 FROM settings WHERE key = ?", (menu_redesign_mark,)
+        ) as cursor:
+            menu_redesign_applied = await cursor.fetchone()
+        if not menu_redesign_applied:
+            legacy_menu_defaults = {
+                'text_welcome_message': (
+                    'Здравствуйте, {user_name}!\n\n'
+                    '{project_name} — роутеры, которые работают сразу: включили в розетку, '
+                    'воткнули кабель, и зарубежные сервисы открываются как обычные. '
+                    'Ни приложений, ни настроек, ни логинов.\n\n'
+                    'Подписка начинается с первого выхода роутера на связь — дни доставки не сгорают.\n\n'
+                    'Выберите раздел ниже.'
+                ),
+                'text_subscription_info': (
+                    'Подписка: {status}\nДействует до: {expiry_date}\nТрафик: {traffic}'
+                ),
+                'text_subscription_expired_main': (
+                    'Подписка не активна. Продлите её, чтобы роутер снова вышел в сеть.'
+                ),
+                MAIN_MENU_LAYOUT_SETTING: _json.dumps([
+                    ['btn_my_router'],
+                    ['btn_catalog', 'btn_my_orders'],
+                    ['btn_renew_sub'],
+                    ['btn_referral', 'btn_support'],
+                    ['btn_about_service'],
+                    ['btn_bot_custom_url'],
+                    ['btn_bot_channel'],
+                ]),
+            }
+            new_menu_defaults = {key: value for key, value, _ in base_texts}
+            new_menu_defaults[MAIN_MENU_LAYOUT_SETTING] = _json.dumps(DEFAULT_MAIN_MENU_LAYOUT)
+            for key, legacy_value in legacy_menu_defaults.items():
+                await db.execute(
+                    "UPDATE settings SET value = ? WHERE key = ? AND value = ?",
+                    (new_menu_defaults[key], key, legacy_value),
+                )
+            await db.execute(
+                "INSERT INTO settings (key, value, description) VALUES (?, '1', ?)",
+                (menu_redesign_mark, 'Редизайн главного меню 08.2026 применён'),
+            )
+            logger.info("Редизайн главного меню: нетронутые дефолты обновлены")
         
         # Добавляем настройки для реферальной системы
         referral_settings = [
