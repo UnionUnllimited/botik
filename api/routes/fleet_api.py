@@ -318,6 +318,13 @@ async def list_routers(
         # они приходят от самих роутеров и новую партию никто не впишет руками.
         "models": sorted({device.model for device in fleet if device.model}),
         "states": [{"value": value, "title": title} for value, title in DEVICE_LABELS.items()],
+        # Готовые скрипты — те же, что кнопками в карточке роутера. Здесь они
+        # нужны для запуска сразу на отмеченных: набор один, и расходиться
+        # этим двум спискам нельзя.
+        "quick_commands": [
+            {"name": name, "title": title}
+            for name, (title, _command) in router_shell.QUICK_COMMANDS.items()
+        ],
         "routers": items,
     }
 
@@ -573,6 +580,9 @@ BULK_LIMITS = {
     "activate": 5,
     # Своя команда: тот же путь, что у консоли в карточке, только на многих.
     "command": 40,
+    # Готовый скрипт — та же команда, но из закрытого набора: опечататься
+    # в том, что уходит на роутер клиента, здесь нечем.
+    "quick": 40,
 }
 """Свой предел на действие, а не общий.
 
@@ -672,12 +682,23 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
             log.warning("fleet.bulk_forbidden", command=command[:120], asked=len(raw_ids))
             return {"ok": False, "error": "Эта команда запрещена из веб-консоли."}
 
-    if action in {"poll", "reboot", "command"}:
+    # Готовый скрипт называется именем из набора, а не текстом: так на роутеры
+    # уходит ровно то, что написано в коде, и проверять его на запрещённое
+    # не нужно — набор закрытый.
+    quick_name = str(payload.get("quick", "")).strip()
+    quick_title = ""
+    if action == "quick":
+        entry = router_shell.QUICK_COMMANDS.get(quick_name)
+        if entry is None:
+            return {"ok": False, "error": "Неизвестный скрипт."}
+        quick_title, command = entry
+
+    if action in {"poll", "reboot", "command", "quick"}:
         if action == "reboot":
 
             async def work(device: Device):
                 return await router_shell.run(device, REBOOT_COMMAND)
-        elif action == "command":
+        elif action in {"command", "quick"}:
 
             async def work(device: Device):
                 return await router_shell.run(device, command)
@@ -695,17 +716,24 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
                 stats = routers_service.parse_stats(result)
                 routers_service.apply_stats(device, stats)
                 routers_service.record_metrics(session, device, stats)
-            elif action == "command":
+            elif action in {"command", "quick"}:
                 # Вывод показываем целиком: ради него команду и запускали.
                 outputs.append(
                     {"mac": device.mac, "ok": result.ok, "output": result.output[:4000]}
                 )
+                # В журнале устройства — название скрипта, а не его текст:
+                # через полгода «Туннель: перезапустить» скажет больше, чем
+                # строка с путями к init-скриптам.
                 routers_service.add_event(
                     session,
                     device_id=device.id,
                     mac=device.mac,
                     level="info",
-                    message="Команда из админки: " + command[:120],
+                    message=(
+                        f"Скрипт из админки: {quick_title}"
+                        if action == "quick"
+                        else "Команда из админки: " + command[:120]
+                    ),
                 )
             else:
                 routers_service.add_event(

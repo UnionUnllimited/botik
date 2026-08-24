@@ -145,6 +145,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             filters={key: args.get(key, "") or "" for key in FLEET_FILTER_KEYS},
             models=data.get("models", []),
             states=data.get("states", []),
+            quick_commands=data.get("quick_commands", []),
             page_sizes=data.get("page_sizes", []),
             per_page=data.get("per_page", 0),
             page=data.get("page", 1),
@@ -181,6 +182,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
                 "status": (form.get("status") or "").strip(),
                 "days": _days_from(form),
                 "command": form.get("command") or "",
+                "quick": (form.get("quick") or "").strip(),
             },
         )
         if error:

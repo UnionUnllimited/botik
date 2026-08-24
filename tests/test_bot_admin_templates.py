@@ -377,6 +377,10 @@ PAGES = {
         },
         "models": ["AX3000", "cudy,tr3000-v1"],
         "states": [{"value": "new", "title": "на складе"}, {"value": "active", "title": "работает"}],
+        "quick_commands": [
+            {"name": "uptime", "title": "Аптайм и нагрузка"},
+            {"name": "frp_restart", "title": "Туннель: перезапустить"},
+        ],
         "page_sizes": [25, 50, 100, 200],
         "per_page": 50,
         "page": 2,

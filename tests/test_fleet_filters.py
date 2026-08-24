@@ -188,6 +188,47 @@ class TestBulkAndFilterWiring:
         api = self._source("api/routes/fleet_api.py")
         assert "sleep" in api[api.index("REBOOT_COMMAND") : api.index("REBOOT_COMMAND") + 200]
 
+    def test_quick_script_runs_on_many(self):
+        """Готовый скрипт — из закрытого набора, тот же, что в карточке.
+
+        Ради него и затевалось: «перезапустить туннель» спрашивают у парка
+        целиком, а не у одного роутера, и вводить это руками сорок раз —
+        сорок поводов опечататься в том, что уходит на устройство клиента.
+        """
+        api = self._source("api/routes/fleet_api.py")
+        body = api[api.index("async def bulk_routers") :]
+        assert "router_shell.QUICK_COMMANDS.get(quick_name)" in body
+        assert "Неизвестный скрипт" in body
+        assert BULK_LIMITS["quick"] <= 40, "тот же поход к роутеру, что и у команды"
+
+    def test_quick_script_is_named_in_the_device_log(self):
+        """Через полгода «Туннель: перезапустить» скажет больше, чем строка
+        с путями к init-скриптам."""
+        api = self._source("api/routes/fleet_api.py")
+        body = api[api.index("async def bulk_routers") :]
+        assert "Скрипт из админки" in body
+
+    def test_scripts_come_from_one_place(self):
+        """Список на странице парка и кнопки в карточке — один набор.
+        Разойдись они, оператор запускал бы на многих не то, что на одном."""
+        api = self._source("api/routes/fleet_api.py")
+        assert api.count("router_shell.QUICK_COMMANDS") >= 2
+
+    def test_actions_live_under_the_table(self):
+        """Панель, а не окно по кнопке: отметил строки — видно, что с ними
+        можно сделать, без лишнего щелчка."""
+        page = self._source("bot/web_admin/templates/routers_fleet.html")
+        assert "<dialog" not in page
+        assert "data-fleet-run" in page
+
+    def test_whole_row_opens_the_card(self):
+        """Попасть в MAC мышью не проще, чем в строку, а открывают её каждый раз."""
+        page = self._source("bot/web_admin/templates/routers_fleet.html")
+        assert "data-fleet-href" in page
+        assert "event.target.closest('a, input, button, select, label')" in page, (
+            "иначе щелчок по отметке уводил бы со страницы"
+        )
+
     def test_client_column_links_to_the_client(self):
         page = self._source("bot/web_admin/templates/routers_fleet.html")
         assert "admin.user_details" in page

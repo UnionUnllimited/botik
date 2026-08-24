@@ -23,8 +23,9 @@
     <div>
       <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Роутеры</h1>
       <p class="text-[13px] tw-text-muted2 mt-1">
-        Парк устройств. Нажмите на MAC, чтобы открыть карточку: там показания,
-        клиент, ручная активация и журнал.
+        Парк устройств. Нажмите на строку, чтобы открыть карточку: там показания,
+        клиент, ручная активация, консоль и журнал. Отметки в строках — для действий
+        над многими сразу, они под таблицей.
       </p>
     </div>
 
@@ -165,17 +166,30 @@
 
     {% if routers %}
     {# Отметки и действия — одна форма на всю таблицу: чекбоксы в строках,
-       кнопки под ней. Действие уходит на сторону основного приложения, у него
+       панель под ней. Действие уходит на сторону основного приложения, у него
        и туннели, и панель. #}
     <form method="post" action="{{ url_for('admin.routers_fleet_bulk') }}" id="fleet-bulk">
+
+    {# Полоса выбора над таблицей — как в «Клиентах»: отметить страницу целиком
+       и видеть, сколько набралось, не доскроллив до кнопок. #}
+    <div class="tw-card p-3 flex items-center gap-3 flex-wrap mb-3">
+      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+        <input type="checkbox" class="w-4 h-4 cursor-pointer" data-fleet-all>
+        <span class="text-[13px] tw-text-base2">Выбрать на странице</span>
+      </label>
+      <div class="ml-auto flex items-center gap-3">
+        <span class="text-[13px] tw-text-muted2" data-fleet-count>0 выбрано</span>
+        <button type="button" class="tw-btn tw-btn-sm" data-fleet-reset>
+          <i data-lucide="circle-x" class="w-3.5 h-3.5"></i><span>Сброс</span>
+        </button>
+      </div>
+    </div>
+
     <div class="tw-card overflow-x-auto">
       <table class="w-full text-[13px]">
         <thead>
           <tr class="tw-text-muted2 text-left">
-            <th class="px-3 py-2 font-medium w-8">
-              <input type="checkbox" class="w-4 h-4 cursor-pointer" data-fleet-all
-                     title="Отметить всё на странице">
-            </th>
+            <th class="px-3 py-2 font-medium w-8"></th>
             <th class="px-3 py-2 font-medium">Роутер</th>
             <th class="px-3 py-2 font-medium">Клиент</th>
             <th class="px-3 py-2 font-medium">Связь</th>
@@ -190,7 +204,10 @@
         </thead>
         <tbody>
           {% for item in routers %}
-          <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+          {# Вся строка ведёт в карточку: попасть в MAC на телефоне мышью
+             не проще, чем в саму ссылку, а открывают её каждый раз. #}
+          <tr class="border-t cursor-pointer" style="border-color:var(--tw-line, #26262b)"
+              data-fleet-href="{{ url_for('admin.router_card', device_id=item.id) }}">
             <td class="px-3 py-2">
               <input type="checkbox" name="ids" value="{{ item.id }}"
                      class="w-4 h-4 cursor-pointer" data-fleet-row>
@@ -252,37 +269,36 @@
       </table>
     </div>
 
-    <div class="tw-card p-3 flex items-center gap-3 flex-wrap">
-      <div class="text-[12px] tw-text-muted2" data-fleet-count>Ничего не отмечено</div>
-      <button type="button" class="tw-btn tw-btn-primary tw-btn-sm" data-fleet-open disabled>
-        <i data-lucide="layers" class="w-3.5 h-3.5"></i><span>Массовые действия</span>
-      </button>
-    </div>
+    {# Массовые действия — панелью под таблицей, а не окном по кнопке:
+       оператор отмечает строки и тут же видит, что с ними можно сделать.
+       Полей у действий разные, поэтому показывается только нужное. #}
+    <div class="tw-card p-5 space-y-4 mt-3">
+      <div class="flex items-center gap-2">
+        <i data-lucide="layers" class="w-4 h-4" style="color:#22c55e"></i>
+        <div class="text-[15px] font-semibold tw-text-base2">Действия над отмеченными</div>
+        <span class="text-[12px] tw-text-muted2 ml-auto" data-fleet-dialog-count>0 выбрано</span>
+      </div>
 
-    {# Окно, а не полоса кнопок под таблицей: действий стало шесть, у половины
-       свои поля, и в один ряд они не укладывались. Заодно между «отметил»
-       и «сделал» появился шаг, на котором видно, что именно выбрано. #}
-    <dialog data-fleet-dialog
-            class="tw-card p-0 w-[min(46rem,92vw)] backdrop:bg-black/60"
-            style="color: var(--admin-text-base); background: var(--admin-bg-elevated);">
-      <div class="p-5 space-y-4">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-[15px] font-semibold">Массовые действия</div>
-            <div class="text-[12px] tw-text-muted2" data-fleet-dialog-count></div>
-          </div>
-          <button type="button" class="tw-btn tw-btn-sm" data-fleet-close>Закрыть</button>
-        </div>
-
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
         <div class="ss-field">
           <label for="bulk_action">Что сделать</label>
           <select id="bulk_action" name="action" class="tw-input" data-fleet-action>
             <option value="poll">Опросить — снять показания</option>
+            <option value="quick">Запустить скрипт</option>
+            <option value="command">Выполнить свою команду</option>
             <option value="reboot">Перезагрузить</option>
-            <option value="command">Выполнить команду</option>
             <option value="status">Проставить состояние</option>
             <option value="activate">Активировать вручную</option>
             <option value="unbind">Отвязать клиента</option>
+          </select>
+        </div>
+
+        <div class="ss-field" data-fleet-field="quick" hidden>
+          <label for="bulk_quick">Скрипт</label>
+          <select id="bulk_quick" name="quick" class="tw-input">
+            {% for item in quick_commands %}
+            <option value="{{ item.name }}">{{ item.title }}</option>
+            {% endfor %}
           </select>
         </div>
 
@@ -299,34 +315,25 @@
           <label for="bulk_days">На сколько дней</label>
           <input type="number" id="bulk_days" name="days" value="30" min="1" max="3650"
                  class="tw-input w-32">
-          <div class="text-[11px] tw-text-subtle2 mt-1">
-            Ручная активация — для стенда и подменных. Купленный клиентом срок
-            включается сам, когда роутер выходит на связь.
-          </div>
-        </div>
-
-        <div class="ss-field" data-fleet-field="command" hidden>
-          <label for="bulk_command">Команда на роутере</label>
-          <textarea id="bulk_command" name="command" rows="4" spellcheck="false"
-                    class="tw-input font-mono text-[12px]"
-                    placeholder="uci show network.wan &amp;&amp; /etc/init.d/frpc restart"></textarea>
-          <div class="text-[11px] tw-text-subtle2 mt-1">
-            Выполняется по SSH через туннель, вывод покажется по каждому роутеру.
-            Перепрошивка и форматирование запрещены — кирпич у клиента на другом
-            конце страны не отменить.
-          </div>
-        </div>
-
-        <div class="text-[12px] tw-text-muted2" data-fleet-warning hidden></div>
-
-        <div class="flex justify-end gap-2">
-          <button type="button" class="tw-btn tw-btn-sm" data-fleet-close>Отмена</button>
-          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" data-fleet-run>
-            <i data-lucide="play" class="w-3.5 h-3.5"></i><span>Выполнить</span>
-          </button>
         </div>
       </div>
-    </dialog>
+
+      <div class="ss-field" data-fleet-field="command" hidden>
+        <label for="bulk_command">Команда на роутере</label>
+        <textarea id="bulk_command" name="command" rows="4" spellcheck="false"
+                  class="tw-input font-mono text-[12px]"
+                  placeholder="uci show network.wan &amp;&amp; /etc/init.d/frpc restart"></textarea>
+      </div>
+
+      <div class="text-[11px] tw-text-subtle2" data-fleet-hint></div>
+      <div class="text-[12px] text-amber-500" data-fleet-warning hidden></div>
+
+      <div>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" data-fleet-run disabled>
+          <i data-lucide="play" class="w-3.5 h-3.5"></i><span>Выполнить</span>
+        </button>
+      </div>
+    </div>
     </form>
 
     {% if outputs %}
@@ -352,45 +359,60 @@
         const rows = () => Array.from(form.querySelectorAll('[data-fleet-row]'));
         const picked = () => rows().filter((box) => box.checked).length;
         const counter = form.querySelector('[data-fleet-count]');
+        const panelCount = form.querySelector('[data-fleet-dialog-count]');
         const all = form.querySelector('[data-fleet-all]');
-        const open = form.querySelector('[data-fleet-open]');
-        const dialog = form.querySelector('[data-fleet-dialog]');
-        const dialogCount = form.querySelector('[data-fleet-dialog-count]');
+        const reset = form.querySelector('[data-fleet-reset]');
+        const run = form.querySelector('[data-fleet-run]');
         const action = form.querySelector('[data-fleet-action]');
         const warning = form.querySelector('[data-fleet-warning]');
+        const hint = form.querySelector('[data-fleet-hint]');
 
         // Предел свой у каждого действия: поход к роутеру занимает секунды,
         // и на большом отборе страница отвалится по времени раньше, чем
         // работа кончится. Здесь только предупреждаем — считает всё равно
         // основное приложение, оно же и откажет.
-        const LIMITS = {poll: 40, reboot: 40, command: 40, status: 200, unbind: 200, activate: 5};
+        const LIMITS = {poll: 40, reboot: 40, command: 40, quick: 40, status: 200, unbind: 200, activate: 5};
         const WARNINGS = {
           reboot: 'Клиенты потеряют связь на пару минут.',
           unbind: 'Клиенты потеряют доступ к своим роутерам.',
           command: 'Команда выполнится на каждом отмеченном роутере.',
           activate: 'Ручная активация не связана с оплаченной подпиской клиента.',
         };
+        const HINTS = {
+          poll: 'Показания снимаются через туннель: молчащий роутер ждём пятнадцать секунд.',
+          quick: 'Готовые скрипты те же, что кнопками в карточке. Вывод покажется по каждому роутеру.',
+          command: 'Выполняется по SSH через туннель. Перепрошивка и форматирование запрещены — '
+                 + 'кирпич у клиента на другом конце страны не отменить.',
+          reboot: 'Перезагрузка идёт по SSH: роутер уйдёт в неё через пару секунд после команды.',
+          status: 'Меняется только запись в базе, роутер не трогаем.',
+          activate: 'Для стенда и подменных. Купленный клиентом срок включается сам, '
+                  + 'когда роутер выходит на связь.',
+          unbind: 'Роутер останется в парке, но перестанет числиться за клиентом.',
+        };
 
         function refresh() {
           const count = picked();
-          counter.textContent = count ? 'Отмечено: ' + count : 'Ничего не отмечено';
-          if (open) open.disabled = count === 0;
+          const label = count ? count + ' выбрано' : '0 выбрано';
+          if (counter) counter.textContent = label;
+          if (panelCount) panelCount.textContent = label;
+          if (run) run.disabled = count === 0;
           // Заголовочная отметка показывает состояние страницы, а не своё:
           // снял одну строку — «всё» больше не «всё».
           if (all) {
             all.checked = count > 0 && count === rows().length;
             all.indeterminate = count > 0 && count < rows().length;
           }
+          refreshFields();
         }
 
-        function refreshDialog() {
+        function refreshFields() {
           const count = picked();
           const chosen = action ? action.value : '';
           const limit = LIMITS[chosen];
           form.querySelectorAll('[data-fleet-field]').forEach((field) => {
             field.hidden = field.dataset.fleetField !== chosen;
           });
-          if (dialogCount) dialogCount.textContent = 'Отмечено роутеров: ' + count;
+          if (hint) hint.textContent = HINTS[chosen] || '';
           const notes = [];
           if (WARNINGS[chosen]) notes.push(WARNINGS[chosen]);
           if (limit && count > limit) {
@@ -408,14 +430,26 @@
             refresh();
           });
         }
-        rows().forEach((box) => box.addEventListener('change', refresh));
-        if (action) action.addEventListener('change', refreshDialog);
-        if (open && dialog) {
-          open.addEventListener('click', () => { refreshDialog(); dialog.showModal(); });
+        if (reset) {
+          reset.addEventListener('click', () => {
+            rows().forEach((box) => { box.checked = false; });
+            refresh();
+          });
         }
-        form.querySelectorAll('[data-fleet-close]').forEach((button) => {
-          button.addEventListener('click', () => dialog && dialog.close());
+        rows().forEach((box) => box.addEventListener('change', refresh));
+        if (action) action.addEventListener('change', refreshFields);
+
+        // Клик по строке открывает карточку. Отметки и ссылки внутри строки
+        // при этом должны работать по-своему — иначе отметить роутер нельзя
+        // вовсе: щелчок по чекбоксу уводил бы со страницы.
+        form.querySelectorAll('[data-fleet-href]').forEach((row) => {
+          row.addEventListener('click', (event) => {
+            if (event.target.closest('a, input, button, select, label')) return;
+            if (window.getSelection && String(window.getSelection())) return;
+            window.location.href = row.dataset.fleetHref;
+          });
         });
+
         refresh();
       })();
     </script>
