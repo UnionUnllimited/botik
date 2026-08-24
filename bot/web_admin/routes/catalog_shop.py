@@ -274,11 +274,28 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             "catalog_specs_limit": str(_form_int(form, "catalog_specs_limit", 8, low=1, high=SPECS_LIMIT_MAX)),
             "router_model_names": model_names,
             "order_status_labels": status_labels,
-            # Адреса, которые видит клиент. Пустая строка — законное значение:
-            # так картинка и кнопка админки просто не показываются.
-            "main_menu_photo_url": (form.get("main_menu_photo_url") or "").strip(),
+            # Адрес админки роутера. Пустая строка — законное значение:
+            # так кнопка в «Моём роутере» просто не показывается.
             "router_panel_url": (form.get("router_panel_url") or "").strip(),
         }
+
+        # Баннер приходит файлом: чужие ссылки протухают, а класть картинку
+        # рядом с товарами оператору некуда. Загруженный файл побеждает поле
+        # с адресом — раз человек выбрал файл, он хочет именно его.
+        banner_url = (form.get("main_menu_photo_url") or "").strip()
+        files = await request.files
+        banner = files.get("main_menu_photo")
+        if banner is not None and banner.filename:
+            # FileStorage.read() синхронный — не держим им цикл событий.
+            content = await asyncio.to_thread(banner.read)
+            data, banner_error = await shop_api.upload_banner(
+                banner.filename, content, banner.content_type or ""
+            )
+            if banner_error:
+                await flash(f"Картинку загрузить не вышло: {banner_error}", "warning")
+            else:
+                banner_url = data.get("url") or banner_url
+        values["main_menu_photo_url"] = banner_url
         descriptions = {key: description for key, _, description in CATALOG_SETTINGS}
 
         for key, value in values.items():

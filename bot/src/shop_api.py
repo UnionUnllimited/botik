@@ -158,6 +158,11 @@ async def upload_photo(product_id: int, filename: str, content: bytes, content_t
     )
 
 
+async def upload_banner(filename: str, content: bytes, content_type: str) -> tuple[dict, str]:
+    """Картинка над главным меню. Возвращает готовый адрес для настройки."""
+    return await upload("/api/v1/catalog/manage/banner", {"banner": (filename, content, content_type)})
+
+
 async def delete_product(product_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/products/{product_id}/delete", {})
 

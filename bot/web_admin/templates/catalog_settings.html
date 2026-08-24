@@ -12,7 +12,10 @@
     <p class="text-[13px] tw-text-muted2 mt-1">Как каталог выглядит в боте.</p>
   </div>
 
-  <form method="post" action="{{ url_for('admin.catalog_settings_save') }}" class="tw-card p-5 space-y-4">
+  {# enctype обязателен: без него браузер отправит только имя файла,
+     а не сам файл, и загрузка молча ничего не сделает. #}
+  <form method="post" action="{{ url_for('admin.catalog_settings_save') }}"
+        enctype="multipart/form-data" class="tw-card p-5 space-y-4">
     <div class="text-[13px] font-semibold tw-text-base2">Настройки раздела в боте</div>
 
     <label class="flex items-center gap-2.5 cursor-pointer select-none">
@@ -60,21 +63,38 @@
       </div>
     </div>
 
-    {# Картинку показываем ссылкой, а не файлом: главный экран правится
-       на месте, а превратить текстовое сообщение в сообщение с фото
-       Telegram не даёт — экран прыгал бы при каждом возврате в меню. #}
+    {# В боте картинка показывается ссылкой, а не файлом: главный экран
+       правится на месте, а превратить текстовое сообщение в сообщение
+       с фото Telegram не даёт — экран прыгал бы при каждом возврате.
+       Оператору про это знать незачем: он просто выбирает файл. #}
     <div class="pt-2 border-t" style="border-color: rgb(var(--admin-border));">
-      <label for="main_menu_photo_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+      <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
         Картинка над главным меню
       </label>
-      <input type="url" id="main_menu_photo_url" name="main_menu_photo_url"
-             value="{{ main_menu_photo_url }}" class="tw-input"
-             placeholder="https://example.com/banner.jpg">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Прямая ссылка на изображение — картинку тянет Telegram, а не бот,
-        поэтому адрес должен открываться снаружи. Пусто — картинки нет.
-        Годится и ссылка на фото товара из каталога.
+
+      {% if main_menu_photo_url %}
+      <div class="mb-2">
+        <img src="{{ main_menu_photo_url }}" alt="Баннер главного меню"
+             class="rounded max-h-40" style="border: 1px solid rgb(var(--admin-border));">
       </div>
+      {% endif %}
+
+      <input type="file" id="main_menu_photo" name="main_menu_photo"
+             accept="image/jpeg,image/png,image/webp" class="tw-input">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        JPEG, PNG или WebP. Файл ложится на наш домен, адрес подставится сам.
+      </div>
+
+      <details class="mt-2">
+        <summary class="text-[11px] tw-text-subtle2 cursor-pointer">Или указать адрес вручную</summary>
+        <input type="url" id="main_menu_photo_url" name="main_menu_photo_url"
+               value="{{ main_menu_photo_url }}" class="tw-input mt-2"
+               placeholder="https://example.com/banner.jpg">
+        <div class="text-[11px] tw-text-subtle2 mt-1">
+          Картинку тянет Telegram, а не бот, — адрес должен открываться снаружи.
+          Пусто и без файла — картинки нет.
+        </div>
+      </details>
     </div>
 
     <div>

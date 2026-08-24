@@ -261,6 +261,29 @@ async def upload_photo(
     return {"ok": True, "product": _product_payload(product)}
 
 
+@router.post("/manage/banner")
+async def upload_banner(banner: UploadFile = File(...)) -> dict:
+    """Картинка над главным меню бота: файл из админки в наш том `/media`.
+
+    Ссылкой её просить бесполезно: чужие адреса протухают, а класть баннер
+    рядом с товарами оператору некуда. Возвращаем готовый абсолютный адрес —
+    картинку по нему тянет Telegram, а он ходит снаружи.
+
+    Прежнюю не удаляем: сообщения с ней уже разосланы клиентам, и битая
+    картинка в старой переписке хуже одного лишнего файла на диске.
+    """
+    try:
+        saved = media.save_image(
+            await banner.read(), banner.content_type or "", prefix="banner"
+        )
+    except media.MediaError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    url = f"{settings.api.public_base_url.rstrip('/')}{saved}"
+    log.info("catalog.banner_uploaded", url=url)
+    return {"ok": True, "url": url}
+
+
 @router.post("/products/{product_id}/delete")
 async def delete_product(product_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
     """Удаление карточки. Прошлые заказы не страдают: в них лежит снимок
