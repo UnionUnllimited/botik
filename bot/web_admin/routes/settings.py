@@ -1701,7 +1701,13 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
     async def settings_buttons_reset():
         """Сброс к дефолтам реестра.
 
-        Параметры (JSON): {"key": "..."} — сбросить одну, или {} — сбросить все.
+        Параметры (JSON):
+          {"key": "..."}     — одну кнопку, иначе все;
+          {"scope": "text"}  — только подпись, не трогая стиль и эмодзи.
+
+        Область нужна ради обновлений оформления: подписи в коде меняются,
+        а цвета оператор подобрал сам, и полный сброс их сносил — из-за
+        этого новые подписи не забирали вовсе.
         """
         from web_admin.run import current_user
         if not current_user.is_admin:
@@ -1715,6 +1721,7 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
         try:
             payload = await request.get_json(force=True, silent=True) or {}
             target_key = (payload.get('key') or '').strip()
+            text_only = (payload.get('scope') or '').strip() == 'text'
             targets = (
                 [BUTTON_REGISTRY_MAP[target_key]]
                 if target_key and target_key in BUTTON_REGISTRY_MAP
@@ -1731,6 +1738,8 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                     (key, b.get('default_text', '') or '',
                      f"Текст кнопки: {label}"),
                 )
+                if text_only:
+                    continue
                 await async_execute_db(
                     "INSERT INTO settings (key, value, description) VALUES (?, ?, ?) "
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

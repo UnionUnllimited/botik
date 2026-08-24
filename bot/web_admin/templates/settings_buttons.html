@@ -16,7 +16,12 @@
             </p>
         </div>
         <div class="flex items-center gap-2">
-            <button type="button" id="resetAllBtn" class="tw-btn tw-btn-secondary tw-btn-sm" title="Сбросить ВСЕ к дефолтам реестра (и тексты тоже)">
+            <button type="button" id="resetTextsBtn" class="tw-btn tw-btn-secondary tw-btn-sm"
+                    title="Вернуть подписи к стандартным. Цвета и эмодзи останутся как есть">
+                <i data-lucide="type" class="w-3.5 h-3.5"></i>
+                Обновить подписи
+            </button>
+            <button type="button" id="resetAllBtn" class="tw-btn tw-btn-ghost tw-btn-sm" title="Сбросить ВСЕ к дефолтам реестра: подписи, цвета и эмодзи">
                 <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
                 Сбросить всё
             </button>
@@ -550,6 +555,23 @@
             const cards = $$('.grp-card');
             const allOpen = cards.every(c => c.classList.contains('open'));
             cards.forEach(c => c.classList.toggle('open', !allOpen));
+        });
+
+        // Подписи меняются с обновлениями оформления, а цвета оператор
+        // подобрал сам. Полный сброс сносил и их — из-за этого новые
+        // подписи не забирали вовсе.
+        $('#resetTextsBtn').addEventListener('click', async () => {
+            if (!confirm('Вернуть подписи кнопок к стандартным? Цвета и эмодзи останутся.')) return;
+            try {
+                const r = await fetch(RESET_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope: 'text' })
+                });
+                const j = await r.json();
+                if (!j.ok) throw new Error(j.error || 'reset failed');
+                location.reload();
+            } catch (e) { alert('Ошибка: ' + e.message); }
         });
 
         $('#resetAllBtn').addEventListener('click', async () => {

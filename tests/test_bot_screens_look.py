@@ -115,3 +115,30 @@ class TestMyRouterIsNotCrowded:
         """Без роутера админку открывать нечем — кнопка вела бы в никуда."""
         body = _my_router_keyboard()
         assert 'panel_url and data.get("router") is not None' in body
+
+
+class TestClientDoesNotSeeTheHardwareModel:
+    """Решение заказчика от 24 августа 2026: имя платы клиенту не показываем.
+
+    Оно ему ничего не говорит и рекламирует чужого производителя. Свои
+    роутеры он различает по номеру и MAC — их видно на экране.
+    """
+
+    def test_neutral_label_exists(self):
+        assert "def router_label" in CATALOG
+        assert 'f"Роутер {position}"' in CATALOG
+
+    def test_model_is_not_rendered_anywhere(self):
+        """Функция перевода кода платы убрана: пока она есть, её позовут."""
+        assert "model_name(" not in CATALOG
+
+    def test_switch_button_shows_the_number(self):
+        body = _my_router_keyboard()
+        assert "router_label(" in body
+
+    def test_operator_still_sees_the_model(self):
+        """В парке и карточке устройства модель нужна — там она и осталась."""
+        fleet = (BOT / "web_admin" / "templates" / "routers_fleet.html").read_text(
+            encoding="utf-8"
+        )
+        assert "item.model" in fleet

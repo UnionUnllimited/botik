@@ -149,23 +149,17 @@ def status_glyph(code: str) -> str:
     return label.split()[0] if label.split() else ""
 
 
-def model_name(raw: str | None) -> str:
-    """Имя модели для клиента.
+def router_label(position: int) -> str:
+    """Как называется роутер для клиента: «Роутер 2», а не «Cudy TR3000».
 
-    В `Device.model` лежит плата OpenWrt как есть — «zbtlink,zbt-z8103ax-c».
-    Известные коды переводит настройка `router_model_names`; незнакомые
-    приводим к читаемому виду сами, чтобы сырой код не доехал до экрана.
+    Модель железа клиенту не показываем — решение заказчика от 24 августа
+    2026. Отличить свои роутеры друг от друга он может по номеру и MAC,
+    а имя платы ему ничего не говорит и рекламирует чужого производителя.
+
+    Оператору модель по-прежнему видна: она в карточке устройства и в списке
+    парка, где как раз и нужна.
     """
-    code = (raw or "").strip()
-    if not code:
-        return ""
-    known = _mapping_setting("router_model_names")
-    if code in known:
-        return known[code]
-    vendor, sep, board = code.partition(",")
-    if not sep:
-        return code
-    return f"{vendor.strip().capitalize()} {board.strip().upper()}".strip()
+    return f"Роутер {position}"
 
 
 def _esc(value) -> str:
@@ -530,7 +524,7 @@ def my_router_text(data: dict) -> str:
         if len(routers) > 1:
             lines += [
                 "",
-                f"Это {position} из {len(routers)}: {_esc(model_name(router.get('model'))) or '—'}",
+                f"{router_label(position)} из {len(routers)}",
                 f"MAC: <tg-spoiler><code>{_esc(router.get('mac'))}</code></tg-spoiler>",
             ]
         return "\n".join(lines)
@@ -553,12 +547,8 @@ def my_router_text(data: dict) -> str:
 
     # Дальше только строки, за которыми есть данные: пустое поле — это не
     # информация, а вопрос «а что тут должно быть?».
-    model = model_name(router.get("model"))
-    if model:
-        detail = _esc(model)
-        if router.get("online"):
-            detail += f" · в сети: {router.get('clients', 0)} устр."
-        lines.append(detail)
+    if router.get("online"):
+        lines.append(f"В сети: {router.get('clients', 0)} устр.")
     if router.get("online") and (router.get("rx_bytes") or router.get("tx_bytes")):
         lines.append(
             f"Трафик: ↓ {human_bytes(router.get('rx_bytes'))}"
@@ -606,11 +596,10 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
             if item.get("id") == current:
                 continue
             mark = "✓" if item.get("online") else "○"
-            label = model_name(item.get("model")) or item.get("mac", "")
             builder.row(
                 btn(
                     "btn_my_router_switch",
-                    text=f"{mark} {label}",
+                    text=f"{mark} {router_label(routers.index(item) + 1)}",
                     callback_data=f"shop_my_router:{item.get('id')}",
                 )
             )
