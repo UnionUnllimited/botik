@@ -145,6 +145,8 @@ PAGES = {
     "catalog_settings.html": {
         "catalog_enabled": True,
         "specs_limit": 8,
+        "model_names": "zbtlink,zbt-z8103ax-c: ZBT Z8103AX",
+        "status_labels": "paid: ✓ Оплачен",
         "main_menu_photo_url": "https://shop.example/media/banner.jpg",
         "router_panel_url": "http://192.168.14.1/",
     },

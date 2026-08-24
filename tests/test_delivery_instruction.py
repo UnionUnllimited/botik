@@ -10,24 +10,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from core import texts
 from core.enums import OrderStatus
 
 ROOT = Path(__file__).resolve().parents[1]
-BOT_DIR = ROOT / "bot"
-
-
-def _catalog():
-    """Загружаем экран каталога, чтобы проверять собранные кнопки, а не исходник."""
-    bot_dir = str(BOT_DIR)
-    if bot_dir not in sys.path:
-        sys.path.insert(0, bot_dir)
-    from src import router_catalog
-
-    return router_catalog
 
 
 class TestInstructionText:
@@ -82,20 +70,22 @@ class TestNoticeAssembly:
     def test_bot_shows_it_as_a_button(self):
         """Кнопкой, а не адресом в тексте: её ищут тогда, когда читать нечего.
 
-        Клавиатура одна на оба экрана — и на «роутер ещё не ожил»,
-        и на рабочий, — поэтому кнопка заводится в одном месте.
-        """
-        markup = _catalog().my_router_keyboard(
-            {"router": None, "instruction_url": "http://192.168.1.1/instruction.html"}
-        )
-        instruction_buttons = [
-            button
-            for row in markup.inline_keyboard
-            for button in row
-            if button.url == "http://192.168.1.1/instruction.html"
-        ]
+        Клавиатура одна на оба экрана — и на «роутер ещё не ожил», и на
+        рабочий, — поэтому кнопка заводится в одном месте.
 
-        assert len(instruction_buttons) == 1
+        Проверка по исходнику, а не вызовом: `router_catalog` тянет `loguru`
+        и `aiogram` из окружения бота, а у тестов своё — сборка падала
+        на импорте, ничего не проверив.
+        """
+        bot = self._source("bot/src/router_catalog.py")
+        start = bot.index("def my_router_keyboard")
+        # До следующей функции верхнего уровня, а не до конкретного имени:
+        # соседа переименуют или вставят между ними новый — и проверка
+        # начнёт смотреть в пустоту, ничего об этом не сказав.
+        end = bot.index("\ndef ", bot.index("\n", start))
+        keyboard = bot[start:end]
+        assert 'data.get("instruction_url")' in keyboard
+        assert "btn_router_instruction" in keyboard
 
     def test_the_button_is_registered(self):
         """Незарегистрированная кнопка покажет клиенту имя ключа."""

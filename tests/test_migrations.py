@@ -23,6 +23,19 @@ _ADD_COLUMN_RE = re.compile(
 _DROP_COLUMN_RE = re.compile(r"op\.drop_column\(\s*[\"'](?P<table>\w+)[\"'],\s*[\"'](?P<column>\w+)[\"']")
 _DROP_TABLE_RE = re.compile(r"op\.drop_table\(\s*[\"'](?P<table>\w+)[\"']")
 
+# Колонку добавляют и голым SQL: `ADD COLUMN IF NOT EXISTS` нужен там, где
+# ревизия уже применена на сервере и `op.add_column` упал бы на дубликате.
+# Такую миграцию тест обязан видеть — иначе он объявляет расхождение там,
+# где колонка на самом деле создаётся.
+_SQL_ADD_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+(?P<table>\w+)\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<column>\w+)",
+    re.I,
+)
+_SQL_DROP_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+(?P<table>\w+)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(?P<column>\w+)",
+    re.I,
+)
+
 
 def _migration_sources() -> list[str]:
     files = sorted(p for p in MIGRATIONS_DIR.glob("*.py") if not p.name.startswith("_"))
@@ -40,7 +53,11 @@ def _schema_from_migrations() -> dict[str, set[str]]:
             schema[table] = set(_COLUMN_RE.findall(match.group("body")))
         for match in _ADD_COLUMN_RE.finditer(upgrade):
             schema.setdefault(match.group("table"), set()).add(match.group("column"))
+        for match in _SQL_ADD_COLUMN_RE.finditer(upgrade):
+            schema.setdefault(match.group("table"), set()).add(match.group("column"))
         for match in _DROP_COLUMN_RE.finditer(upgrade):
+            schema.get(match.group("table"), set()).discard(match.group("column"))
+        for match in _SQL_DROP_COLUMN_RE.finditer(upgrade):
             schema.get(match.group("table"), set()).discard(match.group("column"))
         for match in _DROP_TABLE_RE.finditer(upgrade):
             schema.pop(match.group("table"), None)
