@@ -589,6 +589,12 @@ def order_text(order: dict) -> str:
 
 def order_keyboard(order: dict, cancellable: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    # Ссылку выдаём по нажатию, а не заранее: платёжная ссылка PLATEGA живёт
+    # пятнадцать минут, и вшитая в экран через час была бы уже мёртвой.
+    if is_positive(order.get("delivery_price")) and not order.get("delivery_paid"):
+        builder.row(
+            btn("btn_shop_pay_delivery", callback_data=f"shop_pay_delivery:{order.get('id')}")
+        )
     if cancellable:
         builder.row(
             btn("btn_shop_order_cancel", callback_data=f"shop_order_cancel:{order.get('id')}")
@@ -1074,6 +1080,29 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             order_text(order),
             reply_markup=order_keyboard(order, bool(data.get("cancellable"))),
             link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_pay_delivery:"))
+    async def cq_pay_delivery(query: CallbackQuery):
+        """Свежая ссылка на оплату доставки."""
+        if await blocked(query):
+            return
+        order_id = int(query.data.split(":")[1])
+        data, error = await shop_api.delivery_payment_link(order_id, query.from_user.id)
+        if error:
+            return await query.answer(error[:200], show_alert=True)
+
+        pay_url = data.get("pay_url") or ""
+        if not pay_url:
+            return await query.answer("Ссылка не пришла, попробуйте позже.", show_alert=True)
+        await edit_screen(
+            query.message,
+            text("text_order_pay_delivery").format(price=money(data.get("price"))),
+            reply_markup=InlineKeyboardBuilder()
+            .row(btn("btn_payment_pay_link", url=pay_url))
+            .row(btn("btn_shop_back_to_orders", callback_data="shop_orders"))
+            .as_markup(),
         )
         await query.answer()
 

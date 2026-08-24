@@ -25,6 +25,7 @@ from worker.tasks import (
     frpc_config,
     maintenance,
     monitoring,
+    orders,
     payments,
     routers,
     subscriptions,
@@ -116,6 +117,14 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=7, minute=0),
         id="subscription_reminders",
         name="Напоминания об окончании подписки (10:00 МСК)",
+    )
+    # Раз в сутки: чаще напоминать про неоплаченную доставку незачем,
+    # реже — посылка стоит и ждёт дольше нужного.
+    scheduler.add_job(
+        instrumented("remind_unpaid_delivery", orders.remind_unpaid_delivery),
+        CronTrigger(hour=8, minute=0),
+        id="remind_unpaid_delivery",
+        name="Напоминания о неоплаченной доставке (11:00 МСК)",
     )
     scheduler.add_job(
         instrumented("expire_unactivated", subscriptions.expire_unactivated),

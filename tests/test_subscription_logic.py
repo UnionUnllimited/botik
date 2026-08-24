@@ -43,10 +43,16 @@ class TestActivation:
         assert subscription.expires_at == dt.datetime(2026, 9, 3, 12, tzinfo=dt.UTC)
         assert subscription.device_id == 7
 
-    def test_grace_added_after_expiry(self, plan_month):
+    def test_access_ends_on_the_paid_date(self, plan_month):
+        """Льготных дней нет — решение заказчика от 21 августа 2026.
+
+        Так было и на деле: в панель кладётся дата окончания, и доступ
+        обрывался ровно в срок. Обещание льготы висело только в тексте
+        напоминания, и его убрали.
+        """
         subscription = make_subscription()
         service.activate(subscription, plan=plan_month, now=NOW)
-        assert subscription.grace_until == subscription.expires_at + dt.timedelta(days=3)
+        assert subscription.grace_until == subscription.expires_at
 
     def test_year_plan_with_bonus_days(self, plan_year):
         subscription = make_subscription()

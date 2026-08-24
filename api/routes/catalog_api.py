@@ -1488,6 +1488,49 @@ async def order_card(
     return {"order": _order_payload(order), "cancellable": order.status in _CANCELLABLE}
 
 
+@router.post("/orders/{order_id}/delivery-payment")
+async def delivery_payment_link(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Свежая ссылка на оплату доставки — по кнопке клиента.
+
+    Ссылка PLATEGA живёт пятнадцать минут, поэтому выданная вместе со счётом
+    к вечеру уже мертва. Класть её в напоминание бессмысленно: клиент нажмёт
+    и упрётся в «срок истёк». Живую выдаём тогда, когда он сам готов платить.
+
+    `tg_id` обязателен: по одному номеру заказа нельзя выставлять счёт
+    чужому человеку.
+    """
+    order = await order_service.get_order(session, order_id)
+    tg_id = _int(payload.get("tg_id"))
+    if order is None or order.user is None or order.user.tg_id != tg_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    delivery = order.delivery
+    if delivery is None or delivery.quoted_at is None:
+        return {"ok": False, "error": "Стоимость доставки ещё не посчитана."}
+    if delivery.paid_at is not None:
+        return {"ok": False, "error": "Доставка по этому заказу уже оплачена."}
+    if delivery.price <= 0:
+        return {"ok": False, "error": "Доставка по этому заказу бесплатная."}
+
+    try:
+        payment = await payment_service.start_payment(
+            session,
+            user=order.user,
+            provider_name=PaymentProviderName.PLATEGA,
+            amount=delivery.price,
+            purpose=PaymentPurpose.DELIVERY,
+            description=f"Доставка по заказу {order.public_number}",
+            order=order,
+        )
+    except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
+        log.warning("catalog.delivery_link_failed", order_id=order.id, error=str(exc))
+        return {"ok": False, "error": f"Оплата сейчас недоступна: {exc}"}
+
+    return {"ok": True, "pay_url": payment.confirmation_url or "", "price": str(delivery.price)}
+
+
 @router.post("/orders/{order_id}/cancel")
 async def cancel_order(
     order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)

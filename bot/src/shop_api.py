@@ -210,6 +210,11 @@ async def create_order(payload: dict) -> tuple[dict, str]:
     return await post("/api/v1/catalog/orders", payload)
 
 
+async def delivery_payment_link(order_id: int, tg_id: int) -> tuple[dict, str]:
+    """Свежая ссылка на оплату доставки: прежняя живёт пятнадцать минут."""
+    return await post(f"/api/v1/catalog/orders/{order_id}/delivery-payment", {"tg_id": tg_id})
+
+
 async def subscriptions_snapshot() -> tuple[list[dict], str]:
     """Все подписки клиентов — для зеркала в нашей базе."""
     data, error = await get("/api/v1/catalog/subscriptions")

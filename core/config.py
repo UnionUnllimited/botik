@@ -254,10 +254,18 @@ class SecuritySettings(EnvSettings):
 class SubscriptionSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SUBSCRIPTION_")
 
-    grace_days: int = 3
-    """Сколько дней доступ ещё работает после окончания оплаченного периода."""
+    grace_days: int = 0
+    """Сколько дней доступ ещё работает после окончания оплаченного периода.
+
+    Ноль — решение заказчика от 21 августа 2026: отключаем день в день.
+    Так было и на деле — в панель кладётся дата окончания, и доступ обрывался
+    ровно в срок, — а клиенту при этом обещали льготные дни. Обещание убрано,
+    поведение оставлено."""
+
     reminder_days_before: IdList = Field(default_factory=lambda: [7, 3, 1, 0])
-    reminder_days_after: IdList = Field(default_factory=lambda: [1, 3])
+    reminder_days_after: IdList = Field(default_factory=lambda: [1])
+    """Напоминание после отключения — одно, на следующий день. Дальше клиент
+    либо продлил, либо ушёл, и третье сообщение только раздражает."""
     devices_per_user: int = 1
     activation_deadline_days: int = 180
     """Оплаченная, но не активированная подписка сгорает через N дней (напоминаем заранее)."""

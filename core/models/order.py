@@ -138,6 +138,13 @@ class Delivery(IntPkMixin, TimestampMixin, Base):
     Полем, а не поиском успешного платежа по заказу: состояние доставки
     читают списки и сводка, а тянуть туда платежи ради одного флага дорого."""
 
+    reminded_day: Mapped[int | None] = mapped_column(Integer)
+    """На какой день после выставления счёта уже напомнили про оплату доставки.
+
+    Защита от повторов: круг напоминаний ходит раз в сутки, но при перезапуске
+    воркера он пойдёт снова, и без отметки клиент получил бы то же сообщение
+    дважды."""
+
     tracking_number: Mapped[str | None] = mapped_column(String(64))
     tracking_url: Mapped[str | None] = mapped_column(String(512))
     shipped_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))

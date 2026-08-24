@@ -42,7 +42,7 @@ class TestListParsing:
     def test_empty_list_falls_back_to_default(self, monkeypatch):
         """Пустая строка = «не задано», поэтому подставляется дефолт, а не []."""
         monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_AFTER", "")
-        assert SubscriptionSettings().reminder_days_after == [1, 3]
+        assert SubscriptionSettings().reminder_days_after == [1]
 
     def test_explicit_zero_list_is_respected(self, monkeypatch):
         monkeypatch.setenv("SUBSCRIPTION_REMINDER_DAYS_AFTER", "0")

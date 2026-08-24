@@ -53,7 +53,16 @@ async def send_reminders() -> int:
         rows = await session.scalars(
             select(Subscription)
             .where(
-                Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE]),
+                # Истёкшие тоже: напоминание на следующий день после отключения
+                # шлётся уже по истёкшей подписке. Без неё оно не уходило —
+                # льготных дней нет, и статус меняется в тот же час.
+                Subscription.status.in_(
+                    [
+                        SubscriptionStatus.ACTIVE,
+                        SubscriptionStatus.GRACE,
+                        SubscriptionStatus.EXPIRED,
+                    ]
+                ),
                 Subscription.expires_at.is_not(None),
             )
             .options(selectinload(Subscription.plan))
@@ -72,11 +81,7 @@ async def send_reminders() -> int:
                 )
             elif -remaining in after_days and remaining < 0:
                 marker = remaining
-                grace_left = max(
-                    days_left(subscription.grace_until, now=now) if subscription.grace_until else 0,
-                    0,
-                )
-                text = ru.REMINDER_AFTER.format(days=days_phrase(-remaining), grace=days_phrase(grace_left))
+                text = ru.REMINDER_AFTER.format(days=days_phrase(-remaining))
 
             if text is None or marker is None:
                 continue

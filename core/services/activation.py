@@ -339,15 +339,26 @@ async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -
     if subscription.expires_at is None:
         return False
 
-    device = await session.scalar(
-        select(Device)
-        .where(
-            Device.user_id == subscription.user_id,
-            Device.status.notin_([DeviceStatus.REVOKED, DeviceStatus.BLOCKED]),
+    # Роутер берём тот, к которому привязана эта подписка. Раньше брался
+    # последний активированный у клиента — и у владельца двух роутеров
+    # продление первой подписки уезжало на второй роутер: один получал
+    # чужие дни, другой отключался в оплаченный срок.
+    device = None
+    if subscription.device_id is not None:
+        device = await session.get(Device, subscription.device_id)
+
+    if device is None:
+        # Подписки, заведённые до привязки к устройству, роутера не помнят.
+        # Для них остаётся прежний способ — последний активированный.
+        device = await session.scalar(
+            select(Device)
+            .where(
+                Device.user_id == subscription.user_id,
+                Device.status.notin_([DeviceStatus.REVOKED, DeviceStatus.BLOCKED]),
+            )
+            .order_by(Device.activated_at.desc().nulls_last(), Device.id.desc())
+            .limit(1)
         )
-        .order_by(Device.activated_at.desc().nulls_last(), Device.id.desc())
-        .limit(1)
-    )
     if device is None:
         # Роутер ещё не активирован — учётки в панели тоже нет, синхронизировать нечего.
         return False
