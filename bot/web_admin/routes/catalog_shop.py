@@ -118,6 +118,10 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             status_labels=app_conf.get("order_status_labels", ""),
             main_menu_photo_url=app_conf.get("main_menu_photo_url", "") or "",
             router_panel_url=app_conf.get("router_panel_url", "") or "",
+            landing_url=app_conf.get("landing_url", "") or "",
+            # Показываем, куда кнопка ведёт сейчас: пустое поле — не «никуда»,
+            # а корень домена основного приложения.
+            landing_url_default=shop_api.landing_url(""),
         )
 
     @admin_bp_instance.route("/catalog/delivery", methods=["POST"])
@@ -272,6 +276,9 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             # Адрес админки роутера. Пустая строка — законное значение:
             # так кнопка в «Моём роутере» просто не показывается.
             "router_panel_url": (form.get("router_panel_url") or "").strip(),
+            # Адрес витрины. Пусто — кнопка ведёт в корень домена основного
+            # приложения, там витрина и стоит, пока её не увели на свой домен.
+            "landing_url": (form.get("landing_url") or "").strip().rstrip("/"),
         }
 
         # Баннер приходит файлом: чужие ссылки протухают, а класть картинку

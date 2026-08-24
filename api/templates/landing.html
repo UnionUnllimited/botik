@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ hero_title }} — {{ brand }}</title>
+  <meta name="description" content="{{ hero_subtitle }}">
+  <meta name="theme-color" content="#0b0f14">
+  <meta property="og:title" content="{{ hero_title }}">
+  <meta property="og:description" content="{{ hero_subtitle }}">
+  <meta property="og:type" content="website">
+  {% if products and products[0].photo_url %}
+  <meta property="og:image" content="{{ products[0].photo_url }}">
+  {% endif %}
+  <link rel="stylesheet" href="/static/landing.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top__inner">
+    <span class="brand">{{ brand }}</span>
+    <nav class="top__nav">
+      <a href="#how">Как это работает</a>
+      <a href="#catalog">Модели</a>
+      <a href="#faq">Вопросы</a>
+    </nav>
+    {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть бота</a>{% endif %}
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="wrap hero__inner">
+      <div class="hero__text">
+        <p class="eyebrow">Роутер с подпиской</p>
+        <h1>{{ hero_title }}</h1>
+        <p class="lead">{{ hero_subtitle }}</p>
+        <div class="hero__actions">
+          {% if products %}<a class="btn" href="#catalog">Смотреть модели</a>{% endif %}
+          {% if bot_url %}
+            <a class="btn btn--ghost" href="{{ bot_url }}">Написать в бота</a>
+          {% else %}
+            <span class="note">Заказ оформляется в Telegram-боте</span>
+          {% endif %}
+        </div>
+        <ul class="hero__marks">
+          <li>Настраивать нечего</li>
+          <li>Для всей домашней сети</li>
+          <li>Подписка от {{ plans[0].price if plans else '' }}</li>
+        </ul>
+      </div>
+      {% if products and products[0].photo_url %}
+      <div class="hero__photo">
+        <img src="{{ products[0].photo_url }}" alt="{{ products[0].title }}" loading="eager">
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="band" id="what">
+    <div class="wrap grid grid--4">
+      {% for feature in features %}
+      <article class="card card--flat">
+        <span class="glyph">{{ feature.glyph }}</span>
+        <h3>{{ feature.title }}</h3>
+        <p>{{ feature.text }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="wrap">
+      <h2>Как это работает</h2>
+      <p class="section__lead">От выбора модели до работающего интернета — четыре шага,
+        и три из них занимают минуту в чате.</p>
+      <ol class="steps">
+        {% for step in steps %}
+        <li class="step">
+          <span class="step__no">{{ loop.index }}</span>
+          <div>
+            <h3><span class="glyph glyph--inline">{{ step.glyph }}</span>{{ step.title }}</h3>
+            <p>{{ step.text }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </section>
+
+  <section class="section section--muted" id="catalog">
+    <div class="wrap">
+      <h2>Модели</h2>
+      {% if products %}
+      <p class="section__lead">Цена роутера указана без подписки — срок выбирается
+        при заказе, от него зависит итоговая сумма.</p>
+      <div class="grid grid--3">
+        {% for product in products %}
+        <article class="card product">
+          <div class="product__photo">
+            {% if product.photo_url %}
+              <img src="{{ product.photo_url }}" alt="{{ product.title }}" loading="lazy">
+            {% else %}
+              <span class="glyph glyph--big">▣</span>
+            {% endif %}
+          </div>
+          <div class="product__body">
+            <h3>{{ product.title }}</h3>
+            {% if product.subtitle %}<p class="product__subtitle">{{ product.subtitle }}</p>{% endif %}
+            <p class="product__price">
+              {{ product.price }}
+              {% if product.old_price %}<s>{{ product.old_price }}</s>{% endif %}
+            </p>
+            {% if product.specs %}
+            <dl class="specs">
+              {% for name, value in product.specs[:5] %}
+              <div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>
+              {% endfor %}
+            </dl>
+            {% endif %}
+            {% if product.description %}<p class="product__text">{{ product.description }}</p>{% endif %}
+          </div>
+          <div class="product__foot">
+            {% if product.in_stock %}
+              {% if product.buy_url %}
+                <a class="btn btn--wide" href="{{ product.buy_url }}">
+                  {% if product.preorder %}Оформить предзаказ{% else %}Купить в боте{% endif %}
+                </a>
+              {% else %}
+                <span class="note">Заказ оформляется в Telegram-боте</span>
+              {% endif %}
+              {% if product.preorder %}
+                <span class="tag tag--wait">Под заказ</span>
+              {% else %}
+                <span class="tag tag--ok">В наличии</span>
+              {% endif %}
+            {% else %}
+              <span class="btn btn--off">Нет в наличии</span>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="section__lead">Модели скоро появятся. {% if bot_url %}Напишите в
+        <a href="{{ bot_url }}">бота</a> — расскажем, когда привезут.{% endif %}</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if plans %}
+  <section class="section" id="plans">
+    <div class="wrap">
+      <h2>Сроки подписки</h2>
+      <p class="section__lead">Срок выбирается вместе с роутером. Отсчёт начинается
+        не с оплаты, а с первого включения дома — дни доставки не сгорают.</p>
+      <div class="grid grid--auto">
+        {% for plan in plans %}
+        <article class="card plan">
+          <p class="plan__period">{{ plan.period }}</p>
+          <p class="plan__price">{{ plan.price }}</p>
+          {% if plan.per_month %}<p class="plan__month">≈ {{ plan.per_month }} в месяц</p>{% endif %}
+          {% if plan.description %}<p class="plan__text">{{ plan.description }}</p>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="section section--muted" id="faq">
+    <div class="wrap wrap--narrow">
+      <h2>Частые вопросы</h2>
+      <div class="faq">
+        {% for item in faq %}
+        <details>
+          <summary>{{ item.question }}</summary>
+          <p>{{ item.answer }}</p>
+        </details>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="section cta">
+    <div class="wrap wrap--narrow cta__inner">
+      <h2>Заказ оформляется в боте</h2>
+      <p>Там же — оплата, трек-номер посылки, состояние роутера и продление подписки.</p>
+      {% if bot_url %}
+        <a class="btn btn--big" href="{{ bot_url }}">Перейти в Telegram</a>
+      {% else %}
+        <p class="note">Ссылка на бота ещё не настроена: задайте APP_BOT_USERNAME.</p>
+      {% endif %}
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <span>{{ brand }}</span>
+    {% if support_contact %}<span>Поддержка: {{ support_contact }}</span>{% endif %}
+  </div>
+</footer>
+
+</body>
+</html>

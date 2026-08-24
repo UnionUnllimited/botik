@@ -1,9 +1,12 @@
-"""FastAPI-приложение: ручки каталога и парка, вебхуки платежей, панель роутера.
+"""FastAPI-приложение: витрина, ручки каталога и парка, вебхуки, панель роутера.
 
-Ни сайта, ни своей админки здесь больше нет — интерфейс остался один,
-в стороннем продукте в `bot/`. За нами данные и всё, что физически может
-делать только процесс в нашей сети: туннели к роутерам, активация по SSH,
-проксирование панели и приём оплаты.
+Своей админки здесь нет — интерфейс оператора один, в стороннем продукте
+в `bot/`. За нами данные и всё, что физически может делать только процесс
+в нашей сети: туннели к роутерам, активация по SSH, проксирование панели
+и приём оплаты.
+
+Витрина в корне — не второй кабинет: она рассказывает про товар и уводит
+в бота. Кабинет, регистрация и заказы остаются в одном месте.
 """
 
 from __future__ import annotations
@@ -20,7 +23,15 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.routes import catalog_api, fleet_api, health, lists_api, panel_proxy, webhooks
+from api.routes import (
+    catalog_api,
+    fleet_api,
+    health,
+    landing,
+    lists_api,
+    panel_proxy,
+    webhooks,
+)
 from core.config import settings
 from core.db import check_database, dispose_engine
 from core.logging import configure_logging
@@ -117,6 +128,13 @@ def create_app() -> FastAPI:
         # Без картинок сайт работает, без запуска — нет.
         log.error("api.media_mount_failed", error=str(exc), path=str(media_root))
 
+    # Стили витрины. Отдельным каталогом, а не вместе с картинками товаров:
+    # media — том с загруженными файлами, static едет в образе.
+    try:
+        app.mount("/static", StaticFiles(directory=str(landing.STATIC_DIR)), name="static")
+    except (OSError, RuntimeError) as exc:
+        log.error("api.static_mount_failed", error=str(exc), path=str(landing.STATIC_DIR))
+
     app.include_router(health.router)
     app.include_router(webhooks.router)
     app.include_router(fleet_api.router)
@@ -124,9 +142,16 @@ def create_app() -> FastAPI:
     app.include_router(lists_api.router)
     # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
     app.include_router(panel_proxy.router)
+    # Витрина последней: у неё корень, и перехватывать чужие пути ей нечем.
+    app.include_router(landing.router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+        # Человеку в браузере — страница, машине — JSON. Разбирается по пути,
+        # а не по заголовку Accept: его подделывает кто угодно, а список
+        # служебных путей у нас известен точно.
+        if landing.is_page_request(request.url.path) and request.method in ("GET", "HEAD"):
+            return landing.error_page(request, exc.status_code)
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(RequestValidationError)
@@ -136,6 +161,8 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
         log.exception("api.unhandled", error=str(exc), path=request.url.path)
+        if landing.is_page_request(request.url.path) and request.method in ("GET", "HEAD"):
+            return landing.error_page(request, 500)
         return JSONResponse(status_code=500, content={"error": "internal_error"})
 
     return app

@@ -52,6 +52,13 @@ DEFAULTS: dict[str, Any] = {
     "support.contact": "",
     "support.working_hours": "ежедневно с 10:00 до 22:00 по Москве",
     "activation.auto_enabled": False,
+    "landing.enabled": True,
+    "landing.hero_title": "Роутер, за которым интернет работает как раньше",
+    "landing.hero_subtitle": (
+        "Готовое устройство с подпиской на сервис стабильного доступа "
+        "к зарубежным ресурсам. Включаете в розетку — работает вся домашняя "
+        "сеть: телевизор, приставка, ноутбук, телефоны гостей."
+    ),
 }
 
 DESCRIPTIONS = {
@@ -61,6 +68,9 @@ DESCRIPTIONS = {
     "support.contact": "Контакт поддержки для текстов бота",
     "support.working_hours": "Часы работы поддержки",
     "activation.auto_enabled": "Активировать роутер сам, когда отгруженный заказ выходит на связь",
+    "landing.enabled": "Показывать витрину в корне домена",
+    "landing.hero_title": "Заголовок первого экрана витрины",
+    "landing.hero_subtitle": "Подзаголовок первого экрана витрины",
 }
 
 

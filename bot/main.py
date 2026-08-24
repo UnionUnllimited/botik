@@ -1435,6 +1435,27 @@ async def global_error_handler(event: ErrorEvent):
     logger.exception("Полный traceback:")
 
     return True # Сообщаем aiogram, что ошибка обработана и не нужно ее дальше передавать
+async def show_wanted_product(message: Message, product_id: int | None) -> None:
+    """Карточка модели, выбранной на витрине, — следом за главным меню.
+
+    Молчим при любой заминке: клиент пришёл по ссылке из браузера, меню он
+    уже увидел, и сообщение об ошибке каталога здесь только собьёт с толку —
+    модели открываются кнопкой «Купить роутер».
+    """
+    if not product_id:
+        return
+    from src.router_catalog import catalog_enabled, send_product_card
+    if not catalog_enabled():
+        return
+    try:
+        error = await send_product_card(message, product_id)
+    except Exception as exc:  # noqa: BLE001 — вход в бота не должен падать из-за карточки
+        logger.warning(f"[CATALOG] карточка с витрины не открылась ({product_id}): {exc}")
+        return
+    if error:
+        logger.warning(f"[CATALOG] карточка с витрины не открылась ({product_id}): {error}")
+
+
 # --- Логирование входа/выхода в каждый handler ---
 # Пример для handle_start, остальные по аналогии
 @dp.message(CommandStart())
@@ -1450,11 +1471,17 @@ async def handle_start(message: Message, state: FSMContext):
     # --- Реферальная система и партнёрская программа: обработка /start <ref> ---
     ref_id = None
     is_partner_ref = False
+    # Модель, выбранная на витрине: ссылка `?start=buy_<id>` открывает бота
+    # сразу на её карточке. Показываем в самом конце, после меню, — до этого
+    # клиент может застрять на капче или подписке на канал.
+    wanted_product_id = None
     if message.text:
         parts = message.text.strip().split()
         if len(parts) > 1:
             arg = parts[1]
-            if arg.isdigit():
+            if arg.startswith('buy_') and arg[4:].isdigit():
+                wanted_product_id = int(arg[4:])
+            elif arg.isdigit():
                 ref_id = int(arg)
                 if ref_id == message.from_user.id:
                     ref_id = None
@@ -1937,6 +1964,7 @@ async def handle_start(message: Message, state: FSMContext):
     
     # Если пользователь уже прошел защиту или у него есть подписка, продолжаем как обычно
     await show_main_menu(message)
+    await show_wanted_product(message, wanted_product_id)
     logger.info(f"[HANDLER] handle_start: выход для user_id={message.from_user.id}")
 
 @dp.callback_query(F.data.startswith("captcha_answer_"))

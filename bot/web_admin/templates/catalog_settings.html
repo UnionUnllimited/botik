@@ -84,6 +84,19 @@
     </div>
 
     <div>
+      <label for="landing_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Адрес витрины
+      </label>
+      <input type="text" id="landing_url" name="landing_url"
+             value="{{ landing_url }}" class="tw-input"
+             placeholder="{{ landing_url_default or 'https://…' }}">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Куда ведёт кнопка «Узнать о роутере». Пусто — берётся корень домена
+        основного приложения{% if landing_url_default %} ({{ landing_url_default }}){% endif %}.
+      </div>
+    </div>
+
+    <div>
       <label for="router_panel_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
         Адрес админки роутера
       </label>

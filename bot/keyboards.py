@@ -13,6 +13,19 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
             return btn('btn_website_access', callback_data='website_access')
         return None
 
+    # Витрина: рассказ про роутер для тех, кто ещё ничего о нём не знает.
+    # Ссылка берётся из настройки, а пока она пуста — из адреса нашего API:
+    # витрина живёт в корне того же домена. Нет ни того, ни другого —
+    # кнопки нет: пустая ссылка в Telegram это ошибка отправки всего меню.
+    if key == 'btn_landing':
+        if str(app_conf.get('catalog_enabled', '1')) != '1':
+            return None
+        from src import shop_api
+        url = shop_api.landing_url(app_conf.get('landing_url', ''))
+        if not url:
+            return None
+        return btn('btn_landing', url=url)
+
     # Каталог роутеров: товар, а не подписка. Выключается настройкой
     # catalog_enabled — вместе с ним прячутся и заказы, показывать их
     # без каталога некуда.

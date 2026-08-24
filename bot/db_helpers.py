@@ -654,6 +654,48 @@ async def populate_default_settings():
                 (menu_redesign_mark, 'Редизайн главного меню 08.2026 применён'),
             )
             logger.info("Редизайн главного меню: нетронутые дефолты обновлены")
+
+        # Кнопка витрины должна стоять первой: с неё начинает тот, кто ещё
+        # не знает, что такое роутер с подпиской. Правка дефолта раскладку
+        # в базе не двигает, поэтому один раз и только там, где раскладка
+        # совпадает с прежним дефолтом: свой порядок оператора не трогаем,
+        # к нему кнопка приедет последней строкой сама.
+        landing_button_mark = 'ui_landing_button_2026_08'
+        async with db.execute(
+            "SELECT 1 FROM settings WHERE key = ?", (landing_button_mark,)
+        ) as cursor:
+            landing_button_applied = await cursor.fetchone()
+        if not landing_button_applied:
+            layouts_without_landing = (
+                _json.dumps([
+                    ['btn_my_router'],
+                    ['btn_renew_sub'],
+                    ['btn_catalog'],
+                    ['btn_my_orders', 'btn_support'],
+                    ['btn_referral', 'btn_about_service'],
+                    ['btn_bot_custom_url'],
+                    ['btn_bot_channel'],
+                ]),
+                _json.dumps([
+                    ['btn_my_router'],
+                    ['btn_catalog', 'btn_my_orders'],
+                    ['btn_renew_sub'],
+                    ['btn_referral', 'btn_support'],
+                    ['btn_about_service'],
+                    ['btn_bot_custom_url'],
+                    ['btn_bot_channel'],
+                ]),
+            )
+            for legacy_layout in layouts_without_landing:
+                await db.execute(
+                    "UPDATE settings SET value = ? WHERE key = ? AND value = ?",
+                    (_json.dumps(DEFAULT_MAIN_MENU_LAYOUT), MAIN_MENU_LAYOUT_SETTING, legacy_layout),
+                )
+            await db.execute(
+                "INSERT OR REPLACE INTO settings (key, value, description) VALUES (?, '1', ?)",
+                (landing_button_mark, 'Кнопка витрины добавлена в раскладку главного меню'),
+            )
+            logger.info("Кнопка витрины: раскладка главного меню обновлена")
         
         # Добавляем настройки для реферальной системы
         referral_settings = [

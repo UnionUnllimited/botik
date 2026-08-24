@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -40,6 +41,29 @@ def _config() -> tuple[str, str]:
     base = (os.getenv("FLEET_API_URL") or "").strip().rstrip("/")
     token = (os.getenv("FLEET_API_TOKEN") or "").strip()
     return base, token
+
+
+def landing_url(configured: str = "") -> str:
+    """Адрес витрины для кнопки в меню.
+
+    Настройка оператора важнее: витрина переедет на свой домен, а ходить
+    к ручкам мы будем по прежнему адресу. Пока она пуста, берём корень
+    того же домена, где живёт API, — витрина стоит там же и настраивать
+    ничего не нужно.
+
+    Значение настройки приходит аргументом: этот модуль читают и бот,
+    и админка, а до их таблицы настроек ему дела нет.
+    """
+    custom = (configured or "").strip()
+    if custom:
+        return custom.rstrip("/")
+    base, _token = _config()
+    if not base:
+        return ""
+    parts = urlsplit(base)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
 
 
 MISSING = {

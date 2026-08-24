@@ -148,6 +148,8 @@ PAGES = {
         "status_labels": "paid: ✓ Оплачен",
         "main_menu_photo_url": "https://shop.example/media/banner.jpg",
         "router_panel_url": "http://192.168.14.1/",
+        "landing_url": "",
+        "landing_url_default": "https://shop.example",
     },
     "catalog_shop_form.html": {
         "product": PRODUCT,

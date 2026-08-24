@@ -755,6 +755,30 @@ def draft_payload(user, data: dict) -> dict:
     }
 
 
+async def send_product_card(message, product_id: int) -> str:
+    """Шлёт карточку модели новым сообщением. Возвращает текст ошибки.
+
+    Отдельно от `cq_item`: сюда приходят с витрины по ссылке `?start=buy_<id>`,
+    и править нечего — экрана в чате ещё нет, а команду клиента бот не удаляет.
+    """
+    product, error = await shop_api.product(product_id)
+    if error:
+        return error
+
+    body = card_text(product)
+    markup = card_keyboard(product)
+    photo = product.get("photo_url") or ""
+    if photo and len(body) <= CAPTION_LIMIT:
+        try:
+            await message.answer_photo(photo, caption=body, reply_markup=markup)
+            return ""
+        except Exception as exc:  # noqa: BLE001 — причина в журнал, клиенту карточка
+            logger.warning(f"[CATALOG] фото карточки не отправилось ({photo}): {exc}")
+
+    await message.answer(body, reply_markup=markup, link_preview_options=card_preview(product))
+    return ""
+
+
 # --- Регистрация -------------------------------------------------------------
 
 
