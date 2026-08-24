@@ -38,7 +38,6 @@ def upgrade() -> None:
     )
     op.add_column("deliveries", sa.Column("quoted_at", sa.DateTime(timezone=True)))
     op.add_column("deliveries", sa.Column("paid_at", sa.DateTime(timezone=True)))
-    op.add_column("deliveries", sa.Column("reminded_day", sa.Integer()))
 
     # Заказы, оформленные при зонах, доставку уже оплатили вместе с товаром:
     # цена у них посчитана и деньги получены, второй раз просить нельзя.
@@ -57,7 +56,6 @@ def downgrade() -> None:
         "deliveries",
         sa.Column("zone", sa.String(length=32), nullable=False, server_default=""),
     )
-    op.drop_column("deliveries", "reminded_day")
     op.drop_column("deliveries", "paid_at")
     op.drop_column("deliveries", "quoted_at")
     op.drop_column("deliveries", "speed")

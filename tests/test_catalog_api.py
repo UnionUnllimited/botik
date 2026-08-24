@@ -8,12 +8,16 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 from api.routes import fleet_api
-from api.routes.catalog_api import _draft, _product_payload, _specs
+from api.routes.catalog_api import _draft, _product_payload, _specs, manage_orders
 from core.config import settings
-from core.enums import DeliverySpeed
-from core.models import Product
+from core.enums import DeliveryMethod, DeliverySpeed, DeliveryStatus, OrderStatus
+from core.models import Delivery, Order, Product, User
+from core.models.base import Base
 from core.services.remnawave import RemnaUser
 
 TOKEN = "catalog-token"
@@ -35,6 +39,63 @@ def token(monkeypatch) -> str:
 
 def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    """SQLite in this focused ORM test stores PostgreSQL JSONB as ordinary JSON."""
+    return "JSON"
+
+
+@pytest.mark.asyncio
+async def test_manage_orders_eager_loads_customer_and_delivery() -> None:
+    """Serialization must not start an async lazy load after the query has returned."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync_connection: Base.metadata.create_all(
+                    sync_connection,
+                    tables=[User.__table__, Order.__table__, Delivery.__table__],
+                )
+            )
+
+        session_factory = async_sessionmaker(engine, expire_on_commit=True)
+        async with session_factory() as session:
+            user = User(tg_id=123, username="buyer")
+            order = Order(
+                public_number="R-260824-0001",
+                user=user,
+                status=OrderStatus.PAID,
+                subtotal=Decimal("6900.00"),
+                discount_total=Decimal("0.00"),
+                delivery_price=Decimal("0.00"),
+                total=Decimal("6900.00"),
+                customer_name="",
+                customer_phone="",
+                customer_city="",
+            )
+            order.delivery = Delivery(
+                method=DeliveryMethod.CDEK,
+                speed=DeliverySpeed.FAST,
+                status=DeliveryStatus.NEW,
+                city="Самара",
+                recipient_name="Иванов Иван",
+                recipient_phone="+79001234567",
+                price=Decimal("0.00"),
+            )
+            session.add(order)
+            await session.commit()
+
+            result = await manage_orders(status_filter="", q="", page=1, session=session)
+
+        assert result["total"] == 1
+        assert result["orders"][0]["customer"] == "@buyer"
+        assert result["orders"][0]["customer_telegram"] == "@buyer"
+        assert result["orders"][0]["customer_tg_id"] == 123
+        assert result["orders"][0]["awaiting_quote"] is True
+    finally:
+        await engine.dispose()
 
 
 class TestAccess:
