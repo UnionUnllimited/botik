@@ -109,16 +109,29 @@
     <div class="border-t pt-3" style="border-color: rgb(var(--admin-border));">
       {% if delivery.awaiting_quote %}
       <div class="text-[12px] text-amber-500 mb-2">
-        Цена доставки ещё не названа — клиент ждёт счёт.
+        {{ delivery_titles.get('not_quoted', 'Доставка не посчитана') }} — клиент ждёт счёт.
+      </div>
+      {% elif delivery.paid %}
+      <div class="text-[12px] tw-text-muted2 mb-2">
+        {{ delivery_titles.get('paid', 'Доставка оплачена') }}: <b>{{ delivery.price }} ₽</b>
       </div>
       {% else %}
-      <div class="text-[12px] tw-text-muted2 mb-2">
-        Названо: <b>{{ delivery.price }} ₽</b> ·
-        {% if delivery.paid %}оплачено{% else %}ждёт оплаты клиентом{% endif %}
+      <div class="text-[12px] text-amber-500 mb-2">
+        {{ delivery_titles.get('awaiting_payment', 'Ждёт оплату доставки') }}:
+        <b>{{ delivery.price }} ₽</b>. Счёт клиенту отправлен, кнопка оплаты
+        всегда есть у него в «Моих заказах».
       </div>
       {% endif %}
       <form method="post" action="{{ url_for('admin.order_shop_delivery_quote', order_id=order.id) }}"
             class="flex items-end gap-2 flex-wrap">
+        <div class="ss-field">
+          <label for="delivery_method">Перевозчик</label>
+          <select id="delivery_method" name="method" class="tw-select">
+            {% for code, title in carriers.items() %}
+            <option value="{{ code }}" {% if delivery.method == code %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <div class="ss-field">
           <label for="delivery_price">Цена доставки, ₽</label>
           <input type="text" id="delivery_price" name="price" value="{{ delivery.price }}"

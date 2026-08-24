@@ -114,6 +114,33 @@ def set_quote(delivery: Delivery, price: Decimal, *, now: dt.datetime | None = N
     delivery.quoted_at = now or utcnow()
 
 
+NO_DELIVERY = "none"
+NOT_QUOTED = "not_quoted"
+AWAITING_PAYMENT = "awaiting_payment"
+PAID = "paid"
+
+
+def state(delivery: Delivery | None) -> str:
+    """Состояние доставки — отдельно от статуса заказа.
+
+    Одним статусом это не выражается: заказ к этому моменту «Оплачен» —
+    роутер и подписку клиент уже купил, — и при этом ждёт денег за перевозку.
+    Смешав их, мы или потеряли бы оплату товара, или показали бы «ждёт оплаты»
+    там, где ждать нечего.
+
+    Порядок проверок важен: оплаченная доставка перестаёт быть ожидающей,
+    а ноль — законная цена, и «бесплатно» отличается от «ещё не считали»
+    отметкой `quoted_at`, а не суммой.
+    """
+    if delivery is None:
+        return NO_DELIVERY
+    if delivery.paid_at is not None:
+        return PAID
+    if delivery.quoted_at is None:
+        return NOT_QUOTED
+    return AWAITING_PAYMENT
+
+
 def tracking_url(method: DeliveryMethod, track: str) -> str | None:
     template = TRACKING_URLS.get(method)
     return template.format(track=track) if template and track else None

@@ -34,6 +34,7 @@ ORDER = {
     "phone": "+79001234567",
     "awaiting_quote": True,
     "delivery_paid": False,
+    "delivery_state": "not_quoted",
     "city": "Москва",
     "comment": "",
     "note": "",
@@ -65,22 +66,19 @@ PRODUCT = {
     "photo_path": "/media/a.jpg",
 }
 
-DELIVERY_OPTIONS = [
-    {
-        "method": "cdek",
-        "title": "СДЭК",
-        "pvz_price": "350.00",
-        "courier_price": "550.00",
-        "days": "3–7 дней",
-        "enabled": True,
-    }
-]
-
 PAGES = {
     "orders_shop.html": {
         "orders": [ORDER],
         "statuses": ["new", "paid"],
         "status_titles": {"new": "Новый", "paid": "Оплачен"},
+        "delivery_titles": {
+            "not_quoted": "Доставка не посчитана",
+            "awaiting_payment": "Ждёт оплату доставки",
+            "paid": "Доставка оплачена",
+        },
+        "delivery_filters": [
+            {"value": "delivery:awaiting_payment", "title": "Ждёт оплату доставки"},
+        ],
         "status_filter": "",
         "query": "",
         "total": 1,
@@ -117,6 +115,12 @@ PAGES = {
         "free_devices": [{"mac": "A0:B1:C2:D3:E4:F6", "model": "AX3000"}],
         "next_statuses": ["packing", "cancelled"],
         "status_titles": {"packing": "Собираем", "cancelled": "Отменён", "paid": "Оплачен"},
+        "delivery_titles": {
+            "not_quoted": "Доставка не посчитана",
+            "awaiting_payment": "Ждёт оплату доставки",
+            "paid": "Доставка оплачена",
+        },
+        "carriers": {"cdek": "СДЭК", "post": "Почта России", "yandex": "Яндекс Go"},
     },
     "catalog_promos.html": {
         "promo_error": "",
@@ -137,11 +141,6 @@ PAGES = {
         ],
     },
     "catalog_shop.html": {"products": [PRODUCT], "catalog_error": ""},
-    "catalog_delivery.html": {
-        "delivery": DELIVERY_OPTIONS,
-        "free_from": "0.00",
-        "delivery_error": "",
-    },
     "catalog_settings.html": {
         "catalog_enabled": True,
         "specs_limit": 8,
@@ -418,7 +417,6 @@ def env() -> jinja2.Environment:
 
 
 OURS = {
-    "catalog_delivery.html",
     "catalog_settings.html",
     "catalog_promos.html",
     "catalog_shop.html",

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from core.enums import OrderStatus
+from core.enums import DeliveryMethod, OrderStatus
 
 ADMIN_PAYMENT_OK = "💰 <b>Оплата заказа {number}</b>\nСумма: {total}\nКлиент: {customer}"
 
@@ -107,6 +107,28 @@ ORDER_STATUS_TITLES = {
 }
 """Названия статусов для выгрузок и писем. У админки бота свой такой же
 словарь: она в другом процессе, с другим venv, и до `core` не дотягивается."""
+
+DELIVERY_METHOD_TITLES = {
+    DeliveryMethod.CDEK: "СДЭК",
+    DeliveryMethod.POST: "Почта России",
+    DeliveryMethod.YANDEX: "Яндекс Go",
+    DeliveryMethod.BOXBERRY: "Boxberry",
+    DeliveryMethod.PICKUP: "Самовывоз",
+}
+"""Как перевозчик называется в карточке заказа и выгрузке.
+
+Здесь, а не в настройках: перевозчик — это договор, а не строка в форме,
+и набор меняется кодом вместе с `DeliveryMethod`. Раньше названия лежали
+на странице «Каталог → Доставка» вместе с ценами по зонам; страницу убрали
+вместе с зонами, и словарь остался единственным местом, где СДЭК называется
+СДЭК, а не CDEK. Последние два в предложении не участвуют — они ради заказов,
+оформленных раньше."""
+
+DELIVERY_NOT_QUOTED = "Доставка не посчитана"
+DELIVERY_AWAITING_PAYMENT = "Ждёт оплату доставки"
+"""Состояние доставки отдельно от статуса заказа: роутер к этому моменту
+уже оплачен, и мешать одно с другим нельзя — заказ «Оплачен» и при этом
+ждёт денег за перевозку."""
 
 
 def money(value: Decimal | int | str) -> str:

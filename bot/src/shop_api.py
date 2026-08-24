@@ -391,11 +391,17 @@ async def set_order_status(order_id: int, status: str, reason: str) -> tuple[dic
     )
 
 
-async def quote_delivery(order_id: int, price: str, days: str) -> tuple[dict, str]:
-    """Называет цену доставки: заводит счёт клиенту и текст уведомления."""
+async def quote_delivery(
+    order_id: int, price: str, days: str, method: str = ""
+) -> tuple[dict, str]:
+    """Называет цену доставки: заводит счёт клиенту и текст уведомления.
+
+    Перевозчик передаётся здесь же: клиент выбирал скорость, а кем везти —
+    решает оператор, когда видит адрес и вес.
+    """
     return await post(
         f"/api/v1/catalog/manage/orders/{order_id}/delivery-quote",
-        {"price": price.replace(",", "."), "days": days},
+        {"price": price.replace(",", "."), "days": days, "method": method},
     )
 
 
@@ -413,14 +419,6 @@ async def attach_order_device(order_id: int, mac: str, model: str) -> tuple[dict
 
 async def set_order_note(order_id: int, note: str) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/manage/orders/{order_id}/note", {"note": note})
-
-
-async def delivery_settings() -> tuple[dict, str]:
-    return await get("/api/v1/catalog/manage/delivery")
-
-
-async def save_delivery_settings(payload: dict) -> tuple[dict, str]:
-    return await post("/api/v1/catalog/manage/delivery", payload)
 
 
 # --- Склад устройств ---------------------------------------------------------

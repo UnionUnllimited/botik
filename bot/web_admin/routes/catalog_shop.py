@@ -97,18 +97,6 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             await flash(error, "danger")
         return await render_template("catalog_shop.html", products=products, catalog_error=error)
 
-    @admin_bp_instance.route("/catalog/delivery")
-    async def catalog_delivery():
-        delivery, error = await shop_api.delivery_settings()
-        if error:
-            await flash(error, "danger")
-        return await render_template(
-            "catalog_delivery.html",
-            delivery=delivery.get("options", []),
-            free_from=delivery.get("free_from", "0"),
-            delivery_error=error,
-        )
-
     @admin_bp_instance.route("/catalog/settings")
     async def catalog_settings():
         return await render_template(
@@ -123,24 +111,6 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             # а корень домена основного приложения.
             landing_url_default=shop_api.landing_url(""),
         )
-
-    @admin_bp_instance.route("/catalog/delivery", methods=["POST"])
-    async def catalog_delivery_save():
-        form = await request.form
-        options: dict[str, dict] = {}
-        for method in form.getlist("method"):
-            options[method] = {
-                "title": (form.get(f"title_{method}") or "").strip(),
-                "pvz": _decimal_text(form.get(f"pvz_{method}", "")),
-                "courier": _decimal_text(form.get(f"courier_{method}", "")),
-                "days": (form.get(f"days_{method}") or "").strip(),
-                "enabled": form.get(f"enabled_{method}") == "on",
-            }
-        _, error = await shop_api.save_delivery_settings(
-            {"options": options, "free_from": _decimal_text(form.get("free_from", ""))}
-        )
-        await flash(error or "Доставка сохранена.", "danger" if error else "success")
-        return redirect(url_for("admin.catalog_delivery"))
 
     @admin_bp_instance.route("/catalog/promos")
     async def catalog_promos():

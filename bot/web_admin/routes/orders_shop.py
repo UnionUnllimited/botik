@@ -30,6 +30,25 @@ STATUS_TITLES = {
     "refunded": "Возврат",
 }
 
+DELIVERY_STATE_TITLES = {
+    "not_quoted": "Доставка не посчитана",
+    "awaiting_payment": "Ждёт оплату доставки",
+    "paid": "Доставка оплачена",
+}
+"""Состояние доставки показывается рядом со статусом заказа, а не вместо него:
+заказ к этому моменту «Оплачен» — роутер куплен, — и ждёт денег только
+за перевозку. Словарь свой, как и у статусов: админка в другом процессе
+и до `core/texts.py` не дотягивается."""
+
+CARRIER_TITLES = {
+    "cdek": "СДЭК",
+    "post": "Почта России",
+    "yandex": "Яндекс Go",
+}
+"""Кем отправляем. Клиент выбирал скорость, перевозчика ставит оператор,
+когда видит адрес и вес. Набор тот же, что в `OFFERED_DELIVERY_METHODS`
+основного приложения — оно и проверяет присланное значение."""
+
 
 def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func):
     @admin_bp_instance.route("/orders")
@@ -49,6 +68,8 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             orders=data.get("orders", []),
             statuses=data.get("statuses", []),
             status_titles=STATUS_TITLES,
+            delivery_titles=DELIVERY_STATE_TITLES,
+            delivery_filters=data.get("delivery_filters", []),
             status_filter=status,
             query=query,
             total=data.get("total", 0),
@@ -92,6 +113,8 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             free_devices=data.get("free_devices", []),
             next_statuses=data.get("next_statuses", []),
             status_titles=STATUS_TITLES,
+            delivery_titles=DELIVERY_STATE_TITLES,
+            carriers=CARRIER_TITLES,
         )
 
     def _back(order_id: int):
@@ -127,7 +150,10 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
         """
         form = await request.form
         data, error = await shop_api.quote_delivery(
-            order_id, (form.get("price") or "0").strip(), (form.get("days") or "").strip()
+            order_id,
+            (form.get("price") or "0").strip(),
+            (form.get("days") or "").strip(),
+            (form.get("method") or "").strip(),
         )
         if error:
             await flash(error, "danger")

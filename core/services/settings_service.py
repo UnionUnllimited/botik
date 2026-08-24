@@ -24,30 +24,9 @@ log = structlog.get_logger("services.settings")
 CACHE_TTL_SEC = 60
 
 DEFAULTS: dict[str, Any] = {
-    "delivery.methods": {
-        "cdek": {
-            "title": "СДЭК",
-            "pvz": "350.00",
-            "courier": "550.00",
-            "days": "3–7 дней",
-            "enabled": True,
-        },
-        "post": {
-            "title": "Почта России",
-            "pvz": "300.00",
-            "courier": "450.00",
-            "days": "7–14 дней",
-            "enabled": True,
-        },
-        "yandex": {
-            "title": "Яндекс Go",
-            "pvz": "300.00",
-            "courier": "450.00",
-            "days": "1–3 дня",
-            "enabled": True,
-        },
-    },
-    "delivery.free_from": "0.00",
+    # Цен доставки здесь нет намеренно: их называет оператор в самом заказе,
+    # по адресу и весу. Прейскурант по зонам прожил неделю — цену по нему всё
+    # равно перебивали руками. Названия перевозчиков — в `core/texts.py`.
     "order.shipping_days": "1–2 рабочих дня",
     "support.contact": "",
     "support.working_hours": "ежедневно с 10:00 до 22:00 по Москве",
@@ -62,8 +41,6 @@ DEFAULTS: dict[str, Any] = {
 }
 
 DESCRIPTIONS = {
-    "delivery.methods": "Способы доставки: цена до ПВЗ и курьером, срок",
-    "delivery.free_from": "Сумма заказа, от которой доставка бесплатна (0 — выключено)",
     "order.shipping_days": "Срок отправки заказа после оплаты",
     "support.contact": "Контакт поддержки для текстов бота",
     "support.working_hours": "Часы работы поддержки",

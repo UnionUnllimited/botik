@@ -107,16 +107,24 @@ class TestOfferedDelivery:
         """Заказы, оформленные до отказа от них, должны открываться."""
         assert DeliveryMethod(method.value) is method
 
-    def test_defaults_cover_every_offered_method(self):
+    def test_every_method_has_a_human_name(self):
+        """Оператор ищет «СДЭК», а не «cdek» — и в карточке, и в выгрузке.
+
+        Названия переехали в код вместе с закрытием страницы «Доставка»:
+        цен там больше нет, а перевозчик — это договор, а не строка формы.
+        """
+        from core.enums import DeliveryMethod
+        from core.texts import DELIVERY_METHOD_TITLES
+
+        assert set(DELIVERY_METHOD_TITLES) == set(DeliveryMethod)
+        assert all(title.strip() for title in DELIVERY_METHOD_TITLES.values())
+
+    def test_prices_are_not_configurable_anymore(self):
+        """Прейскурант по зонам убран: цену называет оператор в самом заказе."""
         from core.services.settings_service import DEFAULTS
 
-        configured = set(DEFAULTS["delivery.methods"])
-        assert configured == {method.value for method in OFFERED_DELIVERY_METHODS}
-
-    def test_defaults_are_enabled(self):
-        from core.services.settings_service import DEFAULTS
-
-        assert all(item["enabled"] for item in DEFAULTS["delivery.methods"].values())
+        assert "delivery.methods" not in DEFAULTS
+        assert "delivery.free_from" not in DEFAULTS
 
     def test_yandex_has_no_tracking_link(self):
         """Яндекс присылает ссылку клиенту сам — своя была бы выдумкой."""

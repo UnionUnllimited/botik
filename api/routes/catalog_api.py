@@ -26,7 +26,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -47,6 +47,7 @@ from core.enums import (
     VatCode,
 )
 from core.models import (
+    Delivery,
     Device,
     Notification,
     Order,
@@ -925,6 +926,9 @@ def _order_payload(order: Order) -> dict:
         "delivery_price": str(order.delivery.price) if order.delivery else "0.00",
         "awaiting_quote": delivery_service.awaiting_quote(order.delivery),
         "delivery_paid": bool(order.delivery and order.delivery.paid_at),
+        # Состояние доставки клиенту тоже нужно: по нему бот решает,
+        # показывать ли кнопку «Оплатить доставку» — и в карточке, и в списке.
+        "delivery_state": delivery_service.state(order.delivery),
         "tracking_number": (order.delivery.tracking_number or "") if order.delivery else "",
     }
 
@@ -1038,7 +1042,49 @@ def _manage_order_row(order: Order) -> dict:
         # заказ при этом «Оплачен», и мешать одно с другим нельзя.
         "awaiting_quote": delivery_service.awaiting_quote(order.delivery),
         "delivery_paid": bool(order.delivery and order.delivery.paid_at),
+        "delivery_price": str(order.delivery.price) if order.delivery else "0.00",
+        "delivery_state": delivery_service.state(order.delivery),
     }
+
+
+DELIVERY_FILTER_PREFIX = "delivery:"
+"""Отбор по состоянию доставки идёт тем же полем формы, что и статус заказа.
+
+Два поля на один выпадающий список оператор бы не стал заполнять, а состояний
+всего два стоящих: «не посчитана» и «ждёт оплату». Префикс отличает их
+от статусов заказа, значения которых берутся из `OrderStatus`."""
+
+
+def _delivery_condition(status_filter: str):
+    """Условие отбора по доставке или None, если фильтр про статус заказа."""
+    if not status_filter.startswith(DELIVERY_FILTER_PREFIX):
+        return None
+    state = status_filter[len(DELIVERY_FILTER_PREFIX) :]
+    if state == delivery_service.NOT_QUOTED:
+        return Order.delivery.has(Delivery.quoted_at.is_(None))
+    if state == delivery_service.AWAITING_PAYMENT:
+        return Order.delivery.has(
+            and_(Delivery.quoted_at.is_not(None), Delivery.paid_at.is_(None))
+        )
+    return None
+
+
+def _status_condition(status_filter: str):
+    """Условие отбора для списка и выгрузки — одно на двоих.
+
+    Раньше фильтр собирался в каждой ручке отдельно, и выгрузка отдавала не то,
+    что оператор видел на экране. «Нашёл — выгрузил» держится на том, что
+    условие ровно одно.
+    """
+    if not status_filter:
+        return None
+    delivery_condition = _delivery_condition(status_filter)
+    if delivery_condition is not None:
+        return delivery_condition
+    if status_filter.startswith(DELIVERY_FILTER_PREFIX):
+        # Незнакомое состояние доставки — не повод показать все заказы подряд.
+        return Order.id.is_(None)
+    return Order.status == status_filter
 
 
 @router.get("/manage/orders")
@@ -1052,20 +1098,21 @@ async def manage_orders(
     query = select(Order).options(selectinload(Order.user), selectinload(Order.delivery))
     counter = select(func.count()).select_from(Order)
 
-    if status_filter:
-        query = query.where(Order.status == status_filter)
-        counter = counter.where(Order.status == status_filter)
+    condition = _status_condition(status_filter)
+    if condition is not None:
+        query = query.where(condition)
+        counter = counter.where(condition)
     text = q.strip()
     if text:
         pattern = f"%{text}%"
-        condition = or_(
+        search = or_(
             Order.public_number.ilike(pattern),
             Order.customer_name.ilike(pattern),
             Order.customer_phone.ilike(pattern),
             Order.customer_city.ilike(pattern),
         )
-        query = query.where(condition)
-        counter = counter.where(condition)
+        query = query.where(search)
+        counter = counter.where(search)
 
     total = await session.scalar(counter) or 0
     orders = list(
@@ -1080,6 +1127,18 @@ async def manage_orders(
         "page": page,
         "pages": max((total + ORDERS_PAGE_SIZE - 1) // ORDERS_PAGE_SIZE, 1),
         "statuses": [str(item) for item in OrderStatus],
+        # Отбор по доставке тем же списком: оператор ищет «кто не оплатил
+        # перевозку» так же, как искал бы статус.
+        "delivery_filters": [
+            {
+                "value": f"{DELIVERY_FILTER_PREFIX}{delivery_service.NOT_QUOTED}",
+                "title": texts.DELIVERY_NOT_QUOTED,
+            },
+            {
+                "value": f"{DELIVERY_FILTER_PREFIX}{delivery_service.AWAITING_PAYMENT}",
+                "title": texts.DELIVERY_AWAITING_PAYMENT,
+            },
+        ],
         "orders": [_manage_order_row(order) for order in orders],
     }
 
@@ -1166,8 +1225,9 @@ async def manage_orders_export(
         )
         .order_by(Order.id.desc())
     )
-    if status_filter:
-        query = query.where(Order.status == status_filter)
+    condition = _status_condition(status_filter)
+    if condition is not None:
+        query = query.where(condition)
     text = q.strip()
     if text:
         pattern = f"%{text}%"
@@ -1180,12 +1240,9 @@ async def manage_orders_export(
             )
         )
 
-    # Названия перевозчиков берём те, что оператор задал в настройках, а не
-    # коды из перечисления: в таблице он ищет «СДЭК», а не «cdek».
-    carriers = {
-        option.method: option.title
-        for option in await delivery_service.get_options(session, only_enabled=False)
-    }
+    # Названия перевозчиков человеческие, а не коды из перечисления:
+    # в таблице оператор ищет «СДЭК», а не «cdek».
+    carriers = dict(texts.DELIVERY_METHOD_TITLES)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
@@ -1383,27 +1440,6 @@ async def manage_order_note(
 # --- Настройки доставки ------------------------------------------------------
 
 
-@router.get("/manage/delivery")
-async def manage_delivery_read(session: AsyncSession = Depends(get_session)) -> dict:
-    """Все способы, включая выключенные: иначе их нельзя было бы включить обратно."""
-    options = await delivery_service.get_options(session, only_enabled=False)
-    free_from = await settings_service.get_decimal(session, "delivery.free_from")
-    return {
-        "free_from": str(free_from),
-        "options": [
-            {
-                "method": str(option.method),
-                "title": option.title,
-                "pvz_price": str(option.pvz_price),
-                "courier_price": str(option.courier_price),
-                "days": option.days,
-                "enabled": option.enabled,
-            }
-            for option in options
-        ],
-    }
-
-
 @router.post("/manage/orders/{order_id}/delivery-quote")
 async def manage_delivery_quote(
     order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
@@ -1424,6 +1460,18 @@ async def manage_delivery_quote(
     price = _decimal(payload.get("price"), "0")
     if price < 0:
         return {"ok": False, "error": "Цена доставки не может быть отрицательной."}
+
+    # Перевозчика выбирает оператор здесь же: он зависит от города, веса
+    # и действующего договора, и клиент этой развилки не видел вовсе.
+    raw_method = str(payload.get("method", "")).strip()
+    if raw_method:
+        try:
+            method = DeliveryMethod(raw_method)
+        except ValueError:
+            return {"ok": False, "error": "Неизвестный перевозчик."}
+        if method not in OFFERED_DELIVERY_METHODS:
+            return {"ok": False, "error": "Этим перевозчиком мы больше не отправляем."}
+        order.delivery.method = method
 
     delivery_service.set_quote(order.delivery, price)
     days = str(payload.get("days", "")).strip()[:40]
@@ -1465,38 +1513,6 @@ async def manage_delivery_quote(
         "tg_id": order.user.tg_id if order.user else None,
         "notice": notice,
     }
-
-
-@router.post("/manage/delivery")
-async def manage_delivery_save(
-    payload: dict, session: AsyncSession = Depends(get_transaction)
-) -> dict:
-    """Сохраняет цены и переключатели. Способы перечислены у нас, их набор
-    правится кодом: перевозчик — это ещё и договор, а не строка в форме."""
-    current = await settings_service.get_setting(session, "delivery.methods") or {}
-    incoming = payload.get("options")
-    if not isinstance(incoming, dict):
-        return {"ok": False, "error": "Ожидается объект со способами доставки."}
-
-    updated = dict(current)
-    for method in OFFERED_DELIVERY_METHODS:
-        raw = incoming.get(method.value)
-        if not isinstance(raw, dict):
-            continue
-        block = dict(updated.get(method.value) or {})
-        block["title"] = str(raw.get("title", block.get("title", method.value)))[:60]
-        block["pvz"] = str(_decimal(raw.get("pvz"), str(block.get("pvz", "0"))))
-        block["courier"] = str(_decimal(raw.get("courier"), str(block.get("courier", "0"))))
-        block["days"] = str(raw.get("days", block.get("days", "")))[:40]
-        block["enabled"] = bool(raw.get("enabled"))
-        updated[method.value] = block
-
-    await settings_service.set_setting(session, "delivery.methods", updated)
-    await settings_service.set_setting(
-        session, "delivery.free_from", str(_decimal(payload.get("free_from"), "0"))
-    )
-    log.info("catalog.delivery_saved")
-    return {"ok": True}
 
 
 @router.get("/orders/{order_id}")

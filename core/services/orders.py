@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core import texts
 from core.dates import to_display
 from core.enums import DeliveryMethod, DeliverySpeed, OrderItemType, OrderStatus
 from core.models import Delivery, Order, OrderItem, Plan, Product, User
@@ -312,8 +313,11 @@ def delivery_summary(delivery: Delivery | None) -> str:
     if delivery is None:
         return "—"
     if delivery.method is DeliveryMethod.PICKUP:
-        return "Самовывоз"
+        return texts.DELIVERY_METHOD_TITLES[DeliveryMethod.PICKUP]
     speed = SPEED_SUMMARY.get(delivery.speed, "")
+    # Перевозчик человеческим именем: «СДЭК», а не «CDEK». Оператор ищет
+    # в списке первое, а по коду из перечисления заказ не находится.
+    carrier = texts.DELIVERY_METHOD_TITLES.get(delivery.method, delivery.method.value.upper())
     target = delivery.pvz_address or delivery.address or delivery.city
-    head = f"{speed}, {delivery.method.value.upper()}" if speed else delivery.method.value.upper()
+    head = f"{speed}, {carrier}" if speed else carrier
     return f"{head}, {target}"

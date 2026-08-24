@@ -184,3 +184,106 @@ def test_quote_sets_the_moment_it_was_given():
     before = dt.datetime.now(dt.UTC)
     delivery_service.set_quote(delivery, Decimal("100"))
     assert delivery.quoted_at >= before
+
+
+class TestDeliveryState:
+    """Состояние доставки — отдельная величина, а не статус заказа.
+
+    Одним статусом это не выражается: заказ к этому моменту «Оплачен» —
+    роутер и подписку клиент купил, — и при этом ждёт денег за перевозку.
+    """
+
+    def test_no_delivery(self):
+        assert delivery_service.state(None) == delivery_service.NO_DELIVERY
+
+    def test_fresh_delivery_is_not_quoted(self):
+        assert delivery_service.state(Delivery()) == delivery_service.NOT_QUOTED
+
+    def test_quoted_delivery_awaits_payment(self):
+        delivery = Delivery()
+        delivery_service.set_quote(delivery, Decimal("450.00"))
+        assert delivery_service.state(delivery) == delivery_service.AWAITING_PAYMENT
+
+    def test_paid_delivery_is_paid(self):
+        delivery = Delivery()
+        delivery_service.set_quote(delivery, Decimal("450.00"))
+        delivery.paid_at = dt.datetime(2026, 8, 24, tzinfo=dt.UTC)
+        assert delivery_service.state(delivery) == delivery_service.PAID
+
+    def test_free_delivery_never_waits_for_money(self):
+        """Дарёную доставку платить не за что: иначе заказ завис бы навсегда."""
+        delivery = Delivery()
+        delivery_service.set_quote(delivery, Decimal("0.00"))
+        delivery.paid_at = dt.datetime(2026, 8, 24, tzinfo=dt.UTC)
+        assert delivery_service.state(delivery) == delivery_service.PAID
+
+
+class TestDeliveryFilter:
+    """Отбор «кто не оплатил перевозку» идёт тем же полем, что и статус."""
+
+    def test_awaiting_payment_filter_is_recognised(self):
+        from api.routes.catalog_api import DELIVERY_FILTER_PREFIX, _delivery_condition
+
+        condition = _delivery_condition(f"{DELIVERY_FILTER_PREFIX}awaiting_payment")
+        assert condition is not None
+
+    def test_not_quoted_filter_is_recognised(self):
+        from api.routes.catalog_api import DELIVERY_FILTER_PREFIX, _delivery_condition
+
+        assert _delivery_condition(f"{DELIVERY_FILTER_PREFIX}not_quoted") is not None
+
+    def test_order_status_is_left_alone(self):
+        from api.routes.catalog_api import _delivery_condition
+
+        assert _delivery_condition("paid") is None
+
+    def test_unknown_delivery_state_shows_nothing(self):
+        """Иначе опечатка в адресе показала бы все заказы подряд как отбор."""
+        from api.routes.catalog_api import DELIVERY_FILTER_PREFIX, _status_condition
+
+        condition = _status_condition(f"{DELIVERY_FILTER_PREFIX}teleported")
+        assert condition is not None
+        assert "IS NULL" in str(condition.compile(compile_kwargs={"literal_binds": True}))
+
+    def test_empty_filter_means_everything(self):
+        from api.routes.catalog_api import _status_condition
+
+        assert _status_condition("") is None
+
+
+class TestCarrierIsChosenInTheOrder:
+    """Перевозчика ставит оператор в заказе: клиент выбирал только скорость."""
+
+    def _source(self, relative: str) -> str:
+        return (ROOT / relative).read_text(encoding="utf-8")
+
+    def test_quote_accepts_the_carrier(self):
+        source = self._source("api/routes/catalog_api.py")
+        body = source[source.index("async def manage_delivery_quote") :]
+        body = body[: body.index("delivery_service.set_quote")]
+        assert 'payload.get("method"' in body
+        assert "OFFERED_DELIVERY_METHODS" in body
+
+    def test_retired_carrier_is_refused(self):
+        """Самовывоз и Boxberry остались ради старых заказов, а не для новых."""
+        source = self._source("api/routes/catalog_api.py")
+        body = source[source.index("async def manage_delivery_quote") :]
+        body = body[: body.index("delivery_service.set_quote")]
+        assert "not in OFFERED_DELIVERY_METHODS" in body
+
+    def test_delivery_page_is_gone(self):
+        """Страница с прейскурантом падала пятисоткой: считавшую её функцию
+        удалили вместе с зонами, а ручку оставили."""
+        source = self._source("api/routes/catalog_api.py")
+        assert '"/manage/delivery"' not in source
+        assert not (ROOT / "bot/web_admin/templates/catalog_delivery.html").exists()
+
+    def test_carrier_names_are_human(self):
+        from core.enums import DeliveryMethod
+        from core.services.orders import delivery_summary
+
+        delivery = Delivery(
+            method=DeliveryMethod.CDEK, speed=DeliverySpeed.FAST, city="Самара"
+        )
+        assert "СДЭК" in delivery_summary(delivery)
+        assert "CDEK" not in delivery_summary(delivery)

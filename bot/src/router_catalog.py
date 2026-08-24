@@ -638,6 +638,12 @@ def order_model(order: dict) -> str:
     return (items[0].get("title") or "").strip() if items else ""
 
 
+DELIVERY_AWAITING_PAYMENT = "awaiting_payment"
+"""Доставка посчитана, но не оплачена. Состояние приходит с ручки — считать
+его в боте по цене и отметке значило бы завести второе правило рядом с тем,
+что уже есть в основном приложении."""
+
+
 def orders_keyboard(orders: list[dict], *, show_all: bool = False) -> InlineKeyboardMarkup:
     """Список заказов — только кнопками: текст с теми же номерами и суммами
     над ними дублировал каждую строку дважды."""
@@ -647,6 +653,23 @@ def orders_keyboard(orders: list[dict], *, show_all: bool = False) -> InlineKeyb
         if show_all
         else [o for o in orders if o.get("status") not in HIDDEN_ORDER_STATUSES]
     )
+
+    # Неоплаченная доставка — первой строкой, отдельной кнопкой на заказ.
+    # Счёт со ссылкой живёт пятнадцать минут и в переписке протухает, а эта
+    # кнопка есть всегда: клиент платит из «Моих заказов» в одно нажатие,
+    # не открывая карточку и не разыскивая старое сообщение.
+    pay_label = app_conf.get("btn_shop_pay_delivery", "Оплатить доставку")
+    for order in visible:
+        if order.get("delivery_state") != DELIVERY_AWAITING_PAYMENT:
+            continue
+        builder.row(
+            btn(
+                "btn_shop_pay_delivery",
+                text=f"{pay_label} · #{order.get('id')} · {money(order.get('delivery_price'))}",
+                callback_data=f"shop_pay_delivery:{order.get('id')}",
+            )
+        )
+
     for order in visible:
         name = f"#{order.get('id')} {order_model(order)}".strip()
         builder.row(
@@ -687,11 +710,14 @@ def order_text(order: dict) -> str:
     # Доставка живёт отдельно от «Итого»: её считают после оформления
     # и оплачивают вторым счётом. Молчать о ней нельзя — клиент решит,
     # что заплатил за всё.
-    if order.get("awaiting_quote"):
-        lines.append("Стоимость доставки считаем — пришлём счёт сюда же.")
+    if order.get("delivery_state") == "not_quoted":
+        lines.append(text("text_order_delivery_counting"))
+    elif order.get("delivery_state") == DELIVERY_AWAITING_PAYMENT:
+        lines.append(
+            format_text("text_order_delivery_unpaid", price=money(order.get("delivery_price")))
+        )
     elif is_positive(order.get("delivery_price")):
-        paid = "оплачена" if order.get("delivery_paid") else "ждёт оплаты"
-        lines.append(f"Доставка: {money(order['delivery_price'])} — {paid}")
+        lines.append(f"Доставка: {money(order['delivery_price'])} — оплачена")
     if order.get("tracking_number"):
         lines.append(f"Трек: <code>{_esc(order['tracking_number'])}</code>")
     lines += ["", f"№ для поддержки: <code>{_esc(order.get('number'))}</code>"]
@@ -702,7 +728,7 @@ def order_keyboard(order: dict, cancellable: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     # Ссылку выдаём по нажатию, а не заранее: платёжная ссылка PLATEGA живёт
     # пятнадцать минут, и вшитая в экран через час была бы уже мёртвой.
-    if is_positive(order.get("delivery_price")) and not order.get("delivery_paid"):
+    if order.get("delivery_state") == DELIVERY_AWAITING_PAYMENT:
         builder.row(
             btn("btn_shop_pay_delivery", callback_data=f"shop_pay_delivery:{order.get('id')}")
         )

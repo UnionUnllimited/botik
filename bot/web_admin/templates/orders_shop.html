@@ -20,6 +20,17 @@
           {{ status_titles.get(item, item) }}
         </option>
         {% endfor %}
+        {# Доставка тем же списком: оператор ищет «кто не оплатил перевозку»
+           так же, как искал бы статус, а второе поле он бы не заполнял. #}
+        {% if delivery_filters %}
+        <optgroup label="Доставка">
+          {% for item in delivery_filters %}
+          <option value="{{ item.value }}" {% if status_filter == item.value %}selected{% endif %}>
+            {{ item.title }}
+          </option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
       </select>
       <input type="text" name="q" value="{{ query }}" placeholder="Номер, имя, телефон или город"
              class="tw-input" style="min-width:240px">
@@ -78,6 +89,15 @@
           <td class="px-3 py-2">
             {{ status_titles.get(item.status, item.status) }}
             {% if item.paid %}<span style="color:#16a34a"> ●</span>{% endif %}
+            {# Доставка — отдельная строка, а не другой статус: заказ уже
+               оплачен, а перевозка ещё нет, и одним словом это не сказать. #}
+            {% if item.delivery_state == 'not_quoted' %}
+            <div class="text-[11px] text-amber-500">{{ delivery_titles.get('not_quoted') }}</div>
+            {% elif item.delivery_state == 'awaiting_payment' %}
+            <div class="text-[11px] text-amber-500">
+              {{ delivery_titles.get('awaiting_payment') }} · {{ item.delivery_price }} ₽
+            </div>
+            {% endif %}
           </td>
           <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.tracking_number or '—' }}</td>
         </tr>
