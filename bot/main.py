@@ -1167,22 +1167,62 @@ def _filter_empty_menu_fields(text: str) -> str:
     return "\n".join(filtered_lines).strip()
 
 
+CAPTION_LIMIT = 1024
+"""Telegram обрезает подпись к фото на этой длине.
+
+Меню с блоком подписки в неё обычно влезает, но не всегда: у клиента с
+трафиком и длинной датой бывает длиннее. Обрезать меню нельзя — уедет
+часть текста, поэтому такое меню уходит текстом с превью."""
+
+
+def main_menu_photo() -> str:
+    """Адрес картинки над главным меню. Пусто — картинки нет."""
+    return (app_conf.get('main_menu_photo_url', '') or '').strip()
+
+
 def main_menu_preview() -> LinkPreviewOptions:
-    """Картинка над главным меню.
+    """Запасной способ показать картинку — ссылкой с большим превью.
 
-    Ссылкой на изображение, а не отдельным фото-сообщением: главный экран
-    правится на месте (`edit_text`), а превратить текстовое сообщение
-    в сообщение с фото Telegram не даёт — пришлось бы удалять старое
-    и слать новое, и экран прыгал бы при каждом «В главное меню».
-
-    Адрес задаётся настройкой `main_menu_photo_url` и должен быть виден
-    снаружи: картинку тянет Telegram, а не мы. Пусто — превью выключено,
-    как было раньше.
+    Используется, когда фото-сообщением не выходит: подпись длиннее предела
+    или Telegram не смог забрать картинку. Выглядит как ссылка с картинкой,
+    а не как пост, но лучше, чем меню вовсе без неё.
     """
-    url = (app_conf.get('main_menu_photo_url', '') or '').strip()
+    url = main_menu_photo()
     if not url:
         return LinkPreviewOptions(is_disabled=True)
     return LinkPreviewOptions(url=url, prefer_large_media=True, show_above_text=True)
+
+
+async def send_main_menu_photo(user_id: int, text: str, kbd, previous) -> bool:
+    """Шлёт меню фото-сообщением: картинка сверху, текст подписью.
+
+    Так это выглядит обычным постом, а не ссылкой с превью. Цена — экран
+    переезжает вниз чата: превратить текстовое сообщение в сообщение
+    с фото Telegram не даёт, поэтому старое приходится удалять.
+
+    Сначала шлём новое, потом удаляем старое. В обратном порядке сбой
+    отправки оставил бы клиента вообще без меню.
+    """
+    url = main_menu_photo()
+    if not url or len(text) > CAPTION_LIMIT:
+        return False
+
+    try:
+        await bot.send_photo(chat_id=user_id, photo=url, caption=text, reply_markup=kbd)
+    except Exception as e:
+        # Битая ссылка, недоступный домен, неподдерживаемый формат — меню
+        # всё равно должно открыться, пусть и текстом.
+        logger.warning(f"[MENU] баннер не отправился ({url}): {e}")
+        return False
+
+    if previous is not None:
+        try:
+            await previous.delete()
+        except Exception:
+            # Сообщение старше двух суток удалить нельзя — не беда,
+            # новое меню уже отправлено.
+            pass
+    return True
 
 
 async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message: bool = False):
@@ -1306,6 +1346,16 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
             text_to_send += "\n\n" + "Выберите раздел ниже или напишите в поддержку."
 
     target_message = message_or_query.message if isinstance(message_or_query, CallbackQuery) else message_or_query
+    # Меню с картинкой шлём фото-сообщением: подпись под фото выглядит
+    # обычным постом, а не ссылкой с превью. Не вышло — идём прежним путём,
+    # текстом, и картинка показывается превью.
+    previous = target_message if edit_message and isinstance(message_or_query, CallbackQuery) else None
+    if await send_main_menu_photo(user_id, text_to_send, kbd, previous):
+        if isinstance(message_or_query, CallbackQuery):
+            try: await message_or_query.answer()
+            except: pass
+        return
+
     preview = main_menu_preview()
 
     if edit_message and isinstance(message_or_query, CallbackQuery):

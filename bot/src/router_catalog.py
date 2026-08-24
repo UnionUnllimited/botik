@@ -220,6 +220,39 @@ async def edit_screen(message, text, *, reply_markup=None, link_preview_options=
             raise
 
 
+CAPTION_LIMIT = 1024
+"""Предел подписи к фото у Telegram. Длинную карточку обрезать нельзя —
+уедет часть характеристик, поэтому такая уходит текстом с превью."""
+
+
+async def photo_screen(message, photo: str, text: str, *, reply_markup=None) -> bool:
+    """Показывает экран фото-сообщением: картинка сверху, текст подписью.
+
+    Так карточка выглядит обычным постом, а не ссылкой с превью. Цена —
+    экран переезжает вниз чата: превратить текстовое сообщение в сообщение
+    с фото Telegram не даёт, и старое приходится удалять.
+
+    Сначала шлём новое, потом удаляем старое: в обратном порядке сбой
+    отправки оставил бы клиента с пустым местом вместо экрана.
+
+    `False` — фото показать не вышло, зовущий рисует экран текстом.
+    """
+    if not photo or len(text) > CAPTION_LIMIT:
+        return False
+    try:
+        await message.answer_photo(photo, caption=text, reply_markup=reply_markup)
+    except Exception as exc:  # noqa: BLE001 — причина в журнал, клиенту экран
+        logger.warning(f"[CATALOG] фото не отправилось ({photo}): {exc}")
+        return False
+    try:
+        await message.delete()
+    except Exception:
+        # Сообщение старше двух суток удалить нельзя — не беда,
+        # новый экран уже отправлен.
+        pass
+    return True
+
+
 # --- Экраны каталога ---------------------------------------------------------
 
 
@@ -582,24 +615,30 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
                 )
             )
 
-    # Инструкция — там же, где роутер: кнопкой рядом с админкой, а не строкой
-    # в тексте. Ищут её как раз тогда, когда читать нечего, а нажать хочется.
-    instruction_url = (data.get("instruction_url") or "").strip()
-    if instruction_url:
-        builder.row(btn("btn_router_instruction", url=instruction_url))
-
     if data.get("router") is None:
         builder.row(btn("btn_catalog", callback_data="shop_catalog"))
     else:
         # Продлевать приходят сюда чаще, чем в главное меню: тут виден срок.
         builder.row(btn("btn_renew_sub", callback_data="shop_renew"))
-        # Админка роутера — адрес в домашней сети клиента, снаружи он не
-        # открывается. Ссылкой, а не кнопкой с обработчиком: открывать её
-        # должен браузер клиента, мы до этой сети не дотягиваемся.
-        panel_url = (app_conf.get("router_panel_url", "") or "").strip()
-        if panel_url:
-            builder.row(btn("btn_router_panel", url=panel_url))
-    builder.row(btn("btn_my_orders", callback_data="shop_orders"))
+
+    # Инструкция и админка роутера — два внешних адреса в домашней сети
+    # клиента. Ставим их одним рядом: по отдельности они растягивали экран
+    # на девять кнопок, среди которых не видно главной.
+    #
+    # Ссылками, а не обработчиками: открывать их должен браузер клиента,
+    # мы до этой сети не дотягиваемся.
+    links = []
+    instruction_url = (data.get("instruction_url") or "").strip()
+    if instruction_url:
+        links.append(btn("btn_router_instruction", url=instruction_url))
+    panel_url = (app_conf.get("router_panel_url", "") or "").strip()
+    if panel_url and data.get("router") is not None:
+        links.append(btn("btn_router_panel", url=panel_url))
+    if links:
+        builder.row(*links)
+
+    # «Мои заказы» отсюда убраны: они в главном меню, а здесь занимали
+    # строку между роутером и выходом, ни к тому ни к другому не относясь.
     builder.row(btn("btn_back_to_main", callback_data="back_to_main"))
     return builder.as_markup()
 
@@ -795,12 +834,22 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         product, error = await shop_api.product(int(product_id))
         if error:
             return await show_error(query, error)
-        await edit_screen(
+
+        # Карточку с фото показываем постом: картинка сверху, описание
+        # подписью. Не вышло — рисуем текстом, картинка идёт превью.
+        shown = await photo_screen(
             query.message,
+            product.get("photo_url") or "",
             card_text(product),
             reply_markup=card_keyboard(product),
-            link_preview_options=card_preview(product),
         )
+        if not shown:
+            await edit_screen(
+                query.message,
+                card_text(product),
+                reply_markup=card_keyboard(product),
+                link_preview_options=card_preview(product),
+            )
         await query.answer()
 
     @dp.callback_query(F.data.startswith("shop_buy:"))
