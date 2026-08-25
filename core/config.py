@@ -300,6 +300,13 @@ class PlategaSettings(EnvSettings):
     default_method: str = "any"
     """any | sbp | card | international | crypto либо числовой код провайдера."""
     timeout_sec: float = 20.0
+    link_ttl_min: int = 15
+    """Сколько живёт платёжная ссылка, если провайдер не сказал этого сам.
+
+    В ответе PLATEGA срок приходит полем `expiresIn`, но приходит не всегда.
+    Без него платёж оставался «ждёт оплаты» навсегда: выборка просроченных
+    смотрит на срок, а его нет. Пятнадцать минут — то, что провайдер
+    возвращает, когда возвращает."""
     allowed_ips: StrList = Field(default_factory=list)
 
     partner_callback_url: str = "http://127.0.0.1:8081/platega/callback"

@@ -90,3 +90,75 @@ class TestPollingCoversEveryPurpose:
         """Доставка оплачивается вторым платежом — его тоже надо подтвердить."""
         body = TASK[TASK.index("async def sync_pending_payments") :]
         assert "purpose" not in body, "опрос должен брать все висящие платежи, а не только заказы"
+
+
+class TestHangingPaymentsExpire:
+    """Платёж без срока висел «ждёт оплаты» вечно.
+
+    Срок ссылки приходит в ответе провайдера полем `expiresIn`, но приходит
+    не всегда. Выборка просроченных смотрела только на него, поэтому платёж
+    без срока не попадал в неё никогда — счёт на доставку так и висел сутки
+    после выставления.
+    """
+
+    def _source(self, relative: str) -> str:
+        return (Path(__file__).resolve().parents[1] / relative).read_text(encoding="utf-8")
+
+    def test_fallback_ttl_is_configurable(self):
+        from core.config import settings
+
+        assert settings.platega.link_ttl_min >= 1
+
+    def test_new_payment_always_gets_a_deadline(self):
+        source = self._source("core/services/payments.py")
+        body = source[source.index("    result = await provider.create_payment(request)") :]
+        body = body[: body.index("log.info(")]
+        assert "result.expires_at or" in body, "провайдер молчит — ставим свой срок"
+
+    def test_old_payments_without_deadline_are_expired_too(self):
+        """Те, что заведены до появления запасного значения, тоже надо гасить —
+        иначе они останутся в списке навсегда."""
+        source = self._source("core/services/payments.py")
+        body = source[source.index("async def expire_stale_payments") :]
+        body = body[: body.index("return count")]
+        assert "Payment.expires_at.is_(None)" in body
+        assert "Payment.created_at <" in body
+
+    def test_provider_is_asked_before_cancelling(self):
+        """Клиент мог заплатить в последнюю минуту: гасить вслепую дороже."""
+        source = self._source("core/services/payments.py")
+        body = source[source.index("async def expire_stale_payments") :]
+        body = body[: body.index("return count")]
+        assert "sync_pending_payment" in body
+
+
+class TestManualCancel:
+    """Оператор может погасить висящий платёж руками."""
+
+    def _source(self, relative: str) -> str:
+        return (Path(__file__).resolve().parents[1] / relative).read_text(encoding="utf-8")
+
+    def test_endpoint_asks_the_provider_first(self):
+        api = self._source("api/routes/catalog_api.py")
+        body = api[api.index("async def manage_payment_cancel") :]
+        body = body[: body.index("\n@router")]
+        assert "sync_pending_payment" in body
+        assert "PaymentStatus.CANCELED" in body
+
+    def test_only_pending_can_be_cancelled(self):
+        api = self._source("api/routes/catalog_api.py")
+        body = api[api.index("async def manage_payment_cancel") :]
+        body = body[: body.index("\n@router")]
+        assert "is not PaymentStatus.PENDING" in body
+
+    def test_silent_provider_leaves_the_payment_alone(self):
+        """Не ответил — не отменяем: потерянная оплата дороже висящей строки."""
+        api = self._source("api/routes/catalog_api.py")
+        body = api[api.index("async def manage_payment_cancel") :]
+        body = body[: body.index("\n@router")]
+        assert "не ответил" in body
+
+    def test_button_only_for_pending(self):
+        page = self._source("bot/web_admin/templates/payments_shop.html")
+        assert "{% if item.status == 'pending' %}" in page
+        assert "admin.payment_shop_cancel" in page

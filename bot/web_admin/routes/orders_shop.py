@@ -123,6 +123,14 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             payments_error=error,
         )
 
+    @admin_bp_instance.route("/payments-shop/<int:payment_id>/cancel", methods=["POST"])
+    async def payment_shop_cancel(payment_id: int):
+        """Гасим висящий платёж. Проверку у провайдера делает основное
+        приложение — оплаченный платёж оно отменить не даст."""
+        _, error = await shop_api.cancel_payment(payment_id)
+        await flash(error or "Платёж отменён.", "danger" if error else "success")
+        return redirect(url_for("admin.payments_shop", **dict(request.args)))
+
     @admin_bp_instance.route("/orders/export")
     async def orders_shop_export():
         """Выгрузка в CSV — ровно то, что сейчас на экране: фильтр и поиск те же.

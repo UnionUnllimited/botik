@@ -63,6 +63,7 @@
           <th class="px-3 py-2 font-medium">Состояние</th>
           <th class="px-3 py-2 font-medium">Провайдер</th>
           <th class="px-3 py-2 font-medium">Создан</th>
+          <th class="px-3 py-2 font-medium"></th>
         </tr>
       </thead>
       <tbody>
@@ -107,6 +108,20 @@
             {{ item.created_at[:16].replace('T', ' ') if item.created_at else '—' }}
             {% if item.paid_at %}
             <div class="text-[11px]" style="color:#16a34a">оплачен {{ item.paid_at[11:16] }}</div>
+            {% endif %}
+          </td>
+          {# Отменить можно только висящий: перед отменой основное приложение
+             спрашивает провайдера — клиент мог заплатить минуту назад,
+             а уведомление задержаться. #}
+          <td class="px-3 py-2 text-right">
+            {% if item.status == 'pending' %}
+            <form method="post"
+                  action="{{ url_for('admin.payment_shop_cancel', payment_id=item.id, status=status_filter or None, q=query or None, page=page) }}">
+              <button type="submit" class="tw-btn tw-btn-sm"
+                      onclick="return confirm('Отменить платёж? Ссылка перестанет работать.')">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i><span>Отменить</span>
+              </button>
+            </form>
             {% endif %}
           </td>
         </tr>

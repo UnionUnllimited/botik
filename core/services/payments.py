@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -155,7 +155,12 @@ async def start_payment(
     result = await provider.create_payment(request)
     payment.provider_payment_id = result.provider_payment_id
     payment.confirmation_url = result.confirmation_url
-    payment.expires_at = result.expires_at
+    # Свой срок, если провайдер его не назвал: без него платёж не попадает
+    # в выборку просроченных и висит «ждёт оплаты» вечно — ровно это
+    # и случилось со счётом на доставку.
+    payment.expires_at = result.expires_at or utcnow() + dt.timedelta(
+        minutes=max(settings.platega.link_ttl_min, 1)
+    )
     payment.status = result.status
     payment.raw_request = {"request": request.payload, "response": result.raw}
     payments_total.labels(provider=str(provider_name), status="created").inc()
@@ -432,12 +437,18 @@ async def expire_stale_payments(session: AsyncSession, *, now: dt.datetime | Non
     Вечно висящий платёж чинится глазами, потерянная оплата — скандалом.
     """
     moment = now or utcnow()
+    # Платежи без срока — те, что заведены до появления запасного значения,
+    # и те, кому провайдер срока не назвал. Считаем им тот же предел от
+    # создания: иначе они висят «ждёт оплаты» вечно и путают оператора.
+    fallback = moment - dt.timedelta(minutes=max(settings.platega.link_ttl_min, 1))
     stale = list(
         await session.scalars(
             select(Payment).where(
                 Payment.status == PaymentStatus.PENDING,
-                Payment.expires_at.is_not(None),
-                Payment.expires_at < moment,
+                or_(
+                    Payment.expires_at < moment,
+                    and_(Payment.expires_at.is_(None), Payment.created_at < fallback),
+                ),
             )
         )
     )

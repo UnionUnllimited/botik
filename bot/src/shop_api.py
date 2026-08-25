@@ -384,6 +384,11 @@ async def manage_payments(*, status: str = "", query: str = "", page: int = 1) -
     )
 
 
+async def cancel_payment(payment_id: int) -> tuple[dict, str]:
+    """Гасит висящий платёж. Оплаченный основное приложение не отдаст."""
+    return await post(f"/api/v1/catalog/manage/payments/{payment_id}/cancel", {})
+
+
 async def export_orders(*, status: str = "", query: str = "") -> tuple[bytes, str]:
     """Выгрузка заказов в CSV — под теми же фильтрами, что и список."""
     return await download(

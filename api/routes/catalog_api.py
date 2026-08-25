@@ -1585,6 +1585,42 @@ async def manage_payments(
     }
 
 
+@router.post("/manage/payments/{payment_id}/cancel")
+async def manage_payment_cancel(
+    payment_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Погасить висящий платёж руками.
+
+    Сперва спрашиваем провайдера: клиент мог заплатить минуту назад,
+    а уведомление — задержаться. Отменив такой платёж, мы потеряли бы
+    оплаченный заказ. Провайдер не ответил — не отменяем и говорим об этом:
+    вечно висящий платёж чинится глазами, потерянная оплата — скандалом.
+    """
+    payment = await session.get(Payment, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    if payment.status is not PaymentStatus.PENDING:
+        return {"ok": False, "error": "Отменить можно только платёж, который ждёт оплаты."}
+
+    try:
+        if await payment_service.sync_pending_payment(session, payment):
+            return {
+                "ok": False,
+                "error": (
+                    f"Платёж уже не в ожидании: {PAYMENT_LABELS.get(str(payment.status), payment.status)}. "
+                    "Обновите страницу."
+                ),
+            }
+    except Exception as exc:  # noqa: BLE001 — причину показываем оператору
+        log.warning("catalog.payment_cancel_check_failed", payment_id=payment.id, error=str(exc))
+        return {"ok": False, "error": f"Провайдер не ответил, платёж не тронут: {exc}"}
+
+    payment.status = PaymentStatus.CANCELED
+    payment.error_message = "Отменён оператором"
+    log.info("catalog.payment_canceled", payment_id=payment.id)
+    return {"ok": True}
+
+
 DELETABLE_ORDER_STATUSES = (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED)
 """Что можно стереть насовсем.
 
