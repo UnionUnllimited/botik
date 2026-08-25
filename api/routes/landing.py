@@ -89,15 +89,37 @@ async def landing_page(request: Request, session: AsyncSession = Depends(get_ses
 
 @router.get("/instruction", response_class=HTMLResponse)
 async def instruction_page(request: Request) -> HTMLResponse:
-    """Что делать с приехавшим роутером.
+    """Что делать с приехавшим роутером — читается один раз, в самом начале.
 
-    Заглушка до настоящей инструкции: пять шагов, которые всё равно придётся
-    написать. Адрес постоянный — на него ведёт кнопка в боте, и менять его
-    вместе с текстом не придётся. Оператор может увести кнопку на свою
-    страницу настройкой `router.instruction_url`.
+    Адрес постоянный: на него ведёт кнопка в карточке заказа, пока посылка
+    едет. Оператор может увести её на свою страницу настройкой
+    `router.setup_url`.
     """
     return templates.TemplateResponse(
         request,
         "instruction.html",
-        {"brand": settings.app.brand, "steps": landing.INSTRUCTION_STEPS, "bot_url": landing.bot_link()},
+        {
+            "brand": settings.app.brand,
+            "steps": landing.INSTRUCTION_STEPS,
+            "bot_url": landing.bot_link(),
+        },
+    )
+
+
+@router.get("/guide", response_class=HTMLResponse)
+async def guide_page(request: Request) -> HTMLResponse:
+    """Постоянная инструкция: она нужна не в первый день, а потом.
+
+    Отдельно от шагов подключения: те читают один раз, а сюда возвращаются
+    с вопросами «где пароль от Wi-Fi», «как продлить», «пропал интернет».
+    Кнопка на неё есть у клиента в «Моём роутере» всегда.
+    """
+    return templates.TemplateResponse(
+        request,
+        "guide.html",
+        {
+            "brand": settings.app.brand,
+            "sections": landing.GUIDE_SECTIONS,
+            "bot_url": landing.bot_link(),
+        },
     )

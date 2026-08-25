@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Инструкция — {{ brand }}</title>
+  <meta name="description" content="Пароль от Wi-Fi, срок подписки, продление и что делать, если пропал интернет.">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="stylesheet" href="/static/landing.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top__inner">
+    <a class="brand" href="/">{{ brand }}</a>
+    <nav class="top__nav">
+      <a href="/instruction">Как подключить</a>
+    </nav>
+    {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть бота</a>{% endif %}
+  </div>
+</header>
+
+<main>
+  <section class="section">
+    <div class="wrap wrap--narrow">
+      <p class="eyebrow">Инструкция</p>
+      <h1>Всё про ваш роутер</h1>
+      <p class="lead">Пароль от Wi-Fi, срок подписки, продление и что делать,
+        если интернет вдруг пропал. Роутер только что приехал — начните
+        с <a href="/instruction">подключения</a>.</p>
+
+      <div class="grid grid--auto" style="margin-top: 32px">
+        {% for section in sections %}
+        <article class="card">
+          <span class="glyph">{{ section.glyph }}</span>
+          <h3>{{ section.title }}</h3>
+          <p>{{ section.text }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="section cta">
+    <div class="wrap wrap--narrow cta__inner">
+      <h2>Не нашли ответа?</h2>
+      <p>Напишите в бот — там же видно состояние роутера и срок подписки.</p>
+      {% if bot_url %}<a class="btn btn--big" href="{{ bot_url }}">Написать в Telegram</a>{% endif %}
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <span>{{ brand }}</span>
+    <a href="/instruction">Как подключить роутер</a>
+  </div>
+</footer>
+
+</body>
+</html>

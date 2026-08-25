@@ -19,19 +19,32 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestInstructionText:
-    def test_default_address_is_our_page(self):
-        """Умолчание — страница витрины, а не адрес в домашней сети.
+    def test_default_addresses_are_our_pages(self):
+        """Умолчания — страницы витрины, а не адрес в домашней сети.
 
         Раньше инструкция лежала на самом роутере: она не расходилась
-        с прошивкой и открывалась до появления интернета. Но кнопка нужна
-        раньше — когда посылка ещё едет, а роутера в сети нет вовсе,
+        с прошивкой и открывалась до появления интернета. Но «как подключить»
+        нужна раньше — когда посылка ещё едет, а роутера в сети нет вовсе,
         и адрес `192.168.*` в этот момент никуда не ведёт.
         """
         source = (ROOT / "api/routes/catalog_api.py").read_text(encoding="utf-8")
-        body = source[source.index("async def _instruction_url") :]
-        body = body[: body.index("\ndef ")]
-        assert "/instruction" in body
-        assert "192.168." not in body
+        body = source[source.index("async def _page_url") : source.index("def _order_payload")]
+        assert '"/guide"' in body, "постоянная инструкция"
+        assert '"/instruction"' in body, "как подключить"
+        # Именно адресом, а не упоминанием: почему так — написано там же
+        # в комментарии, и запрещать слово целиком незачем.
+        assert "http://192.168" not in body
+
+    def test_two_instructions_are_told_apart(self):
+        """Их читают в разное время и по разному поводу: шаги распаковки —
+        один раз, «где пароль от Wi-Fi» — потом. Мешать их в одну страницу
+        значит заставлять искать ответ среди уже ненужного."""
+        from core.services.landing import GUIDE_SECTIONS, INSTRUCTION_STEPS
+
+        assert INSTRUCTION_STEPS and GUIDE_SECTIONS
+        assert {item["title"] for item in INSTRUCTION_STEPS}.isdisjoint(
+            {item["title"] for item in GUIDE_SECTIONS}
+        )
 
     def test_instruction_has_a_place_for_the_address(self):
         assert "{instruction}" in texts.DELIVERY_INSTRUCTION
@@ -167,4 +180,6 @@ class TestActivatedStatus:
         end = bot.index("\ndef ", bot.index("\n", start))
         keyboard = bot[start:end]
         assert 'order.get("instruction_url")' in keyboard
-        assert "btn_router_instruction" in keyboard
+        # Своя кнопка, не та, что в «Моём роутере»: там инструкция постоянная,
+        # а здесь — как подключить приехавшую коробку.
+        assert "btn_router_setup" in keyboard

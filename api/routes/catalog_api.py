@@ -904,21 +904,35 @@ _CANCELLABLE = (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT)
 деньги уже у нас, и отмена превращается в возврат."""
 
 
-async def _instruction_url(session: AsyncSession) -> str:
-    """Куда ведёт кнопка «Инструкция по подключению».
+async def _page_url(session: AsyncSession, key: str, fallback: str) -> str:
+    """Адрес страницы для клиента: настройка оператора или наша страница.
 
-    Одно место чтения на весь модуль: адрес нужен и в сообщении о доставке,
-    и на экране «Мой роутер», и в карточке заказа. Разойдись эти чтения
-    умолчанием, клиент получил бы в сообщении один адрес, а на экране другой.
-
-    Настройка оператора важнее; пока она пуста, ведём на свою страницу
-    витрины — она всегда на месте и правится нами, а не оператором.
+    Одно место чтения на весь модуль: адреса нужны в сообщении о доставке,
+    на экране «Мой роутер» и в карточке заказа. Разойдись эти чтения
+    умолчанием, клиент получил бы в сообщении одну ссылку, а на экране другую.
     """
-    configured = str(await settings_service.get_setting(session, "router.instruction_url") or "")
-    ready = configured.strip()
-    if ready:
-        return ready
-    return f"{settings.api.public_base_url.rstrip('/')}/instruction"
+    configured = str(await settings_service.get_setting(session, key) or "").strip()
+    if configured:
+        return configured
+    return f"{settings.api.public_base_url.rstrip('/')}{fallback}"
+
+
+async def _instruction_url(session: AsyncSession) -> str:
+    """Постоянная инструкция: пароль от Wi-Fi, срок, продление, «пропал интернет».
+
+    Она у клиента всегда — кнопкой в «Моём роутере». Это не те же шаги, что
+    при распаковке: их читают один раз, а сюда возвращаются потом.
+    """
+    return await _page_url(session, "router.instruction_url", "/guide")
+
+
+async def _setup_url(session: AsyncSession) -> str:
+    """Как подключить роутер — нужна один раз, пока посылка едет.
+
+    Прежнее умолчание вело на сам роутер (`192.168.*`), но кнопка нужна
+    раньше: роутера в сети ещё нет вовсе, и такой адрес никуда не ведёт.
+    """
+    return await _page_url(session, "router.setup_url", "/instruction")
 
 
 def _order_payload(order: Order, *, instruction_url: str = "") -> dict:
@@ -1017,8 +1031,8 @@ async def list_orders(
         .limit(max(min(limit, 50), 1))
         .options(selectinload(Order.items), selectinload(Order.delivery))
     )
-    instruction = await _instruction_url(session)
-    return {"orders": [_order_payload(order, instruction_url=instruction) for order in found]}
+    setup = await _setup_url(session)
+    return {"orders": [_order_payload(order, instruction_url=setup) for order in found]}
 
 
 # --- Управление заказами из админки бота -------------------------------------
@@ -1427,7 +1441,7 @@ async def manage_order_status(
         return {"ok": False, "error": str(exc)}
 
     await session.flush()
-    instruction_url = await _instruction_url(session)
+    instruction_url = await _setup_url(session)
     return {
         "ok": True,
         "status": str(order.status),
@@ -1775,9 +1789,9 @@ async def order_card(
     order = await order_service.get_order(session, order_id)
     if order is None or order.user is None or order.user.tg_id != tg_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    instruction = await _instruction_url(session)
+    setup = await _setup_url(session)
     return {
-        "order": _order_payload(order, instruction_url=instruction),
+        "order": _order_payload(order, instruction_url=setup),
         "cancellable": order.status in _CANCELLABLE,
     }
 
