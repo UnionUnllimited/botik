@@ -283,12 +283,17 @@ def period_text(plan: Plan) -> str:
     return " ".join(parts) or plan.title
 
 
-def photo_url(product: Product) -> str:
-    """Абсолютный адрес картинки: витрину открывают и по другому домену."""
-    raw = product.photo_url or ""
+def absolute(path: str) -> str:
+    """Путь из настройки — в адрес, по которому картинку отдадут снаружи."""
+    raw = (path or "").strip()
     if not raw or raw.startswith("http"):
         return raw
     return f"{settings.api.public_base_url.rstrip('/')}{raw}"
+
+
+def photo_url(product: Product) -> str:
+    """Абсолютный адрес картинки: витрину открывают и по другому домену."""
+    return absolute(product.photo_url or "")
 
 
 def bot_link(payload: str = "") -> str:
@@ -313,6 +318,20 @@ DEFAULT_FAVICON_URL = "/static/favicon.svg"
 в строку, мелкие детали слипаются. Во вкладке — знак целиком, там он квадратный
 и узнаётся именно по картинке.
 """
+
+
+async def hero_image(session: AsyncSession, products: list[dict[str, Any]]) -> str:
+    """Картинка первого экрана.
+
+    Оператор ставит ту же, что висит баннером над главным меню бота: клиент
+    приходит с витрины в чат и видит то же изображение — переход не рвётся.
+    Ничего не поставили — берём фото первой модели: пустое место на первом
+    экране хуже, чем фото товара.
+    """
+    configured = (await settings_service.get_str(session, "landing.hero_image_url")).strip()
+    if configured:
+        return absolute(configured)
+    return products[0]["photo_url"] if products else ""
 
 
 async def logo_url(session: AsyncSession, fallback: str = DEFAULT_LOGO_URL) -> str:
@@ -353,6 +372,24 @@ def product_card(product: Product) -> dict[str, Any]:
     }
 
 
+TRAFFIC_WORDS = ("gb", "гб", "гигабайт", "трафик", "будет добавлено")
+"""Следы подписки для телефона в описаниях тарифов.
+
+Тарифы заводились под неё, и в описании осталось «Будет добавлено: 15 GB».
+К роутеру это не относится: гигабайты мы не считаем и не продаём, за роутером
+стоит квартира. Показать такую строку на витрине — пообещать то, чего нет."""
+
+
+def plan_description(plan: Plan) -> str:
+    """Описание тарифа без строк про гигабайты."""
+    lines = [
+        line.strip()
+        for line in (plan.description or "").splitlines()
+        if line.strip() and not any(word in line.lower() for word in TRAFFIC_WORDS)
+    ]
+    return " ".join(lines)
+
+
 def plan_card(plan: Plan) -> dict[str, Any]:
     return {
         "id": plan.id,
@@ -360,7 +397,7 @@ def plan_card(plan: Plan) -> dict[str, Any]:
         "period": period_text(plan),
         "price": money(plan.price),
         "per_month": money(plan.price_per_month) if plan.months > 1 else "",
-        "description": plan.description or "",
+        "description": plan_description(plan),
     }
 
 
@@ -388,13 +425,15 @@ async def page_content(
     hero_subtitle = await settings_service.get_str(session, "landing.hero_subtitle")
     support = await settings_service.get_str(session, "support.contact")
 
+    cards = [product_card(product) for product in products]
     return {
         "brand": settings.app.brand,
+        "hero_image": await hero_image(session, cards),
         "logo_url": await logo_url(session, logo_fallback),
         "favicon_url": await favicon_url(session, favicon_fallback),
         "hero_title": hero_title or settings_service.DEFAULTS["landing.hero_title"],
         "hero_subtitle": hero_subtitle or settings_service.DEFAULTS["landing.hero_subtitle"],
-        "products": [product_card(product) for product in products],
+        "products": cards,
         "plans": [plan_card(plan) for plan in plans],
         "steps": STEPS,
         "features": FEATURES,

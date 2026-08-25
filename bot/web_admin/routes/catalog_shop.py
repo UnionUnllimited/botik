@@ -274,7 +274,7 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
         # оператору остаётся выбрать файл. Копировать ссылку руками во второе
         # поле он бы всё равно не стал, а промахнувшись — получил бы витрину
         # без знака и не понял почему.
-        for kind in ("logo", "favicon"):
+        for kind in ("logo", "favicon", "hero"):
             picked = files.get(f"landing_{kind}")
             if picked is None or not picked.filename:
                 continue

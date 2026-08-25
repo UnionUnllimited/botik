@@ -116,6 +116,21 @@
     </div>
 
     <div>
+      <label for="landing_hero" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Картинка на витрине
+      </label>
+      <input type="file" id="landing_hero" name="landing_hero" accept="image/*" class="tw-input">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Первый экран сайта. Поставьте ту же, что висит над главным меню бота, —
+        клиент придёт с витрины в чат и увидит то же изображение.
+        Пусто — возьмём фото первой модели.
+        {% if landing_images and landing_images.hero_image_url %}
+        <br>Сейчас: <span class="font-mono">{{ landing_images.hero_image_url }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div>
       <label for="landing_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
         Адрес витрины
       </label>

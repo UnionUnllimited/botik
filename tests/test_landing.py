@@ -511,6 +511,7 @@ class TestOperatorUploadsHisOwnMarks:
         assert LANDING_IMAGE_SETTINGS == {
             "logo": "landing.logo_url",
             "favicon": "landing.favicon_url",
+            "hero": "landing.hero_image_url",
         }
 
     def test_unknown_kind_is_refused(self):
@@ -587,3 +588,104 @@ class TestOwnFileInStatic:
         (tmp_path / "favicon.ico").write_bytes(b"\x00\x00\x01\x00")
         monkeypatch.setattr(route, "STATIC_DIR", tmp_path)
         assert route.favicon_fallback() == "/static/favicon.ico"
+
+
+class TestHeroImage:
+    """Картинка первого экрана — та же, что баннер над меню бота.
+
+    Клиент приходит с витрины в чат и видит то же изображение: переход
+    не рвётся. Ничего не поставили — берём фото первой модели, пустое место
+    на первом экране хуже, чем фото товара.
+    """
+
+    @pytest.mark.asyncio
+    async def test_setting_wins(self, monkeypatch):
+        monkeypatch.setattr(settings.app, "bot_username", "router_shop_bot")
+        monkeypatch.setattr(settings.api, "public_base_url", "https://shop.example")
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                session.add(_product())
+                session.add(
+                    Setting(
+                        key="landing.hero_image_url", value={"value": "/media/banner-a1.png"}
+                    )
+                )
+                await session.commit()
+                content = await landing.page_content(session)
+
+            assert content["hero_image"] == "https://shop.example/media/banner-a1.png"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_the_first_product(self, monkeypatch):
+        monkeypatch.setattr(settings.app, "bot_username", "router_shop_bot")
+        monkeypatch.setattr(settings.api, "public_base_url", "https://shop.example")
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                session.add(_product(photo_url="/media/router.jpg"))
+                await session.commit()
+                content = await landing.page_content(session)
+
+            assert content["hero_image"] == "https://shop.example/media/router.jpg"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_no_products_no_picture(self, monkeypatch):
+        """Пустой каталог — просто без картинки, а не с битой ссылкой."""
+        monkeypatch.setattr(settings.app, "bot_username", "router_shop_bot")
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                content = await landing.page_content(session)
+            assert content["hero_image"] == ""
+        finally:
+            await engine.dispose()
+
+
+class TestPlanDescriptionHasNoTraffic:
+    """Гигабайты в описании тарифа — след подписки для телефона.
+
+    Тарифы заводились под неё, и в описании осталось «Будет добавлено: 15 GB».
+    К роутеру это не относится: мы не считаем гигабайты и не продаём их —
+    за роутером стоит квартира. Показать такую строку значит пообещать то,
+    чего нет.
+    """
+
+    def _plan(self, description: str) -> Plan:
+        return Plan(slug="m1", title="Месяц", months=1, price=Decimal("300.00"), description=description)
+
+    def test_traffic_line_is_dropped(self):
+        assert landing.plan_description(self._plan("➕ Будет добавлено: 15 GB")) == ""
+
+    def test_russian_gigabytes_too(self):
+        assert landing.plan_description(self._plan("Плюс 15 ГБ трафика")) == ""
+
+    def test_meaningful_text_survives(self):
+        plan = self._plan("Скидка при оплате за три месяца\n➕ Будет добавлено: 15 GB")
+        assert landing.plan_description(plan) == "Скидка при оплате за три месяца"
+
+    @pytest.mark.asyncio
+    async def test_card_shows_the_cleaned_text(self, monkeypatch):
+        monkeypatch.setattr(settings.app, "bot_username", "router_shop_bot")
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                session.add(
+                    Plan(
+                        slug="m1",
+                        title="Месяц",
+                        months=1,
+                        price=Decimal("300.00"),
+                        description="➕ Будет добавлено: 0 GB",
+                    )
+                )
+                await session.commit()
+                content = await landing.page_content(session)
+
+            assert content["plans"][0]["description"] == ""
+        finally:
+            await engine.dispose()

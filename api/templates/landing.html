@@ -9,9 +9,7 @@
   <meta property="og:title" content="{{ hero_title }}">
   <meta property="og:description" content="{{ hero_subtitle }}">
   <meta property="og:type" content="website">
-  {% if products and products[0].photo_url %}
-  <meta property="og:image" content="{{ products[0].photo_url }}">
-  {% endif %}
+  {% if hero_image %}<meta property="og:image" content="{{ hero_image }}">{% endif %}
   <link rel="icon" href="{{ favicon_url }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ favicon_url }}">
   <link rel="stylesheet" href="/static/landing.css">
@@ -55,9 +53,9 @@
           <li>Подписка от {{ plans[0].price if plans else '' }}</li>
         </ul>
       </div>
-      {% if products and products[0].photo_url %}
+      {% if hero_image %}
       <div class="hero__photo">
-        <img src="{{ products[0].photo_url }}" alt="{{ products[0].title }}" loading="eager">
+        <img src="{{ hero_image }}" alt="{{ brand }}" loading="eager">
       </div>
       {% endif %}
     </div>

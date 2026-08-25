@@ -290,6 +290,7 @@ async def upload_banner(banner: UploadFile = File(...)) -> dict:
 LANDING_IMAGE_SETTINGS = {
     "logo": "landing.logo_url",
     "favicon": "landing.favicon_url",
+    "hero": "landing.hero_image_url",
 }
 """Что можно загрузить для витрины: знак в шапке и значок вкладки.
 
@@ -333,6 +334,7 @@ async def landing_settings(session: AsyncSession = Depends(get_session)) -> dict
         "ok": True,
         "logo_url": await settings_service.get_str(session, "landing.logo_url"),
         "favicon_url": await settings_service.get_str(session, "landing.favicon_url"),
+        "hero_image_url": await settings_service.get_str(session, "landing.hero_image_url"),
     }
 
 
