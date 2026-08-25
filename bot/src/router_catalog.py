@@ -61,6 +61,7 @@ HIDDEN_ORDER_STATUSES = ("cancelled", "refunded")
 живые заказы, но достаётся кнопкой «Показать отменённые»."""
 
 SPEED_TITLES = {"fast": "быстрая", "weekly": "раз в неделю"}
+CARRIER_TITLES = {"cdek": "СДЭК", "post": "Почта России", "yandex": "Яндекс Go"}
 """Короткие названия для строки подтверждения. Полные названия и описания
 приходят с данными: их правит оператор, а не переписывает бот."""
 
@@ -382,13 +383,44 @@ def speed_keyboard(options: list[dict]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def carrier_keyboard(carriers: list[dict]) -> InlineKeyboardMarkup:
+    """Кем отправляем. Названия приходят с данными — их правит оператор."""
+    builder = InlineKeyboardBuilder()
+    for carrier in carriers:
+        builder.row(
+            btn(
+                "btn_shop_carrier",
+                text=carrier.get("title") or carrier.get("method", ""),
+                callback_data=f"shop_carrier:{carrier.get('method')}",
+            )
+        )
+    builder.row(btn("btn_back", callback_data="shop_back:speed"))
+    builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
+    return builder.as_markup()
+
+
+def pickup_keyboard(pickup_url: str) -> InlineKeyboardMarkup:
+    """Экран адреса пункта выдачи: карта перевозчика и путь назад.
+
+    Своего списка пунктов у нас нет: они открываются и закрываются каждую
+    неделю, и устаревший отправил бы клиента к закрытой двери. Он выбирает
+    на карте перевозчика и присылает адрес.
+    """
+    builder = InlineKeyboardBuilder()
+    if pickup_url:
+        builder.row(btn("btn_shop_pickup_map", url=pickup_url))
+    builder.row(btn("btn_back", callback_data="shop_back:where"))
+    builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
+    return builder.as_markup()
+
+
 def where_keyboard() -> InlineKeyboardMarkup:
     """Пункт выдачи или курьер. Без цен: их называют после оформления,
     а разница между ними всё равно есть, и оператору её надо знать."""
     builder = InlineKeyboardBuilder()
     builder.row(btn("btn_shop_to_pvz", callback_data="shop_where:pvz"))
     builder.row(btn("btn_shop_to_door", callback_data="shop_where:door"))
-    builder.row(btn("btn_shop_back_to_speed", callback_data="shop_speeds"))
+    builder.row(btn("btn_shop_back_to_speed", callback_data="shop_back:carrier"))
     return builder.as_markup()
 
 
@@ -453,7 +485,10 @@ def confirm_text(quote: dict, data: dict) -> str:
     if data.get("delivery_speed"):
         speed = SPEED_TITLES.get(data["delivery_speed"], data["delivery_speed"])
         where = "в пункт выдачи" if data.get("delivery_to_pvz") else "курьером до двери"
-        lines += ["", f"Доставка: {_esc(speed)}, {where}.", text("text_order_delivery_later")]
+        chosen = data.get("delivery_method", "")
+        carrier = CARRIER_TITLES.get(chosen, chosen)
+        parts = ", ".join(part for part in (carrier, speed, where) if part)
+        lines += ["", f"Доставка: {_esc(parts)}.", text("text_order_delivery_later")]
     return "\n".join(lines)
 
 
@@ -803,6 +838,7 @@ def draft_payload(user, data: dict) -> dict:
         "phone": data.get("phone", ""),
         "city": data.get("city", ""),
         "delivery_speed": data.get("delivery_speed", ""),
+        "delivery_method": data.get("delivery_method", ""),
         "delivery_to_pvz": bool(data.get("delivery_to_pvz", True)),
         "address": data.get("address", ""),
         "promo_code": data.get("promo_code", ""),
@@ -999,6 +1035,42 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             step=RouterOrder.city, key="text_order_ask_city", back="shop_back:phone",
         )
 
+    async def ask_carrier(target, state: FSMContext, *, edit: bool):
+        """Кем отправляем. Список приходит с ручки — там же ссылки на карты.
+
+        Перевозчиков может не оказаться (ручка молчит) — тогда шаг пропускаем:
+        оператор поставит перевозчика в заказе, а клиент не упрётся в пустой
+        экран посреди оформления.
+        """
+        data, error = await shop_api.delivery_options()
+        carriers = data.get("carriers", [])
+        if error or not carriers:
+            if error:
+                logger.warning(f"[CATALOG] перевозчики недоступны: {error}")
+            return await ask_where(target, state, edit=edit)
+
+        await state.set_state(None)
+        payload = {
+            "text": text("text_order_ask_carrier"),
+            "reply_markup": carrier_keyboard(carriers),
+            "link_preview_options": NO_PREVIEW,
+        }
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
+
+    async def pickup_url_of(state: FSMContext) -> str:
+        """Ссылка на карту пунктов выбранного перевозчика."""
+        data, error = await shop_api.delivery_options()
+        if error:
+            return ""
+        chosen = (await state.get_data()).get("delivery_method", "")
+        for carrier in data.get("carriers", []):
+            if carrier.get("method") == chosen:
+                return str(carrier.get("pickup_url") or "")
+        return ""
+
     async def ask_where(target, state: FSMContext, *, edit: bool):
         await state.set_state(None)
         payload = {
@@ -1013,12 +1085,23 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
 
     async def ask_address(target, state: FSMContext, *, edit: bool):
         data = await state.get_data()
-        await ask_step(
-            target, state, edit=edit,
-            step=RouterOrder.address,
-            key="text_order_ask_pvz" if data.get("delivery_to_pvz") else "text_order_ask_address",
-            back="shop_back:where",
-        )
+        if not data.get("delivery_to_pvz"):
+            return await ask_step(
+                target, state, edit=edit,
+                step=RouterOrder.address, key="text_order_ask_address",
+                back="shop_back:where",
+            )
+
+        await state.set_state(RouterOrder.address)
+        payload = {
+            "text": text("text_order_ask_pvz"),
+            "reply_markup": pickup_keyboard(await pickup_url_of(state)),
+            "link_preview_options": NO_PREVIEW,
+        }
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
 
     async def ask_speed(target, state: FSMContext, *, edit: bool):
         """Экран выбора скорости доставки.
@@ -1140,6 +1223,14 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if await blocked(query):
             return
         await state.update_data(delivery_speed=query.data.split(":")[1])
+        await ask_carrier(query, state, edit=True)
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_carrier:"))
+    async def cq_carrier(query: CallbackQuery, state: FSMContext):
+        if await blocked(query):
+            return
+        await state.update_data(delivery_method=query.data.split(":")[1])
         await ask_where(query, state, edit=True)
         await query.answer()
 
@@ -1228,6 +1319,8 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             "name": ask_name,
             "phone": ask_phone,
             "city": ask_city,
+            "speed": ask_speed,
+            "carrier": ask_carrier,
             "where": ask_where,
             "address": ask_address,
             "promo": ask_promo,

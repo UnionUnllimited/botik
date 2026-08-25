@@ -24,6 +24,7 @@ from decimal import Decimal
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import texts
 from core.dates import utcnow
 from core.enums import DeliveryMethod, DeliverySpeed
 from core.models import Delivery, Order
@@ -68,6 +69,46 @@ DEFAULT_SPEED_DESCRIPTIONS = {
         "ближайшей общей отправки — до недели."
     ),
 }
+
+PICKUP_SETTING_KEYS = {
+    DeliveryMethod.CDEK: "delivery.cdek_pickup_url",
+    DeliveryMethod.YANDEX: "delivery.yandex_pickup_url",
+}
+"""Где у перевозчика карта пунктов выдачи.
+
+Своего списка пунктов у нас нет и не будет: они открываются и закрываются
+каждую неделю, и устаревший список отправил бы клиента к закрытой двери.
+Почты России здесь нет — её отделения ищут не по карте перевозчика."""
+
+
+@dataclass(frozen=True, slots=True)
+class CarrierOption:
+    """Перевозчик, как его видит клиент при оформлении."""
+
+    method: DeliveryMethod
+    title: str
+    pickup_url: str
+
+
+async def carrier_options(session: AsyncSession) -> list[CarrierOption]:
+    """Кем отправляем — из чего выбирает клиент.
+
+    Раньше перевозчика ставил оператор при отгрузке: клиенту эта развилка
+    ничего не объясняла. Но пункт выдачи он выбирает на карте перевозчика,
+    а карта у каждого своя — значит и перевозчика он выбирает сам.
+    """
+    options: list[CarrierOption] = []
+    for method, key in PICKUP_SETTING_KEYS.items():
+        url = await settings_service.get_setting(session, key)
+        options.append(
+            CarrierOption(
+                method=method,
+                title=texts.DELIVERY_METHOD_TITLES.get(method, method.value.upper()),
+                pickup_url=str(url or ""),
+            )
+        )
+    return options
+
 
 SPEED_SETTING_KEYS = {
     DeliverySpeed.FAST: ("delivery.fast_title", "delivery.fast_description"),

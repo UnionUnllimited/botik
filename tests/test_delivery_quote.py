@@ -317,3 +317,70 @@ class TestOrderWithoutDelivery:
         body = body[: body.index("delivery_service.set_quote")]
         assert "order.customer_name" in body
         assert "order.customer_phone" in body
+
+
+class TestClientPicksTheCarrier:
+    """Перевозчика выбирает клиент: пункт выдачи он ищет на его карте.
+
+    Раньше перевозчика ставил оператор при отгрузке — клиенту эта развилка
+    ничего не объясняла. Но карта пунктов у каждого своя, и выбрать пункт,
+    не выбрав перевозчика, нельзя.
+    """
+
+    def _source(self, relative: str) -> str:
+        return (ROOT / relative).read_text(encoding="utf-8")
+
+    def test_only_carriers_with_a_map(self):
+        """Почты России здесь нет: её отделения ищут не по карте перевозчика."""
+        from core.enums import DeliveryMethod
+        from core.services.delivery import PICKUP_SETTING_KEYS
+
+        assert set(PICKUP_SETTING_KEYS) == {DeliveryMethod.CDEK, DeliveryMethod.YANDEX}
+
+    def test_maps_are_editable(self):
+        """Ссылки живут в настройках: карта переедет — правим значение,
+        а не выкатываем бота."""
+        from core.services.settings_service import DEFAULTS
+
+        assert DEFAULTS["delivery.cdek_pickup_url"].startswith("http")
+        assert DEFAULTS["delivery.yandex_pickup_url"].startswith("http")
+
+    def test_endpoint_hands_out_carriers(self):
+        api = self._source("api/routes/catalog_api.py")
+        body = api[api.index("async def delivery_options") :]
+        body = body[: body.index("_CLEANERS")]
+        assert '"carriers"' in body
+        assert "pickup_url" in body
+
+    def test_draft_takes_the_choice(self):
+        api = self._source("api/routes/catalog_api.py")
+        body = api[api.index("def _draft(") :]
+        body = body[: body.index("def _totals_payload")]
+        assert 'payload.get("delivery_method"' in body
+        assert "OFFERED_DELIVERY_METHODS" in body, "снятого с продажи перевозчика не берём"
+
+    def test_bot_asks_between_speed_and_where(self):
+        bot = self._source("bot/src/router_catalog.py")
+        assert "async def ask_carrier" in bot
+        speed_handler = bot[bot.index('F.data.startswith("shop_speed:")') :][:600]
+        assert "ask_carrier" in speed_handler
+
+    def test_pickup_screen_links_to_the_map(self):
+        bot = self._source("bot/src/router_catalog.py")
+        body = bot[bot.index("def pickup_keyboard") :]
+        body = body[: body.index("def where_keyboard")]
+        assert "btn_shop_pickup_map" in body
+        assert "url=pickup_url" in body
+
+    def test_missing_carriers_do_not_block_the_order(self):
+        """Ручка молчит — шаг пропускаем: оператор поставит перевозчика сам,
+        а клиент не упрётся в пустой экран посреди оформления."""
+        bot = self._source("bot/src/router_catalog.py")
+        body = bot[bot.index("async def ask_carrier") :]
+        body = body[: body.index("async def pickup_url_of")]
+        assert "return await ask_where" in body
+
+    def test_confirm_screen_names_the_carrier(self):
+        bot = self._source("bot/src/router_catalog.py")
+        body = bot[bot.index("def confirm_text") : bot.index("def confirm_keyboard")]
+        assert "CARRIER_TITLES" in body

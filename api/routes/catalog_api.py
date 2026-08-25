@@ -470,6 +470,16 @@ async def delivery_options(session: AsyncSession = Depends(get_session)) -> dict
             }
             for option in await delivery_service.speed_options(session)
         ],
+        # Перевозчика выбирает клиент: пункт выдачи он ищет на карте, а карта
+        # у каждого своя. Ссылку отдаём готовой — бот её только показывает.
+        "carriers": [
+            {
+                "method": str(option.method),
+                "title": option.title,
+                "pickup_url": option.pickup_url,
+            }
+            for option in await delivery_service.carrier_options(session)
+        ],
     }
 
 
@@ -850,6 +860,19 @@ def _draft(payload: dict) -> order_service.OrderDraft:
     # без доставки, а это тише, чем уронить оформление на опечатке.
     speed = delivery_service.parse_speed(str(payload.get("delivery_speed", "")))
 
+    # Перевозчик приходит от клиента: он выбирал пункт выдачи на его карте.
+    # Незнакомое или снятое с продажи значение молча заменяем умолчанием —
+    # оператор всё равно видит и меняет перевозчика в карточке заказа.
+    raw_method = str(payload.get("delivery_method", "")).strip()
+    method: DeliveryMethod | None = None
+    if raw_method:
+        try:
+            candidate = DeliveryMethod(raw_method)
+        except ValueError:
+            candidate = None
+        if candidate in OFFERED_DELIVERY_METHODS:
+            method = candidate
+
     to_pvz = bool(payload.get("delivery_to_pvz", True))
     return order_service.OrderDraft(
         product_id=_int(payload.get("product_id")) or None,
@@ -858,6 +881,7 @@ def _draft(payload: dict) -> order_service.OrderDraft:
         customer_phone=validators.clean_phone(str(payload.get("phone", ""))),
         customer_city=validators.clean_city(str(payload.get("city", ""))),
         delivery_speed=speed,
+        delivery_method=method,
         delivery_to_pvz=to_pvz,
         delivery_address="" if to_pvz else validators.clean_address(str(payload.get("address", ""))),
         pvz_address=validators.clean_pvz(str(payload.get("address", ""))) if to_pvz else "",
