@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Titan Routers">
+  <!-- Значок вкладки: вся композиция знака — буква, два роутера и волны
+       Wi-Fi на тёмно-синем. Здесь она уместна: значок квадратный и его
+       не растягивают в строку, а узнаётся он именно по картинке целиком.
+       Оператор может заменить файл настройкой landing.favicon_url. -->
+  <defs>
+    <linearGradient id="fav-letter" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.45" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <radialGradient id="fav-glow" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#3b82f6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="#050b1e"/>
+  <circle cx="32" cy="27" r="24" fill="url(#fav-glow)"/>
+
+  <!-- Буква -->
+  <path d="M14 9h36l-5 9h-8v27h-9V18H14z" fill="url(#fav-letter)"/>
+  <path d="M20 12h23l-2.2 4H20z" fill="#050b1e" opacity="0.8"/>
+
+  <!-- Волны Wi-Fi по бокам -->
+  <g fill="none" stroke="#38bdf8" stroke-linecap="round" stroke-width="2">
+    <path d="M6.5 33.5a7 7 0 0 1 9 0" opacity="0.9"/>
+    <path d="M3.5 29.5a12 12 0 0 1 15 0" opacity="0.55"/>
+    <path d="M48.5 33.5a7 7 0 0 1 9 0" opacity="0.9"/>
+    <path d="M45.5 29.5a12 12 0 0 1 15 0" opacity="0.55"/>
+  </g>
+
+  <!-- Два роутера с антеннами -->
+  <g fill="#0f172a" stroke="#1e3a8a" stroke-width="1.2">
+    <rect x="4" y="46" width="20" height="7" rx="2.4"/>
+    <rect x="40" y="46" width="20" height="7" rx="2.4"/>
+  </g>
+  <g stroke="#1e3a8a" stroke-width="1.6" stroke-linecap="round">
+    <path d="M8 46v-6M14 46v-7M20 46v-6"/>
+    <path d="M44 46v-6M50 46v-7M56 46v-6"/>
+  </g>
+  <g fill="#38bdf8">
+    <circle cx="8.5" cy="49.5" r="1"/><circle cx="12" cy="49.5" r="1"/><circle cx="15.5" cy="49.5" r="1"/>
+    <circle cx="44.5" cy="49.5" r="1"/><circle cx="48" cy="49.5" r="1"/><circle cx="51.5" cy="49.5" r="1"/>
+  </g>
+</svg>

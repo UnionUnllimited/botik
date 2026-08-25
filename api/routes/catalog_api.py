@@ -287,6 +287,55 @@ async def upload_banner(banner: UploadFile = File(...)) -> dict:
     return {"ok": True, "url": url}
 
 
+LANDING_IMAGE_SETTINGS = {
+    "logo": "landing.logo_url",
+    "favicon": "landing.favicon_url",
+}
+"""Что можно загрузить для витрины: знак в шапке и значок вкладки.
+
+Две картинки, а не одна: в шапке нужна только буква — рядом с названием,
+высотой в строку, мелкие детали слипаются; во вкладке знак целиком, там он
+квадратный и узнаётся именно по картинке."""
+
+
+@router.post("/manage/landing-image/{kind}")
+async def upload_landing_image(
+    kind: str,
+    image: UploadFile = File(...),
+    session: AsyncSession = Depends(get_transaction),
+) -> dict:
+    """Логотип витрины или значок вкладки: файл из админки в наш том `/media`.
+
+    Сразу записываем адрес в настройку — иначе оператору пришлось бы копировать
+    ссылку руками во второе поле, а промахнувшись, он получил бы витрину
+    без знака и не понял почему.
+    """
+    key = LANDING_IMAGE_SETTINGS.get(kind)
+    if key is None:
+        return {"ok": False, "error": "Неизвестная картинка витрины."}
+
+    try:
+        saved = media.save_image(await image.read(), image.content_type or "", prefix=f"landing-{kind}")
+    except media.MediaError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    # Путь, а не абсолютный адрес: витрину открывают и по другому домену,
+    # и ссылка с прежним именем хоста после переезда вела бы в никуда.
+    await settings_service.set_setting(session, key, saved)
+    log.info("catalog.landing_image_uploaded", kind=kind, path=saved)
+    return {"ok": True, "url": saved}
+
+
+@router.get("/manage/landing")
+async def landing_settings(session: AsyncSession = Depends(get_session)) -> dict:
+    """Что сейчас стоит у витрины — для формы в админке."""
+    return {
+        "ok": True,
+        "logo_url": await settings_service.get_str(session, "landing.logo_url"),
+        "favicon_url": await settings_service.get_str(session, "landing.favicon_url"),
+    }
+
+
 @router.post("/products/{product_id}/delete")
 async def delete_product(product_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
     """Удаление карточки. Прошлые заказы не страдают: в них лежит снимок

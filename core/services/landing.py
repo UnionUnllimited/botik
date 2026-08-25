@@ -306,13 +306,29 @@ def bot_link(payload: str = "") -> str:
 
 
 DEFAULT_LOGO_URL = "/static/logo.svg"
-"""Свой знак в статике: он есть всегда, даже когда оператор ничего не грузил."""
+DEFAULT_FAVICON_URL = "/static/favicon.svg"
+"""Свои знаки в статике: они есть всегда, даже когда оператор ничего не грузил.
+
+Их два, и это не дубль. В шапке нужна одна буква: рядом с названием, высотой
+в строку, мелкие детали слипаются. Во вкладке — знак целиком, там он квадратный
+и узнаётся именно по картинке.
+"""
 
 
-async def logo_url(session: AsyncSession) -> str:
-    """Логотип витрины. Он же — значок вкладки на всех страницах."""
+async def logo_url(session: AsyncSession, fallback: str = DEFAULT_LOGO_URL) -> str:
+    """Логотип в шапке витрины.
+
+    `fallback` передаёт маршрут: он видит, какие файлы реально лежат в статике,
+    и подставляет положенный туда `logo.png`, если он есть.
+    """
     configured = (await settings_service.get_str(session, "landing.logo_url")).strip()
-    return configured or DEFAULT_LOGO_URL
+    return configured or fallback
+
+
+async def favicon_url(session: AsyncSession, fallback: str = DEFAULT_FAVICON_URL) -> str:
+    """Значок вкладки браузера."""
+    configured = (await settings_service.get_str(session, "landing.favicon_url")).strip()
+    return configured or fallback
 
 
 def product_card(product: Product) -> dict[str, Any]:
@@ -348,7 +364,12 @@ def plan_card(plan: Plan) -> dict[str, Any]:
     }
 
 
-async def page_content(session: AsyncSession) -> dict[str, Any]:
+async def page_content(
+    session: AsyncSession,
+    *,
+    logo_fallback: str = DEFAULT_LOGO_URL,
+    favicon_fallback: str = DEFAULT_FAVICON_URL,
+) -> dict[str, Any]:
     """Всё, что нужно шаблону витрины, одним запросом на раздел."""
     products = list(
         await session.scalars(
@@ -369,7 +390,8 @@ async def page_content(session: AsyncSession) -> dict[str, Any]:
 
     return {
         "brand": settings.app.brand,
-        "logo_url": await logo_url(session),
+        "logo_url": await logo_url(session, logo_fallback),
+        "favicon_url": await favicon_url(session, favicon_fallback),
         "hero_title": hero_title or settings_service.DEFAULTS["landing.hero_title"],
         "hero_subtitle": hero_subtitle or settings_service.DEFAULTS["landing.hero_subtitle"],
         "products": [product_card(product) for product in products],

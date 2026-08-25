@@ -187,6 +187,21 @@ async def upload_banner(filename: str, content: bytes, content_type: str) -> tup
     return await upload("/api/v1/catalog/manage/banner", {"banner": (filename, content, content_type)})
 
 
+async def upload_landing_image(
+    kind: str, filename: str, content: bytes, content_type: str
+) -> tuple[dict, str]:
+    """Логотип витрины («logo») или значок вкладки («favicon»)."""
+    return await upload(
+        f"/api/v1/catalog/manage/landing-image/{kind}",
+        {"image": (filename, content, content_type)},
+    )
+
+
+async def landing_settings() -> tuple[dict, str]:
+    """Что сейчас стоит у витрины: адреса логотипа и значка вкладки."""
+    return await get("/api/v1/catalog/manage/landing")
+
+
 async def delete_product(product_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/products/{product_id}/delete", {})
 

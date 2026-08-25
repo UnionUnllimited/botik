@@ -182,6 +182,7 @@ PAGES = {
         "router_panel_url": "http://192.168.14.1/",
         "landing_url": "",
         "landing_url_default": "https://shop.example",
+        "landing_images": {"logo_url": "/media/landing-logo-a1.png", "favicon_url": ""},
     },
     "catalog_shop_form.html": {
         "product": PRODUCT,

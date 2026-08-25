@@ -487,3 +487,103 @@ class TestConnectionTypes:
         forbidden = "".join(("v", "p", "n"))
         blob = " ".join(i["title"] + i["text"] for i in landing.CONNECTION_TYPES).lower()
         assert forbidden not in blob
+
+
+class TestOperatorUploadsHisOwnMarks:
+    """Знак и значок вкладки грузятся файлом из админки.
+
+    Ссылкой просить бесполезно: чужой адрес протухнет, а класть картинку
+    рядом с товарами оператору некуда. Адрес после загрузки прописывает
+    основное приложение само — копировать его руками во второе поле
+    оператор бы не стал, а промахнувшись, получил бы витрину без знака.
+    """
+
+    def _api(self) -> str:
+        from pathlib import Path
+
+        return (
+            Path(__file__).resolve().parents[1] / "api/routes/catalog_api.py"
+        ).read_text(encoding="utf-8")
+
+    def test_both_kinds_are_accepted(self):
+        from api.routes.catalog_api import LANDING_IMAGE_SETTINGS
+
+        assert LANDING_IMAGE_SETTINGS == {
+            "logo": "landing.logo_url",
+            "favicon": "landing.favicon_url",
+        }
+
+    def test_unknown_kind_is_refused(self):
+        body = self._api()[self._api().index("async def upload_landing_image") :]
+        body = body[: body.index("@router.get")]
+        assert "Неизвестная картинка витрины" in body
+
+    def test_setting_is_written_by_us(self):
+        body = self._api()[self._api().index("async def upload_landing_image") :]
+        body = body[: body.index("@router.get")]
+        assert "set_setting" in body
+
+    def test_path_not_absolute_url(self):
+        """Витрину открывают и по другому домену: ссылка с прежним именем
+        хоста после переезда вела бы в никуда."""
+        body = self._api()[self._api().index("async def upload_landing_image") :]
+        body = body[: body.index("@router.get")]
+        assert "public_base_url" not in body
+
+    def test_admin_page_has_both_fields(self):
+        from pathlib import Path
+
+        page = (
+            Path(__file__).resolve().parents[1]
+            / "bot/web_admin/templates/catalog_settings.html"
+        ).read_text(encoding="utf-8")
+        assert 'name="landing_logo"' in page
+        assert 'name="landing_favicon"' in page
+
+    @pytest.mark.asyncio
+    async def test_favicon_falls_back_to_our_own(self):
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                assert await landing.favicon_url(session) == landing.DEFAULT_FAVICON_URL
+        finally:
+            await engine.dispose()
+
+    def test_two_marks_are_different_files(self):
+        """В шапке нужна одна буква, во вкладке — знак целиком."""
+        from api.routes import landing as route
+
+        assert landing.DEFAULT_LOGO_URL != landing.DEFAULT_FAVICON_URL
+        assert (route.STATIC_DIR / "favicon.svg").exists()
+
+
+class TestOwnFileInStatic:
+    """Знак можно заменить, просто закоммитив файл в статику.
+
+    Это самый короткий путь для оператора: он кладёт `logo.png` рядом
+    с нашим `logo.svg`, и витрина берёт его — без настроек, без правок кода
+    и без загрузки через админку.
+    """
+
+    def test_png_wins_over_our_svg(self, tmp_path, monkeypatch):
+        from api.routes import landing as route
+
+        (tmp_path / "logo.svg").write_text("<svg/>", encoding="utf-8")
+        (tmp_path / "logo.png").write_bytes(b"\x89PNG")
+        monkeypatch.setattr(route, "STATIC_DIR", tmp_path)
+        assert route.logo_fallback() == "/static/logo.png"
+
+    def test_our_own_when_nothing_is_put(self, tmp_path, monkeypatch):
+        from api.routes import landing as route
+
+        monkeypatch.setattr(route, "STATIC_DIR", tmp_path)
+        assert route.logo_fallback() == landing.DEFAULT_LOGO_URL
+        assert route.favicon_fallback() == landing.DEFAULT_FAVICON_URL
+
+    def test_favicon_takes_ico_too(self, tmp_path, monkeypatch):
+        """`favicon.ico` — то, что отдаёт большинство рисовалок значков."""
+        from api.routes import landing as route
+
+        (tmp_path / "favicon.ico").write_bytes(b"\x00\x00\x01\x00")
+        monkeypatch.setattr(route, "STATIC_DIR", tmp_path)
+        assert route.favicon_fallback() == "/static/favicon.ico"

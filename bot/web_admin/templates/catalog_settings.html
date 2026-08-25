@@ -83,6 +83,38 @@
       </details>
     </div>
 
+    {# Знак витрины и значок вкладки: файлом, а не ссылкой. Чужой адрес
+       протухнет, а класть картинку рядом с товарами оператору некуда.
+       Адрес после загрузки прописывает основное приложение само. #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label for="landing_logo" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Логотип витрины
+        </label>
+        <input type="file" id="landing_logo" name="landing_logo" accept="image/*" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">
+          Показывается в шапке рядом с названием — лучше только знак, без надписей:
+          в строке высотой 32 пикселя мелкое не читается.
+          {% if landing_images and landing_images.logo_url %}
+          <br>Сейчас: <span class="font-mono">{{ landing_images.logo_url }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div>
+        <label for="landing_favicon" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+          Значок вкладки
+        </label>
+        <input type="file" id="landing_favicon" name="landing_favicon" accept="image/*" class="tw-input">
+        <div class="text-[11px] tw-text-subtle2 mt-1">
+          Квадратная картинка для вкладки браузера — сюда подойдёт знак целиком.
+          {% if landing_images and landing_images.favicon_url %}
+          <br>Сейчас: <span class="font-mono">{{ landing_images.favicon_url }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
     <div>
       <label for="landing_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
         Адрес витрины

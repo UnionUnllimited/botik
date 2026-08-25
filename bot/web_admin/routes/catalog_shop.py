@@ -119,6 +119,7 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             main_menu_photo_url=app_conf.get("main_menu_photo_url", "") or "",
             router_panel_url=app_conf.get("router_panel_url", "") or "",
             landing_url=app_conf.get("landing_url", "") or "",
+            landing_images=(await shop_api.landing_settings())[0],
             # Показываем, куда кнопка ведёт сейчас: пустое поле — не «никуда»,
             # а корень домена основного приложения.
             landing_url_default=shop_api.landing_url(""),
@@ -268,6 +269,21 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
         # с адресом — раз человек выбрал файл, он хочет именно его.
         banner_url = (form.get("main_menu_photo_url") or "").strip()
         files = await request.files
+
+        # Знак витрины и значок вкладки: адрес пишет основное приложение,
+        # оператору остаётся выбрать файл. Копировать ссылку руками во второе
+        # поле он бы всё равно не стал, а промахнувшись — получил бы витрину
+        # без знака и не понял почему.
+        for kind in ("logo", "favicon"):
+            picked = files.get(f"landing_{kind}")
+            if picked is None or not picked.filename:
+                continue
+            content = await asyncio.to_thread(picked.read)
+            _, error = await shop_api.upload_landing_image(
+                kind, picked.filename, content, picked.content_type or ""
+            )
+            if error:
+                await flash(f"Картинку витрины загрузить не вышло: {error}", "warning")
         banner = files.get("main_menu_photo")
         if banner is not None and banner.filename:
             # FileStorage.read() синхронный — не держим им цикл событий.

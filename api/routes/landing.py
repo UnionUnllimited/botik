@@ -32,6 +32,28 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Имена, под которыми знак кладут в статику. Порядок — очередь поиска:
+# положенный руками `logo.png` побеждает нарисованный нами `logo.svg`,
+# и заменить знак можно, просто закоммитив файл, — без настроек и правок.
+LOGO_FILES = ("logo.png", "logo.webp", "logo.jpg", "logo.svg")
+FAVICON_FILES = ("favicon.png", "favicon.webp", "favicon.ico", "favicon.svg")
+
+
+def _static_url(names: tuple[str, ...], default: str) -> str:
+    """Первый из файлов, который правда лежит в статике."""
+    for name in names:
+        if (STATIC_DIR / name).is_file():
+            return f"/static/{name}"
+    return default
+
+
+def logo_fallback() -> str:
+    return _static_url(LOGO_FILES, landing.DEFAULT_LOGO_URL)
+
+
+def favicon_fallback() -> str:
+    return _static_url(FAVICON_FILES, landing.DEFAULT_FAVICON_URL)
+
 # Пути, которые обязаны отвечать JSON и на ошибках: их читают провайдер оплаты,
 # мониторинг, бот и его админка. Страница с извинениями им не нужна — она
 # сломает разбор ответа там, где никто не ждёт HTML.
@@ -69,7 +91,12 @@ def error_page(request: Request, status_code: int) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "landing_error.html",
-        {"brand": settings.app.brand, "code": status_code, "title": title},
+        {
+            "brand": settings.app.brand,
+            "code": status_code,
+            "title": title,
+            "favicon_url": favicon_fallback(),
+        },
         status_code=status_code,
     )
 
@@ -80,10 +107,15 @@ async def landing_page(request: Request, session: AsyncSession = Depends(get_ses
         # Выключенная витрина — не ошибка сервера: домен просто ничего
         # не показывает, а ручки и панель роутера продолжают работать.
         return templates.TemplateResponse(
-            request, "landing_off.html", {"brand": settings.app.brand}, status_code=404
+            request,
+            "landing_off.html",
+            {"brand": settings.app.brand, "favicon_url": favicon_fallback()},
+            status_code=404,
         )
 
-    content = await landing.page_content(session)
+    content = await landing.page_content(
+        session, logo_fallback=logo_fallback(), favicon_fallback=favicon_fallback()
+    )
     return templates.TemplateResponse(request, "landing.html", content)
 
 
@@ -102,7 +134,8 @@ async def instruction_page(
         "instruction.html",
         {
             "brand": settings.app.brand,
-            "logo_url": await landing.logo_url(session),
+            "logo_url": await landing.logo_url(session, logo_fallback()),
+            "favicon_url": await landing.favicon_url(session, favicon_fallback()),
             "steps": landing.INSTRUCTION_STEPS,
             "connection_types": landing.CONNECTION_TYPES,
             "bot_url": landing.bot_link(),
@@ -125,7 +158,8 @@ async def guide_page(
         "guide.html",
         {
             "brand": settings.app.brand,
-            "logo_url": await landing.logo_url(session),
+            "logo_url": await landing.logo_url(session, logo_fallback()),
+            "favicon_url": await landing.favicon_url(session, favicon_fallback()),
             "sections": landing.GUIDE_SECTIONS,
             "bot_url": landing.bot_link(),
         },
