@@ -88,7 +88,9 @@ async def landing_page(request: Request, session: AsyncSession = Depends(get_ses
 
 
 @router.get("/instruction", response_class=HTMLResponse)
-async def instruction_page(request: Request) -> HTMLResponse:
+async def instruction_page(
+    request: Request, session: AsyncSession = Depends(get_session)
+) -> HTMLResponse:
     """Что делать с приехавшим роутером — читается один раз, в самом начале.
 
     Адрес постоянный: на него ведёт кнопка в карточке заказа, пока посылка
@@ -100,14 +102,18 @@ async def instruction_page(request: Request) -> HTMLResponse:
         "instruction.html",
         {
             "brand": settings.app.brand,
+            "logo_url": await landing.logo_url(session),
             "steps": landing.INSTRUCTION_STEPS,
+            "connection_types": landing.CONNECTION_TYPES,
             "bot_url": landing.bot_link(),
         },
     )
 
 
 @router.get("/guide", response_class=HTMLResponse)
-async def guide_page(request: Request) -> HTMLResponse:
+async def guide_page(
+    request: Request, session: AsyncSession = Depends(get_session)
+) -> HTMLResponse:
     """Постоянная инструкция: она нужна не в первый день, а потом.
 
     Отдельно от шагов подключения: те читают один раз, а сюда возвращаются
@@ -119,6 +125,7 @@ async def guide_page(request: Request) -> HTMLResponse:
         "guide.html",
         {
             "brand": settings.app.brand,
+            "logo_url": await landing.logo_url(session),
             "sections": landing.GUIDE_SECTIONS,
             "bot_url": landing.bot_link(),
         },

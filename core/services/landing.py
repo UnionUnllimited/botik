@@ -168,6 +168,37 @@ INSTRUCTION_STEPS: list[dict[str, str]] = [
 в розетку, подписка приезжает сама. Заменить настоящей — правка этого
 списка, адрес страницы при этом не меняется."""
 
+CONNECTION_TYPES: list[dict[str, str]] = [
+    {
+        "title": "DHCP — автоматически",
+        "text": "Подходит большинству провайдеров и стоит по умолчанию: роутер сам "
+        "получает адрес, вводить ничего не нужно. Если не знаете свой тип — начните "
+        "с него.",
+    },
+    {
+        "title": "PPPoE — логин и пароль",
+        "text": "Провайдер выдаёт их в договоре. Введите в панели: «Настройки "
+        "интернета» → PPPoE → логин и пароль. Чаще всего этого достаточно.",
+    },
+    {
+        "title": "Статический IP",
+        "text": "Адрес закреплён за вами. Понадобятся четыре значения из договора: "
+        "IP-адрес, маска, шлюз и DNS — все они вводятся там же, в настройках интернета.",
+    },
+    {
+        "title": "L2TP или PPTP — туннель",
+        "text": "Такое подключение встречается у части домовых сетей. Нужны адрес "
+        "сервера провайдера, логин и пароль; выберите нужный тип в списке и заполните "
+        "три поля.",
+    },
+]
+"""Типы подключения к провайдеру.
+
+Вопрос «какой у вас тип?» человек слышит от провайдера, а не от нас, поэтому
+объясняем словами договора: где логин с паролем, где четыре числа, где ничего.
+Неверный тип — самая частая причина «кабель воткнул, а интернета нет» после
+привязки по MAC."""
+
 GUIDE_SECTIONS: list[dict[str, str]] = [
     {
         "glyph": "▣",
@@ -274,6 +305,16 @@ def bot_link(payload: str = "") -> str:
     return f"https://t.me/{username}"
 
 
+DEFAULT_LOGO_URL = "/static/logo.svg"
+"""Свой знак в статике: он есть всегда, даже когда оператор ничего не грузил."""
+
+
+async def logo_url(session: AsyncSession) -> str:
+    """Логотип витрины. Он же — значок вкладки на всех страницах."""
+    configured = (await settings_service.get_str(session, "landing.logo_url")).strip()
+    return configured or DEFAULT_LOGO_URL
+
+
 def product_card(product: Product) -> dict[str, Any]:
     """Карточка для витрины.
 
@@ -328,6 +369,7 @@ async def page_content(session: AsyncSession) -> dict[str, Any]:
 
     return {
         "brand": settings.app.brand,
+        "logo_url": await logo_url(session),
         "hero_title": hero_title or settings_service.DEFAULTS["landing.hero_title"],
         "hero_subtitle": hero_subtitle or settings_service.DEFAULTS["landing.hero_subtitle"],
         "products": [product_card(product) for product in products],

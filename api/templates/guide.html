@@ -6,15 +6,25 @@
   <title>Инструкция — {{ brand }}</title>
   <meta name="description" content="Пароль от Wi-Fi, срок подписки, продление и что делать, если пропал интернет.">
   <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="{{ logo_url }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ logo_url }}">
   <link rel="stylesheet" href="/static/landing.css">
 </head>
 <body>
 
 <header class="top">
   <div class="wrap top__inner">
-    <a class="brand" href="/">{{ brand }}</a>
+    <a class="brand" href="/">
+      <img class="brand__logo" src="{{ logo_url }}" alt="" width="32" height="32">
+      <span>{{ brand }}</span>
+    </a>
+    {# Навигация та же, что на главной: человек попал сюда по ссылке из чата
+       и должен уметь дойти до моделей, не разыскивая адрес витрины. #}
     <nav class="top__nav">
       <a href="/instruction">Как подключить</a>
+      <a href="/guide" class="is-active">Инструкция</a>
+      <a href="/#catalog">Модели</a>
+      <a href="/#faq">Вопросы</a>
     </nav>
     {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть чат</a>{% endif %}
   </div>

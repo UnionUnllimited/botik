@@ -404,3 +404,86 @@ class TestSetupStepsMatchTheRouter:
     def test_no_forbidden_term(self):
         forbidden = "".join(("v", "p", "n"))
         assert forbidden not in self._text()
+
+
+class TestLookIsOneAcrossPages:
+    """Шапка, логотип и значок вкладки одинаковы на всех страницах витрины.
+
+    Человек попадает на инструкцию по ссылке из чата, а не с главной,
+    и оттуда должен уметь дойти до моделей — иначе он ищет адрес витрины
+    заново или пишет в поддержку.
+    """
+
+    def _pages(self) -> dict[str, str]:
+        from api.routes import landing as route
+
+        return {
+            name: (route.TEMPLATES_DIR / name).read_text(encoding="utf-8")
+            for name in ("landing.html", "instruction.html", "guide.html")
+        }
+
+    def test_every_page_has_the_logo(self):
+        for name, page in self._pages().items():
+            assert "brand__logo" in page, name
+            assert '{{ logo_url }}' in page, name
+
+    def test_every_page_has_a_favicon(self):
+        for name, page in self._pages().items():
+            assert 'rel="icon"' in page, name
+
+    def test_service_pages_have_it_too(self):
+        """404 и выключенная витрина — тоже наши страницы."""
+        from api.routes import landing as route
+
+        for name in ("landing_error.html", "landing_off.html"):
+            page = (route.TEMPLATES_DIR / name).read_text(encoding="utf-8")
+            assert 'rel="icon"' in page, name
+
+    def test_instructions_lead_back_to_the_catalog(self):
+        for name in ("instruction.html", "guide.html"):
+            page = self._pages()[name]
+            assert "/#catalog" in page, name
+
+    def test_logo_falls_back_to_our_own(self):
+        """Оператор ничего не грузил — знак всё равно есть."""
+        from api.routes import landing as route
+
+        assert landing.DEFAULT_LOGO_URL == "/static/logo.svg"
+        assert (route.STATIC_DIR / "logo.svg").exists()
+
+    @pytest.mark.asyncio
+    async def test_operator_logo_wins(self, monkeypatch):
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                session.add(
+                    Setting(key="landing.logo_url", value={"value": "/media/own-logo.png"})
+                )
+                await session.commit()
+                assert await landing.logo_url(session) == "/media/own-logo.png"
+        finally:
+            await engine.dispose()
+
+
+class TestConnectionTypes:
+    """Тип подключения провайдера — на странице «Как подключить».
+
+    Неверный тип — вторая по частоте причина «кабель воткнул, а интернета
+    нет», сразу после привязки по MAC.
+    """
+
+    def test_all_four_are_listed(self):
+        titles = " ".join(item["title"] for item in landing.CONNECTION_TYPES).lower()
+        for kind in ("dhcp", "pppoe", "статический", "l2tp"):
+            assert kind in titles
+
+    def test_page_renders_them(self):
+        from api.routes import landing as route
+
+        page = (route.TEMPLATES_DIR / "instruction.html").read_text(encoding="utf-8")
+        assert "connection_types" in page
+
+    def test_no_forbidden_term(self):
+        forbidden = "".join(("v", "p", "n"))
+        blob = " ".join(i["title"] + i["text"] for i in landing.CONNECTION_TYPES).lower()
+        assert forbidden not in blob

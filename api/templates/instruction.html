@@ -6,13 +6,26 @@
   <title>Как подключить роутер — {{ brand }}</title>
   <meta name="description" content="Пять шагов: включить, подключиться, дождаться подписки.">
   <meta name="theme-color" content="#0b0f14">
+  <link rel="icon" href="{{ logo_url }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ logo_url }}">
   <link rel="stylesheet" href="/static/landing.css">
 </head>
 <body>
 
 <header class="top">
   <div class="wrap top__inner">
-    <a class="brand" href="/">{{ brand }}</a>
+    <a class="brand" href="/">
+      <img class="brand__logo" src="{{ logo_url }}" alt="" width="32" height="32">
+      <span>{{ brand }}</span>
+    </a>
+    {# Навигация та же, что на главной: человек попал сюда по ссылке из чата
+       и должен уметь дойти до моделей, не разыскивая адрес витрины. #}
+    <nav class="top__nav">
+      <a href="/instruction" class="is-active">Как подключить</a>
+      <a href="/guide">Инструкция</a>
+      <a href="/#catalog">Модели</a>
+      <a href="/#faq">Вопросы</a>
+    </nav>
     {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть чат</a>{% endif %}
   </div>
 </header>
@@ -38,6 +51,34 @@
       </ol>
     </div>
   </section>
+
+  {% if connection_types %}
+  <section class="section section--muted" id="wan">
+    <div class="wrap wrap--narrow">
+      <h2>Тип подключения провайдера</h2>
+      {# Тип задаётся в панели роутера: «Настройки интернета». Неверный тип —
+         вторая по частоте причина «кабель воткнул, а интернета нет», сразу
+         после привязки по MAC. Названия те же, что в договоре: человек
+         сверяет их с бумагой, а не угадывает. #}
+      <p class="section__lead">Задаётся в панели роутера — «Настройки интернета».
+        По умолчанию стоит DHCP: он подходит большинству. Свой тип можно найти
+        в договоре или спросить у провайдера.</p>
+
+      <div class="faq">
+        {% for item in connection_types %}
+        <details>
+          <summary>{{ item.title }}</summary>
+          <p>{{ item.text }}</p>
+        </details>
+        {% endfor %}
+      </div>
+
+      <p class="note" style="margin-top:16px">
+        Кабель провайдера всегда в порт WAN — при любом типе подключения.
+      </p>
+    </div>
+  </section>
+  {% endif %}
 
   <section class="section cta">
     <div class="wrap wrap--narrow cta__inner">

@@ -60,7 +60,15 @@ p  { margin: 0 0 12px; }
   height: 64px;
 }
 
-.brand { font-weight: 650; letter-spacing: -0.01em; }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.brand__logo { display: block; width: 32px; height: 32px; border-radius: 9px; }
 
 .top__nav {
   display: flex;
@@ -71,6 +79,7 @@ p  { margin: 0 0 12px; }
 }
 
 .top__nav a:hover { color: var(--text); }
+.top__nav a.is-active { color: var(--text); }
 
 /* --- Кнопки --------------------------------------------------------------- */
 
@@ -155,17 +164,26 @@ p  { margin: 0 0 12px; }
 
 .hero__marks li::before { content: "✓"; color: var(--ok); margin-right: 8px; }
 
+/* Картинку товара рисует оператор, и это чаще всего готовый баннер
+   с надписями по краям. Обрезать его под наше соотношение нельзя —
+   срежется заголовок или половина роутера, — поэтому показываем целиком
+   и позволяем блоку принять высоту самой картинки. */
 .hero__photo {
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   background: var(--bg-elevated);
   box-shadow: var(--shadow);
   overflow: hidden;
-  aspect-ratio: 4 / 3;
   display: flex;
 }
 
-.hero__photo img { width: 100%; height: 100%; object-fit: cover; }
+.hero__photo img {
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+  display: block;
+}
 
 /* --- Секции --------------------------------------------------------------- */
 
@@ -245,15 +263,22 @@ p  { margin: 0 0 12px; }
 
 .product { padding: 0; overflow: hidden; }
 
+/* В карточках соотношение держим — иначе ряд моделей поедет ступеньками,
+   но саму картинку не режем: вписываем целиком, поля добирает фон. */
 .product__photo {
   aspect-ratio: 16 / 11;
   background: var(--bg-muted);
   border-bottom: 1px solid var(--line);
   display: grid;
   place-items: center;
+  padding: 8px;
 }
 
-.product__photo img { width: 100%; height: 100%; object-fit: cover; }
+.product__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 
 .product__body { padding: 20px 22px 8px; flex: 1; }
 .product__subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 12px; }
@@ -346,7 +371,7 @@ p  { margin: 0 0 12px; }
   .grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid--3 { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
   .hero__inner { grid-template-columns: minmax(0, 1fr); }
-  .hero__photo { order: -1; aspect-ratio: 16 / 10; }
+  .hero__photo { order: -1; }
   .top__nav { display: none; }
 }
 
