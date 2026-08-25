@@ -114,8 +114,13 @@
             </p>
             {% if product.specs %}
             <dl class="specs">
+              {# Характеристика без значения — «Поддержка Wi-Fi 6»: пустая
+                 правая колонка выглядела бы как потерянные данные. #}
               {% for name, value in product.specs[:5] %}
-              <div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>
+              <div>
+                <dt>{{ name }}</dt>
+                {% if value %}<dd>{{ value }}</dd>{% else %}<dd>✓</dd>{% endif %}
+              </div>
               {% endfor %}
             </dl>
             {% endif %}

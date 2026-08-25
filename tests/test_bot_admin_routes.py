@@ -84,3 +84,53 @@ class TestSettingsSaveCreatesMissingRows:
         block = self._save_block()
         toggles = block[block.index("for key in toggle_button_keys:") :]
         assert "ON CONFLICT(key) DO UPDATE" in toggles
+
+
+class TestSpecsWithoutAColon:
+    """«Поддержка Wi-Fi 6» — характеристика без второй половины.
+
+    Форма требовала пару «Название: значение» и отказывала на такой строке,
+    теряя всю правку карточки. Оператор при этом не ошибался: не у каждой
+    характеристики есть название и значение, иные — просто признак.
+    """
+
+    def _parser(self):
+        """Грузим модуль по пути: `bot/` не пакет, а тянуть quart ради двух
+        чистых функций незачем — берём их исходник и выполняем отдельно."""
+        source = (
+            Path(__file__).resolve().parents[1] / "bot/web_admin/routes/catalog_shop.py"
+        ).read_text(encoding="utf-8")
+        start = source.index("def _specs_from_form")
+        end = source.index("def _mapping_from_form")
+        namespace: dict = {"json": __import__("json")}
+        exec(compile(source[start:end], "catalog_shop_specs", "exec"), namespace)  # noqa: S102
+        return namespace["_specs_from_form"], namespace["specs_to_text"]
+
+    def test_line_without_a_colon_is_accepted(self):
+        parse, _ = self._parser()
+        raw, error = parse("Порты: 3 LAN\nПоддержка Wi-Fi 6")
+        assert error == ""
+        import json
+
+        assert json.loads(raw) == {"Порты": "3 LAN", "Поддержка Wi-Fi 6": ""}
+
+    def test_empty_name_is_still_refused(self):
+        """Строка, начинающаяся с двоеточия, — опечатка, а не характеристика."""
+        parse, _ = self._parser()
+        _, error = parse(": 3 LAN")
+        assert "название" in error.lower()
+
+    def test_round_trip_keeps_the_line_as_written(self):
+        """Дописав двоеточие обратно, мы правили бы то, что оператор не просил."""
+        parse, to_text = self._parser()
+        import json
+
+        raw, _ = parse("Поддержка Wi-Fi 6\nПорты: 3 LAN")
+        assert to_text(json.loads(raw)) == "Поддержка Wi-Fi 6\nПорты: 3 LAN"
+
+    def test_bot_card_does_not_dangle_a_colon(self):
+        bot = (
+            Path(__file__).resolve().parents[1] / "bot/src/router_catalog.py"
+        ).read_text(encoding="utf-8")
+        card = bot[bot.index("def card_text") : bot.index("def card_keyboard")]
+        assert 'if value else f"• {_esc(name)}"' in card

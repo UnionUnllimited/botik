@@ -36,15 +36,20 @@ def _decimal_text(raw: str) -> str:
 def _specs_from_form(raw: str) -> tuple[str, str]:
     """Характеристики вводятся строками «Порты: 3 LAN» — так их пишут люди,
     а JSON в форме превращает опечатку в скобке в потерянную карточку.
-    Возвращает JSON-строку и текст ошибки."""
+
+    Двоеточие необязательно: «Поддержка Wi-Fi 6» — такая же характеристика,
+    просто без второй половины. Требовать пару значило заставлять оператора
+    выдумывать название там, где его нет, — а он вместо этого терял всю
+    правку карточки на отказе сохранения.
+
+    Возвращает JSON-строку и текст ошибки.
+    """
     specs: dict[str, str] = {}
     for number, line in enumerate((raw or "").splitlines(), start=1):
         line = line.strip()
         if not line:
             continue
-        if ":" not in line:
-            return "", f"Строка {number}: нужен формат «Название: значение»."
-        name, value = line.split(":", 1)
+        name, _sep, value = line.partition(":")
         if not name.strip():
             return "", f"Строка {number}: пустое название характеристики."
         specs[name.strip()] = value.strip()
@@ -52,8 +57,15 @@ def _specs_from_form(raw: str) -> tuple[str, str]:
 
 
 def specs_to_text(specs: dict) -> str:
-    """Обратно в строки для формы."""
-    return "\n".join(f"{name}: {value}" for name, value in (specs or {}).items())
+    """Обратно в строки для формы.
+
+    Характеристике без значения двоеточие не дописываем: оператор написал
+    «Поддержка Wi-Fi 6», и возвращать ему «Поддержка Wi-Fi 6:» значит править
+    то, что он не просил.
+    """
+    return "\n".join(
+        f"{name}: {value}" if value else str(name) for name, value in (specs or {}).items()
+    )
 
 
 def _mapping_from_form(raw: str, field: str) -> tuple[str, str]:

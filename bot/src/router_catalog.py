@@ -285,7 +285,10 @@ def card_text(product: dict) -> str:
         limit = max(int(app_conf.get("catalog_specs_limit", 8) or 8), 1)
         lines += ["", "<b>Характеристики</b>"]
         for name, value in list(specs.items())[:limit]:
-            lines.append(f"• {_esc(name)}: {_esc(value)}")
+            # Характеристика без значения — «Поддержка Wi-Fi 6»: двоеточие
+            # в конце строки читается как оборванная мысль.
+            line = f"• {_esc(name)}: {_esc(value)}" if value else f"• {_esc(name)}"
+            lines.append(line)
     return "\n".join(lines)
 
 
