@@ -73,8 +73,8 @@ class TestSpeedChoice:
         }
 
     def test_weekly_says_when_it_leaves(self):
-        """«Дешевле» без «ждать до понедельника» — обещание, которое не сдержим."""
-        assert "понедельник" in delivery_service.DEFAULT_SPEED_DESCRIPTIONS[DeliverySpeed.WEEKLY]
+        """«Дешевле» без «ждать неделю» — обещание, которое не сдержим."""
+        assert "недел" in delivery_service.DEFAULT_SPEED_DESCRIPTIONS[DeliverySpeed.WEEKLY]
 
 
 class TestQuoteMessage:
@@ -171,7 +171,7 @@ class TestDeliverySummary:
             city="Самара",
             address="Ленина 1",
         )
-        assert delivery_summary(delivery).startswith("по понедельникам")
+        assert delivery_summary(delivery).startswith("раз в неделю")
 
     def test_no_delivery_reads_as_a_dash(self):
         from core.services.orders import delivery_summary

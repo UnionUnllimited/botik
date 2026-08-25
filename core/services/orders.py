@@ -62,7 +62,7 @@ class OrderDraft:
     customer_phone: str = ""
     customer_city: str = ""
     delivery_speed: DeliverySpeed | None = None
-    """Что выбрал клиент: быстро и дороже или дешевле, но ждать понедельника."""
+    """Что выбрал клиент: быстро и дороже или дешевле, но ждать неделю."""
     delivery_method: DeliveryMethod | None = None
     """Перевозчик. Клиент его не выбирает — ставит оператор при отгрузке."""
     delivery_to_pvz: bool = True
@@ -315,7 +315,7 @@ async def list_user_orders(session: AsyncSession, user_id: int, *, limit: int = 
 
 SPEED_SUMMARY = {
     DeliverySpeed.FAST: "быстрая",
-    DeliverySpeed.WEEKLY: "по понедельникам",
+    DeliverySpeed.WEEKLY: "раз в неделю",
 }
 
 

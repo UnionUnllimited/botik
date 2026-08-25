@@ -123,7 +123,7 @@ PAGES = {
             "paid": "Доставка оплачена",
         },
         "carriers": {"cdek": "СДЭК", "post": "Почта России", "yandex": "Яндекс Go"},
-        "speeds": {"fast": "Быстрая", "weekly": "По понедельникам"},
+        "speeds": {"fast": "Быстрая", "weekly": "Раз в неделю"},
     },
     "payments_shop.html": {
         "payments": [
