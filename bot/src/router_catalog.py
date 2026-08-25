@@ -337,8 +337,16 @@ def plans_keyboard(plans: list[dict], product_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def cancel_keyboard() -> InlineKeyboardMarkup:
+def cancel_keyboard(back: str = "") -> InlineKeyboardMarkup:
+    """Клавиатура шага оформления: «Назад» и «Отменить».
+
+    Без «Назад» опечатка в телефоне стоила клиенту всей воронки: отменить
+    и пройти пять шагов заново — или бросить заказ, что он и делал.
+    Куда возвращаться, знает сам экран, поэтому шаг приходит в `back`.
+    """
     builder = InlineKeyboardBuilder()
+    if back:
+        builder.row(btn("btn_back", callback_data=back))
     builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
     return builder.as_markup()
 
@@ -369,6 +377,7 @@ def speed_keyboard(options: list[dict]) -> InlineKeyboardMarkup:
                 callback_data=f"shop_speed:{option.get('speed')}",
             )
         )
+    builder.row(btn("btn_back", callback_data="shop_back:city"))
     builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
     return builder.as_markup()
 
@@ -405,9 +414,10 @@ def renew_keyboard(plans: list[dict]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def promo_keyboard() -> InlineKeyboardMarkup:
+def promo_keyboard(back: str = "shop_back:address") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(btn("btn_shop_promo_skip", callback_data="shop_promo_skip"))
+    builder.row(btn("btn_back", callback_data=back))
     builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
     return builder.as_markup()
 
@@ -426,9 +436,13 @@ def confirm_text(quote: dict, data: dict) -> str:
         lines.append(f"Подписка: {_esc(plan.get('title'))} — {money(plan.get('price'))}")
     if quote.get("promo"):
         lines.append(f"Промокод {_esc(quote['promo'].get('code'))} — −{money(quote.get('discount'))}")
+    # Итог — наша цена. Платёжная система добавляет свою комиссию на своей
+    # странице, и молчать об этом нельзя: клиент видит там другое число
+    # и решает, что его обсчитали.
     lines += [
         "",
         f"<b>Итого: {money(quote.get('total'))}</b>",
+        f"<i>{_esc(text('text_order_total_note'))}</i>",
         "",
         f"Получатель: {_esc(data.get('name'))}",
         f"Телефон: {_esc(data.get('phone'))}",
@@ -446,6 +460,7 @@ def confirm_text(quote: dict, data: dict) -> str:
 def confirm_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(btn("btn_shop_confirm", callback_data="shop_confirm"))
+    builder.row(btn("btn_back", callback_data="shop_back:promo"))
     builder.row(btn("btn_shop_cancel_order", callback_data="shop_cancel"))
     return builder.as_markup()
 
@@ -940,14 +955,70 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             return
         _, product_id, plan_id = query.data.split(":")
         await state.update_data(product_id=int(product_id), plan_id=int(plan_id))
-        await state.set_state(RouterOrder.name)
-        await edit_screen(
-            query.message,
-            text("text_order_ask_name"),
-            reply_markup=cancel_keyboard(),
-            link_preview_options=NO_PREVIEW,
-        )
+        await ask_name(query, state, edit=True)
         await query.answer()
+
+    async def ask_step(target, state: FSMContext, *, edit: bool, step, key: str, back: str):
+        """Экран одного текстового шага воронки.
+
+        Один на первый проход и на возврат: клиент, вернувшийся исправить
+        телефон, должен увидеть ровно тот же экран, а не его двойник,
+        который через месяц разойдётся с оригиналом.
+        """
+        await state.set_state(step)
+        payload = {
+            "text": text(key),
+            "reply_markup": cancel_keyboard(back),
+            "link_preview_options": NO_PREVIEW,
+        }
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
+
+    async def ask_name(target, state: FSMContext, *, edit: bool):
+        data = await state.get_data()
+        # Назад с первого шага — в карточку модели: отменять оформление ради
+        # того, чтобы перечитать характеристики, клиент не должен.
+        product_id = data.get("product_id") or 0
+        await ask_step(
+            target, state, edit=edit,
+            step=RouterOrder.name, key="text_order_ask_name",
+            back=f"shop_item:{product_id}" if product_id else "shop_catalog",
+        )
+
+    async def ask_phone(target, state: FSMContext, *, edit: bool):
+        await ask_step(
+            target, state, edit=edit,
+            step=RouterOrder.phone, key="text_order_ask_phone", back="shop_back:name",
+        )
+
+    async def ask_city(target, state: FSMContext, *, edit: bool):
+        await ask_step(
+            target, state, edit=edit,
+            step=RouterOrder.city, key="text_order_ask_city", back="shop_back:phone",
+        )
+
+    async def ask_where(target, state: FSMContext, *, edit: bool):
+        await state.set_state(None)
+        payload = {
+            "text": text("text_order_ask_where"),
+            "reply_markup": where_keyboard(),
+            "link_preview_options": NO_PREVIEW,
+        }
+        if edit:
+            await edit_screen(target.message, **payload)
+        else:
+            await target.answer(**payload)
+
+    async def ask_address(target, state: FSMContext, *, edit: bool):
+        data = await state.get_data()
+        await ask_step(
+            target, state, edit=edit,
+            step=RouterOrder.address,
+            key="text_order_ask_pvz" if data.get("delivery_to_pvz") else "text_order_ask_address",
+            back="shop_back:where",
+        )
 
     async def ask_speed(target, state: FSMContext, *, edit: bool):
         """Экран выбора скорости доставки.
@@ -980,9 +1051,13 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
 
     async def ask_promo(target, state: FSMContext, *, edit: bool):
         await state.set_state(RouterOrder.promo)
+        data = await state.get_data()
+        # Доставки могло не быть вовсе: варианты не пришли, и шаг с адресом
+        # пропустили. Возвращать туда, где клиент не был, — тупик.
+        back = "shop_back:address" if data.get("delivery_speed") else "shop_back:city"
         payload = {
             "text": text("text_order_ask_promo"),
-            "reply_markup": promo_keyboard(),
+            "reply_markup": promo_keyboard(back),
             "link_preview_options": NO_PREVIEW,
         }
         if edit:
@@ -1029,8 +1104,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if not value:
             return
         await state.update_data(name=value)
-        await state.set_state(RouterOrder.phone)
-        await message.answer(text("text_order_ask_phone"), reply_markup=cancel_keyboard())
+        await ask_phone(message, state, edit=False)
 
     @dp.message(RouterOrder.phone)
     async def on_phone(message: Message, state: FSMContext):
@@ -1041,8 +1115,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if not value:
             return
         await state.update_data(phone=value)
-        await state.set_state(RouterOrder.city)
-        await message.answer(text("text_order_ask_city"), reply_markup=cancel_keyboard())
+        await ask_city(message, state, edit=False)
 
     @dp.message(RouterOrder.city)
     async def on_city(message: Message, state: FSMContext):
@@ -1067,12 +1140,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if await blocked(query):
             return
         await state.update_data(delivery_speed=query.data.split(":")[1])
-        await edit_screen(
-            query.message,
-            text("text_order_ask_where"),
-            reply_markup=where_keyboard(),
-            link_preview_options=NO_PREVIEW,
-        )
+        await ask_where(query, state, edit=True)
         await query.answer()
 
     @dp.callback_query(F.data.startswith("shop_where:"))
@@ -1081,13 +1149,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             return
         to_pvz = query.data.split(":")[1] == "pvz"
         await state.update_data(delivery_to_pvz=to_pvz)
-        await state.set_state(RouterOrder.address)
-        await edit_screen(
-            query.message,
-            text("text_order_ask_pvz") if to_pvz else text("text_order_ask_address"),
-            reply_markup=cancel_keyboard(),
-            link_preview_options=NO_PREVIEW,
-        )
+        await ask_address(query, state, edit=True)
         await query.answer()
 
     @dp.message(RouterOrder.address)
@@ -1148,6 +1210,33 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             reply_markup=created_keyboard(pay_url),
             link_preview_options=NO_PREVIEW,
         )
+
+    @dp.callback_query(F.data.startswith("shop_back:"))
+    async def cq_step_back(query: CallbackQuery, state: FSMContext):
+        """Шаг назад в оформлении заказа.
+
+        Куда возвращаться, говорит сама кнопка: состояние на экранах выбора
+        снимается (`set_state(None)`), и по нему предыдущий шаг не определить.
+
+        Ответы остаются в состоянии: вернувшись, клиент видит тот же вопрос
+        и отвечает заново — прежний ответ просто перезапишется.
+        """
+        if await blocked(query):
+            return
+        step = query.data.split(":", 1)[1]
+        steps = {
+            "name": ask_name,
+            "phone": ask_phone,
+            "city": ask_city,
+            "where": ask_where,
+            "address": ask_address,
+            "promo": ask_promo,
+        }
+        show = steps.get(step)
+        if show is None:
+            return await query.answer()
+        await show(query, state, edit=True)
+        await query.answer()
 
     @dp.callback_query(F.data == "shop_cancel")
     async def cq_cancel(query: CallbackQuery, state: FSMContext):

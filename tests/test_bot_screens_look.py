@@ -142,3 +142,96 @@ class TestClientDoesNotSeeTheHardwareModel:
             encoding="utf-8"
         )
         assert "item.model" in fleet
+
+
+class TestOrderFunnelHasWayBack:
+    """Каждый шаг оформления можно отыграть назад.
+
+    Без этого опечатка в телефоне стоила клиенту всей воронки: отменить
+    и пройти пять шагов заново — или бросить заказ, что он и делал.
+
+    Проверка по исходнику: `router_catalog` тянет `loguru` и `aiogram`
+    из окружения бота, а у тестов своё.
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "bot/src/router_catalog.py"
+    ).read_text(encoding="utf-8")
+
+    def test_every_step_offers_it(self):
+        for step in ("name", "phone", "city", "where", "address", "promo"):
+            assert f'"shop_back:{step}"' in self.SOURCE or f"shop_back:{step}" in self.SOURCE, (
+                f"с шага дальше {step} вернуться некуда"
+            )
+
+    def test_handler_knows_all_steps(self):
+        body = self.SOURCE[self.SOURCE.index("async def cq_step_back") :]
+        body = body[: body.index("@dp.callback_query(F.data ==")]
+        for step in ("name", "phone", "city", "where", "address", "promo"):
+            assert f'"{step}"' in body
+
+    def test_first_step_returns_to_the_card(self):
+        """С первого шага назад — в карточку модели: отменять оформление,
+        чтобы перечитать характеристики, клиент не должен."""
+        body = self.SOURCE[self.SOURCE.index("async def ask_name") :]
+        body = body[: body.index("async def ask_phone")]
+        assert "shop_item:" in body
+
+    def test_promo_skips_the_step_that_never_happened(self):
+        """Доставки могло не быть: варианты не пришли, адрес не спрашивали.
+        Возврат туда — тупик с вопросом, которого клиент не видел."""
+        body = self.SOURCE[self.SOURCE.index("async def ask_promo") :]
+        body = body[: body.index("async def show_confirm")]
+        assert 'data.get("delivery_speed")' in body
+        assert "shop_back:city" in body
+
+    def test_steps_are_asked_in_one_place(self):
+        """Экран возврата и экран первого прохода — один и тот же: два
+        похожих разойдутся через месяц."""
+        assert self.SOURCE.count("async def ask_step") == 1
+        for name in ("ask_name", "ask_phone", "ask_city", "ask_address"):
+            assert f"async def {name}" in self.SOURCE
+
+
+class TestTotalIsOurPrice:
+    """Под «Итого» сказано, что комиссию платёжной системы оно не включает."""
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "bot/src/router_catalog.py"
+    ).read_text(encoding="utf-8")
+
+    def test_note_is_next_to_the_total(self):
+        body = self.SOURCE[self.SOURCE.index("def confirm_text") :]
+        body = body[: body.index("def confirm_keyboard")]
+        assert "text_order_total_note" in body
+        assert body.index("Итого") < body.index("text_order_total_note")
+
+    def test_note_is_editable(self):
+        texts = (
+            Path(__file__).resolve().parents[1] / "bot/src/shop_texts.py"
+        ).read_text(encoding="utf-8")
+        assert '"text_order_total_note"' in texts
+        assert "комисси" in texts
+
+
+class TestDeliveryWording:
+    """Как отправляем — и чем пункт выдачи отличается от курьера."""
+
+    TEXTS = (
+        Path(__file__).resolve().parents[1] / "bot/src/shop_texts.py"
+    ).read_text(encoding="utf-8")
+
+    def test_speed_screen_says_we_send(self):
+        """«Везём» звучит так, будто едем сами, — а отправляет перевозчик."""
+        assert "Как отправляем?" in self.TEXTS
+
+    def test_where_screen_explains_the_price(self):
+        """Разницу в цене клиент должен видеть до выбора, а не из счёта."""
+        block = self.TEXTS[self.TEXTS.index('"text_order_ask_where"') :][:400]
+        assert "дешевле" in block and "дороже" in block
+
+    def test_old_defaults_are_listed_for_reseed(self):
+        """На сервере тексты уже в базе: без перепосева правка кода до них
+        не доедет, а без нового номера отметки круг не пройдёт заново."""
+        assert '"text_order_ask_speed": "🚚 Шаг 4 из 5. Как везём?"' in self.TEXTS
+        assert "ui_redesign_2026_08_v2_applied" in self.TEXTS

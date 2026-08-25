@@ -795,7 +795,7 @@ async def renew_start(payload: dict, session: AsyncSession = Depends(get_transac
     if subscription is None:
         return {
             "ok": False,
-            "error": "Подписки нет. Она появится вместе с заказом роутера.",
+            "error": "Подписки нет. Она появится, когда приедет роутер.",
         }
 
     try:
