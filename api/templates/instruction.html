@@ -6,7 +6,10 @@
   <title>Как подключить роутер — {{ brand }}</title>
   <meta name="description" content="Пять шагов: включить, подключиться, дождаться подписки.">
   <meta name="theme-color" content="#0b0f14">
-  <link rel="icon" href="{{ favicon_url }}" type="image/svg+xml">
+  {# Тип не объявляем: файл кладёт оператор, и это может быть PNG,
+     ICO или JPEG с расширением .png — браузер разберётся сам,
+     а объявленный неверно тип он отвергнет. #}
+  <link rel="icon" href="{{ favicon_url }}">
   <link rel="apple-touch-icon" href="{{ favicon_url }}">
   <link rel="stylesheet" href="/static/landing.css">
 </head>

@@ -689,3 +689,20 @@ class TestPlanDescriptionHasNoTraffic:
             assert content["plans"][0]["description"] == ""
         finally:
             await engine.dispose()
+
+
+class TestFaviconTypeIsNotForced:
+    """Тип значка не объявляем: файл кладёт оператор.
+
+    Присланный `favicon.png` оказался JPEG с расширением `.png` — так бывает
+    сплошь и рядом. Браузер разберёт содержимое сам, а объявленный неверно
+    тип он отвергнет, и значка не будет вовсе.
+    """
+
+    def test_no_hardcoded_mime(self):
+        from api.routes import landing as route
+
+        for name in ("landing.html", "instruction.html", "guide.html"):
+            page = (route.TEMPLATES_DIR / name).read_text(encoding="utf-8")
+            marker = page[page.index('rel="icon"') : page.index('rel="icon"') + 120]
+            assert "image/svg+xml" not in marker, name

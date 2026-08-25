@@ -10,7 +10,10 @@
   <meta property="og:description" content="{{ hero_subtitle }}">
   <meta property="og:type" content="website">
   {% if hero_image %}<meta property="og:image" content="{{ hero_image }}">{% endif %}
-  <link rel="icon" href="{{ favicon_url }}" type="image/svg+xml">
+  {# Тип не объявляем: файл кладёт оператор, и это может быть PNG,
+     ICO или JPEG с расширением .png — браузер разберётся сам,
+     а объявленный неверно тип он отвергнет. #}
+  <link rel="icon" href="{{ favicon_url }}">
   <link rel="apple-touch-icon" href="{{ favicon_url }}">
   <link rel="stylesheet" href="/static/landing.css">
 </head>
