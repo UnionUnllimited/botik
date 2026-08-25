@@ -211,7 +211,15 @@
     </p>
   </div>
 
-  <form method="post" id="gen-settings-form" class="space-y-3" autocomplete="off">
+  {# novalidate обязателен. В форме есть числовые поля с `min`, и значение,
+     не проходящее проверку (ноль там, где ждут единицу, или пустая строка),
+     заставляет браузер отменить отправку. Поле при этом чаще всего лежит
+     на скрытой вкладке — показать подсказку браузер не может и молчит,
+     а для оператора это выглядит как «кнопка не работает».
+
+     Значения всё равно приводит сервер: он читает их как строки и правит
+     сам, поэтому проверка на стороне браузера тут ничего не защищала. #}
+  <form method="post" id="gen-settings-form" class="space-y-3" autocomplete="off" novalidate>
     <div class="gen-save-toolbar">
       <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm gap-1.5">
         <i data-lucide="save" class="w-3.5 h-3.5"></i>

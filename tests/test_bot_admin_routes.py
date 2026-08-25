@@ -204,3 +204,16 @@ class TestSettingsSaveTellsHowMany:
 
     def test_logs_them(self):
         assert "[SETTINGS] сохранено ключей" in self.SOURCE
+
+    def test_browser_validation_does_not_swallow_the_click(self):
+        """Числовое поле с `min` и значением из базы, которое проверку
+        не проходит, отменяло отправку целиком. Поле при этом лежало
+        на скрытой вкладке: показать подсказку браузер не может и молчит,
+        а для оператора это выглядело как «кнопка не работает».
+        """
+        page = (
+            Path(__file__).resolve().parents[1]
+            / "bot/web_admin/templates/settings_general.html"
+        ).read_text(encoding="utf-8")
+        form = page[page.index('id="gen-settings-form"') :][:200]
+        assert "novalidate" in form
