@@ -70,3 +70,73 @@ class TestSubscriptionInfoPlaceholders:
         assert match, "DEFAULT_SUBSCRIPTION_INFO не найден"
         used = set(re.findall(r"\{(\w+)\}", match.group(1)))
         assert used <= provided, f"в шаблоне неизвестные имена: {used - provided}"
+
+
+class TestPremiumEmoji:
+    """Премиум-эмодзи в текстах: `<tg-emoji emoji-id="…">🚀</tg-emoji>`.
+
+    Telegram отдаёт их не всякому боту — только тем, кто купил дополнительный
+    username на Fragment. Остальным он отказывает на всё сообщение целиком,
+    и клиент остаётся без меню. Поэтому отправка идёт в два захода.
+    """
+
+    SOURCE = (Path(__file__).resolve().parents[1] / "bot/main.py").read_text(encoding="utf-8")
+
+    def test_editor_allows_the_tag(self):
+        page = (
+            Path(__file__).resolve().parents[1]
+            / "bot/web_admin/templates/settings_texts.html"
+        ).read_text(encoding="utf-8")
+        assert "'TG-EMOJI'" in page
+        assert 'data-fmt="tg-emoji"' in page, "вставлять id руками — лишний повод опечататься"
+
+    def test_bot_strips_them_on_refusal(self):
+        assert "def without_premium_emoji" in self.SOURCE
+        assert "def is_premium_emoji_refusal" in self.SOURCE
+
+    def test_fallback_keeps_the_plain_emoji(self):
+        """Внутри тега стоит обычный эмодзи — после чистки текст не пустеет."""
+        import re
+
+        body = self.SOURCE[self.SOURCE.index("PREMIUM_EMOJI_RE = ") :]
+        body = body[: body.index("def is_premium_emoji_refusal")]
+        pattern = re.search(r'r"(<tg-emoji.+?)"', body).group(1)
+        assert re.sub(pattern, r"\1", "<tg-emoji emoji-id='1'>🚀</tg-emoji>", flags=re.I) == "🚀"
+
+    def test_menu_retries_without_them(self):
+        """Отказ из-за эмодзи не должен оставлять клиента без меню."""
+        for anchor in ("send_main_menu_photo", "show_main_menu"):
+            assert anchor in self.SOURCE
+        assert self.SOURCE.count("without_premium_emoji(") >= 3
+
+
+class TestSupportKnowsTheRouter:
+    """На экране поддержки есть MAC роутера — если он у клиента есть.
+
+    По MAC оператор находит и клиента, и его подписку; без него разговор
+    начинается с «а какой у вас роутер?».
+    """
+
+    SOURCE = (Path(__file__).resolve().parents[1] / "bot/main.py").read_text(encoding="utf-8")
+
+    def test_variables_are_registered(self):
+        from importlib.util import module_from_spec, spec_from_file_location
+
+        path = Path(__file__).resolve().parents[1] / "bot/src/text_setting_vars.py"
+        spec = spec_from_file_location("text_setting_vars_under_test", path)
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+        names = {item["name"] for item in module.get_text_setting_variables("text_support")}
+        assert {"user_id", "router_mac", "router_line"} <= names
+
+    def test_empty_when_there_is_no_router(self):
+        """Иначе «Роутер: {router_mac}» превратится в висящее «Роутер:»."""
+        body = self.SOURCE[self.SOURCE.index("async def client_router_mac") :]
+        body = body[: body.index("async def show_main_menu")]
+        assert 'return ""' in body
+
+    def test_screen_survives_a_broken_template(self):
+        """Шаблон правит оператор, и незнакомая переменная в нём — вопрос
+        времени. Экран поддержки открывают, когда уже что-то не работает."""
+        body = self.SOURCE[self.SOURCE.index("support_text_template = ") :][:2000]
+        assert "except (KeyError, ValueError, IndexError)" in body

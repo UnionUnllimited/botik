@@ -132,6 +132,10 @@
                         <i data-lucide="link" class="w-3.5 h-3.5"></i>
                         Ссылка
                     </button>
+                    <button type="button" data-fmt="tg-emoji" title="Премиум-эмодзи по id">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                        Эмодзи
+                    </button>
                 </div>
 
                 <textarea id="modalTextarea" spellcheck="true"
@@ -279,7 +283,10 @@
     // ── Live-preview ──────────────────────────────────────────────
     // Telegram поддерживает HTML, поэтому здесь рендерим как HTML,
     // но предварительно «sanitize» — оставляем только разрешённые теги.
-    const ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','INS','S','STRIKE','DEL','CODE','PRE','BR','BLOCKQUOTE','SPAN','TG-SPOILER','A']);
+    // TG-EMOJI — премиум-эмодзи Telegram: <tg-emoji emoji-id="123">🚀</tg-emoji>.
+    // Внутри тега стоит обычный эмодзи — его увидят те, кому премиум-набор
+    // недоступен, поэтому текст читается в любом случае.
+    const ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','INS','S','STRIKE','DEL','CODE','PRE','BR','BLOCKQUOTE','SPAN','TG-SPOILER','TG-EMOJI','A']);
     const VOID_TAGS = new Set(['BR']);
     const TEMPLATE_VAR_RE = /\{[^{}]+\}/g;
     const FORMAT_PLACEHOLDER_RE = /\{[a-zA-Z_][\w]*(?::[^}]*)?\}/g;
@@ -496,6 +503,18 @@
                 const url = prompt('URL ссылки:', 'https://');
                 if (!url) return;
                 wrapSelection('<a href="' + url.replace(/"/g, '&quot;') + '">', '</a>');
+            } else if (f === 'tg-emoji') {
+                // id премиум-эмодзи берут из самого Telegram: переслать
+                // сообщение с ним боту @idstickerbot или скопировать из чата.
+                const id = prompt('id премиум-эмодзи (цифры):', '');
+                if (!id || !/^\d+$/.test(id.trim())) return;
+                // Обычный эмодзи внутри тега обязателен: он показывается тем,
+                // у кого премиум-набор не отобразился, и им же Telegram
+                // заменит эмодзи, если id окажется недоступен.
+                const fallback = prompt('Обычный эмодзи на замену:', '🚀') || '🚀';
+                wrapSelection(
+                    '<tg-emoji emoji-id="' + id.trim() + '">' + fallback, '</tg-emoji>'
+                );
             } else {
                 wrapSelection('<' + f + '>', '</' + f + '>');
             }

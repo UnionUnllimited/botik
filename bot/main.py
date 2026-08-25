@@ -1210,10 +1210,23 @@ async def send_main_menu_photo(user_id: int, text: str, kbd, previous) -> bool:
     try:
         await bot.send_photo(chat_id=user_id, photo=url, caption=text, reply_markup=kbd)
     except Exception as e:
-        # Битая ссылка, недоступный домен, неподдерживаемый формат — меню
-        # всё равно должно открыться, пусть и текстом.
-        logger.warning(f"[MENU] баннер не отправился ({url}): {e}")
-        return False
+        if is_premium_emoji_refusal(e):
+            # Премиум-эмодзи боту не отдали — шлём тот же текст без них.
+            try:
+                await bot.send_photo(
+                    chat_id=user_id,
+                    photo=url,
+                    caption=without_premium_emoji(text),
+                    reply_markup=kbd,
+                )
+            except Exception as retry_error:
+                logger.warning(f"[MENU] баннер не отправился ({url}): {retry_error}")
+                return False
+        else:
+            # Битая ссылка, недоступный домен, неподдерживаемый формат — меню
+            # всё равно должно открыться, пусть и текстом.
+            logger.warning(f"[MENU] баннер не отправился ({url}): {e}")
+            return False
 
     if previous is not None:
         try:
@@ -1223,6 +1236,47 @@ async def send_main_menu_photo(user_id: int, text: str, kbd, previous) -> bool:
             # новое меню уже отправлено.
             pass
     return True
+
+
+PREMIUM_EMOJI_RE = re.compile(r"<tg-emoji[^>]*>(.*?)</tg-emoji>", re.IGNORECASE | re.DOTALL)
+
+
+def without_premium_emoji(text: str) -> str:
+    """Убирает премиум-эмодзи, оставляя обычный внутри тега.
+
+    Премиум-эмодзи в сообщениях доступны не всякому боту: Telegram отдаёт
+    их только тем, кто купил дополнительный username на Fragment. Остальным
+    он отвечает отказом на всё сообщение — и клиент остаётся без меню.
+
+    Поэтому отправка идёт в два захода: сперва как написал оператор, а если
+    Telegram отказал — тем же текстом без тегов. Внутри тега стоит обычный
+    эмодзи, так что смысл сохраняется, теряется только вид.
+    """
+    return PREMIUM_EMOJI_RE.sub(r"", text or "")
+
+
+def is_premium_emoji_refusal(error: Exception) -> bool:
+    """Отказ Telegram именно из-за премиум-эмодзи, а не из-за чего-то ещё."""
+    reason = str(error).lower()
+    return "custom emoji" in reason or "custom_emoji" in reason
+
+
+async def client_router_mac(user_id: int) -> str:
+    """MAC роутера клиента для текстов бота. Пусто — роутера у него нет.
+
+    Молчаливо: экран поддержки открывают, когда что-то уже не работает,
+    и падать из-за недоступного каталога он не должен.
+    """
+    try:
+        from src import shop_api
+        data, error = await shop_api.my_router(user_id)
+        if error:
+            return ""
+        router = data.get("router") or {}
+        return str(router.get("mac") or "")
+    except Exception as exc:  # noqa: BLE001 — причина в журнал, экран важнее
+        logger.warning(f"[SUPPORT] MAC роутера не получен для {user_id}: {exc}")
+        return ""
 
 
 async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message: bool = False):
@@ -1362,11 +1416,27 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         try:
             await target_message.edit_text(text_to_send, reply_markup=kbd, link_preview_options=preview)
         except Exception as e:
-            if "message is not modified" not in str(e).lower():
+            if is_premium_emoji_refusal(e):
+                text_to_send = without_premium_emoji(text_to_send)
+                try:
+                    await target_message.edit_text(
+                        text_to_send, reply_markup=kbd, link_preview_options=preview
+                    )
+                    e = None
+                except Exception as retry_error:
+                    e = retry_error
+            if e is not None and "message is not modified" not in str(e).lower():
                 logger.warning(f"Не удалось отредактировать сообщение для {user_id}: {e}. Отправка нового.")
                 await bot.send_message(user_id, text_to_send, reply_markup=kbd, link_preview_options=preview)
     else:
-        await target_message.answer(text_to_send, reply_markup=kbd, link_preview_options=preview)
+        try:
+            await target_message.answer(text_to_send, reply_markup=kbd, link_preview_options=preview)
+        except Exception as e:
+            if not is_premium_emoji_refusal(e):
+                raise
+            await target_message.answer(
+                without_premium_emoji(text_to_send), reply_markup=kbd, link_preview_options=preview
+            )
 
     if isinstance(message_or_query, CallbackQuery):
         try: await message_or_query.answer()
@@ -2608,12 +2678,29 @@ async def cq_support(query: CallbackQuery):
     user_id_text = str(user_id)
     # Получаем текст поддержки из настроек или используем значение по умолчанию
     support_text_template = app_conf.get('text_support', TXT_SUPPORT_FALLBACK)
-    # Форматируем текст с подстановкой user_id
+
+    # MAC роутера — первое, что спрашивает оператор: по нему находится
+    # и клиент, и его подписка. Роутера может не быть вовсе (человек ещё
+    # не купил), поэтому {router_mac} тогда пуст, а {router_line} — готовая
+    # строка, которая в этом случае исчезает целиком, не оставляя
+    # висящего «Роутер:» без значения.
+    router_mac = await client_router_mac(user_id)
+    router_line = f"Роутер: <code>{html.escape(router_mac)}</code>" if router_mac else ""
+
+    values = {
+        'user_id': html.escape(user_id_text),
+        'router_mac': html.escape(router_mac),
+        'router_line': router_line,
+    }
     try:
-        support_text = support_text_template.format(user_id=html.escape(user_id_text))
-    except (KeyError, ValueError):
-        # Если в шаблоне нет {user_id}, просто используем шаблон как есть
-        support_text = support_text_template.replace('{user_id}', html.escape(user_id_text))
+        support_text = support_text_template.format(**values)
+    except (KeyError, ValueError, IndexError):
+        # Шаблон правит оператор, и незнакомая переменная в нём — вопрос
+        # времени. Экран поддержки падать из-за этого не должен: подставляем
+        # известные значения по одному, остальное оставляем как написано.
+        support_text = support_text_template
+        for name, value in values.items():
+            support_text = support_text.replace('{' + name + '}', value)
     
     # Создаем клавиатуру
     builder = InlineKeyboardBuilder()
