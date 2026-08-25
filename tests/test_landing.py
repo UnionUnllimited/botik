@@ -255,7 +255,9 @@ class TestRendering:
         html = self._render(content)
         assert "6 900 ₽" in html
         assert "?start=buy_" in html
-        assert "Купить в боте" in html
+        # «чат», а не «бот»: для покупателя это переписка в Telegram,
+        # а слово «бот» он читает как «с живым человеком говорить не дадут».
+        assert "Купить в чате" in html
         assert "3 LAN" in html
 
     @pytest.mark.asyncio
@@ -344,3 +346,61 @@ class TestForbiddenTerm:
         ]
         for source in sources:
             assert forbidden not in source.lower()
+
+
+class TestWordingForBuyers:
+    """Для покупателя это переписка в Telegram, а не «бот».
+
+    Слово «бот» человек читает как «с живым человеком поговорить не дадут»,
+    хотя отвечает там оператор. На витрине везде «чат».
+    """
+
+    def _visible_texts(self) -> str:
+        from api.routes import landing as route
+
+        pages = "".join(
+            (route.TEMPLATES_DIR / name).read_text(encoding="utf-8")
+            for name in ("landing.html", "instruction.html", "guide.html")
+        )
+        blocks = landing.STEPS + landing.FEATURES + landing.INSTRUCTION_STEPS + landing.GUIDE_SECTIONS
+        return pages + " ".join(item["title"] + item["text"] for item in blocks)
+
+    def test_no_bot_in_client_facing_text(self):
+        import re
+
+        # Именно слово, а не часть «работает» или «ноутбук».
+        assert not re.search(r"\bбот\w*", self._visible_texts(), flags=re.IGNORECASE)
+
+    def test_chat_is_used_instead(self):
+        assert "чат" in self._visible_texts().lower()
+
+
+class TestSetupStepsMatchTheRouter:
+    """Шаги подключения списаны с инструкции, которая лежит на роутере.
+
+    Придуманные шаги расходятся с тем, что человек видит на устройстве,
+    и первым же несовпадением («какой ещё мастер?») отправляют его
+    в поддержку.
+    """
+
+    def _text(self) -> str:
+        return " ".join(
+            item["title"] + item["text"] for item in landing.INSTRUCTION_STEPS
+        ).lower()
+
+    def test_cable_goes_to_wan(self):
+        assert "wan" in self._text()
+
+    def test_panel_address_is_named(self):
+        assert "192.168.14.1" in self._text() or "titan.lan" in self._text()
+
+    def test_wifi_networks_are_named(self):
+        assert "titan-2.4" in self._text() and "titan-5" in self._text()
+
+    def test_mac_binding_is_explained(self):
+        """Самая частая причина «кабель воткнул, а интернета нет»."""
+        assert "mac" in self._text()
+
+    def test_no_forbidden_term(self):
+        forbidden = "".join(("v", "p", "n"))
+        assert forbidden not in self._text()

@@ -24,7 +24,7 @@
       <a href="#catalog">Модели</a>
       <a href="#faq">Вопросы</a>
     </nav>
-    {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть бота</a>{% endif %}
+    {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть чат</a>{% endif %}
   </div>
 </header>
 
@@ -39,9 +39,9 @@
         <div class="hero__actions">
           {% if products %}<a class="btn" href="#catalog">Смотреть модели</a>{% endif %}
           {% if bot_url %}
-            <a class="btn btn--ghost" href="{{ bot_url }}">Написать в бота</a>
+            <a class="btn btn--ghost" href="{{ bot_url }}">Написать в чат</a>
           {% else %}
-            <span class="note">Заказ оформляется в Telegram-боте</span>
+            <span class="note">Заказ оформляется в чате Telegram</span>
           {% endif %}
         </div>
         <ul class="hero__marks">
@@ -130,10 +130,10 @@
             {% if product.in_stock %}
               {% if product.buy_url %}
                 <a class="btn btn--wide" href="{{ product.buy_url }}">
-                  {% if product.preorder %}Оформить предзаказ{% else %}Купить в боте{% endif %}
+                  {% if product.preorder %}Оформить предзаказ{% else %}Купить в чате{% endif %}
                 </a>
               {% else %}
-                <span class="note">Заказ оформляется в Telegram-боте</span>
+                <span class="note">Заказ оформляется в чате Telegram</span>
               {% endif %}
               {% if product.preorder %}
                 <span class="tag tag--wait">Под заказ</span>
@@ -149,7 +149,7 @@
       </div>
       {% else %}
       <p class="section__lead">Модели скоро появятся. {% if bot_url %}Напишите в
-        <a href="{{ bot_url }}">бота</a> — расскажем, когда привезут.{% endif %}</p>
+        <a href="{{ bot_url }}">чат</a> — расскажем, когда привезут.{% endif %}</p>
       {% endif %}
     </div>
   </section>
@@ -190,12 +190,12 @@
 
   <section class="section cta">
     <div class="wrap wrap--narrow cta__inner">
-      <h2>Заказ оформляется в боте</h2>
+      <h2>Заказ оформляется в чате</h2>
       <p>Там же — оплата, трек-номер посылки, состояние роутера и продление подписки.</p>
       {% if bot_url %}
         <a class="btn btn--big" href="{{ bot_url }}">Перейти в Telegram</a>
       {% else %}
-        <p class="note">Ссылка на бота ещё не настроена: задайте APP_BOT_USERNAME.</p>
+        <p class="note">Ссылка на чат ещё не настроена: задайте APP_BOT_USERNAME.</p>
       {% endif %}
     </div>
   </section>
