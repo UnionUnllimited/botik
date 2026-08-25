@@ -165,6 +165,7 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             devices=data.get("devices", []),
             free_devices=data.get("free_devices", []),
             next_statuses=data.get("next_statuses", []),
+            all_statuses=data.get("all_statuses", []),
             status_titles=STATUS_TITLES,
             delivery_titles=DELIVERY_STATE_TITLES,
             carriers=CARRIER_TITLES,

@@ -254,11 +254,20 @@ def can_transition(current: OrderStatus, target: OrderStatus) -> bool:
     return target in ALLOWED_TRANSITIONS.get(current, ())
 
 
-def set_status(order: Order, target: OrderStatus, *, reason: str | None = None) -> None:
-    """Меняет статус с проверкой перехода и проставляет отметки времени."""
+def set_status(
+    order: Order, target: OrderStatus, *, reason: str | None = None, force: bool = False
+) -> None:
+    """Меняет статус и проставляет отметки времени.
+
+    Порядок переходов защищает автоматику: оплата, отгрузка и активация ходят
+    по нему и не должны перескакивать через шаг. Человека он защищать не может
+    и не должен — жизнь идёт не по схеме: посылку вернули, клиент передумал
+    после отгрузки, заказ закрыли раньше времени. Поэтому оператор переводит
+    заказ куда нужно, а `force` отличает такой перевод от машинного.
+    """
     if order.status is target:
         return
-    if not can_transition(order.status, target):
+    if not force and not can_transition(order.status, target):
         raise OrderError(f"Недопустимый переход {order.status} → {target}")
 
     now = dt.datetime.now(dt.UTC)

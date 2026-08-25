@@ -168,6 +168,7 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             except Exception as _wl_save_e:
                 current_app.logger.warning(f"[WHITELIST] save validation error: {_wl_save_e}")
 
+            saved_keys: list[str] = []
             for key, value in form.items():
                 # Приманки автозаполнения из формы основных настроек (не ключи settings)
                 if key.startswith('gen_honey_'):
@@ -239,6 +240,7 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                         (key, value),
                     )
+                    saved_keys.append(key)
 
             for key in toggle_button_keys:
                 await async_execute_db(
@@ -278,7 +280,13 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             except Exception as e:
                 current_app.logger.warning(f"Ошибка при вызове API перезагрузки настроек бота: {e}")
 
-            await flash('Основные настройки успешно обновлены!', 'success')
+            # Сколько именно записали: «успешно обновлены» без числа ничего
+            # не говорит, и молчаливая потеря настройки выглядела так же,
+            # как удачное сохранение.
+            current_app.logger.info(
+                f"[SETTINGS] сохранено ключей: {len(saved_keys)} ({', '.join(saved_keys[:10])})"
+            )
+            await flash(f'Настройки сохранены: {len(saved_keys)}.', 'success')
             r = redirect(url_for('admin.settings_general') + '#saved')
             r.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             return r

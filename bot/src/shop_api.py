@@ -401,8 +401,14 @@ async def manage_order(order_id: int) -> tuple[dict, str]:
 
 
 async def set_order_status(order_id: int, status: str, reason: str) -> tuple[dict, str]:
+    """Перевод заказа оператором.
+
+    `force` — потому что это человек: схема переходов писана для автоматики,
+    а у него на руках возврат, отказ или заказ, закрытый раньше времени.
+    """
     return await post(
-        f"/api/v1/catalog/manage/orders/{order_id}/status", {"status": status, "reason": reason}
+        f"/api/v1/catalog/manage/orders/{order_id}/status",
+        {"status": status, "reason": reason, "force": True},
     )
 
 

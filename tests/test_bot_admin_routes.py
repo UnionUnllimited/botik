@@ -134,3 +134,73 @@ class TestSpecsWithoutAColon:
         ).read_text(encoding="utf-8")
         card = bot[bot.index("def card_text") : bot.index("def card_keyboard")]
         assert 'if value else f"• {_esc(name)}"' in card
+
+
+class TestOperatorMovesTheOrderAnywhere:
+    """Статус виден и меняется всегда — в самой карточке заказа.
+
+    Схема переходов писана для автоматики: оплата, отгрузка и активация
+    ходят по ней и не должны перескакивать через шаг. Человека она защищать
+    не может — у него на руках возврат, отказ или заказ, закрытый раньше
+    времени, и таких ходов в схеме нет.
+    """
+
+    def _source(self, relative: str) -> str:
+        return (Path(__file__).resolve().parents[1] / relative).read_text(encoding="utf-8")
+
+    def test_service_allows_a_forced_move(self):
+        from core.enums import OrderStatus
+        from core.models import Order
+        from core.services.orders import OrderError, set_status
+
+        order = Order(public_number="R-1", status=OrderStatus.DONE)
+        try:
+            set_status(order, OrderStatus.PACKING)
+        except OrderError:
+            pass
+        else:  # pragma: no cover — проверка самой проверки
+            raise AssertionError("без force схема должна держать")
+
+        set_status(order, OrderStatus.PACKING, force=True)
+        assert order.status is OrderStatus.PACKING
+
+    def test_admin_asks_for_force(self):
+        """Переводит человек, а не автоматика: он видит, что делает."""
+        client = self._source("bot/src/shop_api.py")
+        body = client[client.index("async def set_order_status") :]
+        body = body[: body.index("async def quote_delivery")]
+        assert '"force": True' in body
+
+    def test_card_offers_every_status(self):
+        card = self._source("bot/web_admin/templates/orders_shop_card.html")
+        assert "all_statuses" in card
+        assert "Другие состояния" in card
+
+    def test_card_never_hides_the_form(self):
+        """Раньше на конечном статусе селект пропадал вовсе, и заказ
+        оставался запертым в том состоянии, куда его завела автоматика."""
+        card = self._source("bot/web_admin/templates/orders_shop_card.html")
+        assert "переходов больше нет" not in card
+
+    def test_current_status_is_written_out(self):
+        card = self._source("bot/web_admin/templates/orders_shop_card.html")
+        assert "Сейчас:" in card
+
+
+class TestSettingsSaveTellsHowMany:
+    """«Успешно обновлены» без числа ничего не говорит.
+
+    Молчаливая потеря настройки выглядела ровно так же, как удачное
+    сохранение, — и разбирать это приходилось по базе.
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "bot/web_admin/routes/settings.py"
+    ).read_text(encoding="utf-8")
+
+    def test_counts_saved_keys(self):
+        assert "saved_keys" in self.SOURCE
+        assert "Настройки сохранены: {len(saved_keys)}" in self.SOURCE
+
+    def test_logs_them(self):
+        assert "[SETTINGS] сохранено ключей" in self.SOURCE

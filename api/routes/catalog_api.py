@@ -1421,6 +1421,9 @@ async def manage_order_card(order_id: int, session: AsyncSession = Depends(get_s
         ],
         "devices": [{"id": item.id, "mac": item.mac, "model": item.model or ""} for item in devices],
         "free_devices": [{"mac": item.mac, "model": item.model or ""} for item in free_devices],
+        # Все статусы, кроме текущего: оператор должен видеть, куда заказ
+        # вообще можно поставить, а не только куда ведёт схема.
+        "all_statuses": [str(item) for item in OrderStatus if item is not order.status],
         "next_statuses": [
             str(item) for item in OrderStatus if order_service.can_transition(order.status, item)
         ],
@@ -1459,10 +1462,21 @@ async def manage_order_status(
 ) -> dict:
     order = await _order_or_404(session, order_id)
     reason = str(payload.get("reason", "")).strip()
+    # Оператор переводит заказ куда нужно: схема переходов писана для
+    # автоматики, а у него на руках возврат, отказ или закрытый заказ,
+    # которого в схеме нет.
+    force = bool(payload.get("force"))
+    was = str(order.status)
     try:
-        order_service.set_status(order, OrderStatus(str(payload.get("status", ""))), reason=reason or None)
+        order_service.set_status(
+            order,
+            OrderStatus(str(payload.get("status", ""))),
+            reason=reason or None,
+            force=force,
+        )
     except (order_service.OrderError, ValueError) as exc:
         return {"ok": False, "error": str(exc)}
+    log.info("catalog.order_status_set", order_id=order.id, was=was, now=str(order.status))
 
     await session.flush()
     instruction_url = await _setup_url(session)

@@ -66,14 +66,33 @@
 
   <div class="tw-card p-5 space-y-4">
     <div class="text-[13px] font-semibold tw-text-base2">Состояние заказа</div>
-    {% if next_statuses %}
+    {# Статус виден и меняется всегда. Схема переходов писана для автоматики,
+       а у оператора на руках возврат, отказ или заказ, закрытый раньше
+       времени, — таких ходов в схеме нет, но делать их приходится.
+       Обычный ход стоит первым, остальное — ниже, отдельной группой. #}
     <form method="post" action="{{ url_for('admin.order_shop_status', order_id=order.id) }}"
           class="space-y-3">
+      <div class="text-[12px] tw-text-muted2">
+        Сейчас: <b>{{ status_titles.get(order.status, order.status) }}</b>
+        {% if order.cancel_reason %} · причина: {{ order.cancel_reason }}{% endif %}
+      </div>
       <div class="flex items-center gap-2 flex-wrap">
-        <select name="status" class="tw-select" style="min-width:180px">
-          {% for item in next_statuses %}
-          <option value="{{ item }}">{{ status_titles.get(item, item) }}</option>
-          {% endfor %}
+        <select name="status" class="tw-select" style="min-width:200px">
+          {% if next_statuses %}
+          <optgroup label="Обычный ход">
+            {% for item in next_statuses %}
+            <option value="{{ item }}">{{ status_titles.get(item, item) }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% set others = all_statuses | reject('in', next_statuses) | list %}
+          {% if others %}
+          <optgroup label="Другие состояния">
+            {% for item in others %}
+            <option value="{{ item }}">{{ status_titles.get(item, item) }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
         </select>
         <input type="text" name="reason" placeholder="Причина (для отмены и возврата)"
                class="tw-input" style="min-width:260px">
@@ -86,12 +105,6 @@
         <span class="text-[13px] tw-text-base2">Сообщить клиенту в бот</span>
       </label>
     </form>
-    {% else %}
-    <div class="text-[13px] tw-text-muted2">
-      Из этого состояния переходов больше нет.
-      {% if order.cancel_reason %} Причина: {{ order.cancel_reason }}{% endif %}
-    </div>
-    {% endif %}
 
     {# Удаление — только для ошибочных и брошенных: оплаченный заказ это
        платёж, чек и, скорее всего, уехавшее железо, и восстановить его

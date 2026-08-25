@@ -116,6 +116,7 @@ PAGES = {
         "devices": [{"id": 1, "mac": "A0:B1:C2:D3:E4:F5", "model": "AX3000"}],
         "free_devices": [{"mac": "A0:B1:C2:D3:E4:F6", "model": "AX3000"}],
         "next_statuses": ["packing", "cancelled"],
+        "all_statuses": ["new", "paid", "packing", "shipped", "activated", "cancelled"],
         "status_titles": {"packing": "Собираем", "cancelled": "Отменён", "paid": "Оплачен"},
         "delivery_titles": {
             "not_quoted": "Доставка не посчитана",
