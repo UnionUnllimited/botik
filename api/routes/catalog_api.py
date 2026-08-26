@@ -841,6 +841,39 @@ async def renew_state(tg_id: int, session: AsyncSession = Depends(get_session)) 
     }
 
 
+async def _alive_payment(
+    session: AsyncSession,
+    *,
+    purpose: PaymentPurpose,
+    amount,
+    order_id: int | None = None,
+    user_id: int | None = None,
+) -> Payment | None:
+    """Живой неоплаченный счёт на ту же сумму, если он ещё есть.
+
+    Кнопку оплаты жмут по нескольку раз: пока идёт ответ, пока грузится
+    страница банка, пока клиент думает. Каждое нажатие заводило свой счёт —
+    и мусор в платежах, и настоящая возможность заплатить дважды, открыв
+    две ссылки подряд.
+
+    Просроченный не переиспользуем: мёртвая ссылка хуже отсутствия — клиент
+    нажмёт и упрётся в «срок истёк», не поняв, что делать.
+    """
+    conditions = [
+        Payment.purpose == purpose,
+        Payment.status == PaymentStatus.PENDING,
+        Payment.amount == amount,
+        Payment.confirmation_url.is_not(None),
+        or_(Payment.expires_at.is_(None), Payment.expires_at > utcnow()),
+    ]
+    if order_id is not None:
+        conditions.append(Payment.order_id == order_id)
+    if user_id is not None:
+        conditions.append(Payment.user_id == user_id)
+
+    return await session.scalar(select(Payment).where(*conditions).order_by(Payment.id.desc()))
+
+
 @router.post("/renew")
 async def renew_start(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
     """Ссылка на оплату продления. Срок двигается уже по факту оплаты."""
@@ -857,6 +890,17 @@ async def renew_start(payload: dict, session: AsyncSession = Depends(get_transac
         return {
             "ok": False,
             "error": "Подписки нет. Она появится, когда приедет роутер.",
+        }
+
+    alive = await _alive_payment(
+        session, purpose=PaymentPurpose.SUBSCRIPTION, amount=plan.price, user_id=user.id
+    )
+    if alive is not None:
+        log.info("catalog.renew_link_reused", payment_id=alive.id, plan_id=plan.id)
+        return {
+            "ok": True,
+            "pay_url": alive.confirmation_url or "",
+            "plan": _plan_payload(plan),
         }
 
     try:
@@ -1042,6 +1086,49 @@ def _order_payload(order: Order, *, instruction_url: str = "") -> dict:
     }
 
 
+DUPLICATE_WINDOW_SEC = 120
+"""Сколько секунд повторный такой же заказ считается тем же самым.
+
+Две минуты: обрыв с ретраем и второе нажатие укладываются в них с запасом,
+а человек, решивший купить второй такой же роутер, столько не думает —
+он выбирает адрес и телефон заново."""
+
+
+async def _recent_twin(
+    session: AsyncSession, *, user: User, draft: order_service.OrderDraft
+) -> Order | None:
+    """Только что созданный заказ клиента с тем же составом, если он есть."""
+    if not draft.product_id:
+        return None
+
+    since = utcnow() - dt.timedelta(seconds=DUPLICATE_WINDOW_SEC)
+    candidates = await session.scalars(
+        select(Order)
+        .where(
+            Order.user_id == user.id,
+            Order.status.in_((OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT)),
+            Order.created_at >= since,
+        )
+        .order_by(Order.id.desc())
+        .limit(5)
+        .options(selectinload(Order.items), selectinload(Order.delivery), selectinload(Order.user))
+    )
+    for order in candidates:
+        products = {item.product_id for item in order.items if item.product_id}
+        plans = {item.plan_id for item in order.items if item.plan_id}
+        if draft.product_id in products and (not draft.plan_id or draft.plan_id in plans):
+            return order
+    return None
+
+
+async def _alive_pay_url(session: AsyncSession, order: Order) -> str:
+    """Ссылка живого счёта по заказу — чтобы повтор не остался без оплаты."""
+    payment = await _alive_payment(
+        session, purpose=PaymentPurpose.ORDER, amount=order.total, order_id=order.id
+    )
+    return (payment.confirmation_url or "") if payment else ""
+
+
 @router.post("/orders")
 async def create_order(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
     """Оформление заказа и ссылка на оплату."""
@@ -1052,6 +1139,19 @@ async def create_order(payload: dict, session: AsyncSession = Depends(get_transa
     draft = _draft(payload)
     if not draft.customer_name or not draft.customer_phone:
         return {"ok": False, "error": "Не хватает имени или телефона."}
+
+    # Тот же заказ, отправленный дважды, — это не две покупки. Так бывает
+    # при обрыве связи с ретраем и при двойном нажатии: бот уже защищается,
+    # но заказ и счёт — не то место, где стоит полагаться на чужой процесс.
+    twin = await _recent_twin(session, user=user, draft=draft)
+    if twin is not None:
+        log.info("catalog.order_duplicate_ignored", order_id=twin.id, number=twin.public_number)
+        return {
+            "ok": True,
+            "order": _order_payload(twin),
+            "pay_url": await _alive_pay_url(session, twin),
+            "payment_error": "",
+        }
 
     try:
         order = await order_service.create_order(session, user=user, draft=draft)
@@ -1910,6 +2010,16 @@ async def delivery_payment_link(
         return {"ok": False, "error": "Доставка по этому заказу уже оплачена."}
     if delivery.price <= 0:
         return {"ok": False, "error": "Доставка по этому заказу бесплатная."}
+
+    alive = await _alive_payment(
+        session,
+        purpose=PaymentPurpose.DELIVERY,
+        amount=delivery.price,
+        order_id=order.id,
+    )
+    if alive is not None:
+        log.info("catalog.delivery_link_reused", order_id=order.id, payment_id=alive.id)
+        return {"ok": True, "pay_url": alive.confirmation_url or "", "price": str(delivery.price)}
 
     try:
         payment = await payment_service.start_payment(

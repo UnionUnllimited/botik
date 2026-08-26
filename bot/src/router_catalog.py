@@ -1279,9 +1279,17 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if not data.get("product_id"):
             return await query.answer("Заказ уже оформлен", show_alert=True)
 
+        # Занимаем черновик до запроса, а не после. Оформление идёт до
+        # провайдера оплаты и занимает секунды: за это время клиент успевает
+        # нажать «Оформить» второй раз, и раньше это заводило второй заказ
+        # со вторым счётом.
+        await state.update_data(product_id=None)
         await query.answer("Оформляем…")
         result, error = await shop_api.create_order(draft_payload(query.from_user, data))
         if error:
+            # Заказ не создан — черновик возвращаем, иначе клиент упрётся
+            # в «уже оформлен», не оформив ничего.
+            await state.update_data(product_id=data.get("product_id"))
             return await edit_screen(
                 query.message,
                 f"❌ {_esc(error)}",
