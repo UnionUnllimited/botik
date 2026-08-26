@@ -35,6 +35,7 @@ from core.models import (
     DeviceEvent,
     DomainBuild,
     DomainSource,
+    FirmwareRelease,
     ListKind,
     ManualList,
     ManualListRevision,
@@ -45,6 +46,7 @@ from core.security import normalize_mac
 from core.services import (
     activation,
     domain_lists,
+    firmware,
     panel_ticket,
     remnawave,
     router_shell,
@@ -1670,3 +1672,152 @@ async def lists_build(session: AsyncSession = Depends(get_transaction)) -> dict:
         "failed_sources": record.failed_sources,
         "skipped": record.skipped,
     }
+
+
+# ── Обновление роутеров ───────────────────────────────────────────────────────
+#
+# Роутеры на прошивке Titan обновляются сами: раз в сутки берут манифест
+# по постоянному адресу и действуют по нему. От панели нужно ровно две вещи —
+# раздавать JSON и хранить образы. Ручек к роутеру здесь нет и быть не может:
+# он о себе не сообщает ничего, и сколько устройств обновилось, панель не знает.
+
+
+def _firmware_release_payload(release: FirmwareRelease) -> dict:
+    images = {
+        image.model_key: {
+            "file_name": image.file_name,
+            "url": f"{settings.api.public_base_url.rstrip('/')}{image.url_path}",
+            "sha256": image.sha256,
+            "size": image.size_bytes,
+            "uploaded_at": image.uploaded_at.isoformat() if image.uploaded_at else None,
+        }
+        for image in release.images
+    }
+    return {
+        "id": release.id,
+        "version": release.version,
+        "notes": release.notes,
+        "rollout": release.rollout,
+        "rollout_max": release.rollout_max,
+        "is_published": release.published_at is not None,
+        "published_at": release.published_at.isoformat() if release.published_at else None,
+        "created_at": release.created_at.isoformat() if release.created_at else None,
+        "created_by": release.created_by,
+        "images": images,
+        # Модели без образа перечисляем отдельно: их отсутствие — не поломка,
+        # а штатный способ приостановить одну модель, и на странице это должно
+        # читаться как решение, а не как «забыли загрузить».
+        "missing": [key for key in firmware.MODEL_KEYS if key not in images],
+    }
+
+
+async def _firmware_or_404(session: AsyncSession, release_id: int) -> FirmwareRelease:
+    release = await firmware.get_release(session, release_id)
+    if release is None:
+        raise HTTPException(status_code=404, detail="Выпуск не найден")
+    return release
+
+
+@router.get("/firmware", dependencies=[Depends(require_token)])
+async def firmware_state(session: AsyncSession = Depends(get_session)) -> dict:
+    """Всё, из чего собирается страница «Обновление роутеров»."""
+    history = await firmware.releases(session)
+    current = await firmware.current_release(session)
+    draft = next((item for item in history if item.published_at is None), None)
+    return {
+        "models": [{"key": key, "title": title} for key, title in firmware.MODELS],
+        "rollout_steps": list(firmware.ROLLOUT_STEPS),
+        "rollout_warning": firmware.ROLLOUT_WARNING,
+        "manifest_url": firmware.manifest_url(),
+        "image_suffix": firmware.IMAGE_SUFFIX,
+        "max_mb": settings.app.firmware_max_bytes // (1024 * 1024),
+        "next_version": await firmware.next_version(session),
+        "current": _firmware_release_payload(current) if current else None,
+        "draft": _firmware_release_payload(draft) if draft else None,
+        "releases": [_firmware_release_payload(item) for item in history],
+    }
+
+
+@router.post("/firmware/releases", dependencies=[Depends(require_token)])
+async def firmware_release_create(
+    payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Заводит черновик выпуска. В манифест он не попадёт, пока не опубликован."""
+    try:
+        release = await firmware.create_release(
+            session,
+            version=payload.get("version"),
+            notes=str(payload.get("notes") or ""),
+            author=str(payload.get("author") or ""),
+        )
+    except firmware.FirmwareError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "release": _firmware_release_payload(release)}
+
+
+@router.post("/firmware/releases/{release_id}/upload-ticket", dependencies=[Depends(require_token)])
+async def firmware_upload_ticket(
+    release_id: int, payload: dict, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Разовая ссылка, по которой браузер оператора отправит образ прямо нам.
+
+    Билет, а не общий токен: ссылку выдаёт их процесс, и отдай он токен
+    в браузер — секрет ко всем нашим ручкам уехал бы вместе со страницей.
+    """
+    await _firmware_or_404(session, release_id)
+    try:
+        url = await firmware.issue_ticket(
+            release_id=release_id, model_key=str(payload.get("model") or "")
+        )
+    except firmware.FirmwareError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "url": url}
+
+
+@router.post("/firmware/releases/{release_id}/rollout", dependencies=[Depends(require_token)])
+async def firmware_set_rollout(
+    release_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Меняет долю парка. Применяется сразу: манифест собирается из базы,
+    пересобирать нечего."""
+    release = await _firmware_or_404(session, release_id)
+    rollout = await firmware.set_rollout(session, release, payload.get("rollout"))
+    return {"ok": True, "rollout": rollout}
+
+
+@router.post("/firmware/releases/{release_id}/publish", dependencies=[Depends(require_token)])
+async def firmware_publish(
+    release_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Публикует выпуск: с этой секунды он и есть манифест."""
+    release = await _firmware_or_404(session, release_id)
+    try:
+        await firmware.publish(session, release, rollout=payload.get("rollout", 0))
+    except firmware.FirmwareError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "release": _firmware_release_payload(release)}
+
+
+@router.post("/firmware/releases/{release_id}/image-delete", dependencies=[Depends(require_token)])
+async def firmware_image_delete(
+    release_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Убирает модель из выпуска — штатный способ приостановить её одну."""
+    release = await _firmware_or_404(session, release_id)
+    removed = await firmware.detach_image(session, release, str(payload.get("model") or ""))
+    if not removed:
+        return {"ok": False, "error": "Образа для этой модели в выпуске нет."}
+    return {"ok": True}
+
+
+@router.post("/firmware/releases/{release_id}/delete", dependencies=[Depends(require_token)])
+async def firmware_release_delete(
+    release_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Удаляет выпуск вместе с файлами. Раздаваемый сейчас не отдаём."""
+    release = await _firmware_or_404(session, release_id)
+    try:
+        await firmware.delete_release(session, release)
+    except firmware.FirmwareError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}

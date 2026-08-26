@@ -469,6 +469,11 @@ async def _admin_auth_guard():
                 ('/migrate', 'tools'), ('/tasks', 'tools'),
                 ('/news', 'tools'), ('/inbound-templates', 'tools'), ('/services', 'tools'),
                 ('/bulk-actions', 'tools'),
+                # Раздача прошивки: пункт меню стоит в «Инструментах», и проверка
+                # должна совпадать с ним. Без этой строки путь попадал бы
+                # в 'dashboard' — то есть открывался бы любому модератору,
+                # а выкат прошивки идёт на весь парк.
+                ('/firmware', 'tools'),
                 ('/updates', 'updates'),
             ]
             req_section = None
@@ -1501,6 +1506,8 @@ from web_admin.routes.push import attach_push_routes
 attach_push_routes(admin_bp)
 from web_admin.routes.bulk_ops import attach_bulk_ops_routes
 attach_bulk_ops_routes(admin_bp)
+from web_admin.routes.firmware import attach_firmware_routes
+attach_firmware_routes(admin_bp)
         
 @admin_bp.route('/users__placeholder__moved/<int:telegram_id>/delete', methods=['POST'])
 @login_required

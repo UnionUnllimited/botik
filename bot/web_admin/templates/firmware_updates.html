@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% block title %}Обновление роутеров · {{ super() }}{% endblock %}
+{% block content %}
+{# Роутеры обновляются сами: раз в сутки берут манифест по постоянному адресу
+   и действуют по нему. Отсюда — только выпуск: номер версии, четыре образа
+   и доля парка. Сколько роутеров обновилось, панель не знает: устройства
+   о себе не сообщают ничего. #}
+<div class="tw-anim space-y-4 max-w-4xl">
+
+  <div class="min-w-0">
+    <h1 class="text-lg font-semibold tw-text-base">Обновление роутеров</h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">
+      Роутер раз в сутки читает манифест и обновляется сам. Здесь — что в нём
+      написано: номер версии, образы по моделям и какой доле парка их отдавать.
+    </p>
+    {% if manifest_url %}
+    <a href="{{ manifest_url }}" target="_blank" rel="noopener"
+       class="text-[11.5px] font-mono break-all" style="color: rgb(var(--admin-accent))">
+      {{ manifest_url }}
+    </a>
+    {% endif %}
+  </div>
+
+  {% if firmware_error %}
+  <div class="tw-card p-4 text-[13px]" style="border-color: rgb(244 63 94 / .35);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 inline-block align-text-bottom"></i>
+    {{ firmware_error }}
+  </div>
+  {% else %}
+
+  {# ── Что раздаётся сейчас ──────────────────────────────────────────────── #}
+  <div class="tw-card p-4">
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div class="min-w-0">
+        <div class="text-[12px] tw-text-muted2">Раздаётся сейчас</div>
+        {% if current %}
+        <div class="text-[22px] font-semibold tw-text-base2">версия {{ current.version }}</div>
+        <div class="text-[12px] tw-text-subtle2">
+          опубликована {{ current.published_at[:16].replace('T', ' ') if current.published_at }}{% if current.created_by %}, {{ current.created_by }}{% endif %}
+        </div>
+        {% if current.notes %}
+        <div class="text-[12.5px] tw-text-base2 mt-1">{{ current.notes }}</div>
+        {% endif %}
+        {% else %}
+        <div class="text-[16px] font-semibold tw-text-base2">ничего</div>
+        <div class="text-[12px] tw-text-subtle2">
+          Манифест отдаёт пустой список образов — роутеры читают его и ничего не делают.
+        </div>
+        {% endif %}
+      </div>
+
+      {% if current %}
+      <div class="text-right">
+        <div class="text-[12px] tw-text-muted2">Раскатка</div>
+        <div class="text-[22px] font-semibold {% if current.rollout %}tw-text-base2{% else %}text-amber-600{% endif %}">
+          {{ current.rollout }} %
+        </div>
+        {% if current.rollout_max > current.rollout %}
+        <div class="text-[11px] tw-text-subtle2">доходила до {{ current.rollout_max }} %</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    {% if current %}
+    {# Ползунок со значениями 0 / 5 / 25 / 50 / 100. Промежуточных нет: доля
+       выбирается на глаз, и «37 %» ничем не лучше «25 %». #}
+    <form method="post" action="{{ url_for('admin.firmware_rollout', release_id=current.id) }}"
+          class="mt-4 pt-4 border-t" style="border-color: var(--admin-border);" novalidate>
+      <input type="hidden" name="rollout" value="{{ current.rollout }}" data-fw-rollout-value>
+      <div class="flex items-center gap-3 flex-wrap">
+        <input type="range" min="0" max="{{ rollout_steps|length - 1 }}" step="1"
+               class="flex-1 min-w-[200px]" data-fw-rollout
+               data-fw-steps="{{ rollout_steps|join(',') }}"
+               value="{{ rollout_steps.index(current.rollout) if current.rollout in rollout_steps else 0 }}">
+        <span class="text-[15px] font-semibold tw-text-base2 w-14 text-right" data-fw-rollout-label>
+          {{ current.rollout }} %
+        </span>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Применить</button>
+      </div>
+      <div class="flex justify-between text-[11px] tw-text-subtle2 mt-1 px-1">
+        {% for step in rollout_steps %}<span>{{ step }}</span>{% endfor %}
+      </div>
+    </form>
+
+    {# Единственное, что здесь можно понять неправильно, — решить, что нулём
+       обновление отменяется целиком. Поэтому написано рядом с ползунком. #}
+    <div class="text-[12px] text-amber-600 mt-3 flex gap-2">
+      <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+      <span>{{ rollout_warning }}</span>
+    </div>
+
+    {% if current.rollout %}
+    <form method="post" action="{{ url_for('admin.firmware_rollout', release_id=current.id) }}" class="mt-3">
+      <input type="hidden" name="rollout" value="0">
+      <button type="submit" class="tw-btn tw-btn-sm nav-accent-danger"
+              style="border-color: rgb(244 63 94 / .45);">
+        <i data-lucide="alert-octagon" class="w-3.5 h-3.5"></i>
+        <span>Остановить раздачу</span>
+      </button>
+    </form>
+    {% endif %}
+
+    {# Образы выпуска. sha256 и размер посчитал сервер при загрузке: руками
+       их не вводят нигде — ошибка в одном знаке тихо отменит обновление
+       у всего парка. #}
+    <div class="mt-4 pt-4 border-t space-y-2" style="border-color: var(--admin-border);">
+      {% for model in models %}
+      {% set image = current.images.get(model.key) %}
+      <div class="flex items-start justify-between gap-3 text-[12.5px]">
+        <div class="min-w-0">
+          <div class="tw-text-base2">{{ model.title }}</div>
+          <div class="text-[11px] font-mono tw-text-subtle2">{{ model.key }}</div>
+        </div>
+        <div class="text-right min-w-0">
+          {% if image %}
+          <div class="font-mono text-[11px] break-all tw-text-muted2">{{ image.file_name }}</div>
+          <div class="text-[11px] tw-text-subtle2">
+            {{ '%.1f'|format(image.size / 1048576) }} МБ ·
+            <span class="font-mono">{{ image.sha256[:16] }}…</span>
+          </div>
+          {% else %}
+          <span class="text-[11.5px] text-amber-600">образа нет — эти роутеры не обновляются</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Черновик или новый выпуск ─────────────────────────────────────────── #}
+  {% if draft %}
+  <div class="tw-card p-4">
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <div class="text-[12px] tw-text-muted2">Черновик</div>
+        <div class="text-[18px] font-semibold tw-text-base2">версия {{ draft.version }}</div>
+        {% if draft.notes %}
+        <div class="text-[12.5px] tw-text-base2 mt-1">{{ draft.notes }}</div>
+        {% endif %}
+      </div>
+      <form method="post" action="{{ url_for('admin.firmware_release_delete', release_id=draft.id) }}"
+            onsubmit="return confirm('Удалить черновик вместе с загруженными образами?');">
+        <button type="submit" class="tw-btn tw-btn-sm">Удалить черновик</button>
+      </form>
+    </div>
+
+    <div class="text-[11.5px] tw-text-subtle2 mt-2">
+      Пока выпуск не опубликован, роутеры о нём не знают: манифест отдаёт
+      прежнюю версию.
+    </div>
+
+    {# Образ загружается прямо в основное приложение по разовой ссылке —
+       файл в 54 МБ не гоняем через эту службу. #}
+    <div class="mt-4 pt-4 border-t space-y-3" style="border-color: var(--admin-border);"
+         data-fw-uploads data-fw-release="{{ draft.id }}"
+         data-fw-ticket="{{ url_for('admin.firmware_upload_ticket') }}">
+      {% for model in models %}
+      {% set image = draft.images.get(model.key) %}
+      <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between"
+           data-fw-row data-fw-model="{{ model.key }}">
+        <div class="min-w-0">
+          <div class="text-[12.5px] tw-text-base2">{{ model.title }}</div>
+          <div class="text-[11px] font-mono tw-text-subtle2">{{ model.key }}</div>
+          {% if image %}
+          <div class="text-[11px] tw-text-muted2 font-mono break-all mt-0.5">
+            {{ image.file_name }} · {{ '%.1f'|format(image.size / 1048576) }} МБ
+          </div>
+          <div class="text-[11px] font-mono tw-text-subtle2 break-all">sha256 {{ image.sha256 }}</div>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <input type="file" accept=".bin" class="text-[11.5px] max-w-[200px]" data-fw-file>
+          <button type="button" class="tw-btn tw-btn-sm" data-fw-send>
+            {{ 'Заменить' if image else 'Загрузить' }}
+          </button>
+          {% if image %}
+          <form method="post"
+                action="{{ url_for('admin.firmware_image_delete', release_id=draft.id) }}"
+                onsubmit="return confirm('Убрать модель из выпуска? Её роутеры обновляться не будут.');">
+            <input type="hidden" name="model" value="{{ model.key }}">
+            <button type="submit" class="tw-btn tw-btn-sm" title="Убрать модель из выпуска">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        <div class="text-[11.5px] w-full sm:w-auto sm:text-right" data-fw-status></div>
+      </div>
+      {% endfor %}
+      <noscript>
+        <div class="text-[11.5px] text-amber-600">
+          Загрузка образов требует включённого JavaScript: файл уходит напрямую
+          в основное приложение, с показом хода отправки.
+        </div>
+      </noscript>
+      <div class="text-[11px] tw-text-subtle2">
+        Файл должен оканчиваться на «{{ image_suffix }}»{% if max_mb %}, не больше {{ max_mb }} МБ{% endif %}.
+        sha256 и размер считает сервер при загрузке — руками их не вводят:
+        ошибка в одном знаке тихо отменит обновление у всего парка.
+        Модель без образа — штатный способ приостановить её одну.
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('admin.firmware_publish', release_id=draft.id) }}"
+          class="mt-4 pt-4 border-t flex items-center gap-3 flex-wrap"
+          style="border-color: var(--admin-border);" novalidate
+          onsubmit="return confirm('Опубликовать выпуск {{ draft.version }}? Роутеры начнут обновляться.');">
+      <label class="text-[12.5px] tw-text-base2" for="publish_rollout">Раскатать сразу на</label>
+      <select id="publish_rollout" name="rollout" class="tw-input w-28">
+        {% for step in rollout_steps %}
+        <option value="{{ step }}">{{ step }} %</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm"
+              {% if not draft.images %}disabled{% endif %}>
+        Опубликовать
+      </button>
+      {% if not draft.images %}
+      <span class="text-[11.5px] text-amber-600">Сначала загрузите хотя бы один образ.</span>
+      {% endif %}
+    </form>
+  </div>
+
+  {% else %}
+  <div class="tw-card p-4">
+    <div class="text-[13px] font-semibold tw-text-base2">Новый выпуск</div>
+    <form method="post" action="{{ url_for('admin.firmware_release_create') }}"
+          class="mt-3 space-y-3" novalidate>
+      <div class="flex items-center gap-3 flex-wrap">
+        <label class="text-[12.5px] tw-text-base2 w-20" for="fw_version">Версия</label>
+        <input id="fw_version" type="number" name="version" class="tw-input w-32"
+               value="{{ next_version }}" min="{{ next_version }}" step="1">
+        <span class="text-[11.5px] tw-text-subtle2">
+          Целое, строго больше предыдущего: номер ниже своего роутер игнорирует.
+        </span>
+      </div>
+      <div class="flex items-start gap-3 flex-wrap">
+        <label class="text-[12.5px] tw-text-base2 w-20 mt-2" for="fw_notes">Заметка</label>
+        <input id="fw_notes" type="text" name="notes" class="tw-input flex-1 min-w-[240px]"
+               maxlength="500" placeholder="фикс WAN на WR3000E">
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="w-20"></span>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Создать черновик</button>
+        <span class="text-[11.5px] tw-text-subtle2">
+          Дальше — загрузить образы и опубликовать.
+        </span>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {# ── История ───────────────────────────────────────────────────────────── #}
+  {% if releases %}
+  <div class="tw-card p-4">
+    <div class="text-[13px] font-semibold tw-text-base2 mb-2">История выпусков</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-[12.5px]">
+        <thead class="text-[11px] tw-text-subtle2 uppercase">
+          <tr>
+            <th class="text-left py-1.5">Версия</th>
+            <th class="text-left py-1.5">Опубликована</th>
+            <th class="text-left py-1.5">Раскатана до</th>
+            <th class="text-left py-1.5">Образов</th>
+            <th class="text-left py-1.5">Заметка</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in releases %}
+          <tr class="border-t" style="border-color: var(--admin-border);">
+            <td class="py-1.5 tw-text-base2">
+              {{ item.version }}
+              {% if current and item.id == current.id %}
+              <span class="text-[10.5px] tw-text-subtle2">— раздаётся</span>
+              {% endif %}
+            </td>
+            <td class="py-1.5 tw-text-muted2">
+              {% if item.published_at %}{{ item.published_at[:16].replace('T', ' ') }}
+              {% else %}<span class="text-amber-600">черновик</span>{% endif %}
+            </td>
+            <td class="py-1.5 tw-text-muted2">
+              {{ item.rollout_max }} %{% if item.is_published and item.rollout != item.rollout_max %}
+              <span class="tw-text-subtle2">(сейчас {{ item.rollout }} %)</span>{% endif %}
+            </td>
+            <td class="py-1.5 tw-text-muted2">{{ item.images|length }} из {{ models|length }}</td>
+            <td class="py-1.5 tw-text-muted2">{{ item.notes }}</td>
+            <td class="py-1.5 text-right">
+              {% if not (current and item.id == current.id) %}
+              <form method="post"
+                    action="{{ url_for('admin.firmware_release_delete', release_id=item.id) }}"
+                    onsubmit="return confirm('Удалить выпуск {{ item.version }} вместе с образами?');">
+                <button type="submit" class="tw-btn tw-btn-sm" title="Удалить вместе с образами">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="text-[11px] tw-text-subtle2 mt-2">
+      Сколько роутеров обновилось, здесь не написано и написано быть не может:
+      устройства о себе не сообщают ничего.
+    </div>
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+<script>
+// Образ уходит прямо в основное приложение по разовой ссылке: 54 МБ через эту
+// службу — это лишний перегон и второй таймаут. XHR, а не fetch, ради хода
+// отправки: без него оператор минуту смотрит на неподвижную кнопку и жмёт её
+// второй раз.
+(function () {
+  var box = document.querySelector('[data-fw-uploads]');
+  if (box) {
+    var releaseId = box.getAttribute('data-fw-release');
+    var ticketUrl = box.getAttribute('data-fw-ticket');
+
+    box.querySelectorAll('[data-fw-send]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var row = button.closest('[data-fw-row]');
+        var input = row.querySelector('[data-fw-file]');
+        var status = row.querySelector('[data-fw-status]');
+        var file = input.files && input.files[0];
+        if (!file) { status.textContent = 'Выберите файл.'; return; }
+
+        button.disabled = true;
+        status.textContent = 'Готовим загрузку…';
+
+        fetch(ticketUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ release_id: releaseId, model: row.getAttribute('data-fw-model') })
+        }).then(function (response) { return response.json(); }).then(function (data) {
+          if (!data.ok) { throw new Error(data.error || 'Не получилось.'); }
+          var form = new FormData();
+          form.append('image', file, file.name);
+          var request = new XMLHttpRequest();
+          request.open('POST', data.url, true);
+          request.upload.onprogress = function (event) {
+            if (event.lengthComputable) {
+              status.textContent = 'Отправляем ' + Math.round(event.loaded / event.total * 100) + ' %';
+            }
+          };
+          request.onload = function () {
+            var answer = {};
+            try { answer = JSON.parse(request.responseText); } catch (error) { answer = {}; }
+            if (answer.ok) {
+              status.textContent = 'Готово, обновляем страницу…';
+              window.location.reload();
+            } else {
+              status.textContent = answer.error || ('Ошибка ' + request.status);
+              button.disabled = false;
+            }
+          };
+          request.onerror = function () {
+            status.textContent = 'Связь оборвалась — попробуйте ещё раз.';
+            button.disabled = false;
+          };
+          request.send(form);
+        }).catch(function (error) {
+          status.textContent = error.message;
+          button.disabled = false;
+        });
+      });
+    });
+  }
+
+  // Ползунок ходит по значениям 0 / 5 / 25 / 50 / 100, а в форму уходит само
+  // значение, а не номер шага.
+  document.querySelectorAll('[data-fw-rollout]').forEach(function (slider) {
+    var steps = (slider.getAttribute('data-fw-steps') || '0,100').split(',');
+    var form = slider.form;
+    var hidden = form.querySelector('[data-fw-rollout-value]');
+    var label = form.querySelector('[data-fw-rollout-label]');
+    var sync = function () {
+      var value = steps[Number(slider.value)] || '0';
+      hidden.value = value;
+      label.textContent = value + ' %';
+    };
+    slider.addEventListener('input', sync);
+    sync();
+  });
+})();
+</script>
+{% endblock %}

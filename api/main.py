@@ -25,6 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.routes import (
     catalog_api,
+    firmware_api,
     fleet_api,
     health,
     landing,
@@ -40,7 +41,7 @@ from core.notifications import close_bot
 from core.payments import close_providers
 from core.redis_client import check_redis, close_redis
 from core.sentry import init_sentry
-from core.services import media
+from core.services import firmware, media
 from core.services.frp import close_dashboard
 from core.services.remnawave import close_client as close_remnawave
 
@@ -128,6 +129,19 @@ def create_app() -> FastAPI:
         # Без картинок сайт работает, без запуска — нет.
         log.error("api.media_mount_failed", error=str(exc), path=str(media_root))
 
+    # Образы прошивки. Свой каталог и свой префикс: в `/media` лежат картинки
+    # товаров, а тут файлы по 27–54 МБ, за которыми приходит парк железа.
+    # Отдаёт их StaticFiles, а не наш обработчик: он умеет Range и `304`,
+    # а на такие размеры это разница между дозагрузкой и повторной закачкой.
+    images_root = firmware.images_root()
+    try:
+        images_root.mkdir(parents=True, exist_ok=True)
+        app.mount(
+            firmware.IMAGES_PREFIX, StaticFiles(directory=str(images_root)), name="firmware"
+        )
+    except OSError as exc:
+        log.error("api.firmware_mount_failed", error=str(exc), path=str(images_root))
+
     # Стили витрины. Отдельным каталогом, а не вместе с картинками товаров:
     # media — том с загруженными файлами, static едет в образе.
     try:
@@ -140,6 +154,7 @@ def create_app() -> FastAPI:
     app.include_router(fleet_api.router)
     app.include_router(catalog_api.router)
     app.include_router(lists_api.router)
+    app.include_router(firmware_api.router)
     # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
     app.include_router(panel_proxy.router)
     # Витрина последней: у неё корень, и перехватывать чужие пути ей нечем.

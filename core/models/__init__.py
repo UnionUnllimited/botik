@@ -17,6 +17,7 @@ from core.models.domain_list import (
     ManualList,
     ManualListRevision,
 )
+from core.models.firmware import FirmwareImage, FirmwareRelease
 from core.models.node import Node, NodeAssignment, NodeGroup
 from core.models.order import Delivery, Order, OrderItem
 from core.models.payment import Payment
@@ -41,6 +42,8 @@ __all__ = [
     "DeviceEvent",
     "DomainBuild",
     "DomainSource",
+    "FirmwareImage",
+    "FirmwareRelease",
     "Heartbeat",
     "ListKind",
     "ManualList",

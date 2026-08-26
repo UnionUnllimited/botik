@@ -66,6 +66,7 @@ SERVICE_PREFIXES: tuple[str, ...] = (
     "/docs",
     "/openapi.json",
     "/lists",
+    "/firmware",
     "/media",
     "/panel",
     "/cgi-bin",

@@ -485,6 +485,57 @@ async def set_device_note(device_id: int, note: str) -> tuple[dict, str]:
     return await post(f"/api/v1/fleet/routers/{device_id}/note", {"note": note})
 
 
+# --- Обновление роутеров -----------------------------------------------------
+#
+# Раздачей прошивки занимается основное приложение: манифест отдаётся с его
+# домена, образы лежат в его томе. Отсюда только страница оператора.
+#
+# Сам файл сюда не попадает: браузер отправляет его прямо туда по разовой
+# ссылке. Образ весит 27–54 МБ, и перегонять его через эту службу значило бы
+# положить его в память дважды и упереться в WRITE_TIMEOUT_SEC.
+
+
+async def firmware_state() -> tuple[dict, str]:
+    """Всё для страницы: модели, черновик, что раздаётся сейчас, история."""
+    return await get("/api/v1/fleet/firmware")
+
+
+async def firmware_create_release(version: str, notes: str, author: str) -> tuple[dict, str]:
+    return await post(
+        "/api/v1/fleet/firmware/releases",
+        {"version": version, "notes": notes, "author": author},
+    )
+
+
+async def firmware_upload_ticket(release_id: int, model: str) -> tuple[dict, str]:
+    """Разовая ссылка для отправки образа прямо в основное приложение."""
+    return await post(
+        f"/api/v1/fleet/firmware/releases/{release_id}/upload-ticket", {"model": model}
+    )
+
+
+async def firmware_set_rollout(release_id: int, rollout: str) -> tuple[dict, str]:
+    return await post(
+        f"/api/v1/fleet/firmware/releases/{release_id}/rollout", {"rollout": rollout}
+    )
+
+
+async def firmware_publish(release_id: int, rollout: str) -> tuple[dict, str]:
+    return await post(
+        f"/api/v1/fleet/firmware/releases/{release_id}/publish", {"rollout": rollout}
+    )
+
+
+async def firmware_delete_image(release_id: int, model: str) -> tuple[dict, str]:
+    return await post(
+        f"/api/v1/fleet/firmware/releases/{release_id}/image-delete", {"model": model}
+    )
+
+
+async def firmware_delete_release(release_id: int) -> tuple[dict, str]:
+    return await post(f"/api/v1/fleet/firmware/releases/{release_id}/delete", {})
+
+
 # --- Промокоды каталога ------------------------------------------------------
 #
 # Скидки на железо считает основное приложение вместе с ценой заказа. У бота
