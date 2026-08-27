@@ -7,9 +7,12 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import BigInteger, func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 from core.enums import SubscriptionEventType, SubscriptionStatus
-from core.models import Plan, Subscription
+from core.models import Device, Plan, Subscription, SubscriptionEvent, User
 from core.services import subscriptions as service
 
 NOW = dt.datetime(2026, 8, 3, 12, tzinfo=dt.UTC)
@@ -351,3 +354,115 @@ class _SessionReturning:
 
     async def scalar(self, _statement):
         return self._subscription
+
+
+@compiles(BigInteger, "sqlite")
+def _bigint_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    """SQLite нумерует сама только `INTEGER PRIMARY KEY`."""
+    return "INTEGER"
+
+
+class TestGrantManualOnARealSession:
+    """Ручная активация на настоящей async-сессии, а не на заглушке.
+
+    Заглушка этого не ловит по определению: падало на ленивой загрузке связи,
+    а её умеет делать только настоящая сессия. Именно так и вышло — тесты
+    были зелёными, а «Активировать заново» отвечало пятисоткой.
+    """
+
+    @staticmethod
+    async def _session():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync_connection: Subscription.metadata.create_all(
+                    sync_connection,
+                    tables=[
+                        Subscription.__table__,
+                        SubscriptionEvent.__table__,
+                        User.__table__,
+                        Device.__table__,
+                        Plan.__table__,
+                    ],
+                )
+            )
+        return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+    @pytest.mark.asyncio
+    async def test_new_subscription_is_granted(self):
+        engine, factory = await self._session()
+        try:
+            async with factory() as session:
+                session.add(User(id=1, tg_id=614685408))
+                await session.commit()
+
+                granted = await service.grant_manual(
+                    session, user_id=1, device_id=42, days=30
+                )
+                await session.commit()
+
+                assert granted.device_id == 42
+                assert granted.status is SubscriptionStatus.ACTIVE
+                assert granted.expires_at is not None
+                assert granted.plan_id is None
+                assert granted.source == "manual"
+
+                # Событие сохранилось каскадом, хотя коллекцию мы не трогали.
+                events = list(
+                    await session.scalars(
+                        select(SubscriptionEvent).where(
+                            SubscriptionEvent.subscription_id == granted.id
+                        )
+                    )
+                )
+                assert len(events) == 1
+                assert events[0].event is SubscriptionEventType.ACTIVATED
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_second_activation_extends_the_same_one(self):
+        """Одна подписка — один роутер: повторная активация не заводит вторую."""
+        engine, factory = await self._session()
+        try:
+            async with factory() as session:
+                session.add(User(id=1, tg_id=614685408))
+                await session.commit()
+
+                first = await service.grant_manual(session, user_id=1, device_id=42, days=30)
+                await session.commit()
+                second = await service.grant_manual(session, user_id=1, device_id=42, days=90)
+                await session.commit()
+
+                assert first.id == second.id
+                total = await session.scalar(
+                    select(func.count()).select_from(Subscription)
+                )
+                assert total == 1
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_release_returns_a_paid_one_to_waiting(self):
+        engine, factory = await self._session()
+        try:
+            async with factory() as session:
+                session.add(User(id=1, tg_id=614685408))
+                session.add(Plan(id=5, slug="m1", title="30 дней", months=1, price=Decimal("300.00")))
+                await session.commit()
+
+                paid = Subscription(
+                    user_id=1, device_id=42, plan_id=5,
+                    status=SubscriptionStatus.ACTIVE,
+                    expires_at=dt.datetime(2026, 9, 26, tzinfo=dt.UTC),
+                )
+                session.add(paid)
+                await session.commit()
+
+                assert await service.release_device(session, 42) == "pending"
+                await session.commit()
+
+                assert paid.device_id is None
+                assert paid.status is SubscriptionStatus.PENDING
+        finally:
+            await engine.dispose()

@@ -10,10 +10,9 @@ from __future__ import annotations
 import datetime as dt
 
 import structlog
-from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import object_session, selectinload
 
 from core.config import settings
 from core.dates import add_period, ensure_utc, utcnow
@@ -45,12 +44,22 @@ def _record(
         admin_id=admin_id,
         comment=comment,
     )
-    # Связь уже установлена конструктором, и этого достаточно, чтобы событие
-    # сохранилось каскадом. Дописываем в коллекцию только когда она уже в памяти:
-    # у подписки, поднятой из базы без selectinload, обращение к `events`
-    # запускает ленивую загрузку, а в async-сессии она падает MissingGreenlet.
-    if "events" not in sa_inspect(subscription).unloaded:
-        subscription.events.append(entry)
+    # Кладём событие в сессию сами и коллекцию не трогаем.
+    #
+    # Раньше здесь стоял `subscription.events.append(entry)` под проверкой
+    # «загружена ли коллекция» — и проверка врала. Конструктор через
+    # `back_populates` помечает коллекцию как ожидающую дозаписи, после чего
+    # она перестаёт числиться в `unloaded`, но в памяти её по-прежнему нет.
+    # Явный `append` шёл за ней в базу синхронно, а в async-сессии это
+    # `MissingGreenlet`: ручная активация отвечала пятисоткой.
+    #
+    # Просто убрать `append` нельзя: на каскад надежды нет — SQLAlchemy
+    # предупреждает «not in session, add operation will not proceed»
+    # и молча теряет запись истории. Сессию берём у самой подписки: она
+    # в ней всегда, а обращение к ней не ходит в базу.
+    session = object_session(subscription)
+    if session is not None:
+        session.add(entry)
     return entry
 
 
