@@ -712,6 +712,22 @@ def orders_keyboard(orders: list[dict], *, show_all: bool = False) -> InlineKeyb
     # Счёт со ссылкой живёт пятнадцать минут и в переписке протухает, а эта
     # кнопка есть всегда: клиент платит из «Моих заказов» в одно нажатие,
     # не открывая карточку и не разыскивая старое сообщение.
+    # Неоплаченный заказ — тем же способом. Ссылка при оформлении могла
+    # не выдаться вовсе (провайдер не ответил) или протухнуть за пятнадцать
+    # минут; без этой кнопки клиенту оставалось отменить заказ и оформить
+    # заново, а чаще он просто уходил.
+    order_pay_label = app_conf.get("btn_shop_pay_order", "Оплатить заказ")
+    for order in visible:
+        if not order.get("payable"):
+            continue
+        builder.row(
+            btn(
+                "btn_shop_pay_order",
+                text=f"{order_pay_label} · #{order.get('id')} · {money(order.get('total'))}",
+                callback_data=f"shop_pay_order:{order.get('id')}",
+            )
+        )
+
     pay_label = app_conf.get("btn_shop_pay_delivery", "Оплатить доставку")
     for order in visible:
         if order.get("delivery_state") != DELIVERY_AWAITING_PAYMENT:
@@ -782,6 +798,10 @@ def order_keyboard(order: dict, cancellable: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     # Ссылку выдаём по нажатию, а не заранее: платёжная ссылка PLATEGA живёт
     # пятнадцать минут, и вшитая в экран через час была бы уже мёртвой.
+    # «Оплатить заказ» первой: пока товар не оплачен, всё остальное неважно.
+    # Ручка сама решает, можно ли, — здесь только показываем кнопку.
+    if order.get("payable"):
+        builder.row(btn("btn_shop_pay_order", callback_data=f"shop_pay_order:{order.get('id')}"))
     if order.get("delivery_state") == DELIVERY_AWAITING_PAYMENT:
         builder.row(
             btn("btn_shop_pay_delivery", callback_data=f"shop_pay_delivery:{order.get('id')}")
@@ -1486,6 +1506,29 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             order_text(order),
             reply_markup=order_keyboard(order, bool(data.get("cancellable"))),
             link_preview_options=NO_PREVIEW,
+        )
+        await query.answer()
+
+    @dp.callback_query(F.data.startswith("shop_pay_order:"))
+    async def cq_pay_order(query: CallbackQuery):
+        """Свежая ссылка на оплату заказа."""
+        if await blocked(query):
+            return
+        order_id = int(query.data.split(":")[1])
+        data, error = await shop_api.order_payment_link(order_id, query.from_user.id)
+        if error:
+            return await query.answer(error[:200], show_alert=True)
+
+        pay_url = data.get("pay_url") or ""
+        if not pay_url:
+            return await query.answer("Ссылка не пришла, попробуйте позже.", show_alert=True)
+        await edit_screen(
+            query.message,
+            format_text("text_order_pay_again", price=money(data.get("price"))),
+            reply_markup=InlineKeyboardBuilder()
+            .row(btn("btn_payment_pay_link", url=pay_url))
+            .row(btn("btn_shop_back_to_orders", callback_data="shop_orders"))
+            .as_markup(),
         )
         await query.answer()
 

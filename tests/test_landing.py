@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy.dialects.postgresql import JSONB
@@ -731,3 +732,32 @@ class TestFaviconTypeIsNotForced:
             page = (route.TEMPLATES_DIR / name).read_text(encoding="utf-8")
             marker = page[page.index('rel="icon"') : page.index('rel="icon"') + 120]
             assert "image/svg+xml" not in marker, name
+
+
+class TestPriceIsNotDoubled:
+    """Знак рубля ставит `money`, и шаблон не должен дописывать второй.
+
+    Дублировался он на каждой цене витрины: «8 999 ₽ ₽». Ошибка из тех,
+    что глазами в коде не видно — `money` возвращает готовую строку,
+    а в шаблоне рядом стоит привычное «₽».
+    """
+
+    TEMPLATES = Path(__file__).resolve().parents[1] / "api" / "templates"
+    NAMES = sorted(path.name for path in TEMPLATES.glob("*.html"))
+
+    def test_money_already_carries_the_sign(self):
+        from core.services.landing import money
+
+        assert money(Decimal("8999")) == "8 999 ₽"
+        assert money(Decimal("300.50")) == "300,50 ₽"
+
+    def test_no_currency_sign_in_templates(self):
+        guilty = [
+            name
+            for name in self.NAMES
+            if "₽" in (self.TEMPLATES / name).read_text(encoding="utf-8")
+        ]
+        assert not guilty, (
+            f"знак рубля дописан руками в {guilty}: цены приходят из `money` "
+            "уже со знаком, и получается «300 ₽ ₽»"
+        )

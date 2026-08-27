@@ -1089,6 +1089,11 @@ def _order_payload(order: Order, *, instruction_url: str = "") -> dict:
         "delivery_summary": order_service.delivery_summary(order.delivery),
         "delivery_price": str(order.delivery.price) if order.delivery else "0.00",
         "awaiting_quote": delivery_service.awaiting_quote(order.delivery),
+        "paid": order.paid_at is not None,
+        # Заказ ещё ждёт денег за товар — значит, можно дать ссылку. Считаем
+        # здесь: признак нужен и списку «Моих заказов», и карточке, а два
+        # одинаковых условия в разных местах разъезжаются.
+        "payable": order.paid_at is None and order.status in _PAYABLE,
         "delivery_paid": bool(order.delivery and order.delivery.paid_at),
         # Состояние доставки клиенту тоже нужно: по нему бот решает,
         # показывать ли кнопку «Оплатить доставку» — и в карточке, и в списке.
@@ -2102,6 +2107,62 @@ async def order_card(
         "order": _order_payload(order, instruction_url=setup),
         "cancellable": order.status in _CANCELLABLE,
     }
+
+
+_PAYABLE = (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT)
+"""Когда заказ ещё ждёт оплаты товара. Дальше по цепочке деньги уже приняты,
+и вторая ссылка означала бы вторую оплату того же."""
+
+
+@router.post("/orders/{order_id}/payment")
+async def order_payment_link(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Свежая ссылка на оплату заказа — по кнопке клиента.
+
+    Нужна в двух случаях, и оба обычные. Первый: при оформлении провайдер
+    не ответил, и заказ принят без ссылки — раньше это был тупик, клиенту
+    оставалось только ждать, пока с ним свяжутся. Второй: ссылка живёт
+    пятнадцать минут, а клиент вернулся к заказу через час.
+
+    Живой неоплаченный счёт на ту же сумму переиспользуется: кнопку жмут
+    по нескольку раз, и каждое нажатие заводило бы свой счёт — это и мусор
+    в платежах, и настоящая возможность заплатить дважды.
+    """
+    order = await order_service.get_order(session, order_id)
+    tg_id = _int(payload.get("tg_id"))
+    if order is None or order.user is None or order.user.tg_id != tg_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    if order.paid_at is not None:
+        return {"ok": False, "error": "Этот заказ уже оплачен."}
+    if order.status not in _PAYABLE:
+        return {"ok": False, "error": "Этот заказ уже нельзя оплатить — напишите в поддержку."}
+    if order.total <= 0:
+        return {"ok": False, "error": "По этому заказу платить нечего."}
+
+    alive = await _alive_payment(
+        session, purpose=PaymentPurpose.ORDER, amount=order.total, order_id=order.id
+    )
+    if alive is not None:
+        log.info("catalog.order_link_reused", order_id=order.id, payment_id=alive.id)
+        return {"ok": True, "pay_url": alive.confirmation_url or "", "price": str(order.total)}
+
+    try:
+        payment = await payment_service.start_payment(
+            session,
+            user=order.user,
+            provider_name=PaymentProviderName.PLATEGA,
+            amount=order.total,
+            purpose=PaymentPurpose.ORDER,
+            description=f"Заказ {order.public_number}",
+            order=order,
+        )
+    except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
+        log.warning("catalog.order_link_failed", order_id=order.id, error=str(exc))
+        return {"ok": False, "error": f"Оплата сейчас недоступна: {exc}"}
+
+    return {"ok": True, "pay_url": payment.confirmation_url or "", "price": str(order.total)}
 
 
 @router.post("/orders/{order_id}/delivery-payment")

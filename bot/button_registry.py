@@ -102,6 +102,7 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     _b('btn_shop_back_to_speed',   'shop', 'Назад к выбору доставки',         '‹ К выбору доставки',   ''),
     _b('btn_shop_promo_skip',      'shop', 'Без промокода',                   'Без промокода',         ''),
     _b('btn_shop_confirm',         'shop', 'Оформить заказ',                  'Оформить заказ',        ''),
+    _b('btn_shop_pay_order',       'shop', 'Оплатить заказ',                  'Оплатить заказ',        ''),
     _b('btn_shop_pay_delivery',    'shop', 'Оплатить доставку по заказу',     'Оплатить доставку',     ''),
     _b('btn_shop_order_cancel',    'shop', 'Отменить заказ',                  '✕ Отменить заказ',      ''),
     _b('btn_shop_back_to_orders',  'shop', 'Назад к списку заказов',          '‹ К моим заказам',      ''),

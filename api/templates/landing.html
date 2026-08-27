@@ -55,7 +55,7 @@
           <ul class="hero__facts">
             <li>настраивать нечего</li>
             <li>вся сеть дома</li>
-            {% if plans %}<li>подписка от {{ plans|map(attribute='price')|list|first }} ₽</li>{% endif %}
+            {% if plans %}<li>подписка от {{ plans|map(attribute='price')|list|first }}</li>{% endif %}
           </ul>
         </div>
 
@@ -118,8 +118,8 @@
           {% if product.subtitle %}<p class="product__sub">{{ product.subtitle }}</p>{% endif %}
 
           <p class="product__price">
-            <span class="price">{{ product.price }} ₽</span>
-            {% if product.old_price %}<s>{{ product.old_price }} ₽</s>{% endif %}
+            <span class="price">{{ product.price }}</span>
+            {% if product.old_price %}<s>{{ product.old_price }}</s>{% endif %}
           </p>
 
           {% if product.specs %}
@@ -225,11 +225,11 @@
         <details class="fold">
           <summary>
             <span class="fold__title">{{ plan.period or plan.title }}</span>
-            <span class="fold__price">{{ plan.price }} ₽</span>
+            <span class="fold__price">{{ plan.price }}</span>
             <span class="fold__sign" aria-hidden="true"></span>
           </summary>
           <div class="fold__body">
-            {% if plan.per_month %}<p>{{ plan.per_month }} ₽ в месяц.</p>{% endif %}
+            {% if plan.per_month %}<p>{{ plan.per_month }} в месяц.</p>{% endif %}
             {% if plan.description %}<p>{{ plan.description }}</p>{% endif %}
             {% if not plan.per_month and not plan.description %}
             <p>Срок выбирается в чате вместе с моделью роутера.</p>

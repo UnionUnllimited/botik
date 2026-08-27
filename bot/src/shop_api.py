@@ -254,6 +254,16 @@ async def create_order(payload: dict) -> tuple[dict, str]:
     return await post("/api/v1/catalog/orders", payload)
 
 
+async def order_payment_link(order_id: int, tg_id: int) -> tuple[dict, str]:
+    """Свежая ссылка на оплату самого заказа.
+
+    Нужна и когда провайдер не ответил при оформлении (заказ принят без
+    ссылки), и когда клиент вернулся к нему через час: ссылка живёт
+    пятнадцать минут.
+    """
+    return await post(f"/api/v1/catalog/orders/{order_id}/payment", {"tg_id": tg_id})
+
+
 async def delivery_payment_link(order_id: int, tg_id: int) -> tuple[dict, str]:
     """Свежая ссылка на оплату доставки: прежняя живёт пятнадцать минут."""
     return await post(f"/api/v1/catalog/orders/{order_id}/delivery-payment", {"tg_id": tg_id})
