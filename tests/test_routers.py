@@ -6,8 +6,9 @@ from typing import ClassVar
 
 import pytest
 
+from core.models import Device
 from core.services.frp import mac_from_proxy_name, proxy_kind, proxy_names_for
-from core.services.routers import LEGACY_ACTIVE_FIELD, parse_stats
+from core.services.routers import LEGACY_ACTIVE_FIELD, apply_stats, parse_stats
 
 
 class TestProxyNames:
@@ -163,3 +164,46 @@ class TestModelFromBoard:
         device = Device(mac="A0:B1:C2:D3:E4:F5", model="")
         apply_stats(device, self._stats(""))
         assert device.model == ""
+
+
+class TestFirmwareBuild:
+    """Номер сборки с роутера: по нему видно, дошло ли обновление.
+
+    `fw_version` («25.12.3») на этот вопрос не отвечает — это версия базы,
+    её не с чем сравнивать. Сравнивается целое, то же самое, что `version`
+    в манифесте.
+    """
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"titan_build": 140}, 140),
+            ({"titan_build": "140"}, 140),
+            ({"titan_build": "r140"}, 140),
+            ({"titan_build": "titan-r140"}, 140),
+            # Поле новое: пока прошивка его не шлёт, номер неизвестен.
+            ({}, None),
+            ({"titan_build": ""}, None),
+            ({"titan_build": 0}, None),
+            ({"titan_build": "неизвестно"}, None),
+            # Ноль — не «сборка 0»: нулём пришлось бы считать все молчащие.
+            ({"titan_build": "r0"}, None),
+        ],
+    )
+    def test_build_is_read_from_the_answer(self, payload, expected):
+        assert parse_stats(payload).fw_build == expected
+
+    def test_build_lives_apart_from_the_base_version(self):
+        stats = parse_stats({"fw": "25.12.3", "titan_build": 140})
+        assert (stats.fw_version, stats.fw_build) == ("25.12.3", 140)
+
+    def test_silence_does_not_erase_a_known_build(self):
+        """Прошивка без поля не должна стирать номер, который роутер уже называл."""
+        device = Device(mac="A0:B1:C2:D3:E4:F5", fw_build=140)
+        apply_stats(device, parse_stats({"fw": "25.12.3"}))
+        assert device.fw_build == 140
+
+    def test_new_build_replaces_the_old_one(self):
+        device = Device(mac="A0:B1:C2:D3:E4:F5", fw_build=140)
+        apply_stats(device, parse_stats({"titan_build": 141}))
+        assert device.fw_build == 141

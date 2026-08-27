@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,6 +38,8 @@ class RouterStats:
 
     board: str | None = None
     fw_version: str | None = None
+    fw_build: int | None = None
+    """Номер сборки — то же целое, что `version` в манифесте обновлений."""
     uptime_sec: int = 0
     load_avg: float | None = None
     cpu_pct: int | None = None
@@ -58,6 +61,28 @@ def _as_int(value: Any, default: int = 0) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+_BUILD_DIGITS = re.compile(r"(\d{1,9})")
+
+
+def _as_build(value: Any) -> int | None:
+    """Номер сборки из ответа роутера.
+
+    Прошивка обязана слать целое (`"titan_build": 140`), но разбираем и строку,
+    и `r140`, и `titan-r140`: поле новое, и упереться в тип на первой же партии
+    дороже, чем вытащить из него число. Ноль и мусор — «не сообщил», а не
+    «сборка 0»: нулём пришлось бы считать все молчащие роутеры.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    match = _BUILD_DIGITS.search(str(value))
+    if match is None:
+        return None
+    number = int(match.group(1))
+    return number if number > 0 else None
 
 
 def _as_float(value: Any) -> float | None:
@@ -86,6 +111,14 @@ def parse_stats(payload: dict[str, Any]) -> RouterStats:
     return RouterStats(
         board=str(payload.get("board") or "") or None,
         fw_version=str(payload.get("fw") or payload.get("fw_version") or "") or None,
+        # Каноническое имя — `titan_build`; остальные читаются на случай, если
+        # в партии окажется прошивка, назвавшая поле иначе. Разъехаться тут
+        # нельзя: по этому числу считается, обновился роутер или нет.
+        fw_build=_as_build(
+            payload.get("titan_build")
+            if payload.get("titan_build") is not None
+            else payload.get("fw_build") or payload.get("build")
+        ),
         uptime_sec=_as_int(payload.get("uptime_sec")),
         load_avg=_as_float(payload.get("load")),
         cpu_pct=_as_int(payload.get("cpu_pct"), 0) if payload.get("cpu_pct") is not None else None,
@@ -170,6 +203,10 @@ def apply_stats(device: Device, stats: RouterStats, *, now: dt.datetime | None =
             device.model = stats.board[:64]
     if stats.fw_version:
         device.fw_version = stats.fw_version[:32]
+    if stats.fw_build is not None:
+        # Не сообщил — оставляем прежнее: прошивка без этого поля не должна
+        # стирать номер, который роутер называл до отката или до сбоя опроса.
+        device.fw_build = stats.fw_build
     device.uptime_sec = stats.uptime_sec or device.uptime_sec
     device.load_avg = stats.load_avg if stats.load_avg is not None else device.load_avg
     device.cpu_pct = stats.cpu_pct if stats.cpu_pct is not None else device.cpu_pct

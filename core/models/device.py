@@ -47,6 +47,18 @@ class Device(IntPkMixin, TimestampMixin, Base):
     model: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     serial: Mapped[str | None] = mapped_column(String(64))
     fw_version: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    fw_build: Mapped[int | None] = mapped_column(Integer)
+    """Номер сборки прошивки — то же число, что `version` в манифесте обновлений.
+
+    Отдельно от `fw_version` (`25.12.3`) намеренно: то версия базы, читается
+    человеком и ни с чем не сравнивается, а это — целое, по которому роутер
+    решает, обновляться ли. Только оно отвечает на вопрос «этот роутер уже
+    на новой прошивке или ещё нет».
+
+    Пусто — прошивка номер не сообщает (старая) либо роутер ни разу не отвечал.
+    Это не «сборка 0»: нулём пришлось бы считать все молчащие.
+    """
+
     panel_version: Mapped[str] = mapped_column(String(32), default="", nullable=False)
 
     secret_enc: Mapped[str | None] = mapped_column(String(512))

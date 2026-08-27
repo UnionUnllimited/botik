@@ -233,8 +233,15 @@
             </td>
             <td class="px-3 py-2 whitespace-nowrap">
               <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
+              {# Номер сборки, а не только `25.12.3`: версия базы ни с чем
+                 не сравнивается, а по сборке видно, дошло ли до роутера
+                 то, что раздаётся сейчас. #}
               <div class="tw-text-muted2 text-[12px]">
                 {{ item.model or item.status_label }}{% if item.fw_version %} · {{ item.fw_version }}{% endif %}
+                {%- if item.fw_build %}
+                  · <span class="{% if item.fw_behind %}text-amber-600{% endif %}"
+                          title="Сборка прошивки{% if item.fw_behind %}: отстаёт от того, что раздаётся{% endif %}">r{{ item.fw_build }}</span>
+                {%- endif %}
               </div>
             </td>
             {# Телеграм, а не имя: по нему клиенту пишут, а тёзок среди имён
@@ -257,13 +264,16 @@
               {% endif %}
             </td>
             <td class="px-3 py-2 whitespace-nowrap">
+              {# Одна подписка — один роутер. Здесь только своя подписка этого
+                 роутера: чужая, показанная как «активна», читалась оператором
+                 как «оплачен», и он шёл выяснять, почему нет доступа. #}
               {% if item.subscription_status %}
                 {{ item.subscription_label or item.subscription_status }}
-                {% if item.subscription_elsewhere %}
-                  <div class="tw-text-muted2 text-[12px]">на другом роутере</div>
-                {% endif %}
               {% else %}
                 <span class="tw-text-muted2">нет</span>
+                {% if item.subscription_elsewhere %}
+                  <div class="tw-text-muted2 text-[11.5px]">у клиента — на другом роутере</div>
+                {% endif %}
               {% endif %}
             </td>
             <td class="px-3 py-2">{{ item.clients }}</td>

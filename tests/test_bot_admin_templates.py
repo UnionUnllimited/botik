@@ -314,6 +314,9 @@ PAGES = {
         "image_suffix": "-sysupgrade.bin",
         "max_mb": 128,
         "next_version": 142,
+        "fleet_builds": {
+            "total": 6, "on_current": 3, "behind": 2, "ahead": 0, "unknown": 1,
+        },
         "current": {
             "id": 2,
             "version": 141,
@@ -398,6 +401,7 @@ PAGES = {
             "mac": "A0:B1:C2:D3:E4:F5",
             "model": "AX3000",
             "fw_version": "25.12.3",
+            "fw_build": 141,
             "status": "active",
             "status_label": "работает",
             "online": True,
@@ -482,6 +486,8 @@ PAGES = {
                 "subscription_label": "активна",
                 "status_label": "работает",
                 "fw_version": "25.12.3",
+                "fw_build": 140,
+                "fw_behind": True,
                 "uptime_sec": 372000,
                 "visitor_port": 7101,
                 "rx_bytes": 5_368_709_120,

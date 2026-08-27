@@ -91,12 +91,33 @@ def _elsewhere(subscription, device: Device) -> bool:
     роутера нет вовсе — она ждёт первого выхода на связь. Между отгрузкой
     и активацией страница писала «оплачена, ждёт роутера · на другом роутере»,
     и оператор шёл искать несуществующий второй роутер.
+
+    В строке таблицы это больше не показывается: подписка одна на роутер,
+    и чужая в этой строке читалась как «этот роутер оплачен». Осталось
+    отбором — найти роутер, который молча не активировался, иначе нечем.
     """
     return bool(
         subscription
         and subscription.device_id is not None
         and subscription.device_id != device.id
     )
+
+
+def _own_subscription(subscription, device: Device):
+    """Подписка **этого** роутера, а не любая подписка его владельца.
+
+    Подписка привязана к устройству: одна подписка — один роутер. Взяв
+    подписку клиента, страница писала у второго роутера «активна» и мелким
+    шрифтом «на другом роутере» — оператор читал это как «оплачен» и шёл
+    разбираться, почему на нём нет доступа.
+
+    Оплаченная, но ещё не активированная подписка роутера не имеет вовсе
+    (`device_id` пуст) — её показываем: это будущая подписка именно этого
+    роутера, и между отгрузкой и первым выходом на связь других кандидатов нет.
+    """
+    if subscription is None or _elsewhere(subscription, device):
+        return None
+    return subscription
 
 
 def _matches_link(device: Device, link: str, *, now: dt.datetime) -> bool:
@@ -311,13 +332,22 @@ async def list_routers(
         total = len(devices)
         devices = devices[(page - 1) * size : page * size]
 
+    # Версия, которая раздаётся сейчас: с ней сравнивается номер сборки
+    # на роутере. Один запрос на страницу — иначе «отстаёт» пришлось бы
+    # считать глазами, а именно этот вопрос и задают после выката.
+    served = await firmware.current_release(session)
+    served_build = served.version if served else 0
+
     items = []
     for device in devices:
         online = device.frp_online or device.is_online(
             threshold_min=settings.subscription.heartbeat_offline_min, now=now
         )
         seen = (device.last_heartbeat_at, device.last_poll_at, device.frp_last_seen_at)
-        subscription = subs.get(device.id)
+        # В строке — своя подписка роутера. Подписка клиента нужна отбору
+        # «своей нет, а у клиента есть», и берётся там отдельно.
+        client_subscription = subs.get(device.id)
+        subscription = _own_subscription(client_subscription, device)
         items.append(
             {
                 "id": device.id,
@@ -335,6 +365,13 @@ async def list_routers(
                 "tx_bytes": device.tx_bytes or 0,
                 "uptime_sec": device.uptime_sec or 0,
                 "fw_version": device.fw_version or "",
+                # Номер сборки и отстаёт ли он от того, что раздаётся сейчас.
+                # `fw_version` («25.12.3») на этот вопрос не отвечает: это
+                # версия базы, её не с чем сравнивать.
+                "fw_build": device.fw_build,
+                "fw_behind": bool(
+                    served_build and device.fw_build and device.fw_build < served_build
+                ),
                 "visitor_port": device.frp_visitor_port,
                 # В списке — телеграм: по нему клиенту пишут. Имя из доставки
                 # тёзок не различает и в карточке видно рядом.
@@ -350,12 +387,11 @@ async def list_routers(
                 else "",
                 "status_label": _label(str(device.status), DEVICE_LABELS),
                 "subscription_until": _iso(subscription.expires_at) if subscription else None,
-                # Именно «на другом», а не «не на этом»: у оплаченной, но не
-                # активированной подписки роутера нет вовсе, и строка
-                # «оплачена, ждёт роутера · на другом роутере» — противоречие,
-                # которое страница показывала всё время между отгрузкой
-                # и первым выходом роутера на связь.
-                "subscription_elsewhere": _elsewhere(subscription, device),
+                # Своей подписки нет, а у клиента есть — на другом его роутере.
+                # В строке это не пишется (одна подписка — один роутер, и чужая
+                # здесь читалась как «оплачен»), но отбору нужно: так находится
+                # роутер, который молча не активировался.
+                "subscription_elsewhere": _elsewhere(client_subscription, device),
             }
         )
 
@@ -407,6 +443,7 @@ def _device_payload(device, *, now):
         "mac": device.mac,
         "model": device.model or device.board or "",
         "fw_version": device.fw_version or "",
+        "fw_build": device.fw_build,
         "status": str(device.status),
         "status_label": _label(str(device.status), DEVICE_LABELS),
         "online": device.frp_online
@@ -458,11 +495,16 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
             "email": (device.user.email or "") if device.user else "",
             "phone": (device.user.phone or "") if device.user else "",
         },
+        # Подписка этого роутера, а не любая подписка его владельца: одна
+        # подписка — один роутер. Чужая, показанная здесь как «активна»,
+        # читалась как «этот роутер оплачен».
         "subscription": {
-            "status": str(subscription.status) if subscription else "",
-            "label": _label(str(subscription.status), SUBSCRIPTION_LABELS) if subscription else "",
-            "until": _iso(subscription.expires_at) if subscription else None,
-            "here": bool(subscription and subscription.device_id == device.id),
+            "status": str(own.status) if (own := _own_subscription(subscription, device)) else "",
+            "label": _label(str(own.status), SUBSCRIPTION_LABELS) if own else "",
+            "until": _iso(own.expires_at) if own else None,
+            "here": bool(own and own.device_id == device.id),
+            # Отдельной строкой, а не оттенком статуса: это факт про клиента,
+            # а не про этот роутер. Он и объясняет, почему подписки тут нет.
             "elsewhere": _elsewhere(subscription, device),
         },
         "panel": {
@@ -1731,7 +1773,23 @@ async def firmware_state(session: AsyncSession = Depends(get_session)) -> dict:
     history = await firmware.releases(session)
     current = await firmware.current_release(session)
     draft = next((item for item in history if item.published_at is None), None)
+
+    # Сколько роутеров на какой сборке. Считается по тому, что они сами
+    # назвали при опросе, — своего отчёта об обновлении у них нет и не будет.
+    # Поэтому «молчит» здесь третьей величиной, а не нулём: роутер, который
+    # не отвечал, не «отстаёт», про него просто ничего не известно.
+    builds = list(await session.scalars(select(Device.fw_build)))
+    served = current.version if current else 0
+    fleet_builds = {
+        "total": len(builds),
+        "on_current": sum(1 for build in builds if served and build == served),
+        "behind": sum(1 for build in builds if served and build and build < served),
+        "ahead": sum(1 for build in builds if served and build and build > served),
+        "unknown": sum(1 for build in builds if not build),
+    }
+
     return {
+        "fleet_builds": fleet_builds,
         "models": [{"key": key, "title": title} for key, title in firmware.MODELS],
         "rollout_steps": list(firmware.ROLLOUT_STEPS),
         "rollout_warning": firmware.ROLLOUT_WARNING,

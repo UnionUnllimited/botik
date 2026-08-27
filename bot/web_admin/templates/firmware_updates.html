@@ -62,6 +62,41 @@
       {% endif %}
     </div>
 
+    {% if current and fleet_builds.total %}
+    {# Сколько роутеров на какой сборке. Считается по тому, что роутеры сами
+       назвали при опросе: своего отчёта об обновлении у них нет, и «молчит»
+       здесь третья величина, а не ноль — про такой роутер просто ничего
+       не известно, «отстающим» его звать нельзя. #}
+    <div class="mt-4 pt-4 border-t flex gap-5 flex-wrap text-[12.5px]"
+         style="border-color: var(--admin-border);">
+      <div>
+        <div class="text-[11px] tw-text-muted2">на версии {{ current.version }}</div>
+        <div class="text-[17px] font-semibold tw-text-base2">{{ fleet_builds.on_current }}</div>
+      </div>
+      <div>
+        <div class="text-[11px] tw-text-muted2">отстают</div>
+        <div class="text-[17px] font-semibold {% if fleet_builds.behind %}text-amber-600{% else %}tw-text-base2{% endif %}">
+          {{ fleet_builds.behind }}
+        </div>
+      </div>
+      {% if fleet_builds.ahead %}
+      <div>
+        <div class="text-[11px] tw-text-muted2">версия выше</div>
+        <div class="text-[17px] font-semibold text-rose-500">{{ fleet_builds.ahead }}</div>
+      </div>
+      {% endif %}
+      <div>
+        <div class="text-[11px] tw-text-muted2">не сообщили</div>
+        <div class="text-[17px] font-semibold tw-text-muted2">{{ fleet_builds.unknown }}</div>
+      </div>
+      <div class="text-[11px] tw-text-subtle2 self-end max-w-sm">
+        Считано по последнему опросу роутеров, а не по их отчёту: о себе
+        они не сообщают ничего. «Не сообщили» — молчащие и прошивки,
+        которые номер сборки не называют.
+      </div>
+    </div>
+    {% endif %}
+
     {% if current %}
     {# Ползунок со значениями 0 / 5 / 25 / 50 / 100. Промежуточных нет: доля
        выбирается на глаз, и «37 %» ничем не лучше «25 %». #}

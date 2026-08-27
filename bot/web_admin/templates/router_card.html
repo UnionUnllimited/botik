@@ -11,6 +11,7 @@
       <p class="text-[13px] tw-text-muted2 mt-1">
         {{ router.model or 'модель неизвестна' }}
         {% if router.fw_version %} · прошивка {{ router.fw_version }}{% endif %}
+        {%- if router.fw_build %} · сборка r{{ router.fw_build }}{% endif %}
         {% if router.visitor_port %} · туннель на порту {{ router.visitor_port }}{% endif %}
       </p>
     </div>
@@ -93,14 +94,19 @@
           </div>
           <div class="text-[13px]">
             Подписка:
+            {# Одна подписка — один роутер: здесь только своя. Подписка клиента
+               на другом его роутере — отдельная строка ниже, а не оттенок
+               статуса: это факт про клиента, а не про это устройство. #}
             {% if subscription.status %}
               {{ subscription.label or subscription.status }}
               {% if subscription.until %}<span class="tw-text-muted2">до {{ subscription.until[:10] }}</span>{% endif %}
-              {# «На другом», а не «не на этом»: оплаченная и ещё не
-                 активированная подписка не лежит ни на одном роутере. #}
-              {% if subscription.elsewhere %}<span class="tw-text-muted2">(активирована на другом роутере)</span>{% endif %}
             {% else %}
               <span class="tw-text-muted2">нет</span>
+              {% if subscription.elsewhere %}
+              <div class="tw-text-muted2 text-[12px]">
+                У клиента подписка есть, но она на другом его роутере — этот не активирован.
+              </div>
+              {% endif %}
             {% endif %}
           </div>
           <div class="flex gap-2 flex-wrap">

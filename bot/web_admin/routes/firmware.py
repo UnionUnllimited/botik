@@ -34,6 +34,7 @@ def attach_firmware_routes(admin_bp_instance):
             image_suffix=data.get("image_suffix") or "-sysupgrade.bin",
             max_mb=data.get("max_mb") or 0,
             next_version=data.get("next_version") or 1,
+            fleet_builds=data.get("fleet_builds") or {},
             current=data.get("current"),
             draft=data.get("draft"),
             releases=data.get("releases") or [],
