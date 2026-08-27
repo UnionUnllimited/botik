@@ -1690,6 +1690,12 @@ def _firmware_release_payload(release: FirmwareRelease) -> dict:
             "sha256": image.sha256,
             "size": image.size_bytes,
             "uploaded_at": image.uploaded_at.isoformat() if image.uploaded_at else None,
+            # Номер сборки из имени файла и сходится ли он с версией выпуска.
+            # Приём образа мимо этого уже не пропускает, но выпуски, заведённые
+            # раньше проверки, должны быть видны — а не молча упираться в отказ
+            # при публикации.
+            "build": firmware.build_number(image.file_name),
+            "name_mismatch": firmware.name_mismatch(image.file_name, release.version),
         }
         for image in release.images
     }
@@ -1704,6 +1710,7 @@ def _firmware_release_payload(release: FirmwareRelease) -> dict:
         "created_at": release.created_at.isoformat() if release.created_at else None,
         "created_by": release.created_by,
         "images": images,
+        "name_mismatch": any(item["name_mismatch"] for item in images.values()),
         # Модели без образа перечисляем отдельно: их отсутствие — не поломка,
         # а штатный способ приостановить одну модель, и на странице это должно
         # читаться как решение, а не как «забыли загрузить».

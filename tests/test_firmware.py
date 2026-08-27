@@ -161,6 +161,81 @@ class TestSaveUpload:
         assert firmware.safe_file_name(given) == expected
 
 
+class TestBuildNumberInName:
+    """Номер сборки в имени против объявленной версии.
+
+    Единственная ошибка, которая кладёт парк молча: объяви выпуск версией 140,
+    приложи образы сборки 139 — роутер поставит 139, назовётся 139 и назавтра
+    снова увидит в манифесте 140. Круг перепрошивок у всего парка, и наружу
+    это никак не видно.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("titan-r140-cudy-wr3000e-v1-squashfs-sysupgrade.bin", 140),
+            ("TITAN-R7-zbt-sysupgrade.bin", 7),
+            ("openwrt-cudy-sysupgrade.bin", None),
+            ("titan-rXYZ-sysupgrade.bin", None),
+        ],
+    )
+    def test_number_is_pulled_out_of_the_name(self, name, expected):
+        assert firmware.build_number(name) == expected
+
+    @pytest.mark.asyncio
+    async def test_image_from_another_build_is_not_accepted(self):
+        with pytest.raises(firmware.FirmwareError, match="r139"):
+            await firmware.save_upload(
+                version=140,
+                model_key=MODEL,
+                file_name=f"titan-r139-cudy-wr3000e-v1{SUFFIX}",
+                source=_Bytes(b"payload"),
+            )
+
+    @pytest.mark.asyncio
+    async def test_matching_build_goes_through(self):
+        saved = await firmware.save_upload(
+            version=140,
+            model_key=MODEL,
+            file_name=f"titan-r140-cudy-wr3000e-v1{SUFFIX}",
+            source=_Bytes(b"payload"),
+        )
+        assert saved.file_name.startswith("titan-r140-")
+
+    @pytest.mark.asyncio
+    async def test_name_without_a_number_is_left_alone(self):
+        """Сравнивать не с чем: имя могли поменять руками, и отказ был бы гаданием."""
+        saved = await firmware.save_upload(
+            version=140, model_key=MODEL, file_name=f"cudy{SUFFIX}", source=_Bytes(b"payload")
+        )
+        assert saved.size_bytes == 7
+
+    @pytest.mark.asyncio
+    async def test_publishing_a_mixed_release_is_refused(self):
+        """Вторая застава: выпуски, заведённые до проверки, тоже не должны уйти."""
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                release = await firmware.create_release(session, version=140, notes="")
+                await firmware.attach_image(
+                    session,
+                    release,
+                    model_key=MODEL,
+                    saved=firmware.SavedImage(
+                        f"titan-r139-cudy{SUFFIX}",
+                        f"/firmware/images/v140/titan-r139-cudy{SUFFIX}",
+                        "a" * 64,
+                        10,
+                    ),
+                )
+                with pytest.raises(firmware.FirmwareError, match="titan-r139"):
+                    await firmware.publish(session, release, rollout=5)
+                # Выпуск остался черновиком: в манифест он не попал.
+                assert release.published_at is None
+        finally:
+            await engine.dispose()
+
+
 class TestVersions:
     @pytest.mark.asyncio
     async def test_version_must_grow(self):

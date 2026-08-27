@@ -326,13 +326,16 @@ PAGES = {
             "created_by": "union",
             "images": {
                 "cudy,wr3000e-v1": {
-                    "file_name": "cudy-wr3000e-sysupgrade.bin",
-                    "url": "https://shop.example/firmware/images/v141/cudy-wr3000e-sysupgrade.bin",
+                    "file_name": "titan-r141-cudy-wr3000e-v1-squashfs-sysupgrade.bin",
+                    "url": "https://shop.example/firmware/images/v141/titan-r141-sysupgrade.bin",
                     "sha256": "a" * 64,
                     "size": 26951907,
                     "uploaded_at": "2026-08-26T08:40:00+00:00",
+                    "build": 141,
+                    "name_mismatch": False,
                 },
             },
+            "name_mismatch": False,
             "missing": ["cudy,wr3000s-v1", "cudy,tr3000-v1", "zbtlink,zbt-z8103ax-c"],
         },
         "draft": {
@@ -347,13 +350,18 @@ PAGES = {
             "created_by": "union",
             "images": {
                 "zbtlink,zbt-z8103ax-c": {
-                    "file_name": "zbt-z8103ax-c-sysupgrade.bin",
-                    "url": "https://shop.example/firmware/images/v142/zbt-z8103ax-c-sysupgrade.bin",
+                    "file_name": "titan-r141-zbt-z8103ax-c-squashfs-sysupgrade.bin",
+                    "url": "https://shop.example/firmware/images/v142/titan-r141-sysupgrade.bin",
                     "sha256": "b" * 64,
                     "size": 53930731,
                     "uploaded_at": "2026-08-26T10:05:00+00:00",
+                    # Образ не от той сборки: выпуск 142, а в имени r141.
+                    # Ровно этот случай и кладёт парк молча.
+                    "build": 141,
+                    "name_mismatch": True,
                 },
             },
+            "name_mismatch": True,
             "missing": ["cudy,wr3000e-v1", "cudy,wr3000s-v1", "cudy,tr3000-v1"],
         },
         "releases": [
@@ -361,21 +369,21 @@ PAGES = {
                 "id": 3, "version": 142, "notes": "", "rollout": 0, "rollout_max": 0,
                 "is_published": False, "published_at": None,
                 "created_at": "2026-08-26T10:00:00+00:00", "created_by": "union",
-                "images": {"zbtlink,zbt-z8103ax-c": {}}, "missing": [],
+                "images": {"zbtlink,zbt-z8103ax-c": {}}, "missing": [], "name_mismatch": True,
             },
             {
                 "id": 2, "version": 141, "notes": "фикс WAN на WR3000E",
                 "rollout": 25, "rollout_max": 50,
                 "is_published": True, "published_at": "2026-08-26T09:00:00+00:00",
                 "created_at": "2026-08-26T08:30:00+00:00", "created_by": "union",
-                "images": {"cudy,wr3000e-v1": {}}, "missing": [],
+                "images": {"cudy,wr3000e-v1": {}}, "missing": [], "name_mismatch": False,
             },
             {
                 "id": 1, "version": 140, "notes": "первый выпуск",
                 "rollout": 0, "rollout_max": 100,
                 "is_published": True, "published_at": "2026-08-20T09:00:00+00:00",
                 "created_at": "2026-08-20T08:00:00+00:00", "created_by": "union",
-                "images": {}, "missing": [],
+                "images": {}, "missing": [], "name_mismatch": False,
             },
         ],
     },

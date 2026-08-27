@@ -85,9 +85,36 @@ TICKET_TTL_SEC = 15 * 60
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
+_BUILD_IN_NAME = re.compile(r"titan-r(\d{1,9})", re.IGNORECASE)
+"""Номер сборки в имени образа: `titan-r140-cudy-wr3000e-v1-…-sysupgrade.bin`.
+
+Его сверка с полем «Версия» — единственная проверка, которая ловит ошибку,
+кладущую весь парк молча. Объяви выпуск версией 140, приложи к нему образы
+сборки 139 — и роутер поставит 139, назовётся 139 и назавтра снова увидит
+в манифесте 140. Так весь парк уходит в круг перепрошивок, и наружу это
+никак не видно: устройства о себе не сообщают ничего.
+
+Ловится глазами ровно один раз, и то если посмотреть. Дальше — только этой
+регуляркой."""
+
 
 class FirmwareError(RuntimeError):
     """Причина отказа с текстом для формы."""
+
+
+def build_number(file_name: str) -> int | None:
+    """Номер сборки из имени файла. `None` — в имени его нет.
+
+    Отсутствие номера не отказ: имя могли поменять руками, а сравнивать
+    нам тогда не с чем. Расхождение — отказ.
+    """
+    match = _BUILD_IN_NAME.search(file_name or "")
+    return int(match.group(1)) if match else None
+
+
+def name_mismatch(file_name: str, version: int) -> bool:
+    found = build_number(file_name)
+    return found is not None and found != version
 
 
 class Chunked(Protocol):
@@ -150,6 +177,19 @@ async def save_upload(*, version: int, model_key: str, file_name: str, source: C
     name = safe_file_name(file_name)
     if not name.endswith(IMAGE_SUFFIX):
         raise FirmwareError(f"Имя файла должно оканчиваться на «{IMAGE_SUFFIX}».")
+
+    # Отказ здесь, а не при публикации: это самый ранний момент, когда ошибку
+    # ещё видно целиком — файл в руках, номер в имени и объявленная версия
+    # рядом. При публикации остаётся только список имён.
+    found = build_number(name)
+    if found is not None and found != version:
+        raise FirmwareError(
+            f"В имени файла сборка r{found}, а выпуск объявлен версией {version}. "
+            f"Либо это образ не от той сборки, либо выпуск надо было заводить "
+            f"версией {found}: удалите черновик и создайте заново. Разойдись эти "
+            "числа — роутер поставит одну прошивку, назовётся другой версией "
+            "и назавтра начнёт всё сначала, и так весь парк."
+        )
 
     directory = _release_dir(version)
     try:
@@ -348,6 +388,18 @@ async def publish(session: AsyncSession, release: FirmwareRelease, *, rollout: A
     """
     if not release.images:
         raise FirmwareError("Сначала загрузите хотя бы один образ.")
+
+    # Вторая застава на том же месте: приём образа мимо этой проверки уже
+    # не пройдёт, но в базе лежат выпуски, заведённые до неё, — а публикация
+    # и есть тот рубеж, после которого исправлять нечего.
+    wrong = [image.file_name for image in release.images if name_mismatch(image.file_name, release.version)]
+    if wrong:
+        raise FirmwareError(
+            f"Версия выпуска {release.version}, а в именах образов другая сборка: "
+            f"{', '.join(sorted(wrong))}. Публиковать нельзя: роутер поставит одну "
+            "прошивку, назовётся другой версией и назавтра начнёт всё сначала."
+        )
+
     if release.published_at is None:
         release.published_at = dt.datetime.now(dt.UTC)
     release.rollout = normalize_rollout(rollout)

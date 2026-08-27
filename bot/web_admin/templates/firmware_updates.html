@@ -119,6 +119,14 @@
             {{ '%.1f'|format(image.size / 1048576) }} МБ ·
             <span class="font-mono">{{ image.sha256[:16] }}…</span>
           </div>
+          {% if image.name_mismatch %}
+          {# Такой выпуск мог уйти только до появления проверки. Молчать про
+             него нельзя: это и есть круг перепрошивок у всего парка. #}
+          <div class="text-[11px] text-rose-500">
+            сборка r{{ image.build }} при версии {{ current.version }} —
+            остановите раздачу
+          </div>
+          {% endif %}
           {% else %}
           <span class="text-[11.5px] text-amber-600">образа нет — эти роутеры не обновляются</span>
           {% endif %}
@@ -168,6 +176,11 @@
             {{ image.file_name }} · {{ '%.1f'|format(image.size / 1048576) }} МБ
           </div>
           <div class="text-[11px] font-mono tw-text-subtle2 break-all">sha256 {{ image.sha256 }}</div>
+          {% if image.name_mismatch %}
+          <div class="text-[11px] text-rose-500 mt-0.5">
+            В имени сборка r{{ image.build }}, а выпуск объявлен версией {{ draft.version }}.
+          </div>
+          {% endif %}
           {% endif %}
         </div>
         <div class="flex items-center gap-2 shrink-0">
@@ -201,6 +214,14 @@
         ошибка в одном знаке тихо отменит обновление у всего парка.
         Модель без образа — штатный способ приостановить её одну.
       </div>
+      {# Номер сборки в имени против объявленной версии. Расхождение — та самая
+         ошибка, которая кладёт парк молча: роутер поставит одну прошивку,
+         назовётся другой версией и назавтра начнёт всё сначала. #}
+      <div class="text-[11px] tw-text-subtle2">
+        Номер сборки из имени («titan-r{{ draft.version }}-…») должен совпадать
+        с версией выпуска — {{ draft.version }}. Не совпал — файл не примем
+        и выпуск не опубликуем.
+      </div>
     </div>
 
     <form method="post" action="{{ url_for('admin.firmware_publish', release_id=draft.id) }}"
@@ -214,11 +235,16 @@
         {% endfor %}
       </select>
       <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm"
-              {% if not draft.images %}disabled{% endif %}>
+              {% if not draft.images or draft.name_mismatch %}disabled{% endif %}>
         Опубликовать
       </button>
       {% if not draft.images %}
       <span class="text-[11.5px] text-amber-600">Сначала загрузите хотя бы один образ.</span>
+      {% elif draft.name_mismatch %}
+      <span class="text-[11.5px] text-rose-500">
+        В именах образов другая сборка — замените файлы или заведите выпуск
+        нужной версией.
+      </span>
       {% endif %}
     </form>
   </div>
