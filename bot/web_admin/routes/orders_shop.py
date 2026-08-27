@@ -176,9 +176,17 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
     async def order_shop_delete(order_id: int):
         """Удаление заказа. Оплаченные основное приложение не отдаёт — они
         уже история: платёж, чек и, скорее всего, уехавшее железо."""
+        form = await request.form
+        # Отказ возвращает туда, откуда нажали: из списка — в список.
+        # Иначе оператор, чистящий десяток брошенных заказов, после первого же
+        # отказа оказывался в карточке и терял место.
+        from_list = form.get("from") == "list"
+
         data, error = await shop_api.delete_order(order_id)
         if error:
             await flash(error, "danger")
+            if from_list:
+                return redirect(url_for("admin.orders_shop"))
             return redirect(url_for("admin.order_shop_card", order_id=order_id))
         await flash(f"Заказ {data.get('number') or order_id} удалён.", "success")
         return redirect(url_for("admin.orders_shop"))

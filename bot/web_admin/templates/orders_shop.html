@@ -81,6 +81,7 @@
           {{ sort_th('total', 'Сумма', 'desc') }}
           {{ sort_th('status', 'Состояние') }}
           <th class="px-3 py-2 font-medium">Трек-номер</th>
+          <th class="px-3 py-2"></th>
         </tr>
       </thead>
       <tbody>
@@ -118,6 +119,23 @@
             {% endif %}
           </td>
           <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.tracking_number or '—' }}</td>
+          {# Удаление прямо из списка: брошенных и ошибочных заказов набирается
+             десяток, и открывать карточку ради каждого — лишний круг. Кнопка
+             только у тех, по которым не было денег; отказ всё равно приходит
+             с той стороны, здесь она просто не мозолит глаза. #}
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            {% if not item.paid %}
+            <form method="post"
+                  action="{{ url_for('admin.order_shop_delete', order_id=item.id) }}"
+                  onsubmit="return confirm('Удалить заказ {{ item.number }} насовсем? Отменить это будет нельзя.');">
+              <input type="hidden" name="from" value="list">
+              <button type="submit" class="tw-btn tw-btn-sm" style="color:#f87171"
+                      title="Удалить заказ насовсем">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

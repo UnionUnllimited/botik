@@ -26,7 +26,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1852,16 +1852,30 @@ async def manage_order_delete(
             ),
         }
 
-    payments = await session.scalar(
-        select(func.count()).select_from(Payment).where(Payment.order_id == order.id)
+    # Отказывает только настоящий платёж: по нему есть чек и сверка
+    # с провайдером, и стереть его — значит потерять ответ на вопрос,
+    # откуда взялись деньги. Возврат тоже считается: он про те же деньги.
+    settled = await session.scalar(
+        select(func.count())
+        .select_from(Payment)
+        .where(
+            Payment.order_id == order.id,
+            Payment.status.in_((PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDED)),
+        )
     )
-    if payments:
-        # Платёж мог остаться и у неоплаченного заказа — висящая ссылка.
-        # Стерев заказ, мы оставим платёж без хозяина, а сверку — без ответа.
+    if settled:
         return {
             "ok": False,
-            "error": "К заказу привязаны платежи. Отмените заказ вместо удаления.",
+            "error": (
+                "По заказу проходил платёж — удалять нельзя: пропадёт сверка "
+                "с провайдером. Отмените заказ, история останется."
+            ),
         }
+
+    # Ссылки на оплату, по которым никто не заплатил, уходят вместе с заказом.
+    # Раньше они запрещали удаление, и брошенный заказ со сгоревшей ссылкой
+    # стереть было нельзя вовсе — а сверять по нему нечего.
+    await session.execute(delete(Payment).where(Payment.order_id == order.id))
 
     # Роутер со склада не должен уехать вместе с заказом: он вещь, а не запись.
     await session.execute(
