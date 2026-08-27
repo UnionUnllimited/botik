@@ -184,8 +184,17 @@ async def on_button(query: CallbackQuery) -> None:
 
     if action in PROMPTS:
         _pending[(chat_id, thread_id)] = (action, order_id, time.monotonic())
-        await query.message.answer(PROMPTS[action], message_thread_id=thread_id or None)
+        # Гасим нажатие до отправки подсказки. Не ответишь на callback —
+        # Telegram держит кнопку «нажатой» до таймаута, и оператор смотрит
+        # на крутящийся кружок, не понимая, дошло или нет. А отправка ниже
+        # может и не пройти: прав на запись в топик может не быть.
         await query.answer()
+        try:
+            await query.message.answer(PROMPTS[action], message_thread_id=thread_id or None)
+        except Exception as exc:  # noqa: BLE001 — оператор должен увидеть причину
+            _pending.pop((chat_id, thread_id), None)
+            logger.warning(f"[TOPICS] подсказка не ушла: {exc}")
+            await query.answer(f"Не могу написать в этот чат: {exc}"[:190], show_alert=True)
         return
 
     await query.answer()
@@ -237,12 +246,17 @@ async def _apply_text(action: str, order_id: int, value: str) -> str:
     return "Неизвестное действие."
 
 
-@router.message(F.text, F.message_thread_id)
+@router.message(F.text, F.chat.type.in_({"group", "supergroup"}))
 async def on_reply(message: Message) -> None:
-    """Ответ оператора в топике — если карточка чего-то ждала.
+    """Ответ оператора в рабочем чате — если карточка чего-то ждала.
 
     Ничего не ждала — молчим: в топике заказа люди и просто переписываются,
     и бот, отвечающий на каждую реплику, оттуда всех выгонит.
+
+    Отбор по чату, а не по топику. Раньше стоял фильтр `F.message_thread_id`,
+    и он отсекал главную тему форума: там `message_thread_id` пуст, а карточка
+    попадает туда всякий раз, когда топик завести не вышло. Оператор жал
+    «Трек-номер», получал подсказку — и его ответ до бота уже не доходил.
     """
     key = (message.chat.id, message.message_thread_id or 0)
     waiting = _pending.get(key)

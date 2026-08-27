@@ -200,3 +200,28 @@ class TestPush:
         assert message.order_id == order.id
         assert message.kind == order_topics.KIND
         return message
+
+
+class TestButtonsMatchWhatTheHandleCanDo:
+    """Кнопка должна уметь то, что обещает.
+
+    Оператор жмёт её пальцем с телефона, не читая карточку целиком, и отказ
+    «сейчас нельзя» читается как поломка бота, а не как «так задумано».
+    """
+
+    @staticmethod
+    def _actions(buttons) -> list[str]:
+        return [item["data"].split(":")[-1] for item in buttons if item.get("data")]
+
+    def test_order_without_delivery_has_no_tracking_button(self):
+        """Трек-номер — колонка доставки: нет её, и класть номер некуда."""
+        assert "track" not in self._actions(order_topics.card_buttons(_order(delivery=None)))
+
+    def test_order_with_delivery_has_it(self):
+        delivery = Delivery(
+            method=DeliveryMethod.CDEK,
+            speed=DeliverySpeed.FAST,
+            city="Самара",
+            price=Decimal("0.00"),
+        )
+        assert "track" in self._actions(order_topics.card_buttons(_order(delivery=delivery)))

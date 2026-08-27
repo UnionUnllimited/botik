@@ -111,7 +111,13 @@ def card_buttons(order: Order, *, has_device: bool = False) -> list[dict[str, st
     buttons: list[dict[str, str]] = []
     if order.paid_at and not has_device:
         buttons.append({"text": "◈ Привязать роутер", "data": callback(order.id, "mac")})
-    if order.status not in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+    # Трек-номеру негде лежать без доставки: он колонка в ней. Кнопка без
+    # доставки отвечала бы «негде хранить» — с телефона её жмут вслепую,
+    # и такой отказ читается как поломка.
+    if order.delivery is not None and order.status not in (
+        OrderStatus.CANCELLED,
+        OrderStatus.REFUNDED,
+    ):
         buttons.append({"text": "▤ Трек-номер", "data": callback(order.id, "track")})
     if order.delivery is not None and order.delivery.paid_at is None:
         buttons.append({"text": "₽ Цена доставки", "data": callback(order.id, "dlv")})
