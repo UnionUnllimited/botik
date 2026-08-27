@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -211,3 +212,71 @@ class TestServing:
             grace_until=NOW - dt.timedelta(days=7),
         )
         assert subscription.is_serving(now=NOW) is False
+
+
+class TestOneSubscriptionPerRouter:
+    """Одна подписка — один роутер. Правило заказчика, повторённое трижды.
+
+    Ломалось оно двумя способами сразу: парк спрашивал подписку **клиента**
+    (и у владельца двух роутеров показывал её обоим), а ручная активация
+    не заводила подписку вовсе — доступ в панели был, а в строке стояло «нет».
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "api/routes/fleet_api.py"
+    ).read_text(encoding="utf-8")
+
+    ACTIVATION = (
+        Path(__file__).resolve().parents[1] / "core/services/activation.py"
+    ).read_text(encoding="utf-8")
+
+    def test_fleet_asks_by_device_not_by_client(self):
+        """Оба экрана роутера — список и карточка — берут подписку по устройству.
+
+        `get_current` отвечает про клиента; он остался там, где речь и правда
+        о клиенте (его экран, привязка), но роутеру он отдаёт чужой срок.
+        """
+        assert self.SOURCE.count("get_for_device(session, device.id)") == 2, (
+            "и список, и карточка роутера должны спрашивать подписку по устройству"
+        )
+
+    def test_manual_activation_grants_a_subscription(self):
+        body = self.ACTIVATION[self.ACTIVATION.index("async def activate_manually("):]
+        body = body[: body.find("\nasync def ", 1)]
+        assert "grant_manual" in body, (
+            "ручная активация обязана заводить подписку на этот роутер, "
+            "иначе парк пишет «нет» у работающего роутера"
+        )
+
+    @pytest.mark.asyncio
+    async def test_grant_manual_reuses_the_routers_own_subscription(self, monkeypatch):
+        """Повторная активация продлевает ту же запись, а не заводит вторую."""
+
+        existing = Subscription(
+            id=7,
+            user_id=1,
+            device_id=42,
+            status=SubscriptionStatus.ACTIVE,
+            expires_at=dt.datetime(2026, 9, 1, tzinfo=dt.UTC),
+        )
+        added: list = []
+
+        class _Session:
+            def add(self, item):
+                added.append(item)
+
+            async def flush(self):
+                return None
+
+        async def _found(_session, device_id):
+            assert device_id == 42
+            return existing
+
+        monkeypatch.setattr(service, "get_for_device", _found)
+        monkeypatch.setattr(service, "_record", lambda *a, **k: None)
+
+        result = await service.grant_manual(_Session(), user_id=1, device_id=42, days=30)
+
+        assert result is existing
+        assert added == [], "завелась вторая подписка на тот же роутер"
+        assert result.device_id == 42

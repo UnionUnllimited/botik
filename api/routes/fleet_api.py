@@ -150,33 +150,34 @@ def _sort_key(device: Device, sort: str, subs: dict, *, now: dt.datetime):
     return (0, name.lower()) if name else (1, "")
 
 
-def _matches_sub(device: Device, sub: str, subs: dict, *, now: dt.datetime) -> bool:
+def _matches_sub(
+    device: Device, sub: str, subs: dict, client_subs: dict, *, now: dt.datetime
+) -> bool:
     """Подписка глазами оператора.
 
-    «Нет» и «на другом роутере» — разные беды: в первом случае клиент не платил,
-    во втором заплатил, но роутер этот срок не получил. Разводить их важно:
-    второй случай — это молча не активировавшийся второй роутер.
+    `subs` — своя подписка роутера, `client_subs` — подписка его владельца,
+    если своей нет. «Нет» и «на другом роутере» — разные беды: в первом случае
+    клиент не платил, во втором заплатил, но роутер этот срок не получил.
+    Второй случай — молча не активировавшийся роутер, и найти его больше нечем.
     """
     if not sub:
         return True
-    subscription = subs.get(device.id)
+    own = subs.get(device.id)
     if sub == "none":
-        return subscription is None
-    if subscription is None:
-        return False
-    here = subscription.device_id == device.id
+        return own is None
     if sub == "elsewhere":
-        # Именно на другом, а не «не на этом»: у оплаченной, но не
-        # активированной подписки роутера нет вовсе (`device_id` пуст),
-        # и звать её «на другом роутере» — врать оператору.
-        return subscription.device_id is not None and not here
+        # Своей нет, а у клиента есть и лежит на другом его роутере. Оплаченная,
+        # но не активированная сюда не попадает: у неё роутера нет вовсе
+        # (`device_id` пуст), и звать её «на другом роутере» — врать оператору.
+        other = client_subs.get(device.id)
+        return own is None and other is not None and other.device_id is not None
+    if own is None:
+        return False
     if sub == "active":
-        return here
+        return True
     if sub == "expiring":
-        expires = subscription.expires_at
-        return bool(
-            here and expires and now <= expires <= now + dt.timedelta(days=EXPIRING_SOON_DAYS)
-        )
+        expires = own.expires_at
+        return bool(expires and now <= expires <= now + dt.timedelta(days=EXPIRING_SOON_DAYS))
     return True
 
 
@@ -306,10 +307,19 @@ async def list_routers(
 
     # Подписку спрашиваем один раз на роутер и держим здесь: она нужна и
     # фильтру, и строке таблицы, а второй запрос за тем же — лишний круг.
-    subs = {
+    # Одна подписка — один роутер: спрашиваем по устройству, а не по клиенту.
+    # `get_current` отвечает про клиента, и у владельца двух роутеров отдавал
+    # обоим одну и ту же подписку — второй выглядел оплаченным, хотя доступа
+    # на нём не было.
+    subs = {device.id: await subscription_service.get_for_device(session, device.id) for device in devices}
+
+    # Подписка клиента отдельно и только для тех роутеров, у которых своей нет:
+    # ею объясняется «нет» в строке (оплачена, но ждёт активации — или ушла
+    # на другой роутер) и по ней работает отбор.
+    client_subs = {
         device.id: (
             await subscription_service.get_current(session, device.user_id)
-            if device.user_id
+            if device.user_id and subs.get(device.id) is None
             else None
         )
         for device in devices
@@ -319,7 +329,8 @@ async def list_routers(
         devices = [
             device
             for device in devices
-            if _matches_link(device, link, now=now) and _matches_sub(device, sub, subs, now=now)
+            if _matches_link(device, link, now=now)
+            and _matches_sub(device, sub, subs, client_subs, now=now)
         ]
         if sort in PYTHON_SORTS:
             # Два прохода, а не один кортеж с reverse: перевернув кортеж целиком,
@@ -345,9 +356,9 @@ async def list_routers(
         )
         seen = (device.last_heartbeat_at, device.last_poll_at, device.frp_last_seen_at)
         # В строке — своя подписка роутера. Подписка клиента нужна отбору
-        # «своей нет, а у клиента есть», и берётся там отдельно.
-        client_subscription = subs.get(device.id)
-        subscription = _own_subscription(client_subscription, device)
+        # «своей нет, а у клиента есть» и объяснению под словом «нет».
+        subscription = subs.get(device.id)
+        client_subscription = client_subs.get(device.id)
         items.append(
             {
                 "id": device.id,
@@ -471,8 +482,13 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
 
     now = utcnow()
-    subscription = (
-        await subscription_service.get_current(session, device.user_id) if device.user_id else None
+    # Своя подписка роутера. Подписка владельца берётся только чтобы объяснить
+    # её отсутствие — «есть, но на другом его роутере».
+    subscription = await subscription_service.get_for_device(session, device.id)
+    client_subscription = (
+        await subscription_service.get_current(session, device.user_id)
+        if device.user_id and subscription is None
+        else None
     )
     events = await routers_service.recent_events(session, device_id=device_id, limit=30)
 
@@ -499,13 +515,13 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
         # подписка — один роутер. Чужая, показанная здесь как «активна»,
         # читалась как «этот роутер оплачен».
         "subscription": {
-            "status": str(own.status) if (own := _own_subscription(subscription, device)) else "",
-            "label": _label(str(own.status), SUBSCRIPTION_LABELS) if own else "",
-            "until": _iso(own.expires_at) if own else None,
-            "here": bool(own and own.device_id == device.id),
+            "status": str(subscription.status) if subscription else "",
+            "label": _label(str(subscription.status), SUBSCRIPTION_LABELS) if subscription else "",
+            "until": _iso(subscription.expires_at) if subscription else None,
+            "here": subscription is not None,
             # Отдельной строкой, а не оттенком статуса: это факт про клиента,
             # а не про этот роутер. Он и объясняет, почему подписки тут нет.
-            "elsewhere": _elsewhere(subscription, device),
+            "elsewhere": subscription is None and _elsewhere(client_subscription, device),
         },
         "panel": {
             "username": activation.manual_username_for(device.mac),

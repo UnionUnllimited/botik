@@ -59,50 +59,68 @@ class TestLinkFilter:
 
 
 class TestSubscriptionFilter:
-    def test_empty_filter_keeps_everything(self):
-        assert _matches_sub(device(), "", {}, now=NOW)
+    """Одна подписка — один роутер.
 
-    def test_none_means_no_subscription_at_all(self):
-        assert _matches_sub(device(1), "none", {1: None}, now=NOW)
-        assert not _matches_sub(device(1), "none", {1: subscription(1)}, now=NOW)
+    `subs` — своя подписка роутера и только она; подписка владельца, лежащая
+    на другом его роутере, сюда не попадает вовсе. Она приходит отдельной
+    картой `client_subs` и объясняет «нет»: клиент платил, а этот роутер срока
+    не получил — то есть молча не активировался.
+    """
+
+    def test_empty_filter_keeps_everything(self):
+        assert _matches_sub(device(), "", {}, {}, now=NOW)
+
+    def test_none_means_no_subscription_of_its_own(self):
+        assert _matches_sub(device(1), "none", {1: None}, {}, now=NOW)
+        assert not _matches_sub(device(1), "none", {1: subscription(1)}, {}, now=NOW)
+
+    def test_none_covers_a_router_whose_client_pays_for_another(self):
+        """Своей подписки нет — значит «нет», сколько бы их ни было у клиента."""
+        assert _matches_sub(device(1), "none", {1: None}, {1: subscription(2)}, now=NOW)
 
     def test_active_means_active_on_this_router(self):
-        """Подписка клиента, лежащая на другом роутере, этот не делает активным."""
-        assert _matches_sub(device(1), "active", {1: subscription(1)}, now=NOW)
-        assert not _matches_sub(device(1), "active", {1: subscription(2)}, now=NOW)
+        assert _matches_sub(device(1), "active", {1: subscription(1)}, {}, now=NOW)
+        assert not _matches_sub(device(1), "active", {1: None}, {1: subscription(2)}, now=NOW)
 
     def test_elsewhere_finds_the_second_router(self):
         """Клиент заплатил, но срок ушёл первому роутеру — второй не активирован."""
-        assert _matches_sub(device(1), "elsewhere", {1: subscription(2)}, now=NOW)
-        assert not _matches_sub(device(1), "elsewhere", {1: subscription(1)}, now=NOW)
+        assert _matches_sub(device(1), "elsewhere", {1: None}, {1: subscription(2)}, now=NOW)
+        assert not _matches_sub(device(1), "elsewhere", {1: subscription(1)}, {}, now=NOW)
 
     def test_elsewhere_needs_a_subscription(self):
-        assert not _matches_sub(device(1), "elsewhere", {1: None}, now=NOW)
+        assert not _matches_sub(device(1), "elsewhere", {1: None}, {1: None}, now=NOW)
+
+    def test_awaiting_activation_is_not_elsewhere(self):
+        """Оплаченная и ещё не активированная не лежит ни на одном роутере:
+        звать её «на другом» — врать оператору, он пойдёт искать второй роутер."""
+        assert not _matches_sub(device(1), "elsewhere", {1: None}, {1: subscription(None)}, now=NOW)
 
     @pytest.mark.parametrize("days", [0, 1, EXPIRING_SOON_DAYS])
     def test_expiring_covers_the_next_week(self, days):
-        assert _matches_sub(device(1), "expiring", {1: subscription(1, expires_in_days=days)}, now=NOW)
+        assert _matches_sub(
+            device(1), "expiring", {1: subscription(1, expires_in_days=days)}, {}, now=NOW
+        )
 
     @pytest.mark.parametrize("days", [EXPIRING_SOON_DAYS + 1, 90])
     def test_far_away_is_not_expiring(self, days):
         assert not _matches_sub(
-            device(1), "expiring", {1: subscription(1, expires_in_days=days)}, now=NOW
+            device(1), "expiring", {1: subscription(1, expires_in_days=days)}, {}, now=NOW
         )
 
     def test_already_expired_is_not_expiring(self):
         """Истёкшая не «истекает»: звонить по ней поздно, это другой список."""
         assert not _matches_sub(
-            device(1), "expiring", {1: subscription(1, expires_in_days=-1)}, now=NOW
+            device(1), "expiring", {1: subscription(1, expires_in_days=-1)}, {}, now=NOW
         )
 
     def test_endless_subscription_is_not_expiring(self):
         assert not _matches_sub(
-            device(1), "expiring", {1: subscription(1, expires_in_days=None)}, now=NOW
+            device(1), "expiring", {1: subscription(1, expires_in_days=None)}, {}, now=NOW
         )
 
     def test_expiring_on_another_router_is_not_ours(self):
         assert not _matches_sub(
-            device(1), "expiring", {1: subscription(2, expires_in_days=1)}, now=NOW
+            device(1), "expiring", {1: None}, {1: subscription(2, expires_in_days=1)}, now=NOW
         )
 
 

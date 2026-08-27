@@ -160,6 +160,19 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
     now = utcnow()
     device.status = DeviceStatus.ACTIVE
     device.activated_at = device.activated_at or now
+
+    # Подписка заводится на **этот** роутер. До сих пор ручная активация
+    # не оставляла в наших таблицах ничего: доступ в панели был, а парк писал
+    # «подписка: нет» у роутера, который в эту секунду работает.
+    #
+    # Только когда у роутера есть владелец: подписка принадлежит клиенту,
+    # и у служебного роутера её не к кому привязать. Такой так и останется
+    # без подписки — это правда, а не пробел.
+    if owner is not None:
+        await subscriptions.grant_manual(
+            session, user_id=owner.id, device_id=device.id, days=days, now=now
+        )
+
     routers.add_event(
         session,
         device_id=device.id,
@@ -295,6 +308,16 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
     except remnawave.RemnawaveError as exc:
         log.warning("activation.manual_extend_failed", mac=device.mac, error=str(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
+
+    # Наша подписка двигается вместе с панелью: разъехавшись, они показывают
+    # оператору один срок, а отключают доступ по другому.
+    if device.user_id:
+        await subscriptions.grant_manual(
+            session,
+            user_id=device.user_id,
+            device_id=device.id,
+            days=max((expire_at - utcnow()).days, 1),
+        )
 
     routers.add_event(
         session,

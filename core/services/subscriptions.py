@@ -76,6 +76,86 @@ async def get_pending(session: AsyncSession, user_id: int) -> Subscription | Non
     )
 
 
+async def get_for_device(session: AsyncSession, device_id: int) -> Subscription | None:
+    """Подписка **этого** роутера. Одна подписка — один роутер.
+
+    Именно так надо спрашивать везде, где речь про устройство: `get_current`
+    отвечает про клиента, и у владельца двух роутеров отдаёт одну и ту же
+    подписку обоим. Второй роутер от этого выглядит оплаченным, хотя доступа
+    на нём нет.
+    """
+    return await session.scalar(
+        select(Subscription)
+        .where(Subscription.device_id == device_id, Subscription.status.in_(LIVE_STATUSES))
+        .order_by(Subscription.expires_at.desc().nulls_last())
+        .limit(1)
+        .options(selectinload(Subscription.plan), selectinload(Subscription.device))
+    )
+
+
+async def grant_manual(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    device_id: int,
+    days: int,
+    now: dt.datetime | None = None,
+) -> Subscription:
+    """Подписка ручной активации: срок без тарифа, привязанная к роутеру.
+
+    Ручная активация заводит доступ в панели, и до сих пор этим всё
+    и заканчивалось: в наших таблицах не появлялось ничего, и парк писал
+    «подписка: нет» у роутера, который в эту секунду работает. Оператор видел
+    противоречие и не мог понять, прошла активация или нет.
+
+    Тарифа здесь нет и быть не может — роутер служебный, подменный или
+    проданный вне сайта, — поэтому `plan_id` пуст, а срок ставится днями.
+    Повторная активация того же роутера продлевает ту же запись, а не заводит
+    вторую: одна подписка на роутер, и это правило не должен нарушать даже
+    двойной клик.
+    """
+    moment = now or utcnow()
+    subscription = await get_for_device(session, device_id)
+    old_expires_at = subscription.expires_at if subscription else None
+
+    if subscription is None:
+        subscription = Subscription(
+            user_id=user_id,
+            device_id=device_id,
+            status=SubscriptionStatus.ACTIVE,
+            started_at=moment,
+            source="manual",
+        )
+        session.add(subscription)
+
+    subscription.user_id = user_id
+    subscription.status = SubscriptionStatus.ACTIVE
+    subscription.started_at = subscription.started_at or moment
+    subscription.expires_at = moment + dt.timedelta(days=days)
+    subscription.grace_until = subscription.expires_at + dt.timedelta(
+        days=settings.subscription.grace_days
+    )
+    subscription.pending_expires_at = None
+    subscription.last_reminder_day = None
+    subscription.cancelled_at = None
+
+    await session.flush()
+    _record(
+        subscription,
+        SubscriptionEventType.ACTIVATED,
+        old_expires_at=old_expires_at,
+        days_delta=days,
+        comment=f"Ручная активация на {days} дн.",
+    )
+    log.info(
+        "subscription.granted_manually",
+        subscription_id=subscription.id,
+        device_id=device_id,
+        days=days,
+    )
+    return subscription
+
+
 async def get_current(session: AsyncSession, user_id: int) -> Subscription | None:
     """Что показывать клиенту: сначала действующая, иначе ожидающая активации."""
     return await get_active(session, user_id) or await get_pending(session, user_id)
