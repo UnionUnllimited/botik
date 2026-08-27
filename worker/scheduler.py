@@ -194,6 +194,12 @@ def create_scheduler() -> AsyncIOScheduler:
         id="cleanup_access_log",
         name="Чистка лога обращений за подпиской",
     )
+    scheduler.add_job(
+        instrumented("cleanup_notifications", maintenance.cleanup_notifications),
+        CronTrigger(hour=3, minute=30),
+        id="cleanup_notifications",
+        name="Чистка отправленных сообщений очереди",
+    )
 
     log.info(
         "worker.jobs_registered",

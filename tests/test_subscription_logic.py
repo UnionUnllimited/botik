@@ -466,3 +466,45 @@ class TestGrantManualOnARealSession:
                 assert paid.status is SubscriptionStatus.PENDING
         finally:
             await engine.dispose()
+
+
+class TestManualExtensionKeepsThePanelDate:
+    """Наш срок и срок в панели должны совпадать до часа.
+
+    Ручное продление считало дни целыми: `(expire_at - now).days` отбрасывает
+    часы, и после каждого продления наша дата отставала от панельной почти
+    на сутки. Оператор видел один срок, доступ отключался по другому.
+    """
+
+    @pytest.mark.asyncio
+    async def test_exact_date_is_kept(self, monkeypatch):
+        until = dt.datetime(2026, 10, 1, 17, 45, tzinfo=dt.UTC)
+
+        class _Session:
+            def add(self, _item):
+                return None
+
+            async def flush(self):
+                return None
+
+        async def _none(_session, _device_id):
+            return None
+
+        monkeypatch.setattr(service, "get_for_device", _none)
+        monkeypatch.setattr(service, "_record", lambda *a, **k: None)
+
+        granted = await service.grant_manual(
+            _Session(), user_id=1, device_id=42, days=30, until=until
+        )
+
+        assert granted.expires_at == until, "срок разошёлся с панелью"
+
+    def test_extension_passes_the_panel_date(self):
+        """Иначе округление вернётся: считать дни здесь больше не нужно."""
+        body = (
+            Path(__file__).resolve().parents[1] / "core/services/activation.py"
+        ).read_text(encoding="utf-8")
+        body = body[body.index("async def extend_manually(") :]
+        body = body[: body.find("\nasync def ", 1)]
+        assert "until=expire_at" in body
+        assert ".days, 1)" not in body

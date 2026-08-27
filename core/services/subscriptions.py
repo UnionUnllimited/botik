@@ -126,6 +126,7 @@ async def grant_manual(
     device_id: int,
     days: int,
     now: dt.datetime | None = None,
+    until: dt.datetime | None = None,
 ) -> Subscription:
     """Подписка ручной активации: срок без тарифа, привязанная к роутеру.
 
@@ -139,6 +140,11 @@ async def grant_manual(
     Повторная активация того же роутера продлевает ту же запись, а не заводит
     вторую: одна подписка на роутер, и это правило не должен нарушать даже
     двойной клик.
+
+    `until` — точный срок, который уже проставлен в панели. Считать его здесь
+    заново по целым дням значит отстать от неё на часы: `days` отбрасывает
+    остаток, и после каждого продления оператор видел один срок, а доступ
+    отключался по другому.
     """
     moment = now or utcnow()
     subscription = await get_for_device(session, device_id)
@@ -157,7 +163,7 @@ async def grant_manual(
     subscription.user_id = user_id
     subscription.status = SubscriptionStatus.ACTIVE
     subscription.started_at = subscription.started_at or moment
-    subscription.expires_at = moment + dt.timedelta(days=days)
+    subscription.expires_at = until or moment + dt.timedelta(days=days)
     subscription.grace_until = subscription.expires_at + dt.timedelta(
         days=settings.subscription.grace_days
     )

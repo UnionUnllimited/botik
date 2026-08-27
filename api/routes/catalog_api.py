@@ -728,14 +728,21 @@ async def subscriptions_snapshot(session: AsyncSession = Depends(get_session)) -
     latest: dict[int, dict] = {}
     for tg_id, state, expires_at in rows:
         # Подписок у человека может быть несколько за историю; в базе бота
-        # поле одно, и туда должна попасть последняя по сроку.
+        # поле одно, и туда должна попасть самая дальняя по сроку.
+        candidate = _iso_dt(expires_at)
         current = latest.get(tg_id)
-        if current and current["until"] and expires_at and current["until"] >= expires_at.isoformat():
-            continue
+        if current is not None:
+            if candidate is None:
+                # Ожидающая активации срока не имеет вовсе. Затирать ею
+                # действующую нельзя: бот такие строки пропускает, и дата
+                # у клиента застывает на прежней навсегда.
+                continue
+            if current["until"] is not None and current["until"] >= candidate:
+                continue
         latest[tg_id] = {
             "tg_id": tg_id,
             "status": str(state),
-            "until": _iso_dt(expires_at),
+            "until": candidate,
         }
     return {"total": len(latest), "subscriptions": list(latest.values())}
 
@@ -864,6 +871,7 @@ async def _alive_payment(
     amount,
     order_id: int | None = None,
     user_id: int | None = None,
+    plan_id: int | None = None,
 ) -> Payment | None:
     """Живой неоплаченный счёт на ту же сумму, если он ещё есть.
 
@@ -886,6 +894,11 @@ async def _alive_payment(
         conditions.append(Payment.order_id == order_id)
     if user_id is not None:
         conditions.append(Payment.user_id == user_id)
+    if plan_id is not None:
+        # Сроки приезжают зеркалом из чужой админки, и два разных срока
+        # с одной ценой там обычное дело: по сумме счёт совпал бы, а клиент
+        # оплатил бы не тот период, который выбрал.
+        conditions.append(Payment.plan_id == plan_id)
 
     return await session.scalar(select(Payment).where(*conditions).order_by(Payment.id.desc()))
 
@@ -909,7 +922,11 @@ async def renew_start(payload: dict, session: AsyncSession = Depends(get_transac
         }
 
     alive = await _alive_payment(
-        session, purpose=PaymentPurpose.SUBSCRIPTION, amount=plan.price, user_id=user.id
+        session,
+        purpose=PaymentPurpose.SUBSCRIPTION,
+        amount=plan.price,
+        user_id=user.id,
+        plan_id=plan.id,
     )
     if alive is not None:
         log.info("catalog.renew_link_reused", payment_id=alive.id, plan_id=plan.id)
@@ -2231,6 +2248,14 @@ async def cancel_order(
         return {"ok": False, "error": "Такой заказ отменяет только поддержка."}
 
     order_service.set_status(order, OrderStatus.CANCELLED, reason="Отменён клиентом в боте")
+    # Свой счёт закрываем сразу. У провайдера метода отмены нет — только
+    # возврат, — но живой счёт у нас переиспользует кнопка «Оплатить заказ»
+    # и опрашивает воркер, то есть отменённый заказ продолжает ждать денег.
+    await session.execute(
+        update(Payment)
+        .where(Payment.order_id == order.id, Payment.status == PaymentStatus.PENDING)
+        .values(status=PaymentStatus.CANCELED, error_message="Заказ отменён клиентом")
+    )
     log.info("catalog.order_cancelled", order_id=order.id, number=order.public_number)
     return {"ok": True}
 

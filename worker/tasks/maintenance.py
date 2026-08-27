@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select, update
 from core.config import settings
 from core.db import session_scope
 from core.enums import CommandStatus, DeviceServiceStatus
-from core.models import Device, DeviceCommand, Heartbeat, SubscriptionAccessLog
+from core.models import Device, DeviceCommand, Heartbeat, Notification, SubscriptionAccessLog
 
 log = structlog.get_logger("worker.maintenance")
 
@@ -54,6 +54,30 @@ async def cleanup_access_log() -> int:
     count = result.rowcount or 0
     if count:
         log.info("access_log.cleaned", count=count)
+    return count
+
+
+NOTIFICATIONS_RETENTION_DAYS = 90
+"""Сколько держим отправленные сообщения.
+
+В очередь попадает каждое напоминание, каждое подтверждение оплаты и каждая
+карточка заказа в рабочем чате — за год это десятки тысяч строк, а читают
+их в пределах последних дней: «дошло ли до клиента». Неотправленные не трогаем
+вовсе, сколько бы ни лежали: это ещё не доставленное сообщение."""
+
+
+async def cleanup_notifications() -> int:
+    """Убирает давно отправленные сообщения из очереди."""
+    threshold = dt.datetime.now(dt.UTC) - dt.timedelta(days=NOTIFICATIONS_RETENTION_DAYS)
+    async with session_scope() as session:
+        result = await session.execute(
+            delete(Notification).where(
+                Notification.sent_at.is_not(None), Notification.sent_at < threshold
+            )
+        )
+    count = result.rowcount or 0
+    if count:
+        log.info("notifications.cleaned", count=count, older_than_days=NOTIFICATIONS_RETENTION_DAYS)
     return count
 
 

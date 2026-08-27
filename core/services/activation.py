@@ -315,11 +315,15 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
     # Наша подписка двигается вместе с панелью: разъехавшись, они показывают
     # оператору один срок, а отключают доступ по другому.
     if device.user_id:
+        # Срок берём тот же, что проставлен в панели, а не пересчитываем
+        # днями: целые дни отбрасывают часы, и наша дата отставала от неё
+        # почти на сутки после каждого продления.
         await subscriptions.grant_manual(
             session,
             user_id=device.user_id,
             device_id=device.id,
-            days=max((expire_at - utcnow()).days, 1),
+            days=days,
+            until=expire_at,
         )
 
     routers.add_event(

@@ -21,6 +21,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core import texts
 from core.config import settings
 from core.dates import utcnow
 from core.enums import (
@@ -34,6 +35,7 @@ from core.enums import (
 )
 from core.metrics import payments_total
 from core.models import Order, Payment, Plan, Referral, Subscription, User
+from core.notifications import notify_admins
 from core.payments import PaymentProvider, PaymentRequest, get_provider
 from core.services import subscriptions as subscription_service
 
@@ -274,6 +276,37 @@ async def _push_topic(session: AsyncSession, order: Order, *, note: str) -> None
         log.warning("payment.topic_push_failed", order_id=order.id, error=str(exc))
 
 
+CLOSED_ORDER_STATUSES = (OrderStatus.CANCELLED, OrderStatus.REFUNDED)
+"""Заказы, по которым платить уже нечего. Оплата такого — не поломка, а живой
+случай: клиент отменил заказ и через минуту открыл ссылку из переписки."""
+
+
+async def _report_payment_of_closed_order(
+    session: AsyncSession, payment: Payment, order: Order
+) -> None:
+    """Зовёт оператора: деньги пришли по заказу, которого больше нет.
+
+    Подписку не выдаём и заказ не воскрешаем: отменил его сам клиент, а вернуть
+    деньги или оформить заказ заново — решение человека. Молчать нельзя —
+    иначе оплата просто повиснет платежом без последствий.
+    """
+    log.warning(
+        "payment.for_closed_order",
+        payment_id=payment.id,
+        order_id=order.id,
+        status=str(order.status),
+        amount=str(payment.amount),
+    )
+    await notify_admins(
+        texts.ADMIN_PAYMENT_FOR_CLOSED_ORDER.format(
+            number=order.public_number,
+            status=texts.ORDER_STATUS_TITLES.get(order.status, str(order.status)),
+            total=texts.money(payment.amount),
+        ),
+        session=session,
+    )
+
+
 async def _apply_success(session: AsyncSession, payment: Payment) -> None:
     """Бизнес-эффект успешной оплаты: заказ, подписка, реферальный бонус."""
     order: Order | None = None
@@ -302,6 +335,14 @@ async def _apply_success(session: AsyncSession, payment: Payment) -> None:
             await _push_topic(session, order, note="✓ Доставка оплачена")
         log.info("payment.delivery_paid", payment_id=payment.id, order_id=payment.order_id)
         return
+    if order is not None and order.status in CLOSED_ORDER_STATUSES:
+        # Клиент отменил заказ, а ссылка осталась у него в переписке: гасить
+        # её у провайдера нечем, метода отмены у него нет. Деньги пришли,
+        # и платёж остаётся в сверке, но подписки за отменённый заказ быть
+        # не должно — роутер никто не повезёт. Дальше решает человек.
+        await _report_payment_of_closed_order(session, payment, order)
+        return
+
     if order is not None and order.status in (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT):
         order.status = OrderStatus.PAID
         order.paid_at = payment.paid_at
@@ -482,6 +523,14 @@ async def sync_pending_payment(session: AsyncSession, payment: Payment) -> bool:
     return await apply_status(session, locked, status=result.status, amount=result.amount)
 
 
+EXPIRE_BATCH = 50
+"""Сколько ссылок гасим за круг.
+
+Каждая — это вопрос провайдеру, и без предела один круг на накопленном хвосте
+превращается в длинную транзакцию с держащимися блокировками. Столько же берёт
+опрос висящих платежей: круги ходят рядом и должны стоить одинаково."""
+
+
 async def expire_stale_payments(session: AsyncSession, *, now: dt.datetime | None = None) -> int:
     """Платежи с истёкшей ссылкой переводим в canceled, чтобы не висели вечно.
 
@@ -508,6 +557,8 @@ async def expire_stale_payments(session: AsyncSession, *, now: dt.datetime | Non
                     and_(Payment.expires_at.is_(None), Payment.created_at < fallback),
                 ),
             )
+            .order_by(Payment.id)
+            .limit(EXPIRE_BATCH)
         )
     )
     count = 0

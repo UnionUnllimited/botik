@@ -299,3 +299,135 @@ class TestBrokenLinksAndScreens:
         """Между открытием карточки и нажатием «Заказать» товар мог кончиться."""
         body = _between(BOT_CATALOG, "async def cq_buy", "async def cq_plan")
         assert 'product.get("in_stock")' in body
+
+
+class TestCancelledOrderIsNotPaidByAccident:
+    """Клиент отменил заказ, а ссылка на оплату у него в переписке осталась.
+
+    Гасить её у провайдера нечем — метода отмены у него нет, есть только
+    возврат. Значит, во-первых, свой счёт мы закрываем сами (иначе его
+    переиспользует кнопка «Оплатить заказ» и опрашивает воркер), а во-вторых,
+    пришедшую по нему оплату не превращаем в подписку молча: заказ отменён,
+    роутер никто не повезёт, и решать тут человеку.
+    """
+
+    @staticmethod
+    async def _paid_cancelled_order(session):
+        from core.enums import PaymentProviderName, PaymentPurpose, PaymentStatus
+        from core.models import Payment
+
+        user, _product, order = await _order_with_product(session)
+        order.status = OrderStatus.CANCELLED
+        order.cancelled_at = dt.datetime.now(dt.UTC)
+        payment = Payment(
+            user_id=user.id,
+            order_id=order.id,
+            provider=PaymentProviderName.PLATEGA,
+            purpose=PaymentPurpose.ORDER,
+            status=PaymentStatus.PENDING,
+            idempotency_key="key-cancelled",
+            amount=order.total,
+            currency="RUB",
+        )
+        session.add(payment)
+        await session.commit()
+        return user, order, payment
+
+    @pytest.mark.asyncio
+    async def test_cancelling_closes_the_invoice(self):
+        """Свой счёт закрываем сразу: иначе он живой для кнопки и для опроса."""
+        from api.routes import catalog_api
+        from core.enums import PaymentStatus
+
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                user, _product, order = await _order_with_product(session)
+                from core.enums import PaymentProviderName, PaymentPurpose
+                from core.models import Payment
+
+                session.add(
+                    Payment(
+                        user_id=user.id,
+                        order_id=order.id,
+                        provider=PaymentProviderName.PLATEGA,
+                        purpose=PaymentPurpose.ORDER,
+                        status=PaymentStatus.PENDING,
+                        idempotency_key="key-1",
+                        amount=order.total,
+                        currency="RUB",
+                        confirmation_url="https://pay.example/1",
+                        expires_at=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=10),
+                    )
+                )
+                await session.commit()
+
+                result = await catalog_api.cancel_order(
+                    order.id, {"tg_id": user.tg_id}, session=session
+                )
+                await session.commit()
+
+                assert result == {"ok": True}
+                left = await catalog_api._alive_payment(
+                    session,
+                    purpose=PaymentPurpose.ORDER,
+                    amount=order.total,
+                    order_id=order.id,
+                )
+                assert left is None, "счёт отменённого заказа остался живым"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_payment_of_a_cancelled_order_grants_nothing(self, monkeypatch):
+        """Оплата дошла — подписки быть не должно: заказ отменён."""
+        from sqlalchemy import select
+
+        from core.enums import PaymentStatus
+        from core.models import Subscription
+        from core.services import payments as payment_service
+
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                _user, order, payment = await self._paid_cancelled_order(session)
+
+                told: list = []
+
+                async def _alert(text, *, session=None, reply_markup=None):
+                    told.append(text)
+
+                monkeypatch.setattr(payment_service, "notify_admins", _alert, raising=False)
+
+                await payment_service.apply_status(
+                    session, payment, status=PaymentStatus.SUCCEEDED
+                )
+                await session.commit()
+
+                granted = list(
+                    await session.scalars(
+                        select(Subscription).where(Subscription.order_id == order.id)
+                    )
+                )
+                assert granted == [], "за отменённый заказ выдали подписку"
+                assert payment.status is PaymentStatus.SUCCEEDED, (
+                    "деньги пришли — платёж обязан остаться в сверке"
+                )
+                assert told, "оператору не сказали, что оплатили отменённый заказ"
+        finally:
+            await engine.dispose()
+
+
+class TestRenewalInvoiceMatchesTheChosenPeriod:
+    """Живой счёт переиспользуется по сумме — и по сроку тоже.
+
+    Сроки приезжают зеркалом из чужой админки, и два разных срока с одной
+    ценой там обычное дело. Клиент, выбравший второй, получал ссылку
+    на первый и оплачивал не то, что выбрал.
+    """
+
+    def test_alive_invoice_checks_the_plan(self):
+        helper = _between(CATALOG_API, "async def _alive_payment", '@router.post("/renew")')
+        assert "Payment.plan_id == plan_id" in helper, (
+            "счёт продления обязан совпадать не только ценой, но и сроком"
+        )
