@@ -340,12 +340,37 @@ class TestForbiddenTerm:
             (landing_route.TEMPLATES_DIR / "landing_off.html").read_text(encoding="utf-8"),
             (landing_route.TEMPLATES_DIR / "landing_error.html").read_text(encoding="utf-8"),
             (landing_route.STATIC_DIR / "landing.css").read_text(encoding="utf-8"),
+            (landing_route.TEMPLATES_DIR / "instruction.html").read_text(encoding="utf-8"),
+            (landing_route.TEMPLATES_DIR / "guide.html").read_text(encoding="utf-8"),
             str(landing.STEPS),
             str(landing.FEATURES),
             str(landing.FAQ),
+            str(landing.MARQUEE),
+            str(landing.HOME_POINTS),
+            str(landing.COMPARISON),
+            str(landing.INSTRUCTION_STEPS),
+            str(landing.GUIDE_SECTIONS),
         ]
         for source in sources:
             assert forbidden not in source.lower()
+
+    def test_no_text_block_slips_past_the_check(self):
+        """Проверка растёт вместе с текстами сама.
+
+        Присланная заказчиком вёрстка несла это слово трижды, и заметить его
+        глазами в трёх экранах разметки — вопрос везения. Поэтому смотрим
+        не список, который надо не забыть дополнить, а все текстовые блоки
+        модуля: новый блок попадает под проверку сам.
+        """
+        forbidden = "".join(("v", "p", "n"))
+        blocks = {
+            name: value
+            for name, value in vars(landing).items()
+            if name.isupper() and isinstance(value, (str, list, tuple, dict))
+        }
+        assert len(blocks) >= 6, "тексты витрины перестали быть константами модуля"
+        for name, value in blocks.items():
+            assert forbidden not in str(value).lower(), f"{name} содержит запрещённое слово"
 
 
 class TestWordingForBuyers:

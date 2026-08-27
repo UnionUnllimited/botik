@@ -18,18 +18,16 @@
 <header class="top">
   <div class="wrap top__inner">
     <a class="brand" href="/">
-      <img class="brand__logo" src="{{ logo_url }}" alt="" width="32" height="32">
+      <img class="brand__logo" src="{{ logo_url }}" alt="" width="26" height="26">
       <span>{{ brand }}</span>
     </a>
-    {# Навигация та же, что на главной: человек попал сюда по ссылке из чата
-       и должен уметь дойти до моделей, не разыскивая адрес витрины. #}
     <nav class="top__nav">
-      <a href="/instruction" class="is-active">Как подключить</a>
-      <a href="/guide">Инструкция</a>
-      <a href="/#catalog">Модели</a>
-      <a href="/#faq">Вопросы</a>
+      <a href="/instruction" class="is-active">как подключить</a>
+      <a href="/guide">инструкция</a>
+      <a href="/#catalog">модели</a>
+      <a href="/#faq">вопросы</a>
     </nav>
-    {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть чат</a>{% endif %}
+    {% if bot_url %}<a class="btn btn--sm" href="{{ bot_url }}">Открыть чат</a>{% endif %}
   </div>
 </header>
 
@@ -38,10 +36,10 @@
     <div class="wrap wrap--narrow">
       <p class="eyebrow">Инструкция</p>
       <h1>Как подключить роутер</h1>
-      <p class="lead">Настраивать нечего: роутер приезжает готовым, подписка
+      <p class="page__lead">Настраивать нечего: роутер приезжает готовым, подписка
         включается сама. Всё, что нужно, — розетка и кабель провайдера.</p>
 
-      <ol class="steps" style="grid-template-columns: minmax(0, 1fr); margin-top: 32px">
+      <ol class="steps steps--list" style="margin-top: 32px">
         {% for step in steps %}
         <li class="step">
           <span class="step__no">{{ loop.index }}</span>
@@ -83,12 +81,12 @@
   </section>
   {% endif %}
 
-  <section class="section cta">
-    <div class="wrap wrap--narrow cta__inner">
+  <section class="section"><div class="cta">
+    <div class="wrap">
       <h2>Остались вопросы?</h2>
       <p>Напишите в чат — там же видно состояние роутера и срок подписки.</p>
-      {% if bot_url %}<a class="btn btn--big" href="{{ bot_url }}">Написать в Telegram</a>{% endif %}
-    </div>
+      {% if bot_url %}<a class="btn" href="{{ bot_url }}">Написать в Telegram</a>{% endif %}
+    </div></div>
   </section>
 </main>
 

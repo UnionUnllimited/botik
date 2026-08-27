@@ -22,187 +22,254 @@
 <header class="top">
   <div class="wrap top__inner">
     <a class="brand" href="/">
-      <img class="brand__logo" src="{{ logo_url }}" alt="" width="32" height="32">
+      <img class="brand__logo" src="{{ logo_url }}" alt="" width="26" height="26">
       <span>{{ brand }}</span>
     </a>
     <nav class="top__nav">
-      <a href="#how">Как это работает</a>
-      <a href="#catalog">Модели</a>
-      <a href="#faq">Вопросы</a>
+      <a href="#catalog">модели</a>
+      <a href="#home">как это дома</a>
+      <a href="#how">как работает</a>
+      <a href="#plans">подписка</a>
+      <a href="#faq">вопросы</a>
     </nav>
-    {% if bot_url %}<a class="btn btn--small" href="{{ bot_url }}">Открыть чат</a>{% endif %}
+    {% if bot_url %}<a class="btn btn--sm" href="{{ bot_url }}">Купить роутер</a>{% endif %}
   </div>
 </header>
 
 <main>
 
-  <section class="hero">
+  {# ── Первый экран ─────────────────────────────────────────────────────── #}
+  <section class="hero" id="top">
+    <div class="hero__haze" aria-hidden="true"></div>
     <div class="wrap hero__inner">
-      <div class="hero__text">
-        <p class="eyebrow">Роутер с подпиской</p>
-        <h1>{{ hero_title }}</h1>
-        <p class="lead">{{ hero_subtitle }}</p>
-        <div class="hero__actions">
-          {% if products %}<a class="btn" href="#catalog">Смотреть модели</a>{% endif %}
-          {% if bot_url %}
-            <a class="btn btn--ghost" href="{{ bot_url }}">Написать в чат</a>
-          {% else %}
-            <span class="note">Заказ оформляется в чате Telegram</span>
+      <p class="eyebrow">Роутер с подпиской</p>
+      <h1 class="hero__title">{{ hero_title }}</h1>
+
+      <div class="hero__grid">
+        <div>
+          <p class="hero__lead">{{ hero_subtitle }}</p>
+          <div class="hero__actions">
+            <a class="btn" href="#catalog">Смотреть модели</a>
+            {% if bot_url %}<a class="btn btn--ghost" href="{{ bot_url }}">Купить в чате</a>{% endif %}
+          </div>
+          <ul class="hero__facts">
+            <li>настраивать нечего</li>
+            <li>вся сеть дома</li>
+            {% if plans %}<li>подписка от {{ plans|map(attribute='price')|list|first }} ₽</li>{% endif %}
+          </ul>
+        </div>
+
+        {# Картинка первого экрана — та же, что баннер над меню чата: клиент
+           приходит оттуда и видит то же изображение, переход не рвётся. #}
+        <div class="hero__media">
+          <div class="grid-bg" aria-hidden="true"></div>
+          {% if hero_image %}
+          <img src="{{ hero_image }}" alt="Роутер {{ brand }}" loading="eager" decoding="async">
           {% endif %}
         </div>
-        <ul class="hero__marks">
-          <li>Настраивать нечего</li>
-          <li>Для всей домашней сети</li>
-          <li>Подписка от {{ plans[0].price if plans else '' }}</li>
-        </ul>
       </div>
-      {% if hero_image %}
-      <div class="hero__photo">
-        <img src="{{ hero_image }}" alt="{{ brand }}" loading="eager">
-      </div>
-      {% endif %}
     </div>
   </section>
 
-  <section class="band" id="what">
-    <div class="wrap grid grid--4">
-      {% for feature in features %}
-      <article class="card card--flat">
-        <span class="glyph">{{ feature.glyph }}</span>
-        <h3>{{ feature.title }}</h3>
-        <p>{{ feature.text }}</p>
+  {# Бегущая строка: отвечает на «а на чём это работает» раньше, чем спросят.
+     Дублируется в разметке — лента должна ехать без шва. #}
+  {% if marquee %}
+  <div class="ticker" aria-hidden="true">
+    <div class="ticker__row">
+      {% for _ in range(2) %}
+      <div class="ticker__group">
+        {% for word in marquee %}<span>{{ word }}</span><i>◇</i>{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Каталог ──────────────────────────────────────────────────────────── #}
+  <section class="section" id="catalog">
+    <div class="wrap">
+      <div class="section__head">
+        <div>
+          <p class="eyebrow eyebrow--accent">Модели</p>
+          <h2>Каталог</h2>
+        </div>
+        <p class="section__note">
+          Цена роутера указана без подписки — срок выбирается при заказе,
+          от него зависит итоговая сумма.
+        </p>
+      </div>
+
+      {% if not products %}
+      <p class="empty">Модели скоро появятся.</p>
+      {% endif %}
+
+      {% for product in products %}
+      <article class="product{% if loop.index is even %} product--flip{% endif %}">
+        <div class="product__media">
+          <div class="grid-bg" aria-hidden="true"></div>
+          {% if product.photo_url %}
+          <img src="{{ product.photo_url }}" alt="{{ product.title }}" loading="lazy" decoding="async">
+          {% endif %}
+          <span class="product__tag">{{ product.subtitle or product.title }}</span>
+        </div>
+
+        <div class="product__body">
+          <h3>{{ product.title }}</h3>
+          {% if product.subtitle %}<p class="product__sub">{{ product.subtitle }}</p>{% endif %}
+
+          <p class="product__price">
+            <span class="price">{{ product.price }} ₽</span>
+            {% if product.old_price %}<s>{{ product.old_price }} ₽</s>{% endif %}
+          </p>
+
+          {% if product.specs %}
+          <dl class="specs">
+            {% for name, value in product.specs %}
+            <div class="specs__row">
+              {# Характеристика без двоеточия — тоже характеристика: у иных
+                 нет второй половины, это просто признак. #}
+              <dt>{{ name }}</dt>
+              {% if value %}<dd>{{ value }}</dd>{% endif %}
+            </div>
+            {% endfor %}
+          </dl>
+          {% endif %}
+
+          {% if product.description %}<p class="product__text">{{ product.description }}</p>{% endif %}
+
+          <div class="product__actions">
+            <a class="btn" href="{{ product.buy_url }}">Купить в чате</a>
+            <span class="stock{% if not product.in_stock %} stock--out{% endif %}">
+              {% if product.in_stock %}В наличии{% elif product.preorder %}Под заказ{% else %}Нет в наличии{% endif %}
+            </span>
+          </div>
+        </div>
       </article>
       {% endfor %}
     </div>
   </section>
 
-  <section class="section" id="how">
+  {# ── Как это живёт дома ───────────────────────────────────────────────── #}
+  {% if home_points %}
+  <section class="section" id="home">
     <div class="wrap">
-      <h2>Как это работает</h2>
-      <p class="section__lead">От выбора модели до работающего интернета — четыре шага,
-        и три из них занимают минуту в чате.</p>
-      <ol class="steps">
-        {% for step in steps %}
-        <li class="step">
-          <span class="step__no">{{ loop.index }}</span>
+      <p class="eyebrow eyebrow--accent">Как это живёт у вас дома</p>
+      <h2>Включил — и работает</h2>
+      <ol class="points">
+        {% for point in home_points %}
+        <li class="point">
+          <span class="point__num">{{ '%02d'|format(loop.index) }}</span>
           <div>
-            <h3><span class="glyph glyph--inline">{{ step.glyph }}</span>{{ step.title }}</h3>
-            <p>{{ step.text }}</p>
+            <h3>{{ point.title }}</h3>
+            <p>{{ point.text }}</p>
           </div>
         </li>
         {% endfor %}
       </ol>
+      {% if bot_url %}<a class="btn" href="{{ bot_url }}">Купить в чате</a>{% endif %}
     </div>
   </section>
+  {% endif %}
 
-  <section class="section section--muted" id="catalog">
+  {# ── Сравнение ────────────────────────────────────────────────────────── #}
+  {% if comparison %}
+  <section class="section">
     <div class="wrap">
-      <h2>Модели</h2>
-      {% if products %}
-      <p class="section__lead">Цена роутера указана без подписки — срок выбирается
-        при заказе, от него зависит итоговая сумма.</p>
-      <div class="grid grid--3">
-        {% for product in products %}
-        <article class="card product">
-          <div class="product__photo">
-            {% if product.photo_url %}
-              <img src="{{ product.photo_url }}" alt="{{ product.title }}" loading="lazy">
-            {% else %}
-              <span class="glyph glyph--big">▣</span>
-            {% endif %}
-          </div>
-          <div class="product__body">
-            <h3>{{ product.title }}</h3>
-            {% if product.subtitle %}<p class="product__subtitle">{{ product.subtitle }}</p>{% endif %}
-            <p class="product__price">
-              {{ product.price }}
-              {% if product.old_price %}<s>{{ product.old_price }}</s>{% endif %}
-            </p>
-            {% if product.specs %}
-            <dl class="specs">
-              {# Характеристика без значения — «Поддержка Wi-Fi 6»: пустая
-                 правая колонка выглядела бы как потерянные данные. #}
-              {% for name, value in product.specs[:5] %}
-              <div>
-                <dt>{{ name }}</dt>
-                {% if value %}<dd>{{ value }}</dd>{% else %}<dd>✓</dd>{% endif %}
-              </div>
-              {% endfor %}
-            </dl>
-            {% endif %}
-            {% if product.description %}<p class="product__text">{{ product.description }}</p>{% endif %}
-          </div>
-          <div class="product__foot">
-            {% if product.in_stock %}
-              {% if product.buy_url %}
-                <a class="btn btn--wide" href="{{ product.buy_url }}">
-                  {% if product.preorder %}Оформить предзаказ{% else %}Купить в чате{% endif %}
-                </a>
-              {% else %}
-                <span class="note">Заказ оформляется в чате Telegram</span>
-              {% endif %}
-              {% if product.preorder %}
-                <span class="tag tag--wait">Под заказ</span>
-              {% else %}
-                <span class="tag tag--ok">В наличии</span>
-              {% endif %}
-            {% else %}
-              <span class="btn btn--off">Нет в наличии</span>
-            {% endif %}
-          </div>
-        </article>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="section__lead">Модели скоро появятся. {% if bot_url %}Напишите в
-        <a href="{{ bot_url }}">чат</a> — расскажем, когда привезут.{% endif %}</p>
-      {% endif %}
-    </div>
-  </section>
-
-  {% if plans %}
-  <section class="section" id="plans">
-    <div class="wrap">
-      <h2>Сроки подписки</h2>
-      <p class="section__lead">Срок выбирается вместе с роутером. Отсчёт начинается
-        не с оплаты, а с первого включения дома — дни доставки не сгорают.</p>
-      <div class="grid grid--auto">
-        {% for plan in plans %}
-        <article class="card plan">
-          <p class="plan__period">{{ plan.period }}</p>
-          <p class="plan__price">{{ plan.price }}</p>
-          {% if plan.per_month %}<p class="plan__month">≈ {{ plan.per_month }} в месяц</p>{% endif %}
-          {% if plan.description %}<p class="plan__text">{{ plan.description }}</p>{% endif %}
-        </article>
+      <p class="eyebrow eyebrow--accent">Сравнение</p>
+      <h2>Чем наш роутер отличается от других</h2>
+      <div class="compare">
+        {% for column in comparison %}
+        <div class="compare__col{% if column.ours %} compare__col--ours{% endif %}">
+          <h3>{{ column.title }}</h3>
+          <p>{{ column.text }}</p>
+        </div>
         {% endfor %}
       </div>
     </div>
   </section>
   {% endif %}
 
-  <section class="section section--muted" id="faq">
-    <div class="wrap wrap--narrow">
+  {# ── Как это работает ─────────────────────────────────────────────────── #}
+  <section class="section" id="how">
+    <div class="wrap">
+      <p class="eyebrow eyebrow--accent">Четыре шага</p>
+      <h2>Как это работает</h2>
+      <p class="section__note section__note--wide">
+        От выбора модели до работающего интернета — четыре шага,
+        и три из них занимают минуту в чате.
+      </p>
+      <ol class="steps">
+        {% for step in steps %}
+        <li class="step">
+          <span class="step__num">{{ loop.index }}</span>
+          <h3>{{ step.title }}</h3>
+          <p>{{ step.text }}</p>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </section>
+
+  {# ── Сроки подписки ───────────────────────────────────────────────────── #}
+  {% if plans %}
+  <section class="section" id="plans">
+    <div class="wrap">
+      <p class="eyebrow eyebrow--accent">Подписка</p>
+      <h2>Сроки подписки</h2>
+      <p class="section__note section__note--wide">
+        Срок выбирается вместе с роутером. Отсчёт начинается не с оплаты,
+        а с первого включения дома — дни доставки не сгорают.
+      </p>
+      <div class="plans">
+        {% for plan in plans %}
+        <details class="fold">
+          <summary>
+            <span class="fold__title">{{ plan.period or plan.title }}</span>
+            <span class="fold__price">{{ plan.price }} ₽</span>
+            <span class="fold__sign" aria-hidden="true"></span>
+          </summary>
+          <div class="fold__body">
+            {% if plan.per_month %}<p>{{ plan.per_month }} ₽ в месяц.</p>{% endif %}
+            {% if plan.description %}<p>{{ plan.description }}</p>{% endif %}
+            {% if not plan.per_month and not plan.description %}
+            <p>Срок выбирается в чате вместе с моделью роутера.</p>
+            {% endif %}
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Вопросы ──────────────────────────────────────────────────────────── #}
+  <section class="section" id="faq">
+    <div class="wrap">
+      <p class="eyebrow eyebrow--accent">Вопросы</p>
       <h2>Частые вопросы</h2>
-      <div class="faq">
+      <div class="plans">
         {% for item in faq %}
-        <details>
-          <summary>{{ item.question }}</summary>
-          <p>{{ item.answer }}</p>
+        <details class="fold">
+          <summary>
+            <span class="fold__title">{{ item.question }}</span>
+            <span class="fold__sign" aria-hidden="true"></span>
+          </summary>
+          <div class="fold__body"><p>{{ item.answer }}</p></div>
         </details>
         {% endfor %}
       </div>
     </div>
   </section>
 
-  <section class="section cta">
-    <div class="wrap wrap--narrow cta__inner">
-      <h2>Заказ оформляется в чате</h2>
-      <p>Там же — оплата, трек-номер посылки, состояние роутера и продление подписки.</p>
-      {% if bot_url %}
-        <a class="btn btn--big" href="{{ bot_url }}">Перейти в Telegram</a>
-      {% else %}
-        <p class="note">Ссылка на чат ещё не настроена: задайте APP_BOT_USERNAME.</p>
-      {% endif %}
+  {# ── Призыв ───────────────────────────────────────────────────────────── #}
+  <section class="section">
+    <div class="wrap">
+      <div class="cta">
+        <div class="grid-bg" aria-hidden="true"></div>
+        <h2>Заказ оформляется в чате</h2>
+        <p>Там же — оплата, трек-номер посылки, состояние роутера и продление подписки.</p>
+        {% if bot_url %}<a class="btn" href="{{ bot_url }}">Купить роутер</a>{% endif %}
+      </div>
     </div>
   </section>
 
@@ -210,8 +277,37 @@
 
 <footer class="foot">
   <div class="wrap foot__inner">
-    <span>{{ brand }}</span>
-    {% if support_contact %}<span>Поддержка: {{ support_contact }}</span>{% endif %}
+    <div class="foot__brand">
+      <a class="brand" href="/">
+        <img class="brand__logo" src="{{ logo_url }}" alt="" width="26" height="26">
+        <span>{{ brand }}</span>
+      </a>
+      <p>Роутеры с подпиской на стабильный доступ. Заказ, оплата и поддержка — в чате.</p>
+    </div>
+
+    <div class="foot__col">
+      <p class="foot__label">оборудование</p>
+      {% for product in products %}<a href="#catalog">{{ product.title }}</a>{% endfor %}
+      {% if plans %}<a href="#plans">Подписка</a>{% endif %}
+    </div>
+
+    <div class="foot__col">
+      <p class="foot__label">инфо</p>
+      <a href="#how">Как это работает</a>
+      <a href="/instruction">Как подключить</a>
+      <a href="/guide">Инструкция</a>
+      <a href="#faq">Частые вопросы</a>
+    </div>
+
+    <div class="foot__col">
+      <p class="foot__label">связь</p>
+      {% if bot_url %}<a href="{{ bot_url }}">Чат в Telegram</a>{% endif %}
+      {% if support_contact %}<a href="{{ support_contact }}">Поддержка</a>{% endif %}
+    </div>
+  </div>
+  <div class="wrap foot__bottom">
+    <span>© {{ brand }}</span>
+    <span>заказ и оплата — в чате</span>
   </div>
 </footer>
 

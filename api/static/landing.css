@@ -1,381 +1,756 @@
-/* Витрина. Тёмная тема одним языком с ботом и админкой: те же значки
-   типографской семьи, тот же спокойный тон, никаких цветных эмодзи. */
+/* Витрина: тёмная, одним языком с чатом и админкой.
+   Страницу открывают с телефона по ссылке из чата и находят в поиске,
+   поэтому всё собирается на сервере, а отсюда — только оформление.
 
-:root {
-  --bg:            #0b0f14;
-  --bg-elevated:   #121821;
-  --bg-muted:      #0e141b;
-  --line:          #1e2733;
-  --line-strong:   #2b3644;
-  --text:          #e8edf3;
-  --text-dim:      #9aa7b6;
-  --accent:        #4c8dff;
-  --accent-soft:   rgba(76, 141, 255, 0.14);
-  --ok:            #3fb27f;
-  --wait:          #d9a441;
-  --radius:        14px;
-  --radius-lg:     22px;
-  --shadow:        0 18px 48px rgba(0, 0, 0, 0.45);
+   Шрифты свои, в /static/fonts: Google Fonts — это внешний запрос на чужой
+   домен с каждой загрузки, и там, где он не отвечает, страница минуту стоит
+   без букв. Подмножества только latin и cyrillic: остальные на русской
+   витрине не нужны ни разу. */
+
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/open-sans-400-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/open-sans-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/open-sans-700-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/open-sans-700-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Montserrat';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('/static/fonts/montserrat-800-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Montserrat';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('/static/fonts/montserrat-800-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/roboto-mono-400-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/roboto-mono-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-* { box-sizing: border-box; }
+:root {
+  --bg: #0b0f14;
+  --bg-soft: #0d131a;
+  --bg-card: #0e151d;
+  --text: #e8edf3;
+  --muted: #8a97a6;
+  --dim: #7d8b9a;
+  --line: rgba(255, 255, 255, 0.06);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --accent: #55dfd0;
+  --accent-hi: #8bece0;
+  --on-accent: #07120f;
+  --mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 html { scroll-behavior: smooth; }
 
 body {
-  margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 400 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
+  font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3 {
+  font-family: 'Montserrat', 'Open Sans', Helvetica, Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
 
 a { color: inherit; text-decoration: none; }
 
-h1, h2, h3 { margin: 0 0 12px; line-height: 1.2; letter-spacing: -0.02em; }
-h1 { font-size: clamp(30px, 5vw, 52px); font-weight: 700; }
-h2 { font-size: clamp(24px, 3.4vw, 36px); font-weight: 650; }
-h3 { font-size: 18px; font-weight: 600; }
-p  { margin: 0 0 12px; }
+img { max-width: 100%; }
 
-.wrap { width: min(1120px, 100% - 40px); margin: 0 auto; }
-.wrap--narrow { width: min(760px, 100% - 40px); }
+.wrap { max-width: 1360px; margin: 0 auto; padding: 0 40px; }
 
-/* --- Шапка ---------------------------------------------------------------- */
+/* ── Шапка ─────────────────────────────────────────────────────────────── */
 
 .top {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 60;
+  backdrop-filter: blur(18px);
   background: rgba(11, 15, 20, 0.82);
-  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
 
 .top__inner {
   display: flex;
   align-items: center;
-  gap: 24px;
-  height: 64px;
+  gap: 40px;
+  padding-top: 16px;
+  padding-bottom: 16px;
 }
 
 .brand {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 650;
+  font-weight: 700;
+  font-size: 15px;
   letter-spacing: -0.01em;
 }
 
-.brand__logo { display: block; width: 32px; height: 32px; border-radius: 9px; }
+/* Знак кладёт оператор, и это может быть что угодно от квадратного PNG
+   до узкого SVG: `contain` не даёт ему растянуться и обрезаться. */
+.brand__logo { width: 26px; height: 26px; object-fit: contain; }
 
 .top__nav {
   display: flex;
-  gap: 22px;
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: 15px;
+  gap: 28px;
+  margin-right: auto;
+  font-size: 14.5px;
+  color: var(--muted);
 }
 
+.top__nav a { transition: color .2s; }
 .top__nav a:hover { color: var(--text); }
-.top__nav a.is-active { color: var(--text); }
 
-/* --- Кнопки --------------------------------------------------------------- */
+/* ── Кнопки ────────────────────────────────────────────────────────────── */
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 13px 22px;
-  border-radius: var(--radius);
+  padding: 15px 30px;
+  border-radius: 999px;
   background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: 15px;
-  border: 1px solid transparent;
-  transition: transform 0.12s ease, background 0.12s ease;
+  color: var(--on-accent);
+  font-weight: 700;
+  font-size: 15.5px;
+  line-height: 1;
+  transition: background .25s, transform .25s;
 }
 
-.btn:hover { background: #3d7ae8; transform: translateY(-1px); }
-.btn--small { padding: 9px 16px; font-size: 14px; }
-.btn--big { padding: 16px 32px; font-size: 17px; }
-.btn--wide { width: 100%; }
+.btn:hover { background: var(--accent-hi); transform: translateY(-2px); }
+
+.btn--sm { padding: 12px 24px; font-size: 15px; }
+
 .btn--ghost {
   background: transparent;
-  border-color: var(--line-strong);
   color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-weight: 400;
 }
-.btn--ghost:hover { background: var(--bg-elevated); }
-.btn--off {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--text-dim);
-  width: 100%;
-  cursor: default;
+
+.btn--ghost:hover {
+  background: rgba(85, 223, 208, 0.07);
+  border-color: rgba(85, 223, 208, 0.55);
 }
-.btn--off:hover { transform: none; background: transparent; }
 
-.note { color: var(--text-dim); font-size: 14px; }
+/* ── Общие блоки ───────────────────────────────────────────────────────── */
 
-/* --- Первый экран --------------------------------------------------------- */
+.eyebrow {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.eyebrow--accent {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--accent);
+  margin-bottom: 20px;
+}
+
+.section { padding: 100px 0 0; }
+.section:last-of-type { padding-bottom: 100px; }
+.section h2 { font-size: clamp(28px, 3.2vw, 44px); }
+
+.section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.section__note {
+  max-width: 460px;
+  font-size: 15px;
+  color: var(--dim);
+}
+
+.section__note--wide { max-width: 640px; margin-top: 20px; }
+
+.empty { margin-top: 40px; color: var(--muted); }
+
+/* Сетка с подсветкой — фон под картинками и призывом. Рисуется градиентами,
+   а не картинкой: это ещё один запрос ради узора, который никто не разглядывает. */
+.grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px),
+    radial-gradient(circle at 50% 34%, rgba(85, 223, 208, .15), transparent 62%);
+  background-size: 40px 40px, 40px 40px, 100% 100%;
+  pointer-events: none;
+}
+
+/* ── Первый экран ──────────────────────────────────────────────────────── */
 
 .hero {
-  padding: clamp(48px, 8vw, 96px) 0;
-  background:
-    radial-gradient(1000px 420px at 15% -10%, var(--accent-soft), transparent 60%),
-    radial-gradient(800px 360px at 95% 10%, rgba(63, 178, 127, 0.10), transparent 60%);
+  position: relative;
+  padding: 60px 0 72px;
+  overflow: hidden;
 }
 
-.hero__inner {
+.hero__haze {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1100px;
+  height: 1100px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: conic-gradient(from 20deg, rgba(85, 223, 208, .14), transparent 42%, rgba(85, 223, 208, .09), transparent 88%);
+  filter: blur(90px);
+  pointer-events: none;
+}
+
+.hero__inner { position: relative; }
+
+.hero__title {
+  margin-top: 28px;
+  max-width: 1050px;
+  font-size: clamp(32px, 4.6vw, 68px);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: pretty;
+}
+
+.hero__grid {
+  margin-top: 48px;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: clamp(24px, 5vw, 64px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 56px;
   align-items: center;
 }
 
-.eyebrow {
-  display: inline-block;
-  padding: 5px 12px;
-  margin-bottom: 18px;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: var(--bg-elevated);
-  color: var(--text-dim);
-  font-size: 13px;
-  letter-spacing: 0.02em;
-}
+.hero__lead { font-size: 18px; color: #c3ced9; max-width: 560px; }
 
-.lead { color: var(--text-dim); font-size: clamp(16px, 2vw, 19px); max-width: 52ch; }
+.hero__actions { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 12px; }
 
-.hero__actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 22px; }
-
-.hero__marks {
+.hero__facts {
+  margin-top: 44px;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 22px;
-  margin: 0;
-  padding: 0;
+  gap: 28px;
   list-style: none;
-  color: var(--text-dim);
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--dim);
 }
 
-.hero__marks li::before { content: "✓"; color: var(--ok); margin-right: 8px; }
-
-/* Картинку товара рисует оператор, и это чаще всего готовый баннер
-   с надписями по краям. Обрезать его под наше соотношение нельзя —
-   срежется заголовок или половина роутера, — поэтому показываем целиком
-   и позволяем блоку принять высоту самой картинки. */
-.hero__photo {
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--line);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow);
+.hero__media {
+  position: relative;
+  min-height: 460px;
+  aspect-ratio: 1 / 1;
+  border-radius: 28px;
   overflow: hidden;
-  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #060c14;
 }
 
-.hero__photo img {
+/* Картинки товаров рисует оператор, и это готовые баннеры с надписями
+   по краям: обрезка под наше соотношение срезала бы заголовок. */
+.hero__media img {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
-  max-height: 70vh;
+  height: 100%;
   object-fit: contain;
-  display: block;
+  padding: 32px;
+  filter: drop-shadow(0 30px 46px rgba(0, 0, 0, .5));
 }
 
-/* --- Секции --------------------------------------------------------------- */
+/* ── Бегущая строка ────────────────────────────────────────────────────── */
 
-.section { padding: clamp(48px, 7vw, 88px) 0; }
-.section--muted { background: var(--bg-muted); border-block: 1px solid var(--line); }
-.section__lead { color: var(--text-dim); max-width: 68ch; margin-bottom: 32px; }
-
-.band {
-  padding: 32px 0;
-  border-block: 1px solid var(--line);
-  background: var(--bg-muted);
+.ticker {
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+  padding: 18px 0;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
 }
 
-.grid { display: grid; gap: 20px; }
-.grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.grid--auto { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+.ticker__row { display: flex; width: max-content; animation: marquee 36s linear infinite; }
 
-.card {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  padding: 22px;
+.ticker__group {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  padding-right: 36px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
-.card--flat { background: transparent; border-color: transparent; padding: 4px; }
-.card p { color: var(--text-dim); font-size: 15px; margin: 0; }
+.ticker__group i { color: var(--accent); font-style: normal; }
 
-.glyph {
-  display: inline-block;
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ── Карточка модели ───────────────────────────────────────────────────── */
+
+.product {
+  margin-top: 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+}
+
+/* Чётные карточки зеркалим: подряд идущие одинаковые блоки читаются
+   как повтор, и вторую модель просто пролистывают. */
+.product--flip .product__media { order: 2; }
+
+.product__media {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  aspect-ratio: 1 / 1;
+  border-radius: 26px;
+  overflow: hidden;
+  background-color: var(--bg-card);
+  border: 1px solid var(--line);
+}
+
+.product__media img {
+  position: relative;
+  width: 82%;
+  max-width: 400px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 30px 46px rgba(0, 0, 0, 0.55));
+}
+
+.product__tag {
+  position: absolute;
+  left: 20px;
+  top: 20px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(11, 15, 20, 0.7);
+  border: 1px solid var(--line-strong);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.product__body h3 { font-size: clamp(24px, 2.6vw, 34px); }
+
+.product__sub { margin-top: 10px; color: var(--muted); font-size: 15.5px; }
+
+.product__price { margin-top: 26px; display: flex; align-items: baseline; gap: 14px; }
+
+.price {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: 36px;
+  letter-spacing: -0.04em;
+}
+
+.product__price s { color: var(--dim); font-size: 19px; }
+
+.specs { margin-top: 26px; }
+
+.specs__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.specs__row:last-child { border-bottom: 0; }
+
+.specs dt { font-size: 15.5px; color: var(--muted); }
+.specs dd { font-size: 15.5px; color: #dbe3eb; text-align: right; }
+
+.product__text { margin-top: 22px; color: var(--dim); font-size: 15.5px; }
+
+.product__actions { margin-top: 30px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+
+.stock { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.stock--out { color: var(--dim); }
+
+/* ── Как это живёт дома ────────────────────────────────────────────────── */
+
+.points { margin: 44px 0 40px; list-style: none; display: grid; gap: 2px; }
+
+.point {
+  display: flex;
+  gap: 24px;
+  padding: 26px 0;
+  border-top: 1px solid var(--line);
+}
+
+.point__num {
+  flex: none;
+  width: 44px;
+  font-family: var(--mono);
+  font-size: 13px;
   color: var(--accent);
-  font-size: 22px;
-  line-height: 1;
-  margin-bottom: 12px;
+  padding-top: 4px;
 }
-.glyph--inline { margin: 0 8px 0 0; font-size: 17px; }
-.glyph--big { font-size: 44px; color: var(--line-strong); margin: 0; }
 
-/* --- Шаги ----------------------------------------------------------------- */
+.point h3 { font-size: 19px; letter-spacing: -0.02em; }
+.point p { margin-top: 8px; color: var(--dim); font-size: 15.5px; max-width: 760px; }
+
+/* ── Сравнение ─────────────────────────────────────────────────────────── */
+
+.compare {
+  margin-top: 44px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.compare__col {
+  padding: 30px 26px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+/* Своя колонка подсвечена, чтобы взгляд дошёл до неё после двух чужих. */
+.compare__col--ours {
+  border-color: rgba(85, 223, 208, .4);
+  background: linear-gradient(180deg, rgba(85, 223, 208, .08), transparent 60%), var(--bg-card);
+}
+
+.compare__col h3 { font-size: 19px; letter-spacing: -0.02em; }
+.compare__col p { margin-top: 12px; color: var(--dim); font-size: 15px; }
+
+/* ── Шаги ──────────────────────────────────────────────────────────────── */
 
 .steps {
+  margin-top: 44px;
   list-style: none;
-  margin: 0;
-  padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
 }
 
 .step {
-  display: flex;
-  gap: 16px;
-  padding: 22px;
+  padding: 28px 24px;
+  border-radius: 22px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  background: var(--bg-soft);
 }
 
-.step h3 { display: flex; align-items: center; }
-.step p { color: var(--text-dim); font-size: 15px; margin: 0; }
-
-.step__no {
-  flex: 0 0 34px;
+.step__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
   height: 34px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--accent-soft);
+  background: rgba(85, 223, 208, .12);
   color: var(--accent);
-  font-weight: 650;
-  font-size: 15px;
-}
-
-/* --- Товары --------------------------------------------------------------- */
-
-.product { padding: 0; overflow: hidden; }
-
-/* В карточках соотношение держим — иначе ряд моделей поедет ступеньками,
-   но саму картинку не режем: вписываем целиком, поля добирает фон. */
-.product__photo {
-  aspect-ratio: 16 / 11;
-  background: var(--bg-muted);
-  border-bottom: 1px solid var(--line);
-  display: grid;
-  place-items: center;
-  padding: 8px;
-}
-
-.product__photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.product__body { padding: 20px 22px 8px; flex: 1; }
-.product__subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 12px; }
-
-.product__price {
-  font-size: 24px;
-  font-weight: 680;
-  letter-spacing: -0.02em;
-  margin: 12px 0;
-}
-
-.product__price s { color: var(--text-dim); font-size: 16px; font-weight: 400; margin-left: 10px; }
-.product__text { color: var(--text-dim); font-size: 14px; }
-
-.specs { margin: 0 0 14px; display: grid; gap: 6px; font-size: 14px; }
-.specs div { display: flex; justify-content: space-between; gap: 14px; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
-.specs dt { color: var(--text-dim); margin: 0; }
-.specs dd { margin: 0; text-align: right; }
-
-.product__foot {
-  padding: 16px 22px 22px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.tag { font-size: 13px; color: var(--text-dim); }
-.tag--ok::before { content: "●"; color: var(--ok); margin-right: 6px; }
-.tag--wait::before { content: "●"; color: var(--wait); margin-right: 6px; }
-
-/* --- Тарифы --------------------------------------------------------------- */
-
-.plan { align-items: flex-start; gap: 4px; }
-.plan__period { color: var(--text-dim); font-size: 14px; }
-.plan__price { font-size: 26px; font-weight: 680; letter-spacing: -0.02em; }
-.plan__month, .plan__text { color: var(--text-dim); font-size: 14px; }
-
-/* --- Вопросы -------------------------------------------------------------- */
-
-.faq { display: grid; gap: 10px; }
-
-.faq details {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  padding: 16px 20px;
-}
-
-.faq summary {
-  cursor: pointer;
-  font-weight: 600;
-  list-style: none;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.faq summary::-webkit-details-marker { display: none; }
-.faq summary::after { content: "+"; color: var(--text-dim); font-weight: 400; }
-.faq details[open] summary::after { content: "−"; }
-.faq p { color: var(--text-dim); margin: 12px 0 0; font-size: 15px; }
-
-/* --- Призыв и подвал ------------------------------------------------------ */
-
-.cta__inner {
-  text-align: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background:
-    radial-gradient(600px 200px at 50% 0%, var(--accent-soft), transparent 70%),
-    var(--bg-elevated);
-  padding: clamp(32px, 5vw, 56px);
-}
-
-.cta__inner p { color: var(--text-dim); margin-bottom: 24px; }
-
-.foot {
-  border-top: 1px solid var(--line);
-  padding: 24px 0;
-  color: var(--text-dim);
+  font-family: var(--mono);
   font-size: 14px;
 }
 
-.foot__inner { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+.step h3 { margin-top: 18px; font-size: 18px; letter-spacing: -0.02em; }
+.step p { margin-top: 10px; color: var(--dim); font-size: 15px; }
 
-/* --- Узкие экраны --------------------------------------------------------- */
+/* ── Раскрывающиеся блоки: сроки и вопросы ─────────────────────────────── */
 
-@media (max-width: 900px) {
-  .grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid--3 { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
-  .hero__inner { grid-template-columns: minmax(0, 1fr); }
-  .hero__photo { order: -1; }
-  .top__nav { display: none; }
+.plans { margin-top: 40px; border-top: 1px solid var(--line); }
+
+.fold { border-bottom: 1px solid var(--line); }
+
+.fold summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 0;
+  cursor: pointer;
+  list-style: none;
 }
 
-@media (max-width: 560px) {
-  .grid--4 { grid-template-columns: minmax(0, 1fr); }
-  .top__inner { gap: 12px; }
+.fold summary::-webkit-details-marker { display: none; }
+
+.fold__title { flex: 1; font-size: 17px; font-weight: 700; }
+
+.fold__price { font-family: var(--mono); font-size: 16px; color: var(--accent); }
+
+/* Знак рисуем сами: символ «+» в шрифте оператора может оказаться другим,
+   а поворот на 45° из плюса делает крест без второй иконки. */
+.fold__sign {
+  position: relative;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  transition: transform .25s;
+}
+
+.fold__sign::before,
+.fold__sign::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: var(--muted);
+}
+
+.fold__sign::before { width: 15px; height: 1.5px; }
+.fold__sign::after { width: 1.5px; height: 15px; }
+
+.fold[open] .fold__sign { transform: rotate(45deg); }
+
+.fold__body { padding: 0 0 24px; color: var(--dim); font-size: 15.5px; max-width: 820px; }
+.fold__body p + p { margin-top: 10px; }
+
+/* ── Призыв ────────────────────────────────────────────────────────────── */
+
+.cta {
+  position: relative;
+  margin-top: 40px;
+  padding: 70px 40px;
+  border-radius: 28px;
+  overflow: hidden;
+  text-align: center;
+  border: 1px solid var(--line);
+  background-color: var(--bg-card);
+}
+
+.cta h2, .cta p, .cta .btn { position: relative; }
+.cta p { margin: 16px auto 30px; max-width: 560px; color: var(--dim); font-size: 16px; }
+
+/* ── Подвал ────────────────────────────────────────────────────────────── */
+
+.foot { margin-top: 100px; border-top: 1px solid var(--line); background: var(--bg-soft); }
+
+.foot__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  gap: 40px;
+  padding-top: 56px;
+  padding-bottom: 40px;
+}
+
+.foot__brand p { margin-top: 16px; max-width: 320px; color: var(--dim); font-size: 14.5px; }
+
+.foot__col { display: flex; flex-direction: column; gap: 10px; font-size: 14.5px; color: var(--muted); }
+.foot__col a { transition: color .2s; }
+.foot__col a:hover { color: var(--text); }
+
+.foot__label { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+
+.foot__bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 20px;
+  padding-bottom: 28px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+/* ── Страницы инструкций ───────────────────────────────────────────────── */
+/*
+   «Как подключить» и постоянная инструкция — те же цвета и шрифты, что
+   на главной: человек приходит на них по ссылке из чата, и вторая вёрстка
+   читалась бы как чужой сайт.
+*/
+
+.wrap--narrow { max-width: 880px; }
+
+.top__nav a.is-active { color: var(--text); }
+
+.section--muted { background: var(--bg-soft); padding-bottom: 100px; margin-top: 100px; }
+.section--muted + .section { padding-top: 100px; }
+
+.section h1 { font-size: clamp(28px, 3.6vw, 46px); }
+
+.page__lead { margin-top: 18px; max-width: 720px; color: #c3ced9; font-size: 16.5px; }
+.page__lead a { color: var(--accent); }
+
+.section__lead { margin-top: 16px; max-width: 720px; color: var(--dim); font-size: 15.5px; }
+
+/* Шаг инструкции: номер слева, заголовок и текст справа. От шагов на главной
+   отличается только раскладкой — там четыре плитки в ряд, здесь список. */
+.step__no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(85, 223, 208, .12);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+/* Список, а не плитки: на инструкции шаги идут сверху вниз, номер слева.
+   Отдельным классом, а не по `.steps .step`, — то правило доставало и до
+   четырёх плиток на главной и раскладывало каждую в строку. */
+.steps--list { grid-template-columns: minmax(0, 1fr); }
+.steps--list .step { display: flex; gap: 18px; align-items: flex-start; }
+.steps--list .step h3 { margin-top: 4px; }
+.steps--list .step > div { min-width: 0; }
+
+.glyph { color: var(--accent); font-size: 20px; line-height: 1; }
+.glyph--inline { margin-right: 10px; }
+.glyph--big { display: block; font-family: var(--mono); font-size: 44px; color: var(--accent); }
+
+.grid { display: grid; gap: 20px; }
+.grid--auto { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+.card {
+  padding: 26px 24px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.card h3 { margin-top: 14px; font-size: 18px; letter-spacing: -0.02em; }
+.card p { margin-top: 10px; color: var(--dim); font-size: 15px; }
+
+/* Типы подключения провайдера: тот же раскрывающийся список, что вопросы
+   на главной, но без своего оформления — разъехавшись, они выглядели бы
+   как два разных элемента, делающих одно и то же. */
+.faq { margin-top: 24px; border-top: 1px solid var(--line); }
+.faq details { border-bottom: 1px solid var(--line); }
+
+.faq summary {
+  padding: 20px 0;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 16.5px;
+  list-style: none;
+}
+
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: ' +'; color: var(--accent); font-family: var(--mono); }
+.faq details[open] summary::after { content: ' −'; }
+.faq details p { padding: 0 0 22px; color: var(--dim); font-size: 15.5px; }
+
+.note {
+  margin-top: 36px;
+  padding: 24px 26px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--dim);
+  font-size: 15.5px;
+}
+
+.note strong { color: var(--text); }
+
+/* ── Ошибки и выключенная витрина ──────────────────────────────────────── */
+
+.mid {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+  padding: 40px;
+}
+
+.mid h1 { font-size: clamp(28px, 5vw, 52px); }
+.mid p { color: var(--dim); }
+
+/* ── Телефон ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  body { font-size: 16px; }
+  .wrap { padding: 0 20px; }
+
+  /* Навигация уходит: пять пунктов в строку на телефоне не влезают,
+     а сворачивать их в меню ради пяти якорей — лишняя кнопка. Кнопка
+     покупки остаётся: за ней и приходят. */
+  .top__nav { display: none; }
+  .top__inner { gap: 16px; justify-content: space-between; }
+
+  .section { padding-top: 64px; }
+  .hero { padding: 32px 0 48px; }
+  .hero__grid, .product { grid-template-columns: 1fr; gap: 32px; }
+
+  /* Картинка после текста: на узком экране первым должно идти то,
+     ради чего человек пришёл, — что это и сколько стоит. */
+  .hero__media, .product__media { order: 2; min-height: 300px; }
+  .product--flip .product__media { order: 2; }
+
+  .hero__actions .btn { flex: 1 1 auto; }
+  .compare, .steps { grid-template-columns: minmax(0, 1fr); }
+  .foot__inner { grid-template-columns: 1fr 1fr; gap: 28px; }
+  .point { gap: 14px; }
+  .point__num { width: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .ticker__row { animation: none; }
+  .btn:hover { transform: none; }
 }
