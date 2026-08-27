@@ -118,9 +118,11 @@ def card_buttons(order: Order, *, has_device: bool = False) -> list[dict[str, st
     buttons.append({"text": "↻ Статус", "data": callback(order.id, "status")})
     buttons.append({"text": "✎ Заметка", "data": callback(order.id, "note")})
     if order.user is not None and order.user.tg_id:
-        # Личная переписка, а не пересылка через нас: клиенту отвечает человек,
-        # и разговор должен идти в его чате с ботом, а не в топике.
-        buttons.append({"text": "✉ Написать клиенту", "url": f"tg://user?id={order.user.tg_id}"})
+        # Сообщение уходит **от бота**, а не из личного аккаунта оператора.
+        # Клиент разговаривает с ботом: письмо от незнакомого человека он
+        # в лучшем случае не узнает, а оператор при этом светит свой аккаунт
+        # каждому покупателю.
+        buttons.append({"text": "✉ Написать клиенту", "data": callback(order.id, "dm")})
     buttons.append({"text": "⟳ Обновить", "data": callback(order.id, "card")})
     return buttons
 
@@ -140,6 +142,9 @@ async def card(session: AsyncSession, order: Order) -> dict[str, Any]:
     return {
         "text": card_text(order),
         "buttons": card_buttons(order, has_device=await has_device(session, order)),
+        # Кому писать, если оператор нажмёт «Написать клиенту». Номер, а не
+        # @логин: логин клиент меняет, а бот шлёт по номеру.
+        "client_tg_id": (order.user.tg_id or 0) if order.user else 0,
     }
 
 

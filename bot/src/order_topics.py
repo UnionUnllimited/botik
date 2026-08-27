@@ -21,6 +21,7 @@ from __future__ import annotations
 import time
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -53,6 +54,7 @@ PROMPTS = {
     "dlv": "Пришлите цену доставки числом (можно с днями: «450 2-3 дня»).",
     "mac": "Пришлите MAC роутера: A0:B1:C2:D3:E4:F5",
     "note": "Пришлите заметку по заказу.",
+    "dm": "Напишите сообщение — отправлю его клиенту от имени бота.",
 }
 
 STATUSES = [
@@ -189,6 +191,32 @@ async def on_button(query: CallbackQuery) -> None:
     await query.answer()
 
 
+async def _send_to_client(bot: Bot, order_id: int, value: str) -> str:
+    """Пишет клиенту от имени бота. Возвращает текст ошибки или пусто.
+
+    Именно от бота, а не из личного аккаунта оператора: клиент разговаривает
+    с ботом, и сообщение от незнакомого человека он в лучшем случае
+    не узнает. Заодно оператор не светит свой аккаунт каждому покупателю.
+    """
+    if not value.strip():
+        return "Пустое сообщение отправлять не буду."
+
+    data, error = await shop_api.order_topic_card(order_id)
+    if error:
+        return error
+    tg_id = data.get("client_tg_id") or 0
+    if not tg_id:
+        return "У этого заказа нет клиента в Telegram."
+
+    try:
+        await bot.send_message(tg_id, value)
+    except TelegramForbiddenError:
+        return "Клиент закрылся от бота — написать ему нельзя."
+    except Exception as exc:  # noqa: BLE001 — причину должен увидеть оператор
+        return f"Не отправилось: {exc}"
+    return ""
+
+
 async def _apply_text(action: str, order_id: int, value: str) -> str:
     """Выполняет то, чего ждала кнопка. Возвращает текст ошибки или пусто."""
     if action == "track":
@@ -227,7 +255,16 @@ async def on_reply(message: Message) -> None:
         return
     _pending.pop(key, None)
 
-    error = await _apply_text(action, order_id, (message.text or "").strip())
+    value = (message.text or "").strip()
+    if action == "dm":
+        # Ответ клиенту не меняет заказ, поэтому карточку не перерисовываем:
+        # вместо неё отмечаем, что письмо ушло, — иначе оператор не поймёт,
+        # отправилось оно или он написал в пустоту.
+        error = await _send_to_client(message.bot, order_id, value)
+        await message.reply(f"Не вышло: {error}" if error else "Отправлено клиенту.")
+        return
+
+    error = await _apply_text(action, order_id, value)
     if error:
         await message.reply(f"Не вышло: {error}")
         return

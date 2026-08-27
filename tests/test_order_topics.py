@@ -124,12 +124,19 @@ class TestCardButtons:
         )
         assert "dlv" not in self._actions(order_topics.card_buttons(_order(delivery=delivery)))
 
-    def test_client_button_is_a_link_not_a_callback(self):
-        """Отвечает клиенту человек, и разговор идёт в его чате с ботом,
-        а не в топике: пересылать через нас было бы игрой в испорченный телефон."""
+    def test_writing_to_the_client_goes_through_the_bot(self):
+        """Не ссылка в личку оператора: клиент разговаривает с ботом, письмо
+        от незнакомого человека он в лучшем случае не узнает. Заодно оператор
+        не светит свой аккаунт каждому покупателю."""
         order = _order(user=User(id=5, tg_id=614685408, username="union"))
-        client = [item for item in order_topics.card_buttons(order) if item.get("url")]
-        assert client and "614685408" in client[0]["url"]
+        buttons = order_topics.card_buttons(order)
+        assert not [item for item in buttons if item.get("url")], (
+            "кнопка ведёт наружу — сообщение уйдёт не от бота"
+        )
+        assert "dm" in self._actions(buttons)
+
+    def test_client_without_telegram_gets_no_button(self):
+        assert "dm" not in self._actions(order_topics.card_buttons(_order(user=None)))
 
     def test_callback_fits_telegram_limit(self):
         """64 байта. Длиннее — Telegram обрежет молча, и кнопка перестанет работать."""

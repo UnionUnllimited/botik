@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation
 
 from aiogram import Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, LinkPreviewOptions, Message
@@ -75,6 +76,14 @@ class RouterOrder(StatesGroup):
     city = State()
     address = State()
     promo = State()
+
+    # Шаги, где ждут нажатия, а не текста. Состояние им нужно не для сбора
+    # ответа, а чтобы заметить пишущего клиента: без него набранное сообщение
+    # проваливалось в никуда, и человек оставался с ощущением, что бот завис.
+    speed = State()
+    carrier = State()
+    where = State()
+    confirm = State()
 
 
 async def render_renew(query: CallbackQuery) -> None:
@@ -741,13 +750,19 @@ def orders_keyboard(orders: list[dict], *, show_all: bool = False) -> InlineKeyb
         )
 
     for order in visible:
-        name = f"#{order.get('id')} {order_model(order)}".strip()
+        # Статус словом и сразу после номера. Раньше здесь стоял первый знак
+        # подписи — «○» или «✓», — и отличить отменённый заказ от ждущего
+        # оплаты было нельзя. Модель уходит в хвост: подпись режет Telegram
+        # с конца, и терять надо самое неважное — все роутеры называются похоже.
+        label = status_label(order.get("status", ""))
+        model = order_model(order)
+        text_parts = [f"#{order.get('id')}", label]
+        if model:
+            text_parts.append(model)
         builder.row(
             btn(
                 "btn_shop_order",
-                # Подпись не длиннее 22 знаков — дальше Telegram режет её сам,
-                # и бейдж статуса пропадает первым.
-                text=f"{name[:18]} · {status_glyph(order.get('status', ''))}",
+                text=" · ".join(text_parts)[:40],
                 callback_data=f"shop_order:{order.get('id')}",
             )
         )
@@ -1069,7 +1084,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
                 logger.warning(f"[CATALOG] перевозчики недоступны: {error}")
             return await ask_where(target, state, edit=edit)
 
-        await state.set_state(None)
+        await state.set_state(RouterOrder.carrier)
         payload = {
             "text": text("text_order_ask_carrier"),
             "reply_markup": carrier_keyboard(carriers),
@@ -1092,7 +1107,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         return ""
 
     async def ask_where(target, state: FSMContext, *, edit: bool):
-        await state.set_state(None)
+        await state.set_state(RouterOrder.where)
         payload = {
             "text": text("text_order_ask_where"),
             "reply_markup": where_keyboard(),
@@ -1141,7 +1156,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             await state.update_data(delivery_speed="", address="")
             return await ask_promo(target, state, edit=edit)
 
-        await state.set_state(None)
+        await state.set_state(RouterOrder.speed)
         payload = {
             "text": speed_text(options),
             "reply_markup": speed_keyboard(options),
@@ -1183,7 +1198,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
                 "reply_markup": confirm_keyboard(),
                 "link_preview_options": NO_PREVIEW,
             }
-        await state.set_state(None)
+        await state.set_state(RouterOrder.confirm)
         if edit:
             await edit_screen(target.message, **payload)
         else:
@@ -1230,6 +1245,24 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             return
         await state.update_data(city=value)
         await ask_speed(message, state, edit=False)
+
+    @dp.message(
+        StateFilter(
+            RouterOrder.speed, RouterOrder.carrier, RouterOrder.where, RouterOrder.confirm
+        )
+    )
+    async def on_typed_instead_of_tap(message: Message, state: FSMContext):
+        """Клиент печатает там, где ждут нажатия.
+
+        Раньше такое сообщение проваливалось в никуда: экран не менялся,
+        ответа не было, и человек решал, что бот завис. Он пишет ещё раз,
+        потом ещё — и бросает заказ. Экран не перерисовываем: он уже на месте,
+        и второй такой же только уведёт кнопки вверх ленты.
+        """
+        if await blocked(message, is_query=False):
+            await state.clear()
+            return
+        await message.answer(text("text_order_tap_button"), link_preview_options=NO_PREVIEW)
 
     @dp.callback_query(F.data == "shop_speeds")
     async def cq_speeds(query: CallbackQuery, state: FSMContext):
