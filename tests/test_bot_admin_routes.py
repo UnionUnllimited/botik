@@ -14,11 +14,17 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 ADMIN = Path(__file__).resolve().parents[1] / "bot" / "web_admin"
 TEMPLATES = ADMIN / "templates"
+
+
+def _between(source: str, start: str, end: str) -> str:
+    head = source.index(start)
+    return source[head : source.index(end, head)]
 
 _ROUTE_DECORATED = re.compile(
     r"@\w+\.route\([^)]*\)\s*(?:@\w+[^\n]*\s*)*async def (\w+)\(", re.MULTILINE
@@ -217,3 +223,107 @@ class TestSettingsSaveTellsHowMany:
         ).read_text(encoding="utf-8")
         form = page[page.index('id="gen-settings-form"') :][:200]
         assert "novalidate" in form
+
+
+class TestModeratorGuardCoversEverySection:
+    """Карта путь→раздел обязана знать про все разделы админки.
+
+    Права модератора считаются по префиксу пути. Разделы, перенесённые
+    из нашей админки, в карту не попали — и путь падал в `dashboard`,
+    выданный модератору по умолчанию: он открывал root-пароль клиентского
+    роутера, консоль, склад, заказы и списки доменов для всего парка.
+
+    Проверяется по исходникам: код админки живёт в своём venv и тестами
+    не импортируется. Зато новая страница без записи в карте видна сразу.
+    """
+
+    RUN = (ADMIN / "run.py").read_text(encoding="utf-8", errors="replace")
+
+    _ROUTE_PATH = re.compile(r"@admin_bp(?:_instance)?\.route\(\s*['\"](/[^'\"]*)['\"]")
+    _MAPPING = re.compile(r"\(\s*['\"](/[\w\-]+)['\"]\s*,\s*['\"](\w+)['\"]\s*\)")
+
+    OUTSIDE_THE_MAP: ClassVar[set[str]] = {
+        # Вход и выход: до проверки разделов и после неё.
+        "/login",
+        "/logout",
+        # Статика и PWA — открыты всякому, кто вошёл, иначе у модератора
+        # не грузится сама админка.
+        "/admin-static",
+        "/sw.js",
+        "/offline.html",
+        "/manifest.webmanifest",
+        "/instructions",
+        # Только админ, и это решает отдельная проверка выше по коду.
+        "/settings",
+        "/remnawave",
+        "/panels",
+        "/bulk-actions",
+        # Конечная точка API — свой blueprint со своей проверкой входа.
+        "/api",
+    }
+    """Пути, которых в карте разделов быть и не должно."""
+
+    def _guard(self) -> str:
+        return _between(self.RUN, "_path_to_section = [", "req_section = None")
+
+    def _mapped_prefixes(self) -> set[str]:
+        return {prefix for prefix, _section in self._MAPPING.findall(self._guard())}
+
+    def _routes(self) -> set[str]:
+        """Пути страниц админки так, как их видит страж: целиком."""
+        routes: set[str] = set()
+        for path in [*(ADMIN / "routes").rglob("*.py"), ADMIN / "run.py"]:
+            source = path.read_text(encoding="utf-8", errors="replace")
+            for route in self._ROUTE_PATH.findall(source):
+                if "__placeholder__moved" in route:
+                    # Мёртвая заглушка от переехавшего маршрута.
+                    continue
+                if route == "/":
+                    # Корень — сам дашборд, у него отдельная ветка в страже.
+                    continue
+                if any(part in route for part in self.OUTSIDE_THE_MAP):
+                    continue
+                routes.add(route)
+        return routes
+
+    def test_every_section_is_mapped(self):
+        mapped = self._mapped_prefixes()
+        unmapped = sorted(
+            route for route in self._routes() if not any(prefix in route for prefix in mapped)
+        )
+        assert not unmapped, (
+            "эти разделы не знает проверка прав модератора, "
+            f"и он попадёт в них по прямой ссылке: {unmapped}"
+        )
+
+    def test_unknown_path_is_denied_not_shown(self):
+        """Незнакомый путь — отказ, а не дашборд.
+
+        Пока запасным был `dashboard`, любая новая страница открывалась всем
+        модераторам в тот же день, когда её написали.
+        """
+        tail = _between(self.RUN, "req_section = None", "g.moderator_visible_sections = None")
+        assert "req_section = 'dashboard'  # корневая страница" not in tail, (
+            "запасной раздел `dashboard` открывает модератору всё незнакомое"
+        )
+        assert "403" in tail
+        # Сам дашборд при этом остаётся: закрыть его значило бы не пустить
+        # модератора даже на первую страницу.
+        assert "ADMIN_SECRET_PATH" in tail and "req_section = 'dashboard'" in tail
+
+    def test_transferred_sections_are_not_grantable(self):
+        """Их разделов нет в правах модератора — и выдать их нельзя.
+
+        За этими страницами root-пароль роутера, консоль и списки доменов
+        для всего парка: это работа админа, а не «ещё один раздел».
+        """
+        settings_page = (TEMPLATES / "settings_general.html").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        mapping = dict(self._MAPPING.findall(self._guard()))
+        for path in ("/routers", "/stock", "/catalog", "/orders", "/lists"):
+            section = mapping.get(path)
+            assert section is not None, f"{path} не знает проверка прав"
+            assert f'value="{section}"' not in settings_page, (
+                f"раздел {section} можно выдать модератору с формы прав"
+            )

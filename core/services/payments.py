@@ -181,8 +181,22 @@ async def start_payment(
 
 
 async def _lock_payment(session: AsyncSession, payment_id: int) -> Payment | None:
-    """Блокировка строки: два одновременных колбэка не проведут платёж дважды."""
-    return await session.scalar(select(Payment).where(Payment.id == payment_id).with_for_update())
+    """Блокировка строки: два одновременных колбэка не проведут платёж дважды.
+
+    `populate_existing` обязателен. Без него блокировка бесполезна: строку
+    мы дождёмся, но SQLAlchemy вернёт объект, уже лежащий в сессии, с полями
+    на момент первого чтения — а `expire_on_commit=False` не даст им устареть.
+    Круги опроса и погашения ходят рядом по одним и тем же платежам, и второй
+    видел бы `processed_at` пустым: подписка продлевается ещё на период,
+    реферальный бонус начисляется снова, клиенту уходит второе «Оплата
+    получена».
+    """
+    return await session.scalar(
+        select(Payment)
+        .where(Payment.id == payment_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
 
 
 async def find_payment_for_webhook(

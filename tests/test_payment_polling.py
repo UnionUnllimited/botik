@@ -162,3 +162,100 @@ class TestManualCancel:
         page = self._source("bot/web_admin/templates/payments_shop.html")
         assert "{% if item.status == 'pending' %}" in page
         assert "admin.payment_shop_cancel" in page
+
+
+class TestLockedPaymentIsReadAfresh:
+    """Блокировка строки не помогает, если объект берут из памяти сессии.
+
+    `SELECT ... FOR UPDATE` действительно ждёт чужую транзакцию, но SQLAlchemy
+    возвращает уже загруженный объект как есть: без `populate_existing` его
+    поля остаются теми, какими были до ожидания. Так и выходит двойное
+    зачисление — круги опроса и погашения идут рядом и берут одни и те же
+    платежи: второй видит `processed_at` пустым и проводит оплату заново,
+    то есть продлевает подписку ещё на период и снова начисляет бонус.
+    """
+
+    async def _factory(self, tmp_path):
+        from sqlalchemy import BigInteger
+        from sqlalchemy.dialects.postgresql import JSONB
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.compiler import compiles
+
+        from core.models import Payment, User
+        from core.models.base import Base
+
+        @compiles(JSONB, "sqlite")
+        def _jsonb_as_json(_type, _compiler, **_kwargs) -> str:
+            return "JSON"
+
+        @compiles(BigInteger, "sqlite")
+        def _bigint_as_integer(_type, _compiler, **_kwargs) -> str:
+            return "INTEGER"
+
+        # База файлом, а не в памяти: нужны две настоящие сессии, которые
+        # видят коммиты друг друга, — в этом вся суть проверки.
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'payments.db'}")
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync_connection: Base.metadata.create_all(
+                    sync_connection, tables=[User.__table__, Payment.__table__]
+                )
+            )
+        # `expire_on_commit=False` — как в бою (`core/db.py`): именно поэтому
+        # объект и остаётся в памяти сессии со старыми полями.
+        return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+    async def test_lock_returns_the_row_as_it_is_now(self, tmp_path):
+        from decimal import Decimal
+
+        from sqlalchemy import select, update
+
+        from core.enums import PaymentProviderName, PaymentPurpose, PaymentStatus
+        from core.models import Payment, User
+        from core.services import payments as payment_service
+
+        engine, factory = await self._factory(tmp_path)
+        try:
+            async with factory() as setup:
+                setup.add(User(id=1, tg_id=614685408))
+                setup.add(
+                    Payment(
+                        id=1,
+                        user_id=1,
+                        provider=PaymentProviderName.PLATEGA,
+                        purpose=PaymentPurpose.ORDER,
+                        status=PaymentStatus.PENDING,
+                        idempotency_key="key-1",
+                        amount=Decimal("100.00"),
+                        currency="RUB",
+                    )
+                )
+                await setup.commit()
+
+            async with factory() as polling:
+                # Круг опроса прочитал платёж и ушёл спрашивать провайдера.
+                seen = await polling.scalar(select(Payment).where(Payment.id == 1))
+                assert seen.processed_at is None
+                await polling.commit()
+
+                # Пока он ходил, соседний круг провёл этот же платёж.
+                async with factory() as expiry:
+                    await expiry.execute(
+                        update(Payment)
+                        .where(Payment.id == 1)
+                        .values(
+                            processed_at=dt.datetime.now(dt.UTC),
+                            status=PaymentStatus.SUCCEEDED,
+                        )
+                    )
+                    await expiry.commit()
+
+                locked = await payment_service._lock_payment(polling, 1)
+
+                assert locked is not None
+                assert locked.processed_at is not None, (
+                    "под блокировкой взят снимок из памяти: платёж проведут второй раз"
+                )
+                assert locked.status is PaymentStatus.SUCCEEDED
+        finally:
+            await engine.dispose()

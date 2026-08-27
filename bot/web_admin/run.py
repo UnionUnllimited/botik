@@ -459,6 +459,15 @@ async def _admin_auth_guard():
                 _admin_only_substrings = ('/settings/', '/remnawave', '/panels', '/bulk-actions')
                 if any(s in path for s in _admin_only_substrings) or path.endswith('/settings') or path.endswith('/remnawave'):
                     return '', 403
+            # Открыто всякому, кто вошёл: статика, PWA и страница помощи.
+            # Без них у модератора не грузится сама админка — не раздел,
+            # закрытый от него, а вообще всё: стили, иконки, service worker.
+            _open_for_everyone = (
+                '/admin-static/', '/sw.js', '/offline.html', '/manifest.webmanifest',
+                '/instructions',
+            )
+            if any(part in path for part in _open_for_everyone):
+                return None
             # Разделы по префиксу пути
             _path_to_section = [
                 ('/analytics', 'analytics'),
@@ -475,6 +484,25 @@ async def _admin_auth_guard():
                 # а выкат прошивки идёт на весь парк.
                 ('/firmware', 'tools'),
                 ('/updates', 'updates'),
+                # Разделы, перенесённые из нашей админки. Раздела под них
+                # в правах модератора нет вовсе — и не должно быть: за этими
+                # страницами root-пароль клиентского роутера, консоль, склад,
+                # заказы и списки доменов для всего парка. Записи стоят после
+                # '/users', чтобы `/users/<id>/routers.json` остался у раздела
+                # «Клиенты»: там колонка роутера, а не управление им.
+                ('/routers', 'devices'),
+                ('/stock', 'devices'),
+                ('/lists', 'devices'),
+                ('/catalog', 'shop'),
+                ('/orders', 'shop'),
+                # Рассылка всей базе и рестарт служб — тоже не «дашборд».
+                ('/send_news', 'tools'),
+                ('/restart_', 'tools'),
+                ('/download', 'tools'),
+                ('/manual_backup', 'tools'),
+                # Показания в шапке страницы: их читает каждая страница,
+                # и без них дашборд у модератора пустеет.
+                ('/api/system_stats', 'dashboard'),
             ]
             req_section = None
             # path может быть /{admin_secret_path}/users — проверяем вхождение сегмента
@@ -483,7 +511,16 @@ async def _admin_auth_guard():
                     req_section = sec
                     break
             if req_section is None:
-                req_section = 'dashboard'  # корневая страница
+                # Дашборд — только сама корневая страница. Всё остальное
+                # незнакомое закрываем: пока запасным был 'dashboard'
+                # (он выдан модератору по умолчанию), любая страница, забытая
+                # в карте выше, открывалась ему в тот же день, когда её
+                # написали. Ровно так и утекли роутеры, склад и заказы.
+                _root = f"/{(app.config.get('ADMIN_SECRET_PATH') or '').strip('/')}".rstrip('/')
+                if path == _root:
+                    req_section = 'dashboard'
+                else:
+                    return '', 403
             if req_section and req_section not in g.moderator_visible_sections:
                 if g.moderator_visible_sections:
                     first_url = _moderator_first_allowed_url(list(g.moderator_visible_sections))
