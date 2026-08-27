@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -75,8 +75,32 @@ class Notification(BigIntPkMixin, Base):
     tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     buttons: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
-    """Только ссылки: [{"text": "...", "url": "..."}]. Callback обрабатывает бот,
-    а он сменный — кнопка с уехавшим обработчиком молча перестала бы работать."""
+    """Клиенту — только ссылки: [{"text": "...", "url": "..."}]. Callback
+    обрабатывает бот, а он сменный — кнопка с уехавшим обработчиком молча
+    перестала бы работать, и человек остался бы с мёртвым экраном.
+
+    В рабочий чат оператора (`chat_id` задан) уходят и callback-кнопки:
+    [{"text": "...", "data": "ord:12:track"}]. Там это допустимо — чат наш,
+    обработчик наш, и сломанную кнопку видит тот, кто её и чинит."""
+
+    chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    """Куда слать, если не клиенту: рабочий чат с топиками по заказам.
+    Пусто — обычное сообщение клиенту по `tg_id`, как было."""
+
+    thread_id: Mapped[int | None] = mapped_column(Integer)
+    """Топик в этом чате. Пусто вместе с `topic_title` — сообщение уйдёт
+    в общую ленту чата."""
+
+    topic_title: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    """Непусто — топик надо сначала создать, и это его название. Создать может
+    только бот: право на топики есть у него, а у нас нет даже токена."""
+
+    order_id: Mapped[int | None] = mapped_column(BigInteger)
+    """Чей это топик. По нему отчёт бота записывает номер созданного топика
+    в заказ — иначе следующее сообщение завело бы второй топик тому же заказу.
+
+    Без внешнего ключа намеренно: очередь переживает удаление заказа, и
+    сообщение, ушедшее по удалённому, не должно мешать удалению."""
     kind: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     """Зачем отправлено: reminder, payment, order, admin. Нужно для разбора жалоб."""
 

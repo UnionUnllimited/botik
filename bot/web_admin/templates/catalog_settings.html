@@ -143,6 +143,24 @@
       </div>
     </div>
 
+    {# Работа с заказами с телефона: у каждого заказа свой топик в чате,
+       карточка с кнопками и ввод ответом в тот же топик. #}
+    <div>
+      <label for="orders_topic_chat_id" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
+        Рабочий чат с топиками по заказам
+      </label>
+      <input type="text" id="orders_topic_chat_id" name="orders_topic_chat_id"
+             value="{{ orders_topic_chat_id }}" class="tw-input"
+             placeholder="-1001234567890">
+      <div class="text-[11px] tw-text-subtle2 mt-1">
+        Каждый заказ заводит себе топик: карточка с кнопками, трек-номер
+        и цена доставки — ответом в тот же топик. Группа должна быть
+        супергруппой с включёнными темами, а бот в ней — администратором
+        с правом «Управление темами». Адрес чата — число вида
+        <span class="font-mono">-1001234567890</span>. Пусто — топики выключены.
+      </div>
+    </div>
+
     <div>
       <label for="router_panel_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
         Адрес админки роутера

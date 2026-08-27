@@ -123,6 +123,9 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             # Показываем, куда кнопка ведёт сейчас: пустое поле — не «никуда»,
             # а корень домена основного приложения.
             landing_url_default=shop_api.landing_url(""),
+            # Рабочий чат с топиками по заказам. Лежит у основного приложения:
+            # карточки в очередь кладёт оно, а бот их только разносит.
+            orders_topic_chat_id=(await shop_api.order_topics_settings())[0].get("chat_id", ""),
         )
 
     @admin_bp_instance.route("/catalog/promos")
@@ -263,6 +266,16 @@ def attach_catalog_shop_routes(admin_bp_instance, query_db_func, execute_db_func
             # приложения, там витрина и стоит, пока её не увели на свой домен.
             "landing_url": (form.get("landing_url") or "").strip().rstrip("/"),
         }
+
+        # Чат с топиками живёт в настройках основного приложения, а не здесь:
+        # карточку в очередь кладёт оно, и знать адрес чата должно оно же.
+        # Проверку числа делает ручка — форма и она разошлись бы, а отказ
+        # вылез бы у бота через десять секунд и в чужом логе.
+        _, topics_error = await shop_api.save_order_topics_chat(
+            (form.get("orders_topic_chat_id") or "").strip()
+        )
+        if topics_error:
+            await flash(topics_error, "danger")
 
         # Баннер приходит файлом: чужие ссылки протухают, а класть картинку
         # рядом с товарами оператору некуда. Загруженный файл побеждает поле

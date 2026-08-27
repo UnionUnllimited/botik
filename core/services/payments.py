@@ -253,6 +253,21 @@ async def apply_status(
     return False
 
 
+async def _push_topic(session: AsyncSession, order: Order, *, note: str) -> None:
+    """Двигает карточку заказа в рабочем чате оператора.
+
+    Мягко: деньги уже приняты, и падать из-за очереди сообщений нельзя —
+    оплата важнее, чем строка в чате. Импорт внутри функции, потому что
+    `order_topics` сам ходит в настройки, а те тянут этот модуль.
+    """
+    from core.services import order_topics
+
+    try:
+        await order_topics.push(session, order, note=note)
+    except Exception as exc:  # noqa: BLE001 — оплата не должна падать из-за чата
+        log.warning("payment.topic_push_failed", order_id=order.id, error=str(exc))
+
+
 async def _apply_success(session: AsyncSession, payment: Payment) -> None:
     """Бизнес-эффект успешной оплаты: заказ, подписка, реферальный бонус."""
     order: Order | None = None
@@ -271,11 +286,13 @@ async def _apply_success(session: AsyncSession, payment: Payment) -> None:
         # и клиент получил бы вторую подписку за оплату перевозки.
         if order is not None and order.delivery is not None:
             order.delivery.paid_at = payment.paid_at
+            await _push_topic(session, order, note="✓ Доставка оплачена")
         log.info("payment.delivery_paid", payment_id=payment.id, order_id=payment.order_id)
         return
     if order is not None and order.status in (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT):
         order.status = OrderStatus.PAID
         order.paid_at = payment.paid_at
+        await _push_topic(session, order, note="✓ Заказ оплачен")
 
     plan = await _resolve_plan(session, payment, order)
     if plan is not None:

@@ -55,6 +55,13 @@ class Order(IntPkMixin, TimestampMixin, Base):
     customer_city: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     comment: Mapped[str | None] = mapped_column(Text)
     admin_note: Mapped[str | None] = mapped_column(Text)
+    tg_topic_id: Mapped[int | None] = mapped_column(Integer)
+    """Топик заказа в рабочем чате оператора. Заводит его бот при первом
+    сообщении и присылает номер обратно: права на топики есть только у него.
+
+    Пусто — топика ещё нет либо чат не задан. Второй раз не заводим: топик,
+    заведённый дважды, разводит переписку по заказу на две ветки, и половина
+    решений теряется в той, куда перестали смотреть."""
     utm_source: Mapped[str | None] = mapped_column(String(64))
 
     paid_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))

@@ -19,7 +19,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from loguru import logger
 
-from src import shop_api
+from src import order_topics, shop_api
 
 POLL_INTERVAL_SEC = 10
 """Напоминания и подтверждения оплаты не срочные до секунды, а частый опрос
@@ -48,13 +48,19 @@ async def deliver_once(bot: Bot) -> int:
     sent = 0
     for message in data.get("messages", []):
         message_id = message.get("id")
+        # `chat_id` заполнен — это карточка заказа в рабочий чат, а не письмо
+        # клиенту: там свой топик, свои кнопки и номер топика в отчёте.
+        topic = 0
         try:
-            await bot.send_message(
-                message["tg_id"],
-                message.get("text", ""),
-                reply_markup=_markup(message.get("buttons") or []),
-                disable_web_page_preview=True,
-            )
+            if message.get("chat_id"):
+                topic = await order_topics.send_card(bot, message)
+            else:
+                await bot.send_message(
+                    message["tg_id"],
+                    message.get("text", ""),
+                    reply_markup=_markup(message.get("buttons") or []),
+                    disable_web_page_preview=True,
+                )
         except TelegramForbiddenError:
             await shop_api.outbox_ack(message_id, ok=False, error="бот заблокирован", blocked=True)
             logger.info(f"[OUTBOX] клиент {message.get('tg_id')} закрылся от бота")
@@ -68,7 +74,7 @@ async def deliver_once(bot: Bot) -> int:
             await shop_api.outbox_ack(message_id, ok=False, error=str(exc)[:300])
             logger.warning(f"[OUTBOX] не отправлено {message_id}: {exc}")
         else:
-            await shop_api.outbox_ack(message_id, ok=True)
+            await shop_api.outbox_ack(message_id, ok=True, thread_id=topic)
             sent += 1
 
     if sent:

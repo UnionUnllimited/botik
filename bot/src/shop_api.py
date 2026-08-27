@@ -296,12 +296,24 @@ async def outbox(limit: int = 20) -> tuple[dict, str]:
     return await get("/api/v1/catalog/outbox", {"limit": limit})
 
 
-async def outbox_ack(message_id: int, *, ok: bool, error: str = "", blocked: bool = False):
-    """Отчёт о судьбе сообщения: без него оно будет предложено снова."""
-    return await post(
-        f"/api/v1/catalog/outbox/{message_id}/ack",
-        {"ok": ok, "error": error, "blocked": blocked},
-    )
+async def outbox_ack(
+    message_id: int,
+    *,
+    ok: bool,
+    error: str = "",
+    blocked: bool = False,
+    thread_id: int = 0,
+):
+    """Отчёт о судьбе сообщения: без него оно будет предложено снова.
+
+    `thread_id` — номер только что созданного топика заказа. Его запоминает
+    основное приложение: без этого следующее сообщение завело бы заказу
+    второй топик, и переписка разъехалась бы на две ветки.
+    """
+    payload = {"ok": ok, "error": error, "blocked": blocked}
+    if thread_id:
+        payload["thread_id"] = thread_id
+    return await post(f"/api/v1/catalog/outbox/{message_id}/ack", payload)
 
 
 # --- Клиент и его роутер -----------------------------------------------------
@@ -483,6 +495,32 @@ async def set_device_status(device_id: int, status: str) -> tuple[dict, str]:
 
 async def set_device_note(device_id: int, note: str) -> tuple[dict, str]:
     return await post(f"/api/v1/fleet/routers/{device_id}/note", {"note": note})
+
+
+# --- Топики заказов в рабочем чате -------------------------------------------
+#
+# Карточку собирает основное приложение: она рисуется в двух местах — первым
+# сообщением в топике и после каждого нажатия, — и разъехавшись, показывала бы
+# оператору одно, а делала другое.
+
+
+async def order_topics_settings() -> tuple[dict, str]:
+    """Какой чат сейчас задан под топики заказов."""
+    return await get("/api/v1/catalog/manage/order-topics")
+
+
+async def save_order_topics_chat(chat_id: str) -> tuple[dict, str]:
+    return await post("/api/v1/catalog/manage/order-topics", {"chat_id": chat_id})
+
+
+async def order_topic_card(order_id: int) -> tuple[dict, str]:
+    """Свежий текст и кнопки карточки заказа."""
+    return await get(f"/api/v1/catalog/manage/orders/{order_id}/topic-card")
+
+
+async def order_topic_push(order_id: int) -> tuple[dict, str]:
+    """Отправить заказ в рабочий чат — для заказов старше самих топиков."""
+    return await post(f"/api/v1/catalog/manage/orders/{order_id}/topic", {})
 
 
 # --- Обновление роутеров -----------------------------------------------------

@@ -61,7 +61,7 @@ from core.models import (
     User,
 )
 from core.security import normalize_mac
-from core.services import activation, media, settings_service
+from core.services import activation, media, order_topics, settings_service
 from core.services import delivery as delivery_service
 from core.services import orders as order_service
 from core.services import payments as payment_service
@@ -772,6 +772,12 @@ async def outbox(limit: int = 20, session: AsyncSession = Depends(get_session)) 
                 "text": item.text,
                 "buttons": item.buttons or [],
                 "kind": item.kind,
+                # Пусто — обычное сообщение клиенту, как было. Заполнено —
+                # рабочий чат оператора: топик заказа с кнопками.
+                "chat_id": item.chat_id,
+                "thread_id": item.thread_id,
+                "topic_title": item.topic_title or "",
+                "order_id": item.order_id,
             }
             for item in pending
         ]
@@ -795,6 +801,16 @@ async def outbox_ack(
     if payload.get("ok"):
         message.sent_at = utcnow()
         message.last_error = None
+        # Топик заводит бот — право на это есть только у него, — и номер
+        # возвращает сюда. Без этого следующее сообщение завело бы заказу
+        # второй топик, и переписка разъехалась бы на две ветки.
+        thread_id = payload.get("thread_id")
+        if thread_id and message.order_id:
+            await session.execute(
+                update(Order)
+                .where(Order.id == message.order_id, Order.tg_topic_id.is_(None))
+                .values(tg_topic_id=int(thread_id))
+            )
         return {"ok": True}
 
     message.attempts += 1
@@ -1182,6 +1198,9 @@ async def create_order(payload: dict, session: AsyncSession = Depends(get_transa
     # Перечитываем со связями: у только что созданного заказа состав и доставка
     # для ответа не загружены, а тянуть их по одной в асинхронной сессии нельзя.
     saved = await order_service.get_order(session, order.id)
+    # Новый заказ заводит себе топик в рабочем чате: оператор видит его
+    # на телефоне сразу, не заходя в админку.
+    await order_topics.push(session, saved or order, note="◆ Новый заказ")
     return {
         "ok": True,
         "order": _order_payload(saved or order),
@@ -1630,6 +1649,13 @@ async def manage_order_status(
     log.info("catalog.order_status_set", order_id=order.id, was=was, now=str(order.status))
 
     await session.flush()
+    # Карточка в топике должна догонять любое изменение: оператор нажал
+    # кнопку с телефона и смотрит туда же, а не в веб-админку.
+    await order_topics.push(
+        session,
+        order,
+        note=f"↻ Статус: {texts.ORDER_STATUS_TITLES.get(order.status, str(order.status))}",
+    )
     instruction_url = await _setup_url(session)
     return {
         "ok": True,
@@ -1650,6 +1676,7 @@ async def manage_order_shipping(
     track = str(payload.get("tracking_number", "")).strip()[:64]
     order.delivery.tracking_number = track or None
     order.delivery.tracking_url = delivery_service.tracking_url(order.delivery.method, track)
+    await order_topics.push(session, order, note=f"▤ Трек-номер: {track or 'снят'}")
     return {"ok": True, "tracking_url": order.delivery.tracking_url or ""}
 
 
@@ -1676,6 +1703,8 @@ async def manage_order_device(
     if device.status is DeviceStatus.NEW:
         device.status = DeviceStatus.ASSIGNED
     log.info("catalog.device_attached", order_id=order.id, mac=mac)
+    await session.flush()
+    await order_topics.push(session, order, note=f"◈ Роутер привязан: {mac}")
     return {"ok": True, "mac": mac}
 
 
@@ -1687,6 +1716,7 @@ async def manage_order_note(
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     order.admin_note = str(payload.get("note", "")).strip()[:2000] or None
+    await order_topics.push(session, order, note="✎ Заметка изменена")
     return {"ok": True}
 
 
@@ -1887,6 +1917,79 @@ async def manage_order_delete(
     return {"ok": True, "number": number}
 
 
+# --- Топики заказов в рабочем чате -------------------------------------------
+#
+# Оператор работает с телефона: топик на заказ, кнопки под карточкой, ввод —
+# обычным ответом в чат. Отправляет бот (токен только у него), карточку
+# собираем мы — она должна быть одна и та же в первом сообщении и после
+# каждого нажатия.
+
+
+@router.get("/manage/order-topics")
+async def manage_order_topics(session: AsyncSession = Depends(get_session)) -> dict:
+    """Куда уходят карточки заказов. Пусто — возможность выключена."""
+    return {
+        "ok": True,
+        "chat_id": await settings_service.get_str(session, order_topics.CHAT_SETTING),
+    }
+
+
+@router.post("/manage/order-topics")
+async def manage_order_topics_save(
+    payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Задаёт рабочий чат. Пустое значение выключает топики.
+
+    Проверяем, что это число: адрес чата с топиками отрицательный
+    и длинный (`-1001234567890`), и `@имя` вместо него Telegram не примет —
+    отказ вылез бы у бота через десять секунд и в чужом логе.
+    """
+    raw = str(payload.get("chat_id", "")).strip()
+    if raw:
+        try:
+            int(raw)
+        except ValueError:
+            return {
+                "ok": False,
+                "error": (
+                    "Адрес чата — число вида -1001234567890. Узнать его можно, "
+                    "переслав любое сообщение из чата боту @userinfobot."
+                ),
+            }
+    await settings_service.set_setting(session, order_topics.CHAT_SETTING, raw)
+    log.info("catalog.order_topics_chat_set", chat_id=raw or "выключено")
+    return {"ok": True}
+
+
+@router.get("/manage/orders/{order_id}/topic-card")
+async def manage_order_topic_card(
+    order_id: int, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Свежая карточка заказа: текст и кнопки. Бот перерисовывает ею сообщение
+    после каждого действия — иначе оператор жмёт по устаревшему экрану."""
+    order = await _order_or_404(session, order_id)
+    return {"ok": True, **await order_topics.card(session, order)}
+
+
+@router.post("/manage/orders/{order_id}/topic")
+async def manage_order_topic_push(
+    order_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Отправить заказ в рабочий чат сейчас — для заказов, оформленных
+    до появления топиков, и когда чат завели позже."""
+    order = await _order_or_404(session, order_id)
+    queued = await order_topics.push(session, order, note="↻ По запросу оператора")
+    if queued is None:
+        return {
+            "ok": False,
+            "error": (
+                "Рабочий чат не задан: укажите его в настройке "
+                f"«{order_topics.CHAT_SETTING}»."
+            ),
+        }
+    return {"ok": True}
+
+
 # --- Настройки доставки ------------------------------------------------------
 
 
@@ -1974,6 +2077,8 @@ async def manage_delivery_quote(
     log.info(
         "catalog.delivery_quoted", order_id=order.id, price=str(price), has_link=bool(pay_url)
     )
+    await session.flush()
+    await order_topics.push(session, order, note=f"₽ Доставка: {price} ₽")
     return {
         "ok": True,
         "price": str(price),

@@ -7938,6 +7938,11 @@ async def main():
     # Регистрируем обработчики расширения лимита устройств
     # Каталог роутеров и оформление заказа (товары и заказы — в основном приложении)
     register_router_catalog_handlers(dp, check_user_blocked, send_blocked_message)
+    # Топики заказов в рабочем чате оператора: карточка с кнопками и ввод
+    # ответом в тот же топик. Подключается последним — его обработчики ловят
+    # только `ord:*` и текст внутри топика, чужого не перехватывают.
+    from src.order_topics import router as order_topics_router
+    dp.include_router(order_topics_router)
     try:
         # До polling нужны актуальный токен/прокси из БД: иначе start_polling(bot) держит
         # старый bootstrap-Bot из верха файла, а on_startup уже создаёт другой — long polling идёт мимо прокси.
