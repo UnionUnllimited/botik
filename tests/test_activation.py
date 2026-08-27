@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 
 import pytest
 
-from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod
-from core.models import User
+from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod, DeviceStatus
+from core.models import Device, User
 from core.services.activation import APPLY_SCRIPT, username_for
 from core.services.delivery import tracking_url
 
@@ -214,3 +215,75 @@ class TestManualActivation:
         assert panel_expiry_of(RemnaUser(uuid="u", username="n", subscription_url="")) is None
         garbled = RemnaUser(uuid="u", username="n", subscription_url="", expire_at="скоро")
         assert panel_expiry_of(garbled) is None
+
+
+class TestRouterRefusalIsExplained:
+    """Отказ роутера обязан читаться словами, а не приезжать пятисоткой.
+
+    Роутер не отвечает по SSH постоянно: не включён, туннель ещё не поднялся,
+    сменили пароль. Клиентская активация это ловила, ручная — нет, и оператор
+    видел «Основное приложение ответило 500» без единого слова о причине.
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "core/services/activation.py"
+    ).read_text(encoding="utf-8")
+
+    def _body(self, name: str) -> str:
+        start = self.SOURCE.index(f"async def {name}(")
+        tail = self.SOURCE[start:]
+        end = tail.find("\nasync def ", 1)
+        return tail[:end] if end > 0 else tail
+
+    @pytest.mark.parametrize("name", ["activate_manually", "activate"])
+    def test_delivery_failure_is_caught(self, name):
+        body = self._body(name)
+        assert "deliver_subscription" in body, f"{name} больше не отдаёт ссылку роутеру"
+        assert "router_shell.ShellError" in body, (
+            f"{name} не ловит отказ SSH — оператор получит 500 вместо причины"
+        )
+
+    @pytest.mark.asyncio
+    async def test_manual_activation_turns_ssh_failure_into_a_readable_error(self, monkeypatch):
+        """Не по исходнику, а по делу: подсовываем отказ SSH и ждём ActivationError."""
+        from core.services import activation, router_shell
+        from core.services.remnawave import RemnaUser
+
+        account = RemnaUser(uuid="u", username="n", subscription_url="https://panel/sub/x")
+
+        class _Panel:
+            async def find_user(self, _username):
+                return account
+
+            async def update_expiry(self, **_kwargs):
+                return None
+
+        async def _no_tunnel(_session, _device):
+            return None
+
+        async def _refuse(_device, _url):
+            raise router_shell.ShellError("Не удалось подключиться к роутеру: timeout")
+
+        def _client():
+            return _Panel()
+
+        monkeypatch.setattr(activation.remnawave, "client", _client)
+        monkeypatch.setattr(activation, "_ensure_tunnel", _no_tunnel)
+        monkeypatch.setattr(activation, "deliver_subscription", _refuse)
+        monkeypatch.setattr(activation.routers, "add_event", lambda *a, **k: None)
+
+        device = Device(id=1, mac="F8:5E:3C:92:C0:22", status=DeviceStatus.ACTIVE)
+
+        class _Session:
+            async def get(self, *_args):
+                return None
+
+        with pytest.raises(activation.ActivationError) as failure:
+            await activation.activate_manually(_Session(), device=device, days=30)
+
+        text = str(failure.value)
+        assert "роутер" in text.lower()
+        assert "timeout" in text
+        # Срок в панели уже проставлен, и оператор должен это прочитать:
+        # иначе он решит, что активация не прошла вовсе, и заведёт её заново.
+        assert "панел" in text.lower()

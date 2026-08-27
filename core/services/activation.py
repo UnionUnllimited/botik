@@ -135,8 +135,27 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
         log.warning("activation.manual_panel_failed", mac=device.mac, error=str(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
 
-    await _ensure_tunnel(session, device)
-    output = await deliver_subscription(device, account.subscription_url)
+    # Клиентская активация ловит это ниже, а ручная — не ловила, и отказ SSH
+    # уходил наружу пятисоткой: оператор видел «Основное приложение ответило
+    # 500» и ни слова о причине. Отказ роутера — обычное дело (не включён,
+    # туннель не поднялся, пароль сменили), и он обязан читаться словами.
+    try:
+        await _ensure_tunnel(session, device)
+        output = await deliver_subscription(device, account.subscription_url)
+    except router_shell.ShellError as exc:
+        log.warning("activation.manual_delivery_failed", mac=device.mac, error=str(exc))
+        routers.add_event(
+            session,
+            device_id=device.id,
+            mac=device.mac,
+            level="error",
+            message=f"Ручная активация: роутер недоступен ({exc})",
+        )
+        raise ActivationError(
+            f"Учётка в панели готова, но роутер не принял ссылку: {exc}. "
+            "Проверьте, что он на связи, и нажмите «Активировать заново» — "
+            "срок в панели уже проставлен, второй раз он не сдвинется."
+        ) from exc
 
     now = utcnow()
     device.status = DeviceStatus.ACTIVE
