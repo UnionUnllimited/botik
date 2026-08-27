@@ -85,10 +85,13 @@ async def platega_webhook(
         await _forward_to_partner(body, headers)
         return Response(status_code=200)
 
-    await session.commit()
-
+    # Сообщение клиенту кладётся в очередь строкой в базе, поэтому коммит
+    # обязан быть последним: зависимость `get_session` сама не коммитит,
+    # и всё, что записано после него, пропадало вместе с сессией.
     if applied and payment.status is PaymentStatus.SUCCEEDED:
         await notify_payment_result(session, payment)
+
+    await session.commit()
 
     log.info(
         "webhook.processed",

@@ -1717,9 +1717,10 @@ async def manage_order_device(
 async def manage_order_note(
     order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
 ) -> dict:
-    order = await session.get(Order, order_id)
-    if order is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    # Со связями: карточка для рабочего чата читает состав и клиента, а
+    # ленивая подгрузка в асинхронной сессии — это исключение. Заметка из-за
+    # неё не сохранялась вовсе: пятисотка откатывала всю транзакцию.
+    order = await _order_or_404(session, order_id)
     order.admin_note = str(payload.get("note", "")).strip()[:2000] or None
     await order_topics.push(session, order, note="✎ Заметка изменена")
     return {"ok": True}

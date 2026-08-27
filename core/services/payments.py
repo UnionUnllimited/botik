@@ -235,6 +235,12 @@ async def apply_status(
                 received=str(amount),
             )
             payments_total.labels(provider=str(payment.provider), status="amount_mismatch").inc()
+            # Зовём людей на самом деле, а не только в журнал: деньги у
+            # провайдера, платёж «не прошёл», и разобрать это может только
+            # оператор. Импорт внутри — `notifier` тянет доставку и настройки.
+            from core.services.notifier import notify_amount_mismatch
+
+            await notify_amount_mismatch(payment, str(amount), session=session)
             return False
 
         payment.status = PaymentStatus.SUCCEEDED
@@ -277,7 +283,14 @@ async def _apply_success(session: AsyncSession, payment: Payment) -> None:
             .where(Order.id == payment.order_id)
             # Доставку тоже: успешная оплата доставки ставит на ней отметку,
             # а ленивая подгрузка в асинхронной сессии — это исключение.
-            .options(selectinload(Order.items), selectinload(Order.delivery))
+            # Клиента — потому что его читает карточка заказа для рабочего
+            # чата: без него «✓ Заказ оплачен» падало на ленивой загрузке
+            # и гасилось перехватом, то есть не доезжало до оператора вовсе.
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.delivery),
+                selectinload(Order.user),
+            )
         )
 
     if payment.purpose is PaymentPurpose.DELIVERY:
@@ -319,6 +332,34 @@ async def _resolve_plan(session: AsyncSession, payment: Payment, order: Order | 
     return None
 
 
+async def _subscription_of(
+    session: AsyncSession, payment: Payment, order: Order | None
+) -> Subscription | None:
+    """Какую подписку двигает эта оплата.
+
+    Три случая, и путать их нельзя:
+
+      * продление названо явно (`subscription_id` проставлен при выдаче
+        счёта) — двигаем именно её, а не ту, чей срок дальше;
+      * оплата заказа — это покупка роутера, и подписка у неё своя. Ищем её
+        по заказу: найдётся только при повторном проведении того же платежа,
+        иначе заводится новая. Раньше здесь бралась «текущая подписка
+        клиента», и второй купленный роутер отдавал свой срок первому,
+        а сам оставался без подписки и не активировался вовсе;
+      * оплата подписки без заказа и без ссылки — прежнее поведение.
+    """
+    if payment.subscription_id:
+        return await session.get(Subscription, payment.subscription_id)
+    if order is not None:
+        return await session.scalar(
+            select(Subscription)
+            .where(Subscription.order_id == order.id)
+            .order_by(Subscription.id)
+            .limit(1)
+        )
+    return await subscription_service.get_current(session, payment.user_id)
+
+
 async def _grant_subscription(
     session: AsyncSession,
     *,
@@ -326,8 +367,8 @@ async def _grant_subscription(
     plan: Plan,
     order: Order | None,
 ) -> Subscription:
-    """Продлевает действующую подписку или создаёт новую в ожидании активации."""
-    existing = await subscription_service.get_current(session, payment.user_id)
+    """Продлевает подписку этой оплаты или создаёт новую в ожидании активации."""
+    existing = await _subscription_of(session, payment, order)
     if existing is not None:
         subscription_service.extend(existing, plan=plan, payment_id=payment.id)
         payment.subscription_id = existing.id

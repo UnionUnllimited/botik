@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -227,3 +228,131 @@ class TestPartnerCallbackForwarding:
 
         monkeypatch.setattr(webhooks.httpx, "AsyncClient", _Client)
         await webhooks._forward_to_partner(b"{}", {})
+
+
+class TestAmountMismatchCallsPeople:
+    """Расхождение суммы обязано дойти до человека.
+
+    Платёж помечается «не прошёл», деньги при этом у провайдера, и разобрать
+    это может только оператор. Текст алерта был написан, канал заведён,
+    а вызова не было ни одного — узнать о таком можно было лишь из логов.
+    """
+
+    @pytest.mark.asyncio
+    async def test_operator_is_alerted(self, monkeypatch):
+        import datetime as dt
+        from decimal import Decimal
+
+        from core.enums import PaymentProviderName, PaymentPurpose, PaymentStatus
+        from core.models import Payment
+        from core.services import notifier
+        from core.services import payments as payment_service
+
+        told: dict = {}
+
+        async def _alert(payment, received, *, session=None):
+            told.update(payment_id=payment.id, received=received, session=session)
+
+        monkeypatch.setattr(notifier, "notify_amount_mismatch", _alert)
+
+        payment = Payment(
+            id=17,
+            user_id=1,
+            provider=PaymentProviderName.PLATEGA,
+            purpose=PaymentPurpose.ORDER,
+            status=PaymentStatus.PENDING,
+            idempotency_key="key-17",
+            amount=Decimal("9299.00"),
+            currency="RUB",
+            created_at=dt.datetime.now(dt.UTC),
+        )
+
+        class _Session:
+            def add(self, _item):
+                return None
+
+        session = _Session()
+        applied = await payment_service.apply_status(
+            session, payment, status=PaymentStatus.SUCCEEDED, amount=Decimal("1.00")
+        )
+
+        assert applied is False
+        assert payment.status is PaymentStatus.FAILED
+        assert told.get("payment_id") == 17, "о расхождении суммы никому не сообщили"
+        assert told.get("received") == "1.00"
+        assert told.get("session") is session, "без сессии алерт не ляжет в очередь"
+
+
+class TestWebhookSavesWhatItQueued:
+    """Подтверждение оплаты должно пережить ответ провайдеру.
+
+    Сообщение клиенту кладётся в очередь строкой в базе. Пока `commit` шёл
+    раньше него, строка не сохранялась вовсе: зависимость `get_session`
+    сама не коммитит, и при закрытии сессии всё написанное после пропадало.
+    Сейчас колбэк уходит другому боту, поэтому баг не виден, — но приёмник
+    держат ровно ради того дня, когда его переведут на нас.
+    """
+
+    @pytest.mark.asyncio
+    async def test_notification_is_queued_before_the_commit(self, monkeypatch):
+        import datetime as dt
+        from decimal import Decimal
+
+        from api.routes import webhooks
+        from core.config import settings
+        from core.enums import PaymentProviderName, PaymentPurpose, PaymentStatus
+        from core.models import Payment
+
+        monkeypatch.setattr(settings.platega, "allowed_ips", [])
+
+        payment = Payment(
+            id=3,
+            user_id=1,
+            provider=PaymentProviderName.PLATEGA,
+            purpose=PaymentPurpose.ORDER,
+            status=PaymentStatus.SUCCEEDED,
+            idempotency_key="key-3",
+            amount=Decimal("9299.00"),
+            currency="RUB",
+            created_at=dt.datetime.now(dt.UTC),
+        )
+
+        steps: list[str] = []
+
+        class _Session:
+            def add(self, _item):
+                steps.append("queued")
+
+            async def commit(self):
+                steps.append("commit")
+
+        class _Provider:
+            def verify_webhook(self, _headers, _body):
+                return True
+
+        async def _handle(_session, *, provider_name, data):
+            return payment, True
+
+        async def _notify(session, _payment):
+            session.add(object())
+
+        class _Request:
+            def __init__(self):
+                self.headers = {"Content-Type": "application/json"}
+                self.client = SimpleNamespace(host="127.0.0.1")
+
+            async def body(self):
+                return b'{"transactionId": "x"}'
+
+        monkeypatch.setattr(webhooks, "get_provider", lambda _name: _Provider())
+        monkeypatch.setattr(webhooks.payment_service, "handle_webhook", _handle)
+        monkeypatch.setattr(webhooks, "notify_payment_result", _notify)
+
+        session = _Session()
+        response = await webhooks.platega_webhook(_Request(), session)
+
+        assert response.status_code == 200
+        assert steps, "обработчик ничего не сделал"
+        assert steps[-1] == "commit", (
+            "сообщение клиенту кладётся после коммита и пропадает вместе с сессией"
+        )

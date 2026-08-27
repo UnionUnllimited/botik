@@ -225,3 +225,166 @@ class TestButtonsMatchWhatTheHandleCanDo:
             price=Decimal("0.00"),
         )
         assert "track" in self._actions(order_topics.card_buttons(_order(delivery=delivery)))
+
+
+class TestCardReachesTheQueueFromRealCallers:
+    """Карточка должна доезжать до чата от тех, кто её отправляет на деле.
+
+    Тесты выше строят заказ в памяти и передают клиента полем — так ленивая
+    загрузка связи никогда не срабатывает. А на живой сессии заказ приходит
+    из базы, и `order.user` у него не загружен: обращение к нему в async —
+    исключение. Оплата его проглатывала (карточка «Заказ оплачен» не уходила
+    вовсе), а сохранение заметки отвечало пятисоткой.
+    """
+
+    TOPIC_CHAT = -1001234567890
+
+    @staticmethod
+    async def _factory():
+        from sqlalchemy import BigInteger
+        from sqlalchemy.dialects.postgresql import JSONB
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.compiler import compiles
+
+        from core.models import Device, Notification, Payment, Plan, Referral, Subscription, SubscriptionEvent
+        from core.models.base import Base
+
+        @compiles(JSONB, "sqlite")
+        def _jsonb_as_json(_type, _compiler, **_kwargs) -> str:
+            return "JSON"
+
+        @compiles(BigInteger, "sqlite")
+        def _bigint_as_integer(_type, _compiler, **_kwargs) -> str:
+            """SQLite нумерует сама только INTEGER PRIMARY KEY, у очереди ключ BIGINT."""
+            return "INTEGER"
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync_connection: Base.metadata.create_all(
+                    sync_connection,
+                    tables=[
+                        User.__table__,
+                        Plan.__table__,
+                        Order.__table__,
+                        OrderItem.__table__,
+                        Delivery.__table__,
+                        Payment.__table__,
+                        Subscription.__table__,
+                        SubscriptionEvent.__table__,
+                        Device.__table__,
+                        Referral.__table__,
+                        Notification.__table__,
+                    ],
+                )
+            )
+        return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+    @pytest.fixture(autouse=True)
+    def _topics_on(self, monkeypatch):
+        async def _chat(_session):
+            return self.TOPIC_CHAT
+
+        monkeypatch.setattr(order_topics, "chat_id", _chat)
+
+    async def _seed(self, session):
+        from core.enums import OrderItemType
+
+        session.add(User(id=5, tg_id=614685408, username="union"))
+        order = Order(
+            id=12,
+            public_number="R-260828-0012",
+            user_id=5,
+            status=OrderStatus.AWAITING_PAYMENT,
+            subtotal=Decimal("9299.00"),
+            total=Decimal("9299.00"),
+            currency="RUB",
+            customer_name="Иванов Иван",
+            customer_phone="+79001234567",
+            customer_city="Самара",
+        )
+        order.items.append(
+            OrderItem(
+                item_type=OrderItemType.PRODUCT,
+                title="Роутер TR3000",
+                quantity=1,
+                unit_price=Decimal("9299.00"),
+                total_price=Decimal("9299.00"),
+            )
+        )
+        session.add(order)
+        await session.commit()
+
+    @staticmethod
+    async def _queued(session) -> list:
+        from sqlalchemy import select
+
+        from core.models import Notification
+
+        return list(await session.scalars(select(Notification).where(Notification.kind == order_topics.KIND)))
+
+    @pytest.mark.asyncio
+    async def test_payment_pushes_the_card(self, monkeypatch):
+        """«✓ Заказ оплачен» обязано доезжать до рабочего чата."""
+        from core.enums import PaymentProviderName, PaymentPurpose, PaymentStatus
+        from core.models import Payment
+        from core.services import activation
+        from core.services import payments as payment_service
+
+        async def _no_panel(_session, _subscription):
+            return False
+
+        monkeypatch.setattr(activation, "sync_panel_expiry", _no_panel)
+
+        engine, factory = await self._factory()
+        try:
+            async with factory() as session:
+                await self._seed(session)
+                session.add(
+                    Payment(
+                        id=1,
+                        user_id=5,
+                        order_id=12,
+                        provider=PaymentProviderName.PLATEGA,
+                        purpose=PaymentPurpose.ORDER,
+                        status=PaymentStatus.PENDING,
+                        idempotency_key="key-1",
+                        amount=Decimal("9299.00"),
+                        currency="RUB",
+                    )
+                )
+                await session.commit()
+
+                payment = await session.get(Payment, 1)
+                await payment_service.apply_status(session, payment, status=PaymentStatus.SUCCEEDED)
+                await session.commit()
+
+                cards = await self._queued(session)
+                assert cards, "карточка оплаченного заказа не доехала до рабочего чата"
+                assert "оплачен" in cards[0].text.lower()
+                assert cards[0].chat_id == self.TOPIC_CHAT
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_note_is_saved_and_pushed(self):
+        """Заметка оператора сохраняется, а не отвечает пятисоткой."""
+        from api.routes import catalog_api
+
+        engine, factory = await self._factory()
+        try:
+            async with factory() as session:
+                await self._seed(session)
+
+                result = await catalog_api.manage_order_note(
+                    12, {"note": "Позвонить после обеда"}, session=session
+                )
+                await session.commit()
+
+                assert result == {"ok": True}
+                saved = await session.get(Order, 12)
+                assert saved.admin_note == "Позвонить после обеда"
+                cards = await self._queued(session)
+                assert cards, "карточка после заметки не ушла в чат"
+        finally:
+            await engine.dispose()

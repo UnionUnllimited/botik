@@ -293,21 +293,24 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
     if days < 1:
         raise ActivationError("Срок должен быть хотя бы один день.")
 
-    username = manual_username_for(device.mac)
     try:
-        panel = remnawave.client()
-        account = await panel.find_user(username)
-        if account is None:
+        # По MAC, а не по имени ручной активации: роутер, проданный обычным
+        # путём, носит учётку `tg{id}_{mac}`, и поиск одним именем отвечал
+        # «сначала активируйте роутер» на работающем устройстве.
+        accounts = await _router_accounts(device)
+        if not accounts:
             raise ActivationError(
-                f"В панели нет учётки {username} — сначала активируйте роутер."
+                f"В панели нет учётки роутера {device.mac} — сначала активируйте его."
             )
+        account = accounts[0]
         now = utcnow()
         current = panel_expiry_of(account)
         expire_at = max(current or now, now) + dt.timedelta(days=days)
-        await panel.update_expiry(uuid=account.uuid, expire_at=expire_at)
+        await remnawave.client().update_expiry(uuid=account.uuid, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.manual_extend_failed", mac=device.mac, error=str(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
+    username = account.username
 
     # Наша подписка двигается вместе с панелью: разъехавшись, они показывают
     # оператору один срок, а отключают доступ по другому.
@@ -331,13 +334,56 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
     return expire_at
 
 
+def _mac_key(value: str) -> str:
+    """Только буквы и цифры в нижнем регистре: `A0:B1` и `a0-b1` — одно и то же."""
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def account_of_router(username: str, mac: str) -> bool:
+    """Учётка принадлежит этому роутеру, каким бы способом её ни завели.
+
+    Общее у всех имён одно — MAC в конце: `tg{id}_{mac}` у клиентской
+    активации, `id{user_id}_{mac}` у клиента без Telegram, сам MAC у ручной.
+    Подписка для телефона (`tg{id}` без MAC) под правило не подходит — и не
+    должна: к роутеру она отношения не имеет.
+    """
+    key = _mac_key(mac)
+    return bool(key) and _mac_key(username).endswith(key)
+
+
+async def _router_accounts(device: Device) -> list[remnawave.RemnaUser]:
+    """Учётки этого роутера в панели. Бросает `RemnawaveError`, как и панель.
+
+    Ищем по MAC, а не по имени: имя зависит от того, каким путём роутер
+    активировали, и поиск одним именем не находил половину парка — экран
+    клиента бесконечно писал «подписка настраивается» у работающего роутера.
+
+    Заведённая руками идёт первой: если учёток две (роутер активировали
+    из карточки поверх клиентской), ссылку он получил от неё — она доставлена
+    последней.
+    """
+    accounts = [
+        account
+        for account in await remnawave.client().users()
+        if account_of_router(account.username, device.mac)
+    ]
+    manual = manual_username_for(device.mac)
+    accounts.sort(key=lambda account: account.username.strip().lower() != manual)
+    return accounts
+
+
 async def panel_account_of(device: Device) -> remnawave.RemnaUser | None:
-    """Учётка ручной активации этого роутера, если она заведена."""
+    """Учётка этого роутера, если она заведена.
+
+    Молчащая панель — не ошибка: экран клиента и карточка парка не должны
+    падать из-за неё, они показывают срок, а не выдают доступ.
+    """
     try:
-        return await remnawave.client().find_user(manual_username_for(device.mac))
+        accounts = await _router_accounts(device)
     except remnawave.RemnawaveError as exc:
-        log.warning("activation.manual_lookup_failed", mac=device.mac, error=str(exc))
+        log.warning("activation.panel_lookup_failed", mac=device.mac, error=str(exc))
         return None
+    return accounts[0] if accounts else None
 
 
 async def _check_rate_limit(user: User) -> None:
@@ -376,8 +422,18 @@ async def _resolve_device(session: AsyncSession, user: User, mac: str) -> Device
     return device
 
 
-async def _pending_subscription(session: AsyncSession, user: User) -> Subscription:
-    subscription = await subscriptions.get_pending(session, user.id)
+async def _pending_subscription(
+    session: AsyncSession, user: User, device: Device | None = None
+) -> Subscription:
+    """Подписка, которую включает этот роутер.
+
+    Сперва — подписка его заказа: у клиента, купившего два роутера, ожидающих
+    подписки две, и приезжают устройства в разные дни. Без этого роутер,
+    купленный на месяц, включал бы годовой срок соседа.
+    """
+    subscription = await subscriptions.get_pending(
+        session, user.id, order_id=device.order_id if device else None
+    )
     if subscription is None:
         active = await subscriptions.get_active(session, user.id)
         if active is not None:
@@ -450,21 +506,22 @@ async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -
         # Роутер ещё не активирован — учётки в панели тоже нет, синхронизировать нечего.
         return False
 
-    owner = await session.get(User, subscription.user_id)
-    if owner is None:
-        return False
-
-    username = username_for(owner, device.mac)
     try:
-        panel = remnawave.client()
-        account = await panel.find_user(username)
-        if account is None:
-            log.warning("activation.expiry_sync_no_account", username=username)
+        # По MAC: учётку мог завести и клиент (`tg{id}_{mac}`), и оператор
+        # руками (сам MAC). Поиск одним именем оставлял половину роутеров
+        # без переноса срока — клиент оплачивал, а доступ отключался в старую дату.
+        accounts = await _router_accounts(device)
+        if not accounts:
+            log.warning("activation.expiry_sync_no_account", mac=device.mac)
             return False
-        await panel.update_expiry(uuid=account.uuid, expire_at=subscription.expires_at)
+        account = accounts[0]
+        await remnawave.client().update_expiry(
+            uuid=account.uuid, expire_at=subscription.expires_at
+        )
     except remnawave.RemnawaveError as exc:
-        log.warning("activation.expiry_sync_failed", username=username, error=str(exc))
+        log.warning("activation.expiry_sync_failed", mac=device.mac, error=str(exc))
         return False
+    username = account.username
 
     routers.add_event(
         session,
@@ -496,7 +553,7 @@ async def activate(
     if rate_limited:
         await _check_rate_limit(user)
     device = await _resolve_device(session, user, mac)
-    subscription = await _pending_subscription(session, user)
+    subscription = await _pending_subscription(session, user, device)
 
     now = utcnow()
     username = username_for(user, mac)
@@ -505,13 +562,19 @@ async def activate(
     # Повторная активация того же роутера не должна плодить учётки.
     try:
         account = await panel.find_user(username)
+        expire_at = subscriptions.period_end_for(subscription.plan, start=now)
         if account is None:
             account = await panel.create_user(
                 username=username,
-                expire_at=subscriptions.period_end_for(subscription.plan, start=now),
+                expire_at=expire_at,
                 telegram_id=user.tg_id,
                 description=f"{user.display_name} · {mac}",
             )
+        else:
+            # Учётка осталась с прошлой активации, и срок в ней прежний —
+            # роутер сбрасывали на склад и активируют заново. Без переноса
+            # клиент получает ссылку, по которой доступ уже кончился.
+            await panel.update_expiry(uuid=account.uuid, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.panel_failed", mac=mac, error=str(exc))
         raise ActivationError(

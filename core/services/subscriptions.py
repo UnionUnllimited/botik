@@ -74,14 +74,31 @@ async def get_active(session: AsyncSession, user_id: int) -> Subscription | None
     )
 
 
-async def get_pending(session: AsyncSession, user_id: int) -> Subscription | None:
-    """Оплаченная, но ещё не активированная подписка."""
+async def get_pending(
+    session: AsyncSession, user_id: int, *, order_id: int | None = None
+) -> Subscription | None:
+    """Оплаченная, но ещё не активированная подписка.
+
+    `order_id` — подписка именно этого заказа. У клиента, купившего два
+    роутера, ожидающих подписки две, и сроки в них разные: взяв первую
+    попавшуюся, мы дали бы годовой срок роутеру, купленному на месяц.
+    Заказ известен не всегда, поэтому без него — по-прежнему самая старая.
+    """
+    query = select(Subscription).where(
+        Subscription.user_id == user_id,
+        Subscription.status == SubscriptionStatus.PENDING,
+    )
+    if order_id is not None:
+        own = await session.scalar(
+            query.where(Subscription.order_id == order_id)
+            .order_by(Subscription.id.asc())
+            .limit(1)
+            .options(selectinload(Subscription.plan))
+        )
+        if own is not None:
+            return own
     return await session.scalar(
-        select(Subscription)
-        .where(Subscription.user_id == user_id, Subscription.status == SubscriptionStatus.PENDING)
-        .order_by(Subscription.id.asc())
-        .limit(1)
-        .options(selectinload(Subscription.plan))
+        query.order_by(Subscription.id.asc()).limit(1).options(selectinload(Subscription.plan))
     )
 
 
@@ -403,5 +420,9 @@ def refresh_status(subscription: Subscription, *, now: dt.datetime | None = None
 
 
 def period_end_for(plan: Plan, *, start: dt.datetime | None = None) -> dt.datetime:
-    """Когда закончится подписка, если купить этот тариф сейчас."""
-    return add_period(start or utcnow(), months=plan.months, days=plan.extra_days)
+    """Когда закончится подписка, если купить этот тариф сейчас.
+
+    `or 0` — та же страховка, что в `Plan.apply_to`: тариф приезжает
+    зеркалом из чужой админки, и пустое поле не должно ронять активацию.
+    """
+    return add_period(start or utcnow(), months=plan.months or 0, days=plan.extra_days or 0)

@@ -287,3 +287,237 @@ class TestRouterRefusalIsExplained:
         # Срок в панели уже проставлен, и оператор должен это прочитать:
         # иначе он решит, что активация не прошла вовсе, и заведёт её заново.
         assert "панел" in text.lower()
+
+
+class TestPanelAccountLookup:
+    """Учётку роутера ищут по MAC, а не по одному из двух её имён.
+
+    Имя зависит от того, как активировали: клиент и автоактивация дают
+    `tg{id}_{mac}`, ручная из карточки — сам MAC. Пока искали только вторым
+    именем, у роутера, проданного обычным путём, панель «не находилась»:
+    экран клиента бесконечно писал «подписка настраивается», карточка парка
+    показывала пустой срок, а «Продлить» у оператора отвечало «сначала
+    активируйте роутер».
+    """
+
+    MAC = "D4:0D:AB:28:3B:80"
+
+    @staticmethod
+    def _account(username: str, expire_at: str = "2026-09-26T12:00:00.000Z"):
+        from core.services.remnawave import RemnaUser
+
+        return RemnaUser(
+            uuid=f"uuid-{username}",
+            username=username,
+            subscription_url=f"https://panel/{username}",
+            expire_at=expire_at,
+        )
+
+    def _panel(self, monkeypatch, accounts: list):
+        from core.services import activation
+
+        class _Panel:
+            async def users(self):
+                return accounts
+
+        monkeypatch.setattr(activation.remnawave, "client", _Panel)
+
+    @pytest.mark.asyncio
+    async def test_finds_account_of_a_client_activated_router(self, monkeypatch):
+        """Основной путь продажи: учётку завела клиентская активация."""
+        from core.services import activation
+
+        self._panel(monkeypatch, [self._account("tg614685408_d40dab283b80")])
+        found = await activation.panel_account_of(Device(id=1, mac=self.MAC))
+
+        assert found is not None, "учётка клиентской активации обязана находиться"
+        assert found.username == "tg614685408_d40dab283b80"
+
+    @pytest.mark.asyncio
+    async def test_finds_account_of_a_manually_activated_router(self, monkeypatch):
+        from core.services import activation
+
+        self._panel(monkeypatch, [self._account("d4-0d-ab-28-3b-80")])
+        found = await activation.panel_account_of(Device(id=1, mac=self.MAC))
+
+        assert found is not None and found.username == "d4-0d-ab-28-3b-80"
+
+    @pytest.mark.asyncio
+    async def test_client_without_telegram_is_found_too(self, monkeypatch):
+        """У клиента с почтой шаблон другой, но MAC в имени тот же."""
+        from core.services import activation
+
+        self._panel(monkeypatch, [self._account("id42_d40dab283b80")])
+        found = await activation.panel_account_of(Device(id=1, mac=self.MAC))
+
+        assert found is not None and found.username == "id42_d40dab283b80"
+
+    @pytest.mark.asyncio
+    async def test_another_router_is_not_mistaken_for_ours(self, monkeypatch):
+        """Учётка соседнего роутера того же клиента — не наша."""
+        from core.services import activation
+
+        self._panel(monkeypatch, [self._account("tg614685408_f85e3c92c022")])
+        assert await activation.panel_account_of(Device(id=1, mac=self.MAC)) is None
+
+    @pytest.mark.asyncio
+    async def test_phone_subscription_of_the_same_client_is_not_taken(self, monkeypatch):
+        """`tg{id}` без MAC — подписка для телефона, к роутеру отношения не имеет."""
+        from core.services import activation
+
+        self._panel(monkeypatch, [self._account("tg614685408")])
+        assert await activation.panel_account_of(Device(id=1, mac=self.MAC)) is None
+
+    @pytest.mark.asyncio
+    async def test_manual_account_wins_when_there_are_two(self, monkeypatch):
+        """Роутер активировали руками поверх клиентской: ссылку он получил её."""
+        from core.services import activation
+
+        self._panel(
+            monkeypatch,
+            [self._account("tg614685408_d40dab283b80"), self._account("d4-0d-ab-28-3b-80")],
+        )
+        found = await activation.panel_account_of(Device(id=1, mac=self.MAC))
+
+        assert found is not None and found.username == "d4-0d-ab-28-3b-80"
+
+    @pytest.mark.asyncio
+    async def test_unreachable_panel_is_not_an_error(self, monkeypatch):
+        """Экран клиента не должен падать из-за молчащей панели."""
+        from core.services import activation
+
+        class _Panel:
+            async def users(self):
+                raise activation.remnawave.RemnawaveError("panel is down")
+
+        monkeypatch.setattr(activation.remnawave, "client", _Panel)
+        assert await activation.panel_account_of(Device(id=1, mac=self.MAC)) is None
+
+    @pytest.mark.asyncio
+    async def test_manual_extension_moves_a_client_activated_account(self, monkeypatch):
+        """«Продлить» в карточке парка обязано работать на обычном проданном роутере."""
+        from core.services import activation
+
+        account = self._account("tg614685408_d40dab283b80")
+        moved: dict = {}
+
+        class _Panel:
+            async def users(self):
+                return [account]
+
+            async def update_expiry(self, *, uuid, expire_at):
+                moved.update(uuid=uuid, expire_at=expire_at)
+
+        monkeypatch.setattr(activation.remnawave, "client", _Panel)
+        monkeypatch.setattr(activation.routers, "add_event", lambda *a, **k: None)
+
+        device = Device(id=1, mac=self.MAC, status=DeviceStatus.ACTIVE)
+
+        class _Session:
+            async def get(self, *_args):
+                return None
+
+        until = await activation.extend_manually(_Session(), device=device, days=30)
+
+        assert moved["uuid"] == account.uuid, "продлевать надо найденную учётку"
+        assert until > dt.datetime.now(dt.UTC)
+
+    @pytest.mark.asyncio
+    async def test_expiry_sync_finds_a_manually_activated_account(self, monkeypatch):
+        """Оплата продления обязана двигать срок и у роутера, заведённого руками."""
+        from core.models import Subscription
+        from core.services import activation
+
+        account = self._account("d4-0d-ab-28-3b-80")
+        moved: dict = {}
+
+        class _Panel:
+            async def users(self):
+                return [account]
+
+            async def update_expiry(self, *, uuid, expire_at):
+                moved.update(uuid=uuid, expire_at=expire_at)
+
+        monkeypatch.setattr(activation.remnawave, "client", _Panel)
+        monkeypatch.setattr(activation.routers, "add_event", lambda *a, **k: None)
+
+        device = Device(id=5, mac=self.MAC, status=DeviceStatus.ACTIVE)
+        owner = User(id=7, tg_id=614685408, first_name="Карл")
+        subscription = Subscription(
+            id=3,
+            user_id=7,
+            device_id=5,
+            expires_at=dt.datetime(2026, 10, 1, tzinfo=dt.UTC),
+        )
+
+        class _Session:
+            async def get(self, model, key):
+                return device if model is Device else owner
+
+        assert await activation.sync_panel_expiry(_Session(), subscription) is True
+        assert moved["uuid"] == account.uuid
+
+    @pytest.mark.asyncio
+    async def test_reactivation_moves_the_stale_expiry(self, monkeypatch):
+        """Учётка осталась с прошлого раза — срок в ней надо переставить.
+
+        Роутер сбросили на склад и активировали заново: у нас подписка
+        получает новый срок, а в панели оставался прежний. Клиент видел
+        «активна», а доступа не было.
+        """
+        from decimal import Decimal
+
+        from core.enums import SubscriptionStatus
+        from core.models import Plan, Subscription
+        from core.services import activation
+
+        stale = self._account("tg614685408_d40dab283b80", expire_at="2026-01-01T00:00:00.000Z")
+        moved: dict = {}
+
+        class _Panel:
+            async def users(self):
+                return [stale]
+
+            async def find_user(self, username):
+                return stale if username == stale.username else None
+
+            async def create_user(self, **_kwargs):
+                raise AssertionError("вторая учётка тому же роутеру не нужна")
+
+            async def update_expiry(self, *, uuid, expire_at):
+                moved.update(uuid=uuid, expire_at=expire_at)
+
+        plan = Plan(
+            id=1, slug="m1", title="1 месяц", months=1, extra_days=0, price=Decimal("399.00")
+        )
+        subscription = Subscription(id=3, user_id=7, plan_id=1, status=SubscriptionStatus.PENDING)
+        subscription.plan = plan
+        device = Device(id=1, mac=self.MAC, status=DeviceStatus.NEW)
+        owner = User(id=7, tg_id=614685408, first_name="Карл")
+
+        async def _pending(_session, _user_id, *, order_id=None):
+            return subscription
+
+        async def _delivered(_device, _url):
+            return "ok"
+
+        class _Session:
+            async def scalar(self, *_args, **_kwargs):
+                return device
+
+        monkeypatch.setattr(activation.remnawave, "client", _Panel)
+        monkeypatch.setattr(activation.subscriptions, "get_pending", _pending)
+        monkeypatch.setattr(activation.subscriptions, "activate", lambda *a, **k: subscription)
+        monkeypatch.setattr(activation, "_ensure_tunnel", lambda *a, **k: _noop())
+        monkeypatch.setattr(activation, "deliver_subscription", _delivered)
+        monkeypatch.setattr(activation.routers, "add_event", lambda *a, **k: None)
+
+        await activation.activate(_Session(), user=owner, raw_mac=self.MAC, rate_limited=False)
+
+        assert moved, "срок в панели остался прежним, хотя подписка уже новая"
+        assert moved["uuid"] == stale.uuid
+        assert moved["expire_at"] > dt.datetime.now(dt.UTC)
+
+
+async def _noop():
+    return None
