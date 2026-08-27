@@ -280,3 +280,74 @@ class TestOneSubscriptionPerRouter:
         assert result is existing
         assert added == [], "завелась вторая подписка на тот же роутер"
         assert result.device_id == 42
+
+
+class TestReleaseOnUnbind:
+    """Отвязка клиента снимает подписку с роутера.
+
+    Раньше это делал только сброс на склад, и после «Отвязать клиента»
+    подписка оставалась висеть на роутере без владельца: парк показывал
+    у него «активна», а настоящий роутер того же клиента — «нет».
+    Это и была та самая «активна на другом роутере».
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "api/routes/fleet_api.py"
+    ).read_text(encoding="utf-8")
+
+    def test_unbind_releases_the_subscription(self):
+        body = self.SOURCE[self.SOURCE.index("async def _unbind("):]
+        body = body[: body.index("\n\n\n")]
+        assert "release_device" in body, (
+            "отвязка обязана снимать подписку с роутера, иначе она зависает "
+            "на устройстве без клиента"
+        )
+
+    def test_reset_uses_the_same_release(self):
+        """Два пути не должны расходиться в том, что делают с подпиской."""
+        assert self.SOURCE.count("release_device(session, device.id)") == 2
+
+    @pytest.mark.asyncio
+    async def test_paid_subscription_goes_back_to_waiting(self, monkeypatch):
+        """Клиент за неё заплатил — сжигать вместе с железом нельзя."""
+        paid = Subscription(
+            id=1, user_id=1, device_id=42, plan_id=5,
+            status=SubscriptionStatus.ACTIVE,
+            expires_at=dt.datetime(2026, 9, 26, tzinfo=dt.UTC),
+        )
+        session = _SessionReturning(paid)
+
+        assert await service.release_device(session, 42) == "pending"
+        assert paid.device_id is None
+        assert paid.status is SubscriptionStatus.PENDING
+        assert paid.expires_at is None
+        assert paid.pending_expires_at is not None
+
+    @pytest.mark.asyncio
+    async def test_manual_subscription_is_cancelled(self, monkeypatch):
+        """Без тарифа её нечем активировать заново — в ожидании она зависнет навсегда."""
+        manual = Subscription(
+            id=2, user_id=1, device_id=42, plan_id=None,
+            status=SubscriptionStatus.ACTIVE, source="manual",
+            expires_at=dt.datetime(2026, 9, 26, tzinfo=dt.UTC),
+        )
+        session = _SessionReturning(manual)
+
+        assert await service.release_device(session, 42) == "cancelled"
+        assert manual.device_id is None
+        assert manual.status is SubscriptionStatus.CANCELLED
+        assert manual.cancelled_at is not None
+
+    @pytest.mark.asyncio
+    async def test_router_without_a_subscription_is_fine(self):
+        assert await service.release_device(_SessionReturning(None), 42) == ""
+
+
+class _SessionReturning:
+    """Сессия, отдающая одну заранее выбранную подписку."""
+
+    def __init__(self, subscription):
+        self._subscription = subscription
+
+    async def scalar(self, _statement):
+        return self._subscription

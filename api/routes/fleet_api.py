@@ -29,7 +29,7 @@ from api.deps import get_session, get_transaction
 from api.service_auth import require_token
 from core.config import settings
 from core.dates import utcnow
-from core.enums import DeviceStatus, SubscriptionStatus
+from core.enums import DeviceStatus
 from core.models import (
     Device,
     DeviceEvent,
@@ -39,7 +39,6 @@ from core.models import (
     ListKind,
     ManualList,
     ManualListRevision,
-    Subscription,
     User,
 )
 from core.security import normalize_mac
@@ -629,7 +628,7 @@ async def bind_router(
 @router.post("/routers/{device_id}/unbind", dependencies=[Depends(require_token)])
 async def unbind_router(device_id: int, session: AsyncSession = Depends(get_transaction)) -> dict:
     device = await _device_or_404(session, device_id)
-    _unbind(session, device)
+    await _unbind(session, device)
     return {"ok": True}
 
 
@@ -649,21 +648,8 @@ async def reset_router(device_id: int, session: AsyncSession = Depends(get_trans
     """
     device = await _device_or_404(session, device_id)
 
-    subscription = await session.scalar(
-        select(Subscription).where(Subscription.device_id == device.id)
-    )
-    returned = False
-    if subscription is not None:
-        subscription.device_id = None
-        subscription.status = SubscriptionStatus.PENDING
-        subscription.started_at = None
-        subscription.expires_at = None
-        subscription.grace_until = None
-        subscription.last_reminder_day = None
-        subscription.pending_expires_at = utcnow() + dt.timedelta(
-            days=settings.subscription.activation_deadline_days
-        )
-        returned = True
+    outcome = await subscription_service.release_device(session, device.id)
+    returned = outcome == "pending"
 
     was_order = device.order_id
     device.user_id = None
@@ -678,7 +664,7 @@ async def reset_router(device_id: int, session: AsyncSession = Depends(get_trans
         level="warning",
         message="Сброшен на склад"
         + (f", заказ {was_order} отвязан" if was_order else "")
-        + (", подписка возвращена в ожидание активации" if returned else ""),
+        + RELEASE_NOTES.get(outcome, ""),
     )
     log.info("fleet.device_reset", device_id=device.id, mac=device.mac, subscription=returned)
     # Учётку в панели не трогаем: удаления у клиента панели нет, а гасить её
@@ -687,11 +673,30 @@ async def reset_router(device_id: int, session: AsyncSession = Depends(get_trans
     return {"ok": True, "subscription_returned": returned}
 
 
-def _unbind(session: AsyncSession, device: Device) -> None:
+RELEASE_NOTES = {
+    "pending": ", подписка возвращена в ожидание активации",
+    "cancelled": ", ручная подписка отменена",
+}
+"""Что стало с подпиской роутера. Один набор на отвязку и сброс: разойдись
+тексты, одно и то же действие читалось бы в журнале по-разному."""
+
+
+async def _unbind(session: AsyncSession, device: Device) -> None:
+    """Снимает клиента с роутера — вместе с подпиской, которая на нём лежала.
+
+    Без этого подписка оставалась привязанной к роутеру без владельца: парк
+    показывал у него «активна», а настоящий роутер того же клиента — «нет».
+    Одна подписка — один роутер, и роутер этот должен быть чьим-то.
+    """
+    outcome = await subscription_service.release_device(session, device.id)
     device.user_id = None
     device.status = DeviceStatus.NEW if device.activated_at is None else DeviceStatus.REVOKED
     routers_service.add_event(
-        session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="warning",
+        message="Клиент отвязан" + RELEASE_NOTES.get(outcome, ""),
     )
 
 
@@ -888,7 +893,7 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
                             message=f"Состояние: {was} → {target}",
                         )
                 elif action == "unbind":
-                    _unbind(session, device)
+                    await _unbind(session, device)
                 elif action == "activate":
                     await activation.activate_manually(session, device=device, days=days)
             except activation.ActivationError as exc:
@@ -1164,11 +1169,7 @@ async def unbind_client_router(
     if user is None or device.user_id != user.id:
         return {"ok": False, "error": "Этот роутер числится не за этим клиентом."}
 
-    device.user_id = None
-    device.status = DeviceStatus.NEW if device.activated_at is None else DeviceStatus.REVOKED
-    routers_service.add_event(
-        session, device_id=device.id, mac=device.mac, level="warning", message="Клиент отвязан"
-    )
+    await _unbind(session, device)
     return {"ok": True}
 
 

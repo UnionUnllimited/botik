@@ -156,6 +156,48 @@ async def grant_manual(
     return subscription
 
 
+async def release_device(session: AsyncSession, device_id: int) -> str:
+    """Снимает подписку с роутера. Возвращает, что с ней стало.
+
+    Зовётся всюду, где роутер перестаёт быть клиентским: отвязка, сброс
+    на склад. Раньше это делал только сброс, и отвязка оставляла подписку
+    висеть на роутере без владельца — в парке он показывался «активна», хотя
+    клиента у него нет, а настоящий роутер того же клиента писал «нет».
+    Одна подписка — один роутер, и роутер этот должен быть чьим-то.
+
+    Оплаченная возвращается в ожидание активации: клиент за неё заплатил,
+    и сжигать её вместе с железом нельзя — срок пойдёт заново на следующем
+    роутере. Ручная (без тарифа) отменяется: активировать её потом нечем,
+    и висеть в ожидании она будет вечно.
+    """
+    subscription = await session.scalar(
+        select(Subscription).where(Subscription.device_id == device_id)
+    )
+    if subscription is None:
+        return ""
+
+    subscription.device_id = None
+    subscription.started_at = None
+    subscription.expires_at = None
+    subscription.grace_until = None
+    subscription.last_reminder_day = None
+
+    if subscription.plan_id is None:
+        subscription.status = SubscriptionStatus.CANCELLED
+        subscription.cancelled_at = utcnow()
+        subscription.pending_expires_at = None
+        outcome = "cancelled"
+    else:
+        subscription.status = SubscriptionStatus.PENDING
+        subscription.pending_expires_at = utcnow() + dt.timedelta(
+            days=settings.subscription.activation_deadline_days
+        )
+        outcome = "pending"
+
+    log.info("subscription.released", subscription_id=subscription.id, device_id=device_id, outcome=outcome)
+    return outcome
+
+
 async def get_current(session: AsyncSession, user_id: int) -> Subscription | None:
     """Что показывать клиенту: сначала действующая, иначе ожидающая активации."""
     return await get_active(session, user_id) or await get_pending(session, user_id)

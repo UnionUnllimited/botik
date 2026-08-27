@@ -1567,6 +1567,6 @@ docker compose logs worker --no-log-prefix --tail=30 | grep -E "routers\.|frpc\.
 docker compose --profile frp up -d frpc     # туннели к роутерам
 ```
 
-Проверки перед коммитом: `python -m pytest -q` (1171 тест) и `ruff check .`.
+Проверки перед коммитом: `python -m pytest -q` (1176 тестов) и `ruff check .`.
 `ruff` запускать без трубы: `| tail -1` съедает код возврата, и упавшая
 проверка выглядит пройденной — так один коммит и ушёл с ошибками разбора.

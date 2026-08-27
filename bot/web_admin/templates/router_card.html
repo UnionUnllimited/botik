@@ -94,36 +94,18 @@
           </div>
           <div class="text-[13px]">
             Подписка:
-            {# Одна подписка — один роутер: здесь только своя. Подписка клиента
-               на другом его роутере — отдельная строка ниже, а не оттенок
-               статуса: это факт про клиента, а не про это устройство. #}
+            {# Одна подписка — один роутер: здесь только своя. #}
             {% if subscription.status %}
               {{ subscription.label or subscription.status }}
               {% if subscription.until %}<span class="tw-text-muted2">до {{ subscription.until[:10] }}</span>{% endif %}
             {% else %}
               <span class="tw-text-muted2">нет</span>
-              {% if subscription.elsewhere %}
-              <div class="tw-text-muted2 text-[12px]">
-                У клиента подписка есть, но она на другом его роутере — этот не активирован.
-              </div>
-              {% endif %}
             {% endif %}
           </div>
           <div class="flex gap-2 flex-wrap">
             <form method="post" action="{{ url_for('admin.router_unbind', device_id=device_id) }}"
-                  onsubmit="return confirm('Отвязать клиента от этого роутера?')">
+                  onsubmit="return confirm('Отвязать клиента от этого роутера? Подписка, лежащая на нём, вернётся в ожидание активации.')">
               <button type="submit" class="tw-btn tw-btn-sm">Отвязать клиента</button>
-            </form>
-            {# Отвязки мало, чтобы пройти путь заказа заново: она снимает
-               владельца, но оставляет отметку об активации и привязку
-               к заказу, а автоактивация начинается с «уже активирован —
-               не трогать». Сброс возвращает роутер в состояние «только
-               со склада». #}
-            <form method="post" action="{{ url_for('admin.router_reset', device_id=device_id) }}"
-                  onsubmit="return confirm('Вернуть роутер на склад? Снимутся клиент, заказ и активация. Оплаченная подписка не сгорит — вернётся в ожидание активации.')">
-              <button type="submit" class="tw-btn tw-btn-sm nav-accent-danger">
-                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>Сбросить на склад</span>
-              </button>
             </form>
           </div>
         {% else %}
@@ -152,6 +134,24 @@
             <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Привязать</button>
           </form>
         {% endif %}
+
+        {# Сброс — про роутер, а не про клиента, и нужен как раз тогда, когда
+           клиента уже нет: подписка могла остаться висеть на нём и мешать
+           активации настоящего роутера того же клиента. Раньше кнопка
+           пряталась вместе с клиентом, и починить это из карточки было нечем. #}
+        <div class="pt-3 border-t" style="border-color: var(--admin-border);">
+          <form method="post" action="{{ url_for('admin.router_reset', device_id=device_id) }}"
+                onsubmit="return confirm('Вернуть роутер на склад? Снимутся клиент, заказ и активация. Оплаченная подписка не сгорит — вернётся в ожидание активации.')">
+            <button type="submit" class="tw-btn tw-btn-sm nav-accent-danger">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>Сбросить на склад</span>
+            </button>
+          </form>
+          <div class="text-[11px] tw-text-subtle2 mt-1.5">
+            Снимает клиента, заказ, активацию и подписку с этого роутера.
+            Оплаченная подписка не сгорает — вернётся в ожидание активации
+            и включится на следующем роутере.
+          </div>
+        </div>
       </div>
 
       {# ── Ручная активация ────────────────────────────────────────────── #}
