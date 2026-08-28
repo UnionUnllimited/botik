@@ -188,6 +188,7 @@ def tracking_url(method: DeliveryMethod, track: str) -> str | None:
 
 
 def attach_delivery(
+    session: AsyncSession,
     order: Order,
     *,
     speed: DeliverySpeed,
@@ -199,7 +200,16 @@ def attach_delivery(
     pvz_code: str | None = None,
     pvz_address: str | None = None,
 ) -> Delivery:
-    """Заводит доставку к заказу. Цена остаётся нулевой до расчёта оператором."""
+    """Заводит доставку к заказу. Цена остаётся нулевой до расчёта оператором.
+
+    Сессия принимается явно и доставка кладётся в неё сама. Одной связи мало:
+    у заказа `delivery` — связь «один к одному», и присвоение ей объекта,
+    которого нет в сессии, SQLAlchemy пропускает с предупреждением
+    «not in session, add operation will not proceed». Оно уходит в лог,
+    заказ создаётся, ответ клиенту содержит выбранную доставку — а строки
+    в базе нет. Потом оператор не может ни назвать цену, ни вписать
+    трек-номер: их некуда положить.
+    """
     delivery = Delivery(
         order=order,
         method=method,
@@ -213,6 +223,7 @@ def attach_delivery(
         recipient_phone=recipient_phone,
     )
     order.delivery = delivery
+    session.add(delivery)
     return delivery
 
 

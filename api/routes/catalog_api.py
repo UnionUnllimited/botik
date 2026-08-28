@@ -2054,6 +2054,7 @@ async def manage_delivery_quote(
         # до выбора скорости, и те, где бот её не прислал. Отказывать здесь
         # нельзя — посылку всё равно отправлять, и цену за неё берут тут же.
         delivery_service.attach_delivery(
+            session,
             order,
             speed=speed or DeliverySpeed.WEEKLY,
             method=method or DeliveryMethod.CDEK,

@@ -211,6 +211,7 @@ async def create_order(
     # прочерк там, где человек честно выбрал скорость и оставил адрес.
     if draft.delivery_speed is not None:
         delivery_service.attach_delivery(
+            session,
             order,
             speed=draft.delivery_speed,
             method=draft.delivery_method or DeliveryMethod.CDEK,

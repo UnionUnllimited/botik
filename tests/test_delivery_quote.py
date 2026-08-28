@@ -18,13 +18,31 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import BigInteger, func, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 from core import texts
-from core.enums import DeliverySpeed, PaymentPurpose
-from core.models import Delivery
+from core.enums import DeliveryMethod, DeliverySpeed, PaymentPurpose
+from core.models import Delivery, Plan, Product, User
+from core.models.base import Base
 from core.services import delivery as delivery_service
+from core.services import orders as order_service
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@compiles(JSONB, "sqlite")
+def _jsonb_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    """В этом тесте JSONB хранится обычным JSON — до Postgres он не доезжает."""
+    return "JSON"
+
+
+@compiles(BigInteger, "sqlite")
+def _bigint_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    """SQLite нумерует сама только `INTEGER PRIMARY KEY`."""
+    return "INTEGER"
 
 
 class TestAwaitingQuote:
@@ -384,3 +402,96 @@ class TestClientPicksTheCarrier:
         bot = self._source("bot/src/router_catalog.py")
         body = bot[bot.index("def confirm_text") : bot.index("def confirm_keyboard")]
         assert "CARRIER_TITLES" in body
+
+
+class TestDeliveryReallyReachesTheDatabase:
+    """Доставка обязана оказаться строкой в базе, а не только в памяти.
+
+    Ловушка стоила всех заказов до 28 августа 2026: `Delivery(order=order)`
+    и присвоение `order.delivery` связь устанавливают, но объект в сессию
+    не кладут — SQLAlchemy пропускает это с предупреждением «not in session,
+    add operation will not proceed». Оно уходит в лог, заказ создаётся,
+    и ответ клиенту содержит выбранную доставку: связь-то в памяти есть.
+    А в базе строки нет, и оператор потом не может ни назвать цену,
+    ни вписать трек-номер — их некуда положить.
+
+    Заглушки сессии это не ловят по определению: там `add` ничего не значит.
+    Поэтому здесь настоящий async-движок.
+    """
+
+    @staticmethod
+    async def _session():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+    @staticmethod
+    def _draft(**kwargs):
+        values = {
+            "product_id": 1,
+            "plan_id": 1,
+            "customer_name": "Иванов Иван",
+            "customer_phone": "+79001234567",
+            "customer_city": "Самара",
+            "delivery_speed": DeliverySpeed.FAST,
+            "delivery_method": DeliveryMethod.CDEK,
+            "delivery_to_pvz": True,
+            "pvz_address": "Пункт СДЭК MSK2587",
+        }
+        values.update(kwargs)
+        return order_service.OrderDraft(**values)
+
+    async def _seed(self, session):
+        session.add_all(
+            [
+                User(id=1, tg_id=42),
+                Product(id=1, slug="basic", title="Роутер Basic", price=Decimal("8999.00"), stock=5),
+                Plan(id=1, slug="m1", title="30 дней", months=1, price=Decimal("300.00")),
+            ]
+        )
+        await session.commit()
+        return await session.get(User, 1)
+
+    @pytest.mark.asyncio
+    async def test_order_with_delivery_saves_the_row(self):
+        engine, factory = await self._session()
+        try:
+            async with factory() as session:
+                user = await self._seed(session)
+                order = await order_service.create_order(session, user=user, draft=self._draft())
+                await session.commit()
+                order_id = order.id
+
+            # Новая сессия: смотрим на то, что правда легло в базу, а не
+            # на объект, оставшийся в памяти прошлой.
+            async with factory() as session:
+                saved = await session.scalar(
+                    select(Delivery).where(Delivery.order_id == order_id)
+                )
+                assert saved is not None, "доставка не сохранилась — оператору некуда класть цену"
+                assert saved.method is DeliveryMethod.CDEK
+                assert saved.speed is DeliverySpeed.FAST
+                assert saved.pvz_address == "Пункт СДЭК MSK2587"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_order_without_a_chosen_speed_has_no_delivery(self):
+        """Клиент скорость не выбирал — доставки и не должно быть."""
+        engine, factory = await self._session()
+        try:
+            async with factory() as session:
+                user = await self._seed(session)
+                order = await order_service.create_order(
+                    session, user=user, draft=self._draft(delivery_speed=None)
+                )
+                await session.commit()
+                order_id = order.id
+
+            async with factory() as session:
+                assert await session.scalar(
+                    select(func.count()).select_from(Delivery).where(Delivery.order_id == order_id)
+                ) == 0
+        finally:
+            await engine.dispose()
