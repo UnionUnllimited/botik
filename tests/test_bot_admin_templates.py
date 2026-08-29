@@ -243,25 +243,26 @@ PAGES = {
         "sources": [
             {
                 "id": 1, "url": "https://example.com/block.lst", "title": "Заблокированное",
-                "kind": "domain", "is_enabled": True, "last_lines": 1200,
+                "kind": "direct_domain", "is_enabled": True, "last_lines": 1200,
                 "last_error": "", "last_ok_at": "2026-08-13T15:00:00+00:00",
             },
             {
                 "id": 2, "url": "https://example.com/subnets.lst", "title": "",
-                "kind": "ip", "is_enabled": False, "last_lines": 0,
+                "kind": "direct_ip", "is_enabled": False, "last_lines": 0,
                 "last_error": "HTTP 404", "last_ok_at": None,
             },
         ],
         "manual": {
-            "domain": {
+            "direct_domain": {
                 "body": "my.example.com",
                 "updated_by": "union",
                 "updated_at": "2026-08-13T15:00:00+00:00",
             },
-            "ip": {"body": "", "updated_by": "", "updated_at": None},
+            "direct_ip": {"body": "", "updated_by": "", "updated_at": None},
+            "proxy_domain": {"body": "", "updated_by": "", "updated_at": None},
         },
         "history": {
-            "domain": [
+            "direct_domain": [
                 {
                     "id": 4, "author": "union", "added": 12, "removed": 0,
                     "created_at": "2026-08-13T15:00:00+00:00",
@@ -271,7 +272,8 @@ PAGES = {
                     "created_at": "2026-08-12T09:30:00+00:00",
                 },
             ],
-            "ip": [],
+            "direct_ip": [],
+            "proxy_domain": [],
         },
         "imported": {},
         "poll_intervals": [5, 10, 15, 30, 60, 180, 360, 720, 1440],
@@ -288,12 +290,22 @@ PAGES = {
         },
         "files": [
             {
-                "kind": "domain", "title": "Домены", "name": "domains.lst",
-                "url": "https://example.com/lists/domains.lst", "lines": 51234,
+                "kind": "direct_domain", "title": "Домены мимо туннеля",
+                "name": "direct-domains.lst", "lines": 974,
+                "url": "https://example.com/lists/direct-domains.lst",
+                "setting": "chnlist_url (при chn_list 'direct')",
             },
             {
-                "kind": "ip", "title": "Подсети IPv4", "name": "ip.lst",
-                "url": "https://example.com/lists/ip.lst", "lines": 0,
+                "kind": "direct_ip", "title": "Сети мимо туннеля",
+                "name": "direct-ip.lst", "lines": 8662,
+                "url": "https://example.com/lists/direct-ip.lst",
+                "setting": "chnroute_url",
+            },
+            {
+                "kind": "proxy_domain", "title": "Домены через туннель",
+                "name": "proxy-domains.lst", "lines": 0,
+                "url": "https://example.com/lists/proxy-domains.lst",
+                "setting": "gfwlist_url (при gfwlist_update '1')",
             },
         ],
         "last_build": {

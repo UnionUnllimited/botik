@@ -12,6 +12,7 @@ from typing import ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
+from core.models import ListKind
 from core.services.domain_lists import clean_domains, clean_ips, merge
 
 
@@ -63,20 +64,20 @@ class TestCleanIps:
 
 class TestMerge:
     def test_duplicates_collapse_and_sorted(self):
-        merged = merge([["b.com", "a.com"], ["a.com"]], "", "domain")
+        merged = merge([["b.com", "a.com"], ["a.com"]], "", ListKind.DIRECT_DOMAIN)
         assert merged == ["a.com", "b.com"]
 
     def test_manual_list_is_cleaned_too(self):
         """Оператор вставляет что придётся — причёсываем тем же способом."""
-        merged = merge([["a.com"]], "https://Z.COM/path\n# коммент\n\nмусор тут", "domain")
+        merged = merge([["a.com"]], "https://Z.COM/path\n# коммент\n\nмусор тут", ListKind.DIRECT_DOMAIN)
         assert merged == ["a.com", "z.com"]
 
     def test_manual_ip_list_uses_ip_rules(self):
-        merged = merge([["1.2.3.4"]], "10.0.0.0/8\nexample.com", "ip")
+        merged = merge([["1.2.3.4"]], "10.0.0.0/8\nexample.com", ListKind.DIRECT_IP)
         assert merged == ["1.2.3.4", "10.0.0.0/8"]
 
     def test_empty_everything_is_not_an_error(self):
-        assert merge([], "", "domain") == []
+        assert merge([], "", ListKind.DIRECT_DOMAIN) == []
 
 
 class TestStorage:
@@ -87,8 +88,8 @@ class TestStorage:
         from core.services import domain_lists
 
         monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
-        domain_lists.write_list("domain", ["a.com", "b.com"])
-        assert domain_lists.read_list("domain") == "a.com\nb.com\n"
+        domain_lists.write_list(ListKind.DIRECT_DOMAIN, ["a.com", "b.com"])
+        assert domain_lists.read_list(ListKind.DIRECT_DOMAIN) == "a.com\nb.com\n"
 
     def test_missing_file_is_empty_not_error(self, tmp_path, monkeypatch):
         """Сборки ещё не было — отдаём пустое, а не падаем."""
@@ -96,7 +97,7 @@ class TestStorage:
         from core.services import domain_lists
 
         monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
-        assert domain_lists.read_list("ip") == ""
+        assert domain_lists.read_list(ListKind.DIRECT_IP) == ""
 
     def test_no_temp_file_left_behind(self, tmp_path, monkeypatch):
         """Запись атомарная: роутер не должен получить половину списка."""
@@ -104,7 +105,7 @@ class TestStorage:
         from core.services import domain_lists
 
         monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
-        domain_lists.write_list("ip", ["1.2.3.4"])
+        domain_lists.write_list(ListKind.DIRECT_IP, ["1.2.3.4"])
         leftovers = list((tmp_path / "lists").glob("*.tmp"))
         assert leftovers == []
 
@@ -113,24 +114,24 @@ class TestStorage:
         from core.services import domain_lists
 
         monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
-        domain_lists.write_list("domain", [])
-        assert domain_lists.read_list("domain") == ""
+        domain_lists.write_list(ListKind.DIRECT_DOMAIN, [])
+        assert domain_lists.read_list(ListKind.DIRECT_DOMAIN) == ""
 
 
 class TestServing:
     """Раздача открыта: за списком приходит прошивка, а не наш процесс."""
 
     def test_served_without_token(self, client):
-        assert client.get("/lists/domains.lst").status_code == 200
-        assert client.get("/lists/ip.lst").status_code == 200
+        assert client.get("/lists/direct-domains.lst").status_code == 200
+        assert client.get("/lists/direct-ip.lst").status_code == 200
 
     def test_served_as_plain_text(self, client):
-        response = client.get("/lists/domains.lst")
+        response = client.get("/lists/direct-domains.lst")
         assert response.headers["content-type"].startswith("text/plain")
 
     def test_cacheable(self, client):
         """Парк тянет списки разом — без кеша это лишняя нагрузка на ровном месте."""
-        assert "max-age" in client.get("/lists/ip.lst").headers.get("cache-control", "")
+        assert "max-age" in client.get("/lists/direct-ip.lst").headers.get("cache-control", "")
 
 
 class TestAdminEndpointsAccess:
@@ -179,7 +180,7 @@ class TestAdminEndpointsAccess:
 
         monkeypatch.setattr(settings.api, "fleet_token", SecretStr("lists-token"))
         assert client.get("/api/v1/fleet/lists").status_code == 401
-        assert client.get("/lists/domains.lst").status_code == 200
+        assert client.get("/lists/direct-domains.lst").status_code == 200
 
 
 class TestUpload:
@@ -198,7 +199,7 @@ class TestUpload:
         """Пустой bucket выключает выкладку — это не ошибка сборки."""
         from core.services import domain_lists
 
-        assert await domain_lists.upload({"domain": ["a.com"]}, {}) is False
+        assert await domain_lists.upload({ListKind.DIRECT_DOMAIN: ["a.com"]}, {}) is False
 
     @pytest.mark.asyncio
     async def test_partial_config_is_not_enough(self):
@@ -206,7 +207,7 @@ class TestUpload:
         from core.services import domain_lists
 
         half = {"lists_s3_bucket": "b", "lists_s3_endpoint": "https://storage.example"}
-        assert await domain_lists.upload({"domain": ["a.com"]}, half) is False
+        assert await domain_lists.upload({ListKind.DIRECT_DOMAIN: ["a.com"]}, half) is False
 
     @pytest.mark.asyncio
     async def test_broken_storage_does_not_raise(self, monkeypatch):
@@ -217,7 +218,7 @@ class TestUpload:
             raise RuntimeError("хранилище недоступно")
 
         monkeypatch.setattr(domain_lists, "_s3_client", _boom)
-        assert await domain_lists.upload({"domain": ["a.com"]}, self.CONF) is False
+        assert await domain_lists.upload({ListKind.DIRECT_DOMAIN: ["a.com"]}, self.CONF) is False
 
 
 class TestSecretsNotLeaked:
@@ -235,24 +236,24 @@ class TestDiffCounts:
     def test_added_and_removed(self):
         from core.services.domain_lists import diff_counts
 
-        assert diff_counts("a.com\nb.com", "b.com\nc.com", "domain") == (1, 1)
+        assert diff_counts("a.com\nb.com", "b.com\nc.com", ListKind.DIRECT_DOMAIN) == (1, 1)
 
     def test_reordering_is_not_a_change(self):
         """Иначе перестановка строк давала бы «+40 −40» на правке одной буквы."""
         from core.services.domain_lists import diff_counts
 
-        assert diff_counts("a.com\nb.com", "b.com\na.com", "domain") == (0, 0)
+        assert diff_counts("a.com\nb.com", "b.com\na.com", ListKind.DIRECT_DOMAIN) == (0, 0)
 
     def test_case_and_scheme_are_not_a_change(self):
         from core.services.domain_lists import diff_counts
 
-        assert diff_counts("a.com", "https://A.COM/path", "domain") == (0, 0)
+        assert diff_counts("a.com", "https://A.COM/path", ListKind.DIRECT_DOMAIN) == (0, 0)
 
     def test_garbage_lines_do_not_count(self):
         """Строку, которую сборка отбросит, история не считает добавленной."""
         from core.services.domain_lists import diff_counts
 
-        assert diff_counts("a.com", "a.com\nне домен\n\n# коммент", "domain") == (0, 0)
+        assert diff_counts("a.com", "a.com\nне домен\n\n# коммент", ListKind.DIRECT_DOMAIN) == (0, 0)
 
 
 class TestImportFromUrl:
@@ -260,7 +261,7 @@ class TestImportFromUrl:
     async def test_rejects_non_http(self):
         from core.services.domain_lists import import_from_url
 
-        body, error = await import_from_url("ftp://example.com/list.lst", "domain")
+        body, error = await import_from_url("ftp://example.com/list.lst", ListKind.DIRECT_DOMAIN)
         assert not body
         assert "http" in error
 
@@ -273,7 +274,7 @@ class TestImportFromUrl:
             return "# заголовок\nhttps://A.COM/path\nмусор\nb.com\n", "", ""
 
         monkeypatch.setattr(domain_lists, "fetch", _fetch)
-        body, error = await domain_lists.import_from_url("https://e.com/l.lst", "domain")
+        body, error = await domain_lists.import_from_url("https://e.com/l.lst", ListKind.DIRECT_DOMAIN)
         assert error == ""
         assert body == "a.com\nb.com"
 
@@ -286,7 +287,7 @@ class TestImportFromUrl:
             return "# только комментарии\n", "", ""
 
         monkeypatch.setattr(domain_lists, "fetch", _fetch)
-        body, error = await domain_lists.import_from_url("https://e.com/l.lst", "domain")
+        body, error = await domain_lists.import_from_url("https://e.com/l.lst", ListKind.DIRECT_DOMAIN)
         assert not body
         assert error
 
@@ -301,23 +302,23 @@ class TestManualFingerprint:
     def test_change_moves_the_fingerprint(self):
         from core.services.domain_lists import manual_fingerprint
 
-        before = manual_fingerprint({"domain": "a.com", "ip": ""})
-        after = manual_fingerprint({"domain": "a.com\nb.com", "ip": ""})
+        before = manual_fingerprint({ListKind.DIRECT_DOMAIN: "a.com", ListKind.DIRECT_IP: ""})
+        after = manual_fingerprint({ListKind.DIRECT_DOMAIN: "a.com\nb.com", ListKind.DIRECT_IP: ""})
         assert before != after
 
     def test_reordering_does_not(self):
         """Иначе каждое сохранение запускало бы перекачку всех источников."""
         from core.services.domain_lists import manual_fingerprint
 
-        one = manual_fingerprint({"domain": "a.com\nb.com", "ip": ""})
-        two = manual_fingerprint({"domain": "b.com\na.com", "ip": ""})
+        one = manual_fingerprint({ListKind.DIRECT_DOMAIN: "a.com\nb.com", ListKind.DIRECT_IP: ""})
+        two = manual_fingerprint({ListKind.DIRECT_DOMAIN: "b.com\na.com", ListKind.DIRECT_IP: ""})
         assert one == two
 
     def test_ip_list_counts_too(self):
         from core.services.domain_lists import manual_fingerprint
 
-        before = manual_fingerprint({"domain": "a.com", "ip": ""})
-        after = manual_fingerprint({"domain": "a.com", "ip": "10.0.0.0/8"})
+        before = manual_fingerprint({ListKind.DIRECT_DOMAIN: "a.com", ListKind.DIRECT_IP: ""})
+        after = manual_fingerprint({ListKind.DIRECT_DOMAIN: "a.com", ListKind.DIRECT_IP: "10.0.0.0/8"})
         assert before != after
 
 
@@ -327,20 +328,21 @@ class TestLocalPublish:
     def test_writes_both_files(self, tmp_path):
         from core.services.domain_lists import publish_local
 
-        assert publish_local(str(tmp_path), {"domain": ["a.com"], "ip": ["1.2.3.4"]}) is True
-        assert (tmp_path / "domains.lst").read_text(encoding="utf-8") == "a.com\n"
-        assert (tmp_path / "ip.lst").read_text(encoding="utf-8") == "1.2.3.4\n"
+        built = {ListKind.DIRECT_DOMAIN: ["a.com"], ListKind.DIRECT_IP: ["1.2.3.4"]}
+        assert publish_local(str(tmp_path), built) is True
+        assert (tmp_path / "direct-domains.lst").read_text(encoding="utf-8") == "a.com\n"
+        assert (tmp_path / "direct-ip.lst").read_text(encoding="utf-8") == "1.2.3.4\n"
 
     def test_empty_path_means_do_not_publish(self, tmp_path):
         from core.services.domain_lists import publish_local
 
-        assert publish_local("", {"domain": ["a.com"]}) is False
+        assert publish_local("", {ListKind.DIRECT_DOMAIN: ["a.com"]}) is False
 
     def test_no_temp_file_left_behind(self, tmp_path):
         """Запись атомарная: роутер не должен получить половину списка."""
         from core.services.domain_lists import publish_local
 
-        publish_local(str(tmp_path), {"domain": ["a.com"]})
+        publish_local(str(tmp_path), {ListKind.DIRECT_DOMAIN: ["a.com"]})
         assert list(tmp_path.glob("*.tmp")) == []
 
     def test_unwritable_path_does_not_raise(self, tmp_path):
@@ -349,7 +351,7 @@ class TestLocalPublish:
 
         busy = tmp_path / "file"
         busy.write_text("не каталог", encoding="utf-8")
-        assert publish_local(str(busy), {"domain": ["a.com"]}) is False
+        assert publish_local(str(busy), {ListKind.DIRECT_DOMAIN: ["a.com"]}) is False
 
 
 class TestListsAreSeparate:
@@ -362,8 +364,10 @@ class TestListsAreSeparate:
     def test_file_names_do_not_collide(self):
         from core.services.domain_lists import FILE_NAMES
 
-        assert FILE_NAMES["domain"] != FILE_NAMES["ip"]
-        assert set(FILE_NAMES) == {"domain", "ip"}
+        assert set(FILE_NAMES) == set(ListKind.ALL)
+        assert len(set(FILE_NAMES.values())) == len(ListKind.ALL), (
+            "два вида пишутся в один файл — один затрёт другой"
+        )
 
     def test_written_separately(self, tmp_path, monkeypatch):
         """Запись одного вида не трогает файл другого."""
@@ -371,17 +375,17 @@ class TestListsAreSeparate:
         from core.services import domain_lists
 
         monkeypatch.setattr(settings.app, "media_dir", str(tmp_path))
-        domain_lists.write_list("domain", ["a.com"])
-        domain_lists.write_list("ip", ["1.2.3.4"])
-        assert domain_lists.read_list("domain") == "a.com\n"
-        assert domain_lists.read_list("ip") == "1.2.3.4\n"
+        domain_lists.write_list(ListKind.DIRECT_DOMAIN, ["a.com"])
+        domain_lists.write_list(ListKind.DIRECT_IP, ["1.2.3.4"])
+        assert domain_lists.read_list(ListKind.DIRECT_DOMAIN) == "a.com\n"
+        assert domain_lists.read_list(ListKind.DIRECT_IP) == "1.2.3.4\n"
 
-        domain_lists.write_list("domain", ["a.com", "b.com"])
-        assert domain_lists.read_list("ip") == "1.2.3.4\n"
+        domain_lists.write_list(ListKind.DIRECT_DOMAIN, ["a.com", "b.com"])
+        assert domain_lists.read_list(ListKind.DIRECT_IP) == "1.2.3.4\n"
 
     def test_served_at_different_urls(self, client):
-        first = client.get("/lists/domains.lst")
-        second = client.get("/lists/ip.lst")
+        first = client.get("/lists/direct-domains.lst")
+        second = client.get("/lists/direct-ip.lst")
         assert first.status_code == 200
         assert second.status_code == 200
 
@@ -395,13 +399,83 @@ class TestListsAreSeparate:
         """
         from core.services.domain_lists import CLEANERS
 
-        assert CLEANERS["domain"]("1.2.3.4") == []
-        assert CLEANERS["ip"]("example.com") == []
+        assert CLEANERS[ListKind.DIRECT_DOMAIN]("1.2.3.4") == []
+        assert CLEANERS[ListKind.DIRECT_IP]("example.com") == []
 
     def test_manual_list_is_cleaned_by_kind_in_merge(self):
         """Свой список чистится внутри merge — он приходит сырым от человека."""
         from core.services.domain_lists import merge
 
         mixed = "1.2.3.4\nexample.com"
-        assert merge([], mixed, "domain") == ["example.com"]
-        assert merge([], mixed, "ip") == ["1.2.3.4"]
+        assert merge([], mixed, ListKind.DIRECT_DOMAIN) == ["example.com"]
+        assert merge([], mixed, ListKind.DIRECT_IP) == ["1.2.3.4"]
+
+
+class TestOrderMatchesTheRepository:
+    """Порядок строк повторяет `parts/build.sh` из репозитория списков.
+
+    Собранное у нас и собранное скриптом должно совпадать строка в строку:
+    иначе не сверить глазами, что роутер получил именно то, что лежит
+    в `domensrouter`, — а diff в тысячу строк никто читать не станет.
+    """
+
+    def test_networks_sort_numerically(self):
+        """`sort -t. -k1,1n -k2,2n -k3,3n -k4,4n`, а не побайтово.
+
+        Побайтовая сортировка ставит `10.0.0.0` между `1.0.0.0` и `2.0.0.0`.
+        """
+        given = ["2.0.0.0/8", "10.0.0.0/8", "1.0.0.0/8", "9.9.9.9"]
+        assert merge([given], "", ListKind.DIRECT_IP) == [
+            "1.0.0.0/8",
+            "2.0.0.0/8",
+            "9.9.9.9",
+            "10.0.0.0/8",
+        ]
+
+    def test_same_network_sorts_by_mask(self):
+        given = ["10.0.0.0/16", "10.0.0.0/8"]
+        assert merge([given], "", ListKind.DIRECT_IP) == ["10.0.0.0/8", "10.0.0.0/16"]
+
+    def test_domains_sort_bytewise(self):
+        """`LC_ALL=C sort -u`: дефис (0x2D) раньше цифр и букв."""
+        given = ["ya.ru", "a-b.ru", "ab.ru", "a.ru"]
+        assert merge([given], "", ListKind.DIRECT_DOMAIN) == ["a-b.ru", "a.ru", "ab.ru", "ya.ru"]
+
+
+class TestThreeListsHaveDifferentMeanings:
+    """Три списка, и перепутать их дороже всего остального в этом модуле.
+
+    Первые два уводят мимо туннеля, третий — в туннель. Ошибка в одну сторону
+    пустит банки и госуслуги через зарубежный сервер, в другую — оставит
+    заблокированное без обхода.
+    """
+
+    def test_all_three_kinds_are_built(self):
+        from core.services.domain_lists import CLEANERS, FILE_NAMES, PASSWALL_SETTINGS
+
+        assert set(ListKind.ALL) == {"direct_domain", "direct_ip", "proxy_domain"}
+        for mapping in (CLEANERS, FILE_NAMES, PASSWALL_SETTINGS):
+            assert set(mapping) == set(ListKind.ALL)
+
+    def test_proxy_list_is_cleaned_as_domains(self):
+        """Через туннель идут домены, а не сети: чистильщик тот же, что у direct."""
+        from core.services.domain_lists import CLEANERS, clean_domains
+
+        assert CLEANERS[ListKind.PROXY_DOMAIN] is clean_domains
+
+    def test_settings_do_not_collide(self):
+        """Каждый список прописывается в свою настройку PassWall."""
+        from core.services.domain_lists import PASSWALL_SETTINGS
+
+        assert len(set(PASSWALL_SETTINGS.values())) == len(ListKind.ALL)
+        assert "chnlist_url" in PASSWALL_SETTINGS[ListKind.DIRECT_DOMAIN]
+        assert "chnroute_url" in PASSWALL_SETTINGS[ListKind.DIRECT_IP]
+        assert "gfwlist_url" in PASSWALL_SETTINGS[ListKind.PROXY_DOMAIN]
+
+    def test_old_names_are_gone(self):
+        """Смысл списков стал обратным: отдавать новое по старому адресу
+        значит молча вывернуть маршрутизацию у того, кто на него смотрит."""
+        from core.services.domain_lists import FILE_NAMES
+
+        assert "domains.lst" not in FILE_NAMES.values()
+        assert "ip.lst" not in FILE_NAMES.values()

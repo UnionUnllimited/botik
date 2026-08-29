@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.dates import utcnow
-from core.models import DomainBuild, DomainSource, ManualList, ManualListRevision
+from core.models import DomainBuild, DomainSource, ListKind, ManualList, ManualListRevision
 from core.services import settings_service
 
 log = structlog.get_logger(__name__)
@@ -73,7 +73,11 @@ def clean_ips(raw: str) -> list[str]:
     return out
 
 
-CLEANERS = {"domain": clean_domains, "ip": clean_ips}
+CLEANERS = {
+    ListKind.DIRECT_DOMAIN: clean_domains,
+    ListKind.DIRECT_IP: clean_ips,
+    ListKind.PROXY_DOMAIN: clean_domains,
+}
 
 
 def manual_fingerprint(manual: dict[str, str]) -> str:
@@ -122,27 +126,70 @@ async def fetch(
     return response.text, (response.headers.get("ETag") or "")[:200], ""
 
 
+def _network_key(value: str) -> tuple[int, int, int, int, int]:
+    """Ключ числовой сортировки сетей — по октетам, потом по маске.
+
+    `sort -t. -k1,1n -k2,2n -k3,3n -k4,4n` из `parts/build.sh` репозитория.
+    Побайтовая сортировка поставила бы `10.0.0.0` после `1.0.0.0`, но перед
+    `2.0.0.0` — список стал бы нечитаемым, а разница с репозиторием вылезала
+    бы в каждом diff.
+    """
+    address, _, mask = value.partition("/")
+    octets = [int(part) for part in address.split(".")]
+    return (*octets, int(mask or 32))
+
+
 def merge(parts: list[list[str]], manual: str, kind: str) -> list[str]:
-    """Склеивает куски со своим списком: уникальные значения по алфавиту.
+    """Склеивает куски со своим списком: уникальные значения по порядку.
 
     Свой список проходит ту же чистку, что и скачанное. Оператор вставляет
     в поле что придётся — с `https://`, с комментарием, с пустой строкой,
     — и молча пропустить такую строку хуже, чем причесать её тем же способом.
+
+    Порядок повторяет `parts/build.sh` репозитория: домены побайтово
+    (`LC_ALL=C sort -u`), сети численно по октетам. Собранное у нас и собранное
+    скриптом должно совпадать строка в строку — иначе не сверить, что роутер
+    получил именно то, что лежит в репозитории.
     """
     cleaner = CLEANERS[kind]
     values: set[str] = set()
     for part in parts:
         values.update(part)
     values.update(cleaner(manual))
+    if kind == ListKind.DIRECT_IP:
+        return sorted(values, key=_network_key)
+    # Байтовый порядок, а не алфавитный: `LC_ALL=C` у списков в репозитории.
+    # Значения уже приведены к нижнему регистру и состоят из ASCII, поэтому
+    # обычная сортировка строк и есть байтовая.
     return sorted(values)
 
 
 # ── Сборка ────────────────────────────────────────────────────────────────────
 
-FILE_NAMES = {"domain": "domains.lst", "ip": "ip.lst"}
-"""Имена файлов, по которым роутер их забирает. Прежние `domenchik.lst`
-и `ipchik.lst` не переносим: адрес в прошивке всё равно меняется, а имя,
-по которому не догадаться о содержимом, стоило заменить сразу."""
+FILE_NAMES = {
+    ListKind.DIRECT_DOMAIN: "direct-domains.lst",
+    ListKind.DIRECT_IP: "direct-ip.lst",
+    ListKind.PROXY_DOMAIN: "proxy-domains.lst",
+}
+"""Имена файлов, по которым роутер их забирает.
+
+Названы по смыслу, а не по репозиторию (`test.lst`, `testip.lst`,
+`testproxy.lst`): адрес попадает в конфиг PassWall и живёт там годами,
+и через полгода «test.lst» не скажет, что внутри и куда оно ведёт.
+
+Прежние `domains.lst` и `ip.lst` убраны намеренно. Смысл списков стал
+обратным — раньше это было «через туннель», теперь «мимо», — и отдавать
+новое содержимое по старому адресу значило бы молча вывернуть маршрутизацию
+у любого роутера, который на него смотрит."""
+
+PASSWALL_SETTINGS = {
+    ListKind.DIRECT_DOMAIN: "chnlist_url (при chn_list 'direct')",
+    ListKind.DIRECT_IP: "chnroute_url",
+    ListKind.PROXY_DOMAIN: "gfwlist_url (при gfwlist_update '1')",
+}
+"""Куда какой адрес прописывается в прошивке. Показывается рядом со ссылкой
+на странице списков: перепутать местами `chnlist_url` и `gfwlist_url` — значит
+пустить российские банки через туннель, а заблокированное напрямую."""
 
 
 def lists_dir() -> Path:
@@ -275,7 +322,7 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
             *(refetch(s) for s in sources if s.id not in bodies and not s.last_error)
         )
 
-    parts: dict[str, list[list[str]]] = {"domain": [], "ip": []}
+    parts: dict[str, list[list[str]]] = {kind: [] for kind in ListKind.ALL}
     for source in sources:
         body = bodies.get(source.id)
         if body is None:
@@ -288,7 +335,7 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
 
     counts: dict[str, int] = {}
     built: dict[str, list[str]] = {}
-    for kind in ("domain", "ip"):
+    for kind in ListKind.ALL:
         values = merge(parts[kind], manual.get(kind, ""), kind)
         write_list(kind, values)
         counts[kind] = len(values)
@@ -299,8 +346,11 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
     # домен, раздающий те же файлы.
     publish_local(conf.get("lists_local_dir", ""), built)
     record.uploaded = await upload(built, conf)
-    record.domains = counts["domain"]
-    record.ips = counts["ip"]
+    # В истории сборок две колонки, а списков теперь три: домены считаем
+    # вместе — и те, что мимо туннеля, и те, что через. Разводить их значило
+    # бы менять схему ради строки, которую читают глазами раз в месяц.
+    record.domains = counts[ListKind.DIRECT_DOMAIN] + counts[ListKind.PROXY_DOMAIN]
+    record.ips = counts[ListKind.DIRECT_IP]
     record.failed_sources = failed
     record.finished_at = utcnow()
     log.info("domain_lists.built", domains=record.domains, ips=record.ips, failed=failed)

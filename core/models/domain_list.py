@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import ClassVar
 
 from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,16 +20,38 @@ from core.models.base import Base, BigIntPkMixin
 
 
 class ListKind:
-    """Что лежит в источнике: домены или подсети IPv4.
+    """Какой из трёх списков собирает источник.
+
+    PassWall на роутере читает три файла, и у каждого своё назначение:
+
+      * `DIRECT_DOMAIN` → `chnlist_url` при `chn_list 'direct'` — домены
+        **мимо** туннеля. Российские сайты, банки, госуслуги: через туннель
+        они либо не откроются вовсе, либо будут отвечать как из-за рубежа.
+      * `DIRECT_IP` → `chnroute_url` — сети **мимо** туннеля. Ими же держатся
+        напрямую все `*.ru`: PassWall отбрасывает голые зоны из списка доменов.
+      * `PROXY_DOMAIN` → `gfwlist_url` при `gfwlist_update '1'` — домены
+        **через** туннель. Короткий список: наша инфраструктура и то, что
+        заблокировано у российских хостеров.
+
+    Всё, чего нет ни в одном списке, идёт по режиму по умолчанию.
+    При совпадении выигрывает proxy: правила добавляются в порядке
+    `use_proxy_list` → `use_gfw_list` → `chn_list`, срабатывает первое.
 
     Не enum: значение уезжает в чужую админку по HTTP и обратно, а лишний
-    тип в схеме ради двух вариантов усложняет и миграцию, и разбор ответа.
+    тип в схеме усложняет и миграцию, и разбор ответа.
     """
 
-    DOMAIN = "domain"
-    IP = "ip"
+    DIRECT_DOMAIN = "direct_domain"
+    DIRECT_IP = "direct_ip"
+    PROXY_DOMAIN = "proxy_domain"
 
-    ALL = (DOMAIN, IP)
+    ALL = (DIRECT_DOMAIN, DIRECT_IP, PROXY_DOMAIN)
+
+    TITLES: ClassVar[dict[str, str]] = {
+        DIRECT_DOMAIN: "Домены мимо туннеля",
+        DIRECT_IP: "Сети мимо туннеля",
+        PROXY_DOMAIN: "Домены через туннель",
+    }
 
 
 class DomainSource(BigIntPkMixin, Base):
@@ -45,7 +68,7 @@ class DomainSource(BigIntPkMixin, Base):
     title: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     """Понятное имя для страницы: «Discord», «Подсети Telegram»."""
 
-    kind: Mapped[str] = mapped_column(String(16), default=ListKind.DOMAIN, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), default=ListKind.DIRECT_DOMAIN, nullable=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 

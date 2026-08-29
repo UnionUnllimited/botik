@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 
+from core.models import ListKind
 from core.services import domain_lists
 
 router = APIRouter(prefix="/lists", tags=["lists"])
@@ -29,18 +30,25 @@ def _plain(body: str) -> Response:
     )
 
 
-@router.get("/domains.lst")
-async def domains() -> Response:
-    """Домены. Пустой ответ означает, что сборки ещё не было.
+@router.get("/direct-domains.lst")
+async def direct_domains() -> Response:
+    """Домены мимо туннеля — `chnlist_url` при `chn_list 'direct'`.
 
-    Пустое, а не 404: прошивка на 404 может решить, что адрес сменился,
-    и записать себе пустой список — разницы в итоге никакой, а разбираться
-    с этим на роутере у клиента куда сложнее, чем посмотреть сюда.
+    Пустой ответ означает, что сборки ещё не было. Пустое, а не 404: прошивка
+    на 404 может решить, что адрес сменился, и записать себе пустой список —
+    разницы в итоге никакой, а разбираться с этим на роутере у клиента куда
+    сложнее, чем посмотреть сюда.
     """
-    return _plain(domain_lists.read_list("domain"))
+    return _plain(domain_lists.read_list(ListKind.DIRECT_DOMAIN))
 
 
-@router.get("/ip.lst")
-async def ips() -> Response:
-    """Подсети IPv4."""
-    return _plain(domain_lists.read_list("ip"))
+@router.get("/direct-ip.lst")
+async def direct_ip() -> Response:
+    """Сети мимо туннеля — `chnroute_url`."""
+    return _plain(domain_lists.read_list(ListKind.DIRECT_IP))
+
+
+@router.get("/proxy-domains.lst")
+async def proxy_domains() -> Response:
+    """Домены через туннель — `gfwlist_url` при `gfwlist_update '1'`."""
+    return _plain(domain_lists.read_list(ListKind.PROXY_DOMAIN))

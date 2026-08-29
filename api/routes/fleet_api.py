@@ -1549,7 +1549,7 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
                 "updated_by": row.updated_by if row else "",
                 "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
             }
-            for kind, row in ((k, manual.get(k)) for k in ("domain", "ip"))
+            for kind, row in ((k, manual.get(k)) for k in ListKind.ALL)
         },
         "config": {
             key: ("задан" if value else "")
@@ -1568,8 +1568,12 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
                 "name": domain_lists.FILE_NAMES[kind],
                 "url": f"{base}/lists/{domain_lists.FILE_NAMES[kind]}",
                 "lines": len(domain_lists.read_list(kind).splitlines()),
+                # Куда этот адрес прописывается в прошивке. Перепутать
+                # `chnlist_url` с `gfwlist_url` — значит пустить банки через
+                # туннель, а заблокированное напрямую.
+                "setting": domain_lists.PASSWALL_SETTINGS[kind],
             }
-            for kind, title in (("domain", "Домены"), ("ip", "Подсети IPv4"))
+            for kind, title in ListKind.TITLES.items()
         ],
         "last_build": (
             {
@@ -1590,7 +1594,7 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
 async def source_add(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
     """Добавляет источник. Адрес уникален — тот же список дважды не нужен."""
     url = str(payload.get("url") or "").strip()
-    kind = str(payload.get("kind") or "domain").strip()
+    kind = str(payload.get("kind") or ListKind.DIRECT_DOMAIN).strip()
     if not url.startswith(("http://", "https://")):
         return {"ok": False, "error": "Адрес должен начинаться с http:// или https://"}
     if kind not in ListKind.ALL:
