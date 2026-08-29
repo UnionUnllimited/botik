@@ -27,7 +27,7 @@
       <a href="/#catalog">модели</a>
       <a href="/#faq">вопросы</a>
     </nav>
-    {% if bot_url %}<a class="btn btn--sm" href="{{ bot_url }}">Открыть чат</a>{% endif %}
+    {% if bot_url %}<a class="btn btn--sm" href="{{ bot_url }}">Открыть бот</a>{% endif %}
   </div>
 </header>
 
@@ -37,8 +37,8 @@
       <p class="eyebrow">Инструкция</p>
       <h1>Всё про ваш роутер</h1>
       <p class="page__lead">Пароль от Wi-Fi, срок подписки, продление и что делать,
-        если интернет вдруг пропал. Роутер только что приехал — начните
-        с <a href="/instruction">подключения</a>.</p>
+        если интернет вдруг пропал. Вы только что получили и распаковали
+        роутер — начните с <a href="/instruction">подключения</a>.</p>
 
       <div class="grid grid--auto" style="margin-top: 32px">
         {% for section in sections %}
@@ -55,7 +55,7 @@
   <section class="section"><div class="cta">
     <div class="wrap">
       <h2>Не нашли ответа?</h2>
-      <p>Напишите в чат — там же видно состояние роутера и срок подписки.</p>
+      <p>Напишите в бот — там же видно состояние роутера и срок подписки.</p>
       {% if bot_url %}<a class="btn" href="{{ bot_url }}">Написать в Telegram</a>{% endif %}
     </div></div>
   </section>

@@ -256,9 +256,9 @@ class TestRendering:
         html = self._render(content)
         assert "6 900 ₽" in html
         assert "?start=buy_" in html
-        # «чат», а не «бот»: для покупателя это переписка в Telegram,
-        # а слово «бот» он читает как «с живым человеком говорить не дадут».
-        assert "Купить в чате" in html
+        # «бот», а не «чат»: заказ оформляется именно в боте, а «чат»
+        # покупатель принимает за групповой чат или канал.
+        assert "Купить в боте" in html
         assert "3 LAN" in html
 
     @pytest.mark.asyncio
@@ -375,10 +375,12 @@ class TestForbiddenTerm:
 
 
 class TestWordingForBuyers:
-    """Для покупателя это переписка в Telegram, а не «бот».
+    """Заказ оформляется в **боте**, и называть его надо ботом.
 
-    Слово «бот» человек читает как «с живым человеком поговорить не дадут»,
-    хотя отвечает там оператор. На витрине везде «чат».
+    Решение заказчика от 28 августа 2026, обратное прежнему. С 25 августа
+    на витрине писали «чат»: считалось, что слово «бот» читается как
+    «с живым человеком поговорить не дадут». Заказчик решил иначе — «чат»
+    покупатель принимает за групповой чат или канал, а идёт он именно в бота.
     """
 
     def _visible_texts(self) -> str:
@@ -391,14 +393,18 @@ class TestWordingForBuyers:
         blocks = landing.STEPS + landing.FEATURES + landing.INSTRUCTION_STEPS + landing.GUIDE_SECTIONS
         return pages + " ".join(item["title"] + item["text"] for item in blocks)
 
-    def test_no_bot_in_client_facing_text(self):
+    def test_no_chat_in_client_facing_text(self):
         import re
 
-        # Именно слово, а не часть «работает» или «ноутбук».
-        assert not re.search(r"\bбот\w*", self._visible_texts(), flags=re.IGNORECASE)
+        # Именно слово целиком: «отвечать» и «начать» под запрет не попадают.
+        found = re.findall(r"\bчат\w*", self._visible_texts(), flags=re.IGNORECASE)
+        assert not found, f"осталось слово «чат»: {sorted(set(found))}"
 
-    def test_chat_is_used_instead(self):
-        assert "чат" in self._visible_texts().lower()
+    def test_bot_is_used_instead(self):
+        import re
+
+        # Тоже словом: «работает» и «ноутбук» содержат «бот» внутри.
+        assert re.search(r"\bбот\w*", self._visible_texts(), flags=re.IGNORECASE)
 
 
 class TestSetupStepsMatchTheRouter:

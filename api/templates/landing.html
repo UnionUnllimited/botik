@@ -50,7 +50,7 @@
           <p class="hero__lead">{{ hero_subtitle }}</p>
           <div class="hero__actions">
             <a class="btn" href="#catalog">Смотреть модели</a>
-            {% if bot_url %}<a class="btn btn--ghost" href="{{ bot_url }}">Купить в чате</a>{% endif %}
+            {% if bot_url %}<a class="btn btn--ghost" href="{{ bot_url }}">Купить в боте</a>{% endif %}
           </div>
           <ul class="hero__facts">
             <li>настраивать нечего</li>
@@ -59,7 +59,7 @@
           </ul>
         </div>
 
-        {# Картинка первого экрана — та же, что баннер над меню чата: клиент
+        {# Картинка первого экрана — та же, что баннер над меню бота: клиент
            приходит оттуда и видит то же изображение, переход не рвётся. #}
         <div class="hero__media">
           <div class="grid-bg" aria-hidden="true"></div>
@@ -138,7 +138,7 @@
           {% if product.description %}<p class="product__text">{{ product.description }}</p>{% endif %}
 
           <div class="product__actions">
-            <a class="btn" href="{{ product.buy_url }}">Купить в чате</a>
+            <a class="btn" href="{{ product.buy_url }}">Купить в боте</a>
             <span class="stock{% if not product.in_stock %} stock--out{% endif %}">
               {% if product.in_stock %}В наличии{% elif product.preorder %}Под заказ{% else %}Нет в наличии{% endif %}
             </span>
@@ -166,7 +166,7 @@
         </li>
         {% endfor %}
       </ol>
-      {% if bot_url %}<a class="btn" href="{{ bot_url }}">Купить в чате</a>{% endif %}
+      {% if bot_url %}<a class="btn" href="{{ bot_url }}">Купить в боте</a>{% endif %}
     </div>
   </section>
   {% endif %}
@@ -195,8 +195,8 @@
       <p class="eyebrow eyebrow--accent">Четыре шага</p>
       <h2>Как это работает</h2>
       <p class="section__note section__note--wide">
-        От выбора модели до работающего интернета — четыре шага,
-        и три из них занимают минуту в чате.
+        От выбора модели до интернета без ограничений — четыре шага,
+        и три из них занимают минуту в боте.
       </p>
       <ol class="steps">
         {% for step in steps %}
@@ -217,8 +217,9 @@
       <p class="eyebrow eyebrow--accent">Подписка</p>
       <h2>Сроки подписки</h2>
       <p class="section__note section__note--wide">
-        Срок выбирается вместе с роутером. Отсчёт начинается не с оплаты,
-        а с первого включения дома — дни доставки не сгорают.
+        Срок подписки выбирается вместе со стоимостью роутера. Отсчёт начинается
+        не с оплаты, а с первого подключения к интернету дома — дни доставки
+        не сгорают.
       </p>
       <div class="plans">
         {% for plan in plans %}
@@ -232,7 +233,7 @@
             {% if plan.per_month %}<p>{{ plan.per_month }} в месяц.</p>{% endif %}
             {% if plan.description %}<p>{{ plan.description }}</p>{% endif %}
             {% if not plan.per_month and not plan.description %}
-            <p>Срок выбирается в чате вместе с моделью роутера.</p>
+            <p>Срок подписки выбирается в боте вместе со стоимостью роутера.</p>
             {% endif %}
           </div>
         </details>
@@ -266,7 +267,7 @@
     <div class="wrap">
       <div class="cta">
         <div class="grid-bg" aria-hidden="true"></div>
-        <h2>Заказ оформляется в чате</h2>
+        <h2>Заказ оформляется в боте</h2>
         <p>Там же — оплата, трек-номер посылки, состояние роутера и продление подписки.</p>
         {% if bot_url %}<a class="btn" href="{{ bot_url }}">Купить роутер</a>{% endif %}
       </div>
@@ -282,17 +283,17 @@
         <img class="brand__logo" src="{{ logo_url }}" alt="" width="26" height="26">
         <span>{{ brand }}</span>
       </a>
-      <p>Роутеры с подпиской на стабильный доступ. Заказ, оплата и поддержка — в чате.</p>
+      <p>Роутеры с подпиской на стабильный доступ. Заказ, оплата и поддержка — в боте.</p>
     </div>
 
     <div class="foot__col">
-      <p class="foot__label">оборудование</p>
+      <p class="foot__label">Оборудование</p>
       {% for product in products %}<a href="#catalog">{{ product.title }}</a>{% endfor %}
-      {% if plans %}<a href="#plans">Подписка</a>{% endif %}
+      {% if plans %}<a href="#plans">Сроки подписки</a>{% endif %}
     </div>
 
     <div class="foot__col">
-      <p class="foot__label">инфо</p>
+      <p class="foot__label">Информация</p>
       <a href="#how">Как это работает</a>
       <a href="/instruction">Как подключить</a>
       <a href="/guide">Инструкция</a>
@@ -300,14 +301,14 @@
     </div>
 
     <div class="foot__col">
-      <p class="foot__label">связь</p>
-      {% if bot_url %}<a href="{{ bot_url }}">Чат в Telegram</a>{% endif %}
+      <p class="foot__label">Связь</p>
+      {% if bot_url %}<a href="{{ bot_url }}">Бот в Telegram</a>{% endif %}
       {% if support_contact %}<a href="{{ support_contact }}">Поддержка</a>{% endif %}
     </div>
   </div>
   <div class="wrap foot__bottom">
     <span>© {{ brand }}</span>
-    <span>заказ и оплата — в чате</span>
+    <span>заказ и оплата — в боте</span>
   </div>
 </footer>
 
