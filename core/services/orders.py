@@ -300,6 +300,20 @@ def set_status(
     log.info("order.status_changed", order_id=order.id, status=str(target), reason=reason)
 
 
+async def load_for_status(session: AsyncSession, order_id: int) -> Order | None:
+    """Заказ, готовый к смене статуса.
+
+    Именно так его и надо брать перед `set_status`: тот трогает `order.delivery`
+    (ставит отметки об отгрузке и доставке), а у заказа, поднятого через
+    `session.get`, связь не загружена. Обращение к ней уходит в базу синхронно,
+    и под async-движком это `MissingGreenlet` — то есть пятисотка вместо
+    смены статуса.
+    """
+    return await session.scalar(
+        select(Order).where(Order.id == order_id).options(selectinload(Order.delivery))
+    )
+
+
 async def get_order(session: AsyncSession, order_id: int) -> Order | None:
     return await session.scalar(
         select(Order)

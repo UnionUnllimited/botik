@@ -521,3 +521,41 @@ class TestPanelAccountLookup:
 
 async def _noop():
     return None
+
+
+class TestOrderIsLoadedReadyForStatusChange:
+    """Заказ перед сменой статуса берётся со связью доставки.
+
+    `set_status` ставит на доставке отметки об отгрузке и доставке, а у заказа
+    из `session.get` связь не загружена: обращение к ней уходит в базу
+    синхронно, и под async-движком это `MissingGreenlet`. Ручная активация
+    так и падала пятисоткой — уже после того, как учётка в панели заведена,
+    ссылка доставлена роутеру и подписка выдана. Оставалось поставить статус
+    заказа, и на этом всё откатывалось.
+    """
+
+    SOURCE = (
+        Path(__file__).resolve().parents[1] / "core/services/activation.py"
+    ).read_text(encoding="utf-8")
+
+    def test_status_change_does_not_use_bare_session_get(self):
+        assert "session.get(Order" not in self.SOURCE, (
+            "заказ для смены статуса надо брать через load_for_status: "
+            "иначе set_status уронит запрос на ленивой загрузке доставки"
+        )
+        assert self.SOURCE.count("order_service.load_for_status(") == 2
+
+    @pytest.mark.asyncio
+    async def test_set_status_touches_delivery(self):
+        """Проверка не про activation, а про причину: если `set_status`
+        перестанет трогать доставку, требование выше можно будет снять."""
+        from core.enums import DeliveryMethod, DeliverySpeed, OrderStatus
+        from core.models import Delivery, Order
+        from core.services import orders as order_service
+
+        delivery = Delivery(method=DeliveryMethod.CDEK, speed=DeliverySpeed.FAST, city="Самара")
+        order = Order(
+            id=1, public_number="R-1", user_id=1, status=OrderStatus.SHIPPED, delivery=delivery
+        )
+        order_service.set_status(order, OrderStatus.ACTIVATED, force=True)
+        assert delivery.delivered_at is not None

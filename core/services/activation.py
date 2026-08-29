@@ -28,7 +28,7 @@ from core import notifications, texts
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
-from core.models import Device, Order, Subscription, User
+from core.models import Device, Subscription, User
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
 from core.services import orders as order_service
@@ -142,7 +142,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
     try:
         await _ensure_tunnel(session, device)
         output = await deliver_subscription(device, account.subscription_url)
-    except router_shell.ShellError as exc:
+    except (router_shell.ShellError, ActivationError) as exc:
         log.warning("activation.manual_delivery_failed", mac=device.mac, error=str(exc))
         routers.add_event(
             session,
@@ -155,6 +155,28 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
             f"Учётка в панели готова, но роутер не принял ссылку: {exc}. "
             "Проверьте, что он на связи, и нажмите «Активировать заново» — "
             "срок в панели уже проставлен, второй раз он не сдвинется."
+        ) from exc
+    except Exception as exc:
+        # До сюда доходит всё, что ломается по дороге к роутеру, кроме отказа
+        # SSH: подготовка туннеля пересобирает конфиг frpc и перезапускает
+        # контейнер, а это файлы и docker — там свои способы отказать.
+        #
+        # Пятисотка здесь особенно вредна: учётка в панели уже заведена и срок
+        # проставлен, то есть половина работы сделана, а оператор видит
+        # «Основное приложение ответило 500» и не знает ни что случилось,
+        # ни в каком состоянии остался роутер. Причина уходит в лог с полной
+        # трассировкой, оператору — та же строка человеческим языком.
+        log.exception("activation.manual_failed", mac=device.mac, error=str(exc))
+        routers.add_event(
+            session,
+            device_id=device.id,
+            mac=device.mac,
+            level="error",
+            message=f"Ручная активация сорвалась: {exc}"[:500],
+        )
+        raise ActivationError(
+            f"Учётка в панели готова, но доставить ссылку не вышло: {exc}. "
+            "Срок в панели уже проставлен — повторное нажатие его не сдвинет."
         ) from exc
 
     now = utcnow()
@@ -202,7 +224,7 @@ async def mark_order_activated(session: AsyncSession, device: Device) -> bool:
     """
     if device.order_id is None:
         return False
-    order = await session.get(Order, device.order_id)
+    order = await order_service.load_for_status(session, device.order_id)
     if order is None or not order_service.can_transition(order.status, OrderStatus.ACTIVATED):
         return False
 
@@ -256,7 +278,7 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
     if not await settings_service.get_bool(session, "activation.auto_enabled"):
         return False
 
-    order = await session.get(Order, device.order_id)
+    order = await order_service.load_for_status(session, device.order_id)
     if order is None or order.status not in SHIPPED_STATUSES:
         return False
 
