@@ -46,6 +46,18 @@
           <div>
             <h3><span class="glyph glyph--inline">{{ step.glyph }}</span>{{ step.title }}</h3>
             <p>{{ step.text }}</p>
+            {# Адрес панели человек набирает руками и попадает в поиск вместо
+               адресной строки — это первая же ошибка на третьем шаге. Кнопка
+               открывает её сама; работает только из домашней сети, но читают
+               инструкцию как раз оттуда. #}
+            {% if step.link %}
+            <p class="step__link">
+              <a class="btn btn--sm btn--ghost" href="{{ step.link.url }}"
+                 {% if step.link.url.startswith('http') %}target="_blank" rel="noopener"{% endif %}>
+                {{ step.link.label }}
+              </a>
+            </p>
+            {% endif %}
           </div>
         </li>
         {% endfor %}

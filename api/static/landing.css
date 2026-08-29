@@ -273,11 +273,14 @@ img { max-width: 100%; }
 }
 
 .hero__grid {
-  margin-top: 48px;
+  margin-top: 40px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 56px;
-  align-items: center;
+  /* Текст начинается сразу под заголовком, а не висит по центру картинки.
+     С `center` на широком экране между ними зияла дыра в треть экрана:
+     колонка с фото вдвое выше текстовой, и та уезжала к её середине. */
+  align-items: start;
 }
 
 .hero__lead { font-size: 18px; color: #c3ced9; max-width: 560px; }
@@ -297,8 +300,12 @@ img { max-width: 100%; }
 
 .hero__media {
   position: relative;
-  min-height: 460px;
-  aspect-ratio: 1 / 1;
+  min-height: 420px;
+  /* Не квадрат: на широком экране колонка вдвое шире текста, и квадрат
+     вырастал в семьсот пикселей — первый экран переставал помещаться,
+     а рядом с ним оставалась пустота. */
+  aspect-ratio: 4 / 3;
+  max-height: 520px;
   border-radius: 28px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -754,3 +761,7 @@ img { max-width: 100%; }
   .ticker__row { animation: none; }
   .btn:hover { transform: none; }
 }
+
+/* Кнопка внутри шага инструкции: открыть панель роутера, перейти к типам
+   подключения. Отступ сверху — чтобы она не липла к тексту шага. */
+.step__link { margin-top: 14px; }
