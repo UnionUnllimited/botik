@@ -1769,10 +1769,29 @@ async def manage_order_shipping(
         return {"ok": False, "error": "У заказа нет доставки — трек-номеру негде лежать."}
 
     track = str(payload.get("tracking_number", "")).strip()[:64]
+    changed = bool(track) and track != (order.delivery.tracking_number or "")
     order.delivery.tracking_number = track or None
     order.delivery.tracking_url = delivery_service.tracking_url(order.delivery.method, track)
     await order_topics.push(session, order, note=f"▤ Трек-номер: {track or 'снят'}")
-    return {"ok": True, "tracking_url": order.delivery.tracking_url or ""}
+
+    # Текст клиенту собираем мы, отправляет тот, у кого есть токен, — как
+    # у статуса и счёта на доставку. Раньше номер уезжал клиенту только
+    # приложением к «Заказ отправлен»: перевозчик выдаёт трек когда придётся,
+    # и вписанный после отгрузки не доходил вовсе — лежал в карточке заказа
+    # и ждал, пока туда заглянут.
+    #
+    # Снятый номер шлём молча: сообщать «трека больше нет» нечего.
+    notice = ""
+    if changed:
+        notice = texts.TRACK_ASSIGNED.format(number=order.public_number)
+        notice += "\n\n" + texts.TRACK_INFO.format(track=track)
+
+    return {
+        "ok": True,
+        "tracking_url": order.delivery.tracking_url or "",
+        "tg_id": order.user.tg_id if order.user else None,
+        "notice": notice,
+    }
 
 
 @router.post("/manage/orders/{order_id}/device")

@@ -226,24 +226,74 @@ async def _send_to_client(bot: Bot, order_id: int, value: str) -> str:
     return ""
 
 
-async def _apply_text(action: str, order_id: int, value: str) -> str:
-    """Выполняет то, чего ждала кнопка. Возвращает текст ошибки или пусто."""
+async def _apply_text(action: str, order_id: int, value: str) -> tuple[str, dict]:
+    """Выполняет то, чего ждала кнопка.
+
+    Возвращает ошибку и ответ ручки целиком: в нём может лежать готовое
+    сообщение клиенту (`notice`). Текст собирает основное приложение —
+    тексты заказов живут там, — а отправляем его мы: токен только у нас.
+    """
     if action == "track":
-        _, error = await shop_api.set_order_tracking(order_id, value)
-        return error
+        data, error = await shop_api.set_order_tracking(order_id, value)
+        return error, data
     if action == "note":
-        _, error = await shop_api.set_order_note(order_id, value)
-        return error
+        data, error = await shop_api.set_order_note(order_id, value)
+        return error, data
     if action == "mac":
-        _, error = await shop_api.attach_order_device(order_id, value, "")
-        return error
+        data, error = await shop_api.attach_order_device(order_id, value, "")
+        return error, data
     if action == "dlv":
         # «450 2-3 дня»: первое слово — цена, остальное — срок. Разбираем
         # здесь, а не просим двумя сообщениями: с телефона это два лишних шага.
         price, _, days = value.partition(" ")
-        _, error = await shop_api.quote_delivery(order_id, price.strip(), days.strip())
-        return error
-    return "Неизвестное действие."
+        data, error = await shop_api.quote_delivery(order_id, price.strip(), days.strip())
+        return error, data
+    return "Неизвестное действие.", {}
+
+
+async def _push_notice(bot: Bot, data: dict) -> str:
+    """Шлёт клиенту сообщение, собранное основным приложением.
+
+    Возвращает строку для оператора: ушло или почему нет. Заказ к этому
+    моменту уже изменён, и молчащий Telegram не повод откатывать трек-номер.
+
+    Раньше топик этот ответ выбрасывал: цену доставки оператор называл,
+    счёт клиенту не уходил, а трек-номер клиент видел, только если сам
+    открывал карточку заказа. В веб-админке то же самое отправлялось.
+    """
+    tg_id = data.get("tg_id") or 0
+    notice = (data.get("notice") or "").strip()
+    if not tg_id or not notice:
+        return ""
+
+    # Длинный адрес строкой в тексте не нажимают — он идёт кнопкой.
+    markup = None
+    if data.get("pay_url"):
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💳 Оплатить доставку", url=data["pay_url"])]
+            ]
+        )
+    elif data.get("tracking_url"):
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Отследить посылку", url=data["tracking_url"])]
+            ]
+        )
+
+    try:
+        await bot.send_message(
+            tg_id,
+            notice,
+            reply_markup=markup,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except TelegramForbiddenError:
+        return "Клиент закрылся от бота — сообщение ему не ушло."
+    except Exception as exc:  # noqa: BLE001 — причину должен увидеть оператор
+        return f"Клиенту не отправилось: {exc}"
+    return "Клиенту отправлено."
 
 
 @router.message(F.text, F.chat.type.in_({"group", "supergroup"}))
@@ -278,10 +328,14 @@ async def on_reply(message: Message) -> None:
         await message.reply(f"Не вышло: {error}" if error else "Отправлено клиенту.")
         return
 
-    error = await _apply_text(action, order_id, value)
+    error, result = await _apply_text(action, order_id, value)
     if error:
         await message.reply(f"Не вышло: {error}")
         return
+
+    sent = await _push_notice(message.bot, result)
+    if sent:
+        await message.reply(sent)
 
     data, card_error = await shop_api.order_topic_card(order_id)
     if card_error:

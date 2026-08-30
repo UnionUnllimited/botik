@@ -253,8 +253,26 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
     @admin_bp_instance.route("/orders/<int:order_id>/shipping", methods=["POST"])
     async def order_shop_shipping(order_id: int):
         form = await request.form
-        _, error = await shop_api.set_order_tracking(order_id, (form.get("tracking_number") or "").strip())
+        data, error = await shop_api.set_order_tracking(
+            order_id, (form.get("tracking_number") or "").strip()
+        )
         await flash(error or "Трек-номер сохранён.", "danger" if error else "success")
+        # Клиенту — сразу, как только номер появился. Раньше он уезжал только
+        # приложением к «Заказ отправлен», и трек, полученный от перевозчика
+        # после отгрузки, до клиента не доходил вовсе.
+        if not error and data.get("tg_id") and data.get("notice"):
+            markup = None
+            if data.get("tracking_url"):
+                markup = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="Отследить посылку", url=data["tracking_url"])]
+                    ]
+                )
+            try:
+                await send_telegram_message(int(data["tg_id"]), data["notice"], markup)
+                await flash("Клиенту отправлен трек-номер.", "success")
+            except Exception as exc:  # noqa: BLE001 — причину показываем оператору
+                await flash(f"Трек сохранён, но сообщение не ушло: {exc}", "warning")
         return _back(order_id)
 
     @admin_bp_instance.route("/orders/<int:order_id>/device", methods=["POST"])
