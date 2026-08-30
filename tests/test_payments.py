@@ -283,6 +283,90 @@ class TestAmountMismatchCallsPeople:
         assert told.get("session") is session, "без сессии алерт не ляжет в очередь"
 
 
+class TestCommissionOnTopIsNotAMismatch:
+    """Комиссия платёжной системы приходит сверху, и точное совпадение
+    заворачивало все оплаты подряд: счёт на 92,99 приходил как 100,43,
+    платёж падал в «не прошёл», а оператор получал алерт на каждый заказ.
+
+    Больше выставленного — зачисляем, меньше — по-прежнему нет.
+    """
+
+    @staticmethod
+    def _payment():
+        import datetime as dt
+        from decimal import Decimal
+
+        from core.enums import PaymentProviderName, PaymentPurpose, PaymentStatus
+        from core.models import Payment
+
+        return Payment(
+            id=8,
+            user_id=1,
+            provider=PaymentProviderName.PLATEGA,
+            purpose=PaymentPurpose.ORDER,
+            status=PaymentStatus.PENDING,
+            idempotency_key="key-8",
+            amount=Decimal("92.99"),
+            currency="RUB",
+            created_at=dt.datetime.now(dt.UTC),
+        )
+
+    @pytest.mark.asyncio
+    async def test_charge_with_commission_is_credited(self, monkeypatch):
+        from decimal import Decimal
+
+        from core.enums import PaymentStatus
+        from core.services import notifier
+        from core.services import payments as payment_service
+
+        alerts: list = []
+
+        async def _alert(payment, received, *, session=None):
+            alerts.append(received)
+
+        async def _granted(session, payment):
+            return None
+
+        monkeypatch.setattr(notifier, "notify_amount_mismatch", _alert)
+        monkeypatch.setattr(payment_service, "_apply_success", _granted)
+
+        payment = self._payment()
+        applied = await payment_service.apply_status(
+            object(), payment, status=PaymentStatus.SUCCEEDED, amount=Decimal("100.43")
+        )
+
+        assert applied is True, "оплата с комиссией сверху должна зачисляться"
+        assert payment.status is PaymentStatus.SUCCEEDED
+        assert not alerts, "переплата на комиссию — не повод звать людей"
+        assert payment.amount == Decimal("92.99"), (
+            "счёт остаётся нашим: комиссия до нас не доходит и выручкой не становится"
+        )
+
+    @pytest.mark.asyncio
+    async def test_underpayment_still_stops_everything(self, monkeypatch):
+        from decimal import Decimal
+
+        from core.enums import PaymentStatus
+        from core.services import notifier
+        from core.services import payments as payment_service
+
+        alerts: list = []
+
+        async def _alert(payment, received, *, session=None):
+            alerts.append(received)
+
+        monkeypatch.setattr(notifier, "notify_amount_mismatch", _alert)
+
+        payment = self._payment()
+        applied = await payment_service.apply_status(
+            object(), payment, status=PaymentStatus.SUCCEEDED, amount=Decimal("92.98")
+        )
+
+        assert applied is False
+        assert payment.status is PaymentStatus.FAILED
+        assert alerts == ["92.98"], "недоплата обязана дойти до человека"
+
+
 class TestWebhookSavesWhatItQueued:
     """Подтверждение оплаты должно пережить ответ провайдеру.
 

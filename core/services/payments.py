@@ -240,12 +240,18 @@ async def apply_status(
         return False
 
     if status is PaymentStatus.SUCCEEDED:
-        if amount is not None and amount != payment.amount:
-            # Сумма не сошлась — не зачисляем и зовём людей.
+        # Комиссию платёжная система берёт сверху: клиент платит больше, чем
+        # мы выставили, и в уведомлении приходит списанное с него, а не наше.
+        # Требование точного совпадения заворачивало вообще все оплаты —
+        # заказ на 92,99 приходил как 100,43 и не зачислялся.
+        #
+        # Недоплата — по-прежнему повод не зачислять и звать людей: столько
+        # стоит заказ, и меньше этого он не отдаётся.
+        if amount is not None and amount < payment.amount:
             payment.status = PaymentStatus.FAILED
-            payment.error_message = f"Сумма уведомления {amount} не совпадает с {payment.amount}"
+            payment.error_message = f"Сумма уведомления {amount} меньше выставленной {payment.amount}"
             log.error(
-                "payment.amount_mismatch",
+                "payment.amount_below_invoice",
                 payment_id=payment.id,
                 expected=str(payment.amount),
                 received=str(amount),
@@ -258,6 +264,19 @@ async def apply_status(
 
             await notify_amount_mismatch(payment, str(amount), session=session)
             return False
+
+        if amount is not None and amount > payment.amount:
+            # Переплата — это комиссия, до нас она не доходит. В журнал её
+            # пишем: по этой строке видно, сколько провайдер берёт сверху,
+            # а `payment.amount` остаётся нашим счётом, иначе сверка заказа
+            # начнёт считать комиссию нашей выручкой.
+            log.info(
+                "payment.amount_above_invoice",
+                payment_id=payment.id,
+                invoiced=str(payment.amount),
+                charged=str(amount),
+                surcharge=str(amount - payment.amount),
+            )
 
         payment.status = PaymentStatus.SUCCEEDED
         payment.paid_at = payment.paid_at or utcnow()
