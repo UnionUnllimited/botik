@@ -173,9 +173,28 @@ class TestOrderFunnelHasWayBack:
     def test_first_step_returns_to_the_card(self):
         """С первого шага назад — в карточку модели: отменять оформление,
         чтобы перечитать характеристики, клиент не должен."""
-        body = self.SOURCE[self.SOURCE.index("async def ask_name") :]
-        body = body[: body.index("async def ask_phone")]
+        body = self.SOURCE[self.SOURCE.index("def back_from_name") :]
+        body = body[: body.index("# --- Экраны заказа")]
         assert "shop_item:" in body
+
+        ask = self.SOURCE[self.SOURCE.index("async def ask_name") :]
+        ask = ask[: ask.index("async def ask_phone")]
+        assert "back_from_name(data)" in ask
+
+    def test_refused_value_keeps_the_way_back(self):
+        """Экран ошибки — тот же шаг: «Назад» с него ведёт туда же, куда
+        с самого шага. Без этого под «Телефон не похож на номер» оставалась
+        одна кнопка — отменить заказ."""
+        body = self.SOURCE[self.SOURCE.index("async def check_field") :]
+        body = body[: body.index("@dp.message(RouterOrder.name)")]
+        assert "cancel_keyboard(back)" in body
+
+        for call, back in (
+            ('check_field(message, "phone"', '"shop_back:name"'),
+            ('check_field(message, "city"', '"shop_back:phone"'),
+        ):
+            tail = self.SOURCE[self.SOURCE.index(call) :][:200]
+            assert back in tail, f"{call} остался без пути назад"
 
     def test_promo_skips_the_step_that_never_happened(self):
         """Доставки могло не быть: варианты не пришли, адрес не спрашивали.

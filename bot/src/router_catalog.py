@@ -361,6 +361,16 @@ def cancel_keyboard(back: str = "") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def back_from_name(data: dict) -> str:
+    """Куда ведёт «Назад» с первого шага: в карточку модели, если она известна.
+
+    Считается в одном месте: экран шага и экран ошибки на нём должны вести
+    в одну и ту же сторону.
+    """
+    product_id = data.get("product_id") or 0
+    return f"shop_item:{product_id}" if product_id else "shop_catalog"
+
+
 # --- Экраны заказа -----------------------------------------------------------
 
 
@@ -1064,11 +1074,10 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         data = await state.get_data()
         # Назад с первого шага — в карточку модели: отменять оформление ради
         # того, чтобы перечитать характеристики, клиент не должен.
-        product_id = data.get("product_id") or 0
         await ask_step(
             target, state, edit=edit,
             step=RouterOrder.name, key="text_order_ask_name",
-            back=f"shop_item:{product_id}" if product_id else "shop_catalog",
+            back=back_from_name(data),
         )
 
     async def ask_phone(target, state: FSMContext, *, edit: bool):
@@ -1217,12 +1226,17 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         else:
             await target.answer(**payload)
 
-    async def check_field(message: Message, field: str) -> str:
+    async def check_field(message: Message, field: str, *, back: str) -> str:
         """Проверка значения на стороне основного приложения. Пустой ответ —
-        клиенту уже объяснили, что не так, и шаг остался прежним."""
+        клиенту уже объяснили, что не так, и шаг остался прежним.
+
+        «Назад» тут тот же, что и на самом шаге. Без него экран ошибки
+        предлагал только отменить заказ: телефон не сошёлся с форматом —
+        и единственная кнопка под ошибкой выбрасывала из воронки.
+        """
         value, error = await shop_api.validate_field(field, message.text or "")
         if error:
-            await message.answer(f"❌ {_esc(error)}", reply_markup=cancel_keyboard())
+            await message.answer(f"❌ {_esc(error)}", reply_markup=cancel_keyboard(back))
             return ""
         return value
 
@@ -1231,7 +1245,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if await blocked(message, is_query=False):
             await state.clear()
             return
-        value = await check_field(message, "name")
+        value = await check_field(message, "name", back=back_from_name(await state.get_data()))
         if not value:
             return
         await state.update_data(name=value)
@@ -1242,7 +1256,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if await blocked(message, is_query=False):
             await state.clear()
             return
-        value = await check_field(message, "phone")
+        value = await check_field(message, "phone", back="shop_back:name")
         if not value:
             return
         await state.update_data(phone=value)
@@ -1253,7 +1267,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if await blocked(message, is_query=False):
             await state.clear()
             return
-        value = await check_field(message, "city")
+        value = await check_field(message, "city", back="shop_back:phone")
         if not value:
             return
         await state.update_data(city=value)
@@ -1315,7 +1329,11 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             await state.clear()
             return
         data = await state.get_data()
-        value = await check_field(message, "pvz" if data.get("delivery_to_pvz") else "address")
+        value = await check_field(
+            message,
+            "pvz" if data.get("delivery_to_pvz") else "address",
+            back="shop_back:where",
+        )
         if not value:
             return
         await state.update_data(address=value)
