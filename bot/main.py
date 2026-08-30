@@ -227,6 +227,16 @@ async def apply_bot_session_from_settings(dispatcher: Dispatcher) -> None:
 # Словарь блокировок для каждого пользователя: {user_id: asyncio.Lock}
 _trial_grant_locks: Dict[int, asyncio.Lock] = {}
 
+from src.order_topics import PREFIX as ORDER_TOPIC_PREFIX
+
+_OPERATOR_CALLBACK = f"{ORDER_TOPIC_PREFIX}:"
+"""Кнопки под карточкой заказа в рабочем чате. Их жмёт оператор, и обе
+клиентские проверки ниже ему не подходят: в таблице пользователей бота его
+может не быть вовсе, а разбор десятка заказов подряд упирается в лимит,
+рассчитанный на клиента. Префикс берём из модуля топиков — свой разошёлся бы
+с ним молча, и кнопки перестали бы работать без единой ошибки в журнале."""
+
+
 # --- Middleware для проверки существования пользователя в БД ---
 class UserExistsMiddleware(BaseMiddleware):
     """Middleware для проверки существования пользователя в БД перед обработкой callback queries"""
@@ -247,7 +257,13 @@ class UserExistsMiddleware(BaseMiddleware):
             if callback_data.startswith("captcha_answer_") or callback_data == "restart_deleted_user":
                 # Пропускаем эти callbacks без проверки пользователя
                 return await handler(event, data)
-            
+
+            # Оператор в рабочем чате клиентом бота быть не обязан. Без этого
+            # исключения его нажатие подменяло карточку заказа экраном
+            # «нажмите Старт», и работать с заказом становилось нечем.
+            if callback_data.startswith(_OPERATOR_CALLBACK):
+                return await handler(event, data)
+
             # Проверяем существование пользователя в БД
             user_data = await db_helpers.get_user(user_id)
             
@@ -392,6 +408,11 @@ class ThrottlingMiddleware(BaseMiddleware):
             callback_data = event.data or ""
             # Исключаем captcha и restart_deleted_user (они уже обрабатываются в UserExistsMiddleware)
             if callback_data.startswith("captcha_answer_") or callback_data == "restart_deleted_user":
+                return await handler(event, data)
+            # Карточка заказа: оператор проходит по заказам пачкой, и лимит,
+            # посчитанный на клиента, останавливал его посреди работы —
+            # кнопки отвечали «слишком много запросов».
+            if callback_data.startswith(_OPERATOR_CALLBACK):
                 return await handler(event, data)
 
         # Ответы в начатом диалоге — не флуд: их спросили мы сами. Оформление

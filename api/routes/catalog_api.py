@@ -1779,7 +1779,8 @@ async def manage_order_shipping(
 async def manage_order_device(
     order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
 ) -> dict:
-    """Привязка MAC к заказу при отгрузке — по нему клиент активирует роутер."""
+    """Привязка MAC к заказу при отгрузке — по нему роутер узнают, когда он
+    сам выйдет на связь у клиента."""
     order = await _order_or_404(session, order_id)
     mac = normalize_mac(str(payload.get("mac", "")))
     if not mac:

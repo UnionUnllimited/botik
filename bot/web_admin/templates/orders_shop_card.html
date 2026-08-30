@@ -223,7 +223,7 @@
     </div>
     {% else %}
     <div class="text-[13px] tw-text-muted2">
-      Не привязан. Укажите MAC с наклейки при отгрузке — по нему клиент активирует роутер.
+      Не привязан. Укажите MAC с наклейки при отгрузке — по нему роутер узнают, когда он выйдет на связь.
     </div>
     {% endif %}
     <form method="post" action="{{ url_for('admin.order_shop_device', order_id=order.id) }}"
