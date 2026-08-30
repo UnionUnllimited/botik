@@ -212,6 +212,32 @@ class TestOrderFunnelHasWayBack:
             assert f"async def {name}" in self.SOURCE
 
 
+class TestSupportScreenShowsTheMac:
+    """MAC роутера — первое, что спрашивает оператор.
+
+    Переменные `{router_mac}` и `{router_line}` завели в августе, но в текст
+    по умолчанию не поставили: экран показывал один Telegram ID, и оператор
+    всё равно просил MAC отдельным сообщением.
+    """
+
+    TEXTS = (
+        Path(__file__).resolve().parents[1] / "bot/src/texts.py"
+    ).read_text(encoding="utf-8")
+
+    def test_default_screen_has_it(self):
+        body = self.TEXTS[self.TEXTS.index("TXT_SUPPORT_FALLBACK = (") :][:600]
+        assert "{user_id}" in body
+        assert "{router_line}" in body
+
+    def test_old_default_is_listed_for_reseed(self):
+        """На живой базе текст уже засеян прежним значением, и без перепосева
+        с новым номером отметки правка кода до клиента не доедет."""
+        assert "ui_redesign_2026_08_rest_v2" in self.TEXTS
+        legacy = self.TEXTS[self.TEXTS.index("REST_LEGACY_TEXTS") :]
+        block = legacy[legacy.index('"text_support"') :][:400]
+        assert "{router_line}" not in block, "в перепосеве должно лежать прежнее значение"
+
+
 class TestTotalIsOurPrice:
     """Под «Итого» сказано, что комиссию платёжной системы оно не включает."""
 
@@ -254,4 +280,13 @@ class TestDeliveryWording:
         не доедет, а без нового номера отметки круг не пройдёт заново."""
         assert '"text_order_ask_speed": "🚚 Шаг 4 из 5. Как везём?"' in self.TEXTS
         assert "Сумма без комиссии платёжной системы" in self.TEXTS
-        assert "ui_redesign_2026_08_v3_applied" in self.TEXTS
+        assert "ui_redesign_2026_08_v4_applied" in self.TEXTS
+
+    def test_shop_speaks_for_the_shop(self):
+        """«Покажу» и «выдам» — это один человек в переписке. За заказом стоит
+        магазин, и отвечать он должен во множественном числе."""
+        current = self.TEXTS[: self.TEXTS.index("LEGACY_TEXTS")]
+        for singular in ("покажу", "выдам"):
+            assert singular not in current, f"клиенту всё ещё отвечают «{singular}»"
+        assert "покажем характеристики" in current
+        assert current.count("выдадим новую") == 3

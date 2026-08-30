@@ -17,6 +17,7 @@ from web_admin.core.s3_uploader import (
     upload_file_async,
 )
 from src.telegram_html import is_html_text_setting_key, validate_telegram_html
+from src.texts import TXT_SUPPORT_FALLBACK
 from src.telegram_bot_factory import make_aiogram_bot
 from tg_sender import clear_bot_token_cache
 import uuid
@@ -1042,11 +1043,13 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
                     "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
                     ('text_referral_share', 'Присоединяйся!', 'Текст для кнопки Поделиться в реферальной программе (можно использовать {ref_link})')
                 )
-            # Текст поддержки
+            # Текст поддержки. Дефолт один на весь проект и лежит в `src.texts`:
+            # свой здесь разошёлся бы с тем, что видит клиент, и новая база
+            # получала бы экран без MAC.
             if 'text_support' not in existing:
                 await async_execute_db(
                     "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
-                    ('text_support', '💬 <b>Поддержка</b>\n\nДля того, чтобы мы быстро вас нашли, скопируйте ваш ID заранее и отправьте в поддержку с проблемой, которая у вас случилась.\n\n📋 <b>Ваш ID для копирования:</b>\n\n<blockquote>{user_id}</blockquote>\n\n👇 Нажмите на текст выше, чтобы скопировать ваш ID, затем перейдите в поддержку.', 'Текст страницы поддержки. Используйте {user_id} для отображения ID пользователя')
+                    ('text_support', TXT_SUPPORT_FALLBACK, 'Текст страницы поддержки. Переменные: {user_id}, {router_mac}, {router_line}')
                 )
             # Текст об окончании трафика Remnawave
             if 'text_remnawave_traffic_exhausted' not in existing:

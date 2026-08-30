@@ -89,7 +89,7 @@ TEXT_SETTING_VARIABLES: dict[str, list[dict[str, str]]] = {
         # «Роутер: {router_mac}» превратилось бы в висящее «Роутер:» —
         # для такого случая есть {router_line}, он исчезает целиком.
         {"name": "router_mac", "label": "MAC роутера (пусто, если роутера нет)"},
-        {"name": "router_line", "label": "Строка «Роутер: MAC» (пусто, если роутера нет)"},
+        {"name": "router_line", "label": "Строка «Ваш MAC-адрес: …» (пусто, если роутера нет)"},
     ],
     # 🔔 Уведомления
     "text_subscription_expiring": [],

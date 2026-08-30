@@ -2706,7 +2706,9 @@ async def cq_support(query: CallbackQuery):
     # строка, которая в этом случае исчезает целиком, не оставляя
     # висящего «Роутер:» без значения.
     router_mac = await client_router_mac(user_id)
-    router_line = f"Роутер: <code>{html.escape(router_mac)}</code>" if router_mac else ""
+    router_line = (
+        f"Ваш MAC-адрес: <code>{html.escape(router_mac)}</code>" if router_mac else ""
+    )
 
     values = {
         'user_id': html.escape(user_id_text),
