@@ -234,4 +234,5 @@ class TestDeliveryWording:
         """На сервере тексты уже в базе: без перепосева правка кода до них
         не доедет, а без нового номера отметки круг не пройдёт заново."""
         assert '"text_order_ask_speed": "🚚 Шаг 4 из 5. Как везём?"' in self.TEXTS
-        assert "ui_redesign_2026_08_v2_applied" in self.TEXTS
+        assert "Сумма без комиссии платёжной системы" in self.TEXTS
+        assert "ui_redesign_2026_08_v3_applied" in self.TEXTS
