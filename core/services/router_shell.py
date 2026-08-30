@@ -115,19 +115,39 @@ def derive_password(mac: str, salt: str) -> str:
     return digest[:16]
 
 
-def password_for(device: Device) -> str:
-    """Порядок: индивидуальный пароль роутера, затем вывод из MAC, затем общий."""
+def passwords_for(device: Device) -> list[str]:
+    """Пароли, которыми пробуем войти, в порядке от точного к общему.
+
+    Их несколько, потому что парк смешанный: часть роутеров ещё со стоковым
+    паролем, часть уже перепрошита и считает его из MAC. Раньше выбирался
+    ровно один — заданная соль отменяла статический пароль, и стоковый роутер
+    не открывался вовсе, хотя пароль от него известен и лежит в настройках.
+    """
+    candidates: list[str] = []
+
     if device.ssh_password_enc:
         try:
-            return decrypt_secret(device.ssh_password_enc, aad=f"ssh:{device.id}")
+            candidates.append(decrypt_secret(device.ssh_password_enc, aad=f"ssh:{device.id}"))
         except Exception:  # noqa: BLE001 — ключ шифрования мог смениться
             log.warning("router_shell.device_password_unreadable", device_id=device.id)
 
     salt = settings.frp.ssh_password_salt.get_secret_value()
     if salt:
-        return derive_password(device.mac, salt)
+        candidates.append(derive_password(device.mac, salt))
 
-    return settings.frp.ssh_password.get_secret_value()
+    static = settings.frp.ssh_password.get_secret_value()
+    if static:
+        candidates.append(static)
+
+    # Повторы убираем: одинаковый пароль дважды — это лишний отказ логина
+    # в журнале роутера и лишняя секунда ожидания на каждой команде.
+    return list(dict.fromkeys(password for password in candidates if password))
+
+
+def password_for(device: Device) -> str:
+    """Первый подходящий пароль. Для показа оператору — там нужен один."""
+    candidates = passwords_for(device)
+    return candidates[0] if candidates else ""
 
 
 def store_password(device: Device, password: str) -> None:
@@ -142,28 +162,46 @@ async def run(
     timeout: float | None = None,  # noqa: ASYNC109 — предел задаёт вызывающий, сессия своя на команду
 ) -> CommandResult:
     """Выполняет одну команду и возвращает её вывод."""
-    password = password_for(device)
-    if not password:
+    candidates = passwords_for(device)
+    if not candidates:
         raise ShellError("Пароль SSH неизвестен: задайте FRP_SSH_PASSWORD_SALT или пароль роутера вручную")
 
     port = ssh_port_for(device)
     limit = timeout or settings.frp.ssh_timeout_sec
 
-    try:
-        async with asyncssh.connect(
-            settings.frp.visitor_host,
-            port=port,
-            username=settings.frp.ssh_user,
-            password=password,
-            known_hosts=None,
-            connect_timeout=limit,
-            login_timeout=limit,
-        ) as connection:
-            result = await connection.run(command, check=False, timeout=limit)
-    except asyncssh.PermissionDenied as exc:
-        raise ShellError("Роутер отклонил логин или пароль SSH") from exc
-    except (TimeoutError, asyncssh.Error, OSError) as exc:
-        raise ShellError(f"Не удалось подключиться к роутеру: {exc}") from exc
+    # Пароли перебираем: парк смешанный, и роутер со стоковым паролем должен
+    # открываться, даже когда соль задана. Перебираем только отказ логина —
+    # на недоступном туннеле следующий пароль ничего не изменит, а лишние
+    # попытки удвоят ожидание там, где отвечать всё равно некому.
+    result = None
+    denied: Exception | None = None
+    for attempt, password in enumerate(candidates, start=1):
+        try:
+            async with asyncssh.connect(
+                settings.frp.visitor_host,
+                port=port,
+                username=settings.frp.ssh_user,
+                password=password,
+                known_hosts=None,
+                connect_timeout=limit,
+                login_timeout=limit,
+            ) as connection:
+                result = await connection.run(command, check=False, timeout=limit)
+            break
+        except asyncssh.PermissionDenied as exc:
+            denied = exc
+            log.info(
+                "router_shell.password_rejected",
+                device_id=device.id,
+                mac=device.mac,
+                attempt=attempt,
+                of=len(candidates),
+            )
+        except (TimeoutError, asyncssh.Error, OSError) as exc:
+            raise ShellError(f"Не удалось подключиться к роутеру: {exc}") from exc
+
+    if result is None:
+        raise ShellError("Роутер отклонил логин или пароль SSH") from denied
 
     log.info(
         "router_shell.command",

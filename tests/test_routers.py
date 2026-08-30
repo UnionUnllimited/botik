@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 import pytest
+from pydantic import SecretStr
 
 from core.models import Device
 from core.services.frp import mac_from_proxy_name, proxy_kind, proxy_names_for
@@ -124,6 +125,70 @@ class TestSshPassword:
         from core.services.router_shell import derive_password
 
         assert derive_password("D4:0D:AB:03:4B:CE", "other") != "7600a1bd651d639c"
+
+
+class TestStockRouterStillOpens:
+    """Парк смешанный: часть роутеров ещё со стоковым паролем, часть уже
+    считает его из MAC.
+
+    Раньше выбирался ровно один пароль: заданная соль отменяла статический,
+    и стоковый роутер не открывался вовсе — хотя пароль от него известен
+    и лежит в настройках.
+    """
+
+    def _device(self):
+        from core.models import Device
+
+        return Device(id=7, mac="D4:0D:AB:03:4B:CE", model="")
+
+    def test_salt_no_longer_hides_the_stock_password(self, monkeypatch):
+        from core.config import settings
+        from core.services import router_shell
+
+        monkeypatch.setattr(settings.frp, "ssh_password_salt", SecretStr("tests"))
+        monkeypatch.setattr(settings.frp, "ssh_password", SecretStr("stock-secret"))
+
+        candidates = router_shell.passwords_for(self._device())
+        assert candidates == ["7600a1bd651d639c", "stock-secret"]
+
+    def test_stock_password_alone_is_enough(self, monkeypatch):
+        from core.config import settings
+        from core.services import router_shell
+
+        monkeypatch.setattr(settings.frp, "ssh_password_salt", SecretStr(""))
+        monkeypatch.setattr(settings.frp, "ssh_password", SecretStr("stock-secret"))
+
+        assert router_shell.passwords_for(self._device()) == ["stock-secret"]
+
+    def test_no_duplicates(self, monkeypatch):
+        """Одинаковый пароль дважды — лишний отказ логина в журнале роутера
+        и лишняя секунда ожидания на каждой команде."""
+        from core.config import settings
+        from core.services import router_shell
+
+        monkeypatch.setattr(settings.frp, "ssh_password_salt", SecretStr("tests"))
+        monkeypatch.setattr(settings.frp, "ssh_password", SecretStr("7600a1bd651d639c"))
+
+        assert router_shell.passwords_for(self._device()) == ["7600a1bd651d639c"]
+
+    def test_nothing_configured_is_still_an_error(self, monkeypatch):
+        from core.config import settings
+        from core.services import router_shell
+
+        monkeypatch.setattr(settings.frp, "ssh_password_salt", SecretStr(""))
+        monkeypatch.setattr(settings.frp, "ssh_password", SecretStr(""))
+
+        assert router_shell.passwords_for(self._device()) == []
+
+    def test_operator_is_shown_the_most_precise_one(self, monkeypatch):
+        """В карточке показываем один пароль — тот, которым войдём первым."""
+        from core.config import settings
+        from core.services import router_shell
+
+        monkeypatch.setattr(settings.frp, "ssh_password_salt", SecretStr("tests"))
+        monkeypatch.setattr(settings.frp, "ssh_password", SecretStr("stock-secret"))
+
+        assert router_shell.password_for(self._device()) == "7600a1bd651d639c"
 
 
 class TestModelFromBoard:
