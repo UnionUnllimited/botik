@@ -60,12 +60,14 @@ from core.models import (
     Subscription,
     User,
 )
+from core.redis_client import RateLimiter
 from core.security import normalize_mac
-from core.services import activation, media, order_topics, settings_service
+from core.services import activation, media, order_topics, router_shell, settings_service
 from core.services import delivery as delivery_service
 from core.services import orders as order_service
 from core.services import payments as payment_service
 from core.services import promo as promo_service
+from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
 
 log = structlog.get_logger("api.catalog")
@@ -708,6 +710,77 @@ async def my_router(
         "router": router_payload,
         "order": _order_payload(order) if order is not None else None,
     }
+
+
+UPDATE_ATTEMPTS_PER_HOUR = 3
+"""Сколько раз в час клиент может попросить роутер обновиться.
+
+Не защита от нагрузки, а защита от круга перепрошивок: кнопка запускает
+установку образа, после которой роутер перезагружается и минуты три молчит.
+Клиент в это время видит «не отвечает» и жмёт ещё раз."""
+
+
+@router.post("/my-router/update")
+async def my_router_update(
+    payload: dict, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Клиент просит роутер обновиться, не дожидаясь суточного круга.
+
+    Роутер ходит за манифестом раз в сутки сам; кнопка нужна там, где ждать
+    сутки нельзя — поддержка выпустила исправление и просит клиента нажать.
+
+    Команда уходит в фон и сессия закрывается сразу: образ весит десятки
+    мегабайт, и ответа «поставилось» в пределах запроса не бывает. Поэтому
+    отсюда возвращается «запущено», а не «обновлено».
+    """
+    tg_id = _int(payload.get("tg_id"))
+    device_id = _int(payload.get("device_id"))
+
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    # Чужой роутер обновить нельзя: device_id приходит из кнопки, а кнопку
+    # можно позвать с любым номером.
+    query = select(Device).where(Device.user_id == user.id)
+    device = await session.scalar(
+        query.where(Device.id == device_id) if device_id else query.order_by(Device.id.desc())
+    )
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    allowed, _ = await RateLimiter().hit(
+        f"router_update:{device.id}",
+        limit=UPDATE_ATTEMPTS_PER_HOUR,
+        window_sec=3600,
+    )
+    if not allowed:
+        return {"ok": False, "error": "too_often"}
+
+    online = device.frp_online or device.is_online(
+        threshold_min=settings.subscription.heartbeat_offline_min
+    )
+    if not online:
+        return {"ok": False, "error": "offline"}
+
+    try:
+        result = await router_shell.run_quick(device, "ota_now")
+    except router_shell.ShellError as exc:
+        log.warning("catalog.router_update_failed", device_id=device.id, error=str(exc))
+        return {"ok": False, "error": "unreachable"}
+
+    # Событие в журнал устройства: оператор должен видеть, что перепрошивку
+    # начал клиент, а не он сам и не суточный круг.
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message="Обновление прошивки запущено клиентом из бота",
+    )
+    await session.commit()
+    log.info("catalog.router_update_started", device_id=device.id, tg_id=tg_id)
+    return {"ok": result.ok, "error": "" if result.ok else "unreachable"}
 
 
 @router.get("/subscriptions")

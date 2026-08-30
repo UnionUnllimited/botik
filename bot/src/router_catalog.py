@@ -673,6 +673,19 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
         # Продлевать приходят сюда чаще, чем в главное меню: тут виден срок.
         builder.row(btn("btn_renew_sub", callback_data="shop_renew"))
 
+    # Обновление прошивки — только пока роутер на связи: команда идёт к нему
+    # по туннелю, и на молчащем ей некуда прийти. Кнопка у выключенного
+    # роутера обещала бы то, чего не случится.
+    if router is not None and router.get("online"):
+        builder.row(
+            btn(
+                "btn_router_update",
+                callback_data=f"shop_router_update:{current}"
+                if current
+                else "shop_router_update",
+            )
+        )
+
     # Инструкция и админка роутера — два внешних адреса в домашней сети
     # клиента. Ставим их одним рядом: по отдельности они растягивали экран
     # на девять кнопок, среди которых не видно главной.
@@ -1451,6 +1464,47 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             link_preview_options=NO_PREVIEW,
         )
         await query.answer()
+
+    # Ответы кнопки обновления. Всё, что известно в пределах запроса, —
+    # дошла ли команда до роутера: ставится прошивка минутами позже, и
+    # никакого «обновилось» отсюда прийти не может.
+    UPDATE_REPLIES = {
+        "offline": "text_router_update_offline",
+        "too_often": "text_router_update_too_often",
+        "unreachable": "text_router_update_failed",
+    }
+
+    @dp.callback_query(F.data.startswith("shop_router_update"))
+    async def cq_router_update(query: CallbackQuery, state: FSMContext):
+        """Клиент просит роутер обновиться, не дожидаясь суточного круга.
+
+        Экран не перерисовываем: роутер сейчас уйдёт в перезагрузку, и
+        свежие показания всё равно покажут «не отвечает» — клиент прочитает
+        это как поломку, хотя это и есть обновление.
+        """
+        if await blocked(query):
+            return
+        await state.clear()
+        device_id = 0
+        if ":" in query.data:
+            try:
+                device_id = int(query.data.split(":", 1)[1])
+            except ValueError:
+                device_id = 0
+
+        data, error = await shop_api.update_router(query.from_user.id, device_id)
+        if error:
+            return await query.answer(error[:200], show_alert=True)
+
+        key = (
+            "text_router_update_started"
+            if data.get("ok")
+            else UPDATE_REPLIES.get(str(data.get("error")), "text_router_update_failed")
+        )
+        # Обрезка не косметическая: тексты правятся в админке, а Telegram
+        # длиннее двухсот знаков во всплывающем окне не принимает и отвечает
+        # ошибкой на весь колбэк.
+        await query.answer(text(key)[:200], show_alert=True)
 
     @dp.callback_query(F.data == "shop_renew")
     async def cq_renew(query: CallbackQuery, state: FSMContext):

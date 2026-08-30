@@ -350,6 +350,18 @@ async def my_router(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
     return await get("/api/v1/catalog/my-router", params)
 
 
+async def update_router(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
+    """Просит роутер обновить прошивку, не дожидаясь суточного круга.
+
+    Ответ приходит сразу: команда на устройстве уходит в фон, и «запущено» —
+    это всё, что известно в пределах запроса.
+    """
+    payload = {"tg_id": tg_id}
+    if device_id:
+        payload["device_id"] = device_id
+    return await post("/api/v1/catalog/my-router/update", payload)
+
+
 async def my_router_available(tg_id: int) -> bool:
     """Показывать ли кнопку «Мой роутер» — есть ли у клиента роутер или заказ.
 
