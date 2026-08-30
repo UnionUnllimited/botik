@@ -492,6 +492,22 @@ async def attach_order_device(order_id: int, mac: str, model: str) -> tuple[dict
     )
 
 
+async def set_order_customer(
+    order_id: int, *, name: str, phone: str, city: str, address: str, reason: str
+) -> tuple[dict, str]:
+    """Правка данных получателя. Причина обязательна — её спрашивает ручка."""
+    return await post(
+        f"/api/v1/catalog/manage/orders/{order_id}/customer",
+        {
+            "name": name,
+            "phone": phone,
+            "city": city,
+            "address": address,
+            "reason": reason,
+        },
+    )
+
+
 async def set_order_note(order_id: int, note: str) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/manage/orders/{order_id}/note", {"note": note})
 

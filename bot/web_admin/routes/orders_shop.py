@@ -284,6 +284,30 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
         await flash(error or "Роутер привязан к заказу.", "danger" if error else "success")
         return _back(order_id)
 
+    @admin_bp_instance.route("/orders/<int:order_id>/customer", methods=["POST"])
+    async def order_shop_customer(order_id: int):
+        """Правка получателя, телефона и адреса — с обязательной причиной.
+
+        Причину не спрашиваем «для галочки»: это единственное место, где
+        данные заказа меняются задним числом, и через неделю ответить,
+        почему адрес другой, будет нечем — журнала действий в проекте нет,
+        его роль играет топик заказа, куда причина и уходит.
+        """
+        form = await request.form
+        data, error = await shop_api.set_order_customer(
+            order_id,
+            name=(form.get("name") or "").strip(),
+            phone=(form.get("phone") or "").strip(),
+            city=(form.get("city") or "").strip(),
+            address=(form.get("address") or "").strip(),
+            reason=(form.get("reason") or "").strip(),
+        )
+        if error:
+            await flash(error, "danger")
+        else:
+            await flash("Данные изменены: " + "; ".join(data.get("changes") or []), "success")
+        return _back(order_id)
+
     @admin_bp_instance.route("/orders/<int:order_id>/note", methods=["POST"])
     async def order_shop_note(order_id: int):
         form = await request.form

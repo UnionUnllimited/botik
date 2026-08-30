@@ -131,6 +131,60 @@
       {% if delivery.address %}<br>Адрес: {{ delivery.address }}{% endif %}
     </div>
 
+    {# Клиент ошибается в адресе и телефоне, и до отгрузки это чинится звонком.
+       Чинить было негде: данные приходили из воронки и дальше только
+       показывались, а оператор переписывал их в чате перевозчика — в заказе
+       оставалось старое, и следующая посылка ехала туда же.
+
+       Причина обязательна и уходит в топик заказа. Это единственное место, где
+       данные меняются задним числом, а журнала действий в проекте больше нет:
+       без причины «почему адрес другой» через неделю не ответит никто. #}
+    <details class="border-t pt-3" style="border-color: rgb(var(--admin-border));">
+      <summary class="text-[13px] font-semibold tw-text-base2 cursor-pointer select-none">
+        Изменить данные получателя
+      </summary>
+      <form method="post" action="{{ url_for('admin.order_shop_customer', order_id=order.id) }}"
+            class="mt-3 space-y-3">
+        <div class="flex items-end gap-2 flex-wrap">
+          <div class="ss-field">
+            <label for="customer_name">Получатель</label>
+            <input type="text" id="customer_name" name="name"
+                   value="{{ delivery.recipient or order.customer }}" class="tw-input" style="min-width:200px">
+          </div>
+          <div class="ss-field">
+            <label for="customer_phone">Телефон</label>
+            <input type="text" id="customer_phone" name="phone"
+                   value="{{ delivery.phone or order.phone }}" class="tw-input w-48">
+          </div>
+          <div class="ss-field">
+            <label for="customer_city">Город</label>
+            <input type="text" id="customer_city" name="city"
+                   value="{{ order.city }}" class="tw-input w-48">
+          </div>
+        </div>
+        <div class="ss-field">
+          <label for="customer_address">Адрес</label>
+          <input type="text" id="customer_address" name="address"
+                 value="{{ delivery.address }}" class="tw-input w-full">
+        </div>
+        <div class="ss-field">
+          <label for="customer_reason">Почему меняете</label>
+          <input type="text" id="customer_reason" name="reason" required
+                 placeholder="Клиент позвонил: ошибся в номере дома"
+                 class="tw-input w-full">
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+          </button>
+        </div>
+        <div class="text-[11px] tw-text-subtle2">
+          Причина уйдёт в топик заказа — по ней потом видно, кто и зачем правил.
+          Клиенту сообщение не отправляется.
+        </div>
+      </form>
+    </details>
+
     {# Цену доставки называет оператор: она зависит от адреса и габаритов,
        а при оформлении клиент платит только за роутер и подписку. Отправив
        цену, шлём клиенту счёт — вторым платежом по тому же заказу.

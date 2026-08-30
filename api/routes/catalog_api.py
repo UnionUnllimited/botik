@@ -1823,6 +1823,94 @@ async def manage_order_device(
     return {"ok": True, "mac": mac}
 
 
+_CUSTOMER_FIELDS = (
+    ("name", "Получатель"),
+    ("phone", "Телефон"),
+    ("city", "Город"),
+    ("address", "Адрес"),
+)
+
+
+@router.post("/manage/orders/{order_id}/customer")
+async def manage_order_customer(
+    order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Правка данных получателя оператором.
+
+    Клиент ошибается в адресе и телефоне, и до отгрузки это чинится звонком —
+    но починить было негде: данные приходили из воронки и дальше только
+    показывались. Оператор переписывал их в чате перевозчика, а в заказе
+    оставалось старое, и следующая посылка ехала туда же.
+
+    Причина обязательна. Это единственное место, где данные заказа меняются
+    задним числом, и через неделю «почему адрес другой» не ответит никто:
+    журнала действий в проекте больше нет, его роль играет топик заказа.
+    """
+    order = await _order_or_404(session, order_id)
+
+    reason = str(payload.get("reason", "")).strip()[:500]
+    if not reason:
+        return {"ok": False, "error": "Напишите, почему меняете данные."}
+
+    # Проверки те же, что и у клиента в воронке: адрес без дома и телефон
+    # не тем форматом одинаково ломают доставку, кто бы их ни вводил.
+    cleaned: dict[str, str] = {}
+    for field, title in _CUSTOMER_FIELDS:
+        raw = str(payload.get(field, "")).strip()
+        if not raw:
+            continue
+        value = _CLEANERS[field](raw)
+        if not value:
+            return {"ok": False, "error": f"{title}: {_COMPLAINTS[field]}"}
+        cleaned[field] = value
+
+    if not cleaned:
+        return {"ok": False, "error": "Нечего менять: все поля пустые."}
+
+    delivery = order.delivery
+    changes: list[str] = []
+    was = {
+        "name": order.customer_name,
+        "phone": order.customer_phone,
+        "city": order.customer_city,
+        "address": (delivery.pvz_address or delivery.address or "") if delivery else "",
+    }
+    for field, title in _CUSTOMER_FIELDS:
+        if field in cleaned and cleaned[field] != was[field]:
+            changes.append(f"{title}: {was[field] or '—'} → {cleaned[field]}")
+
+    if not changes:
+        return {"ok": False, "error": "Данные и так такие же."}
+
+    if "name" in cleaned:
+        order.customer_name = cleaned["name"]
+    if "phone" in cleaned:
+        order.customer_phone = cleaned["phone"]
+    if "city" in cleaned:
+        order.customer_city = cleaned["city"]
+
+    # У доставки свои поля получателя: по ним печатается накладная, и
+    # разойдясь с заказом, они отправили бы посылку по прежнему адресу.
+    if delivery is not None:
+        if "name" in cleaned:
+            delivery.recipient_name = cleaned["name"]
+        if "phone" in cleaned:
+            delivery.recipient_phone = cleaned["phone"]
+        if "city" in cleaned:
+            delivery.city = cleaned["city"]
+        if "address" in cleaned:
+            if delivery.pvz_address:
+                delivery.pvz_address = cleaned["address"]
+            else:
+                delivery.address = cleaned["address"]
+
+    note = "; ".join(changes)
+    log.info("catalog.order_customer_edited", order_id=order.id, changes=note, reason=reason)
+    await session.flush()
+    await order_topics.push(session, order, note=f"✎ Данные изменены: {note}\nПричина: {reason}")
+    return {"ok": True, "changes": changes, "reason": reason}
+
+
 @router.post("/manage/orders/{order_id}/note")
 async def manage_order_note(
     order_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
