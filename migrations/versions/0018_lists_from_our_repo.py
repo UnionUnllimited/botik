@@ -34,7 +34,6 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-from core.models import ListKind
 
 revision: str = "0018"
 down_revision: str | None = "0017"
@@ -44,44 +43,44 @@ depends_on: str | Sequence[str] | None = None
 _RAW = "https://raw.githubusercontent.com/UnionUnllimited/domensrouter/main/parts"
 
 _FOLDERS = {
-    ListKind.DIRECT_DOMAIN: "domains",
-    ListKind.DIRECT_IP: "ip",
-    ListKind.PROXY_DOMAIN: "proxy",
+    "direct_domain": "domains",
+    "direct_ip": "ip",
+    "proxy_domain": "proxy",
 }
 
 _SEED: tuple[tuple[str, str, str], ...] = (
-    (ListKind.DIRECT_DOMAIN, "00-tld-zones", "Зоны верхнего уровня"),
-    (ListKind.DIRECT_DOMAIN, "01-idn-zones", "Кириллические зоны"),
-    (ListKind.DIRECT_DOMAIN, "10-yandex", "Яндекс"),
-    (ListKind.DIRECT_DOMAIN, "11-vk-mail", "VK и Mail.ru"),
-    (ListKind.DIRECT_DOMAIN, "12-sber", "Сбер"),
-    (ListKind.DIRECT_DOMAIN, "20-banks-fintech", "Банки и финтех"),
-    (ListKind.DIRECT_DOMAIN, "21-marketplace-retail", "Маркетплейсы и ритейл"),
-    (ListKind.DIRECT_DOMAIN, "22-travel-delivery-taxi", "Поездки, такси, доставка"),
-    (ListKind.DIRECT_DOMAIN, "23-gov-health-edu", "Госуслуги, медицина, образование"),
-    (ListKind.DIRECT_DOMAIN, "24-maps", "Карты"),
-    (ListKind.DIRECT_DOMAIN, "26-corporate", "Корпорации"),
-    (ListKind.DIRECT_DOMAIN, "30-telecom", "Операторы связи"),
-    (ListKind.DIRECT_DOMAIN, "31-hosting-cloud-cdn", "Хостинги и облака"),
-    (ListKind.DIRECT_DOMAIN, "32-security-av", "Антивирусы и ИБ"),
-    (ListKind.DIRECT_DOMAIN, "40-state-media", "Госмедиа"),
-    (ListKind.DIRECT_DOMAIN, "41-media-streaming", "Кино, музыка, ТВ"),
-    (ListKind.DIRECT_DOMAIN, "50-games", "Игры"),
-    (ListKind.DIRECT_DOMAIN, "51-steam-valve", "Steam и Valve"),
-    (ListKind.DIRECT_DOMAIN, "60-saas-martech", "Сервисы для бизнеса"),
-    (ListKind.DIRECT_DOMAIN, "70-it-content", "IT-медиа и RuStore"),
-    (ListKind.DIRECT_DOMAIN, "80-oss-updates", "Свободный софт и обновления"),
-    (ListKind.DIRECT_DOMAIN, "90-ip-speed-check", "Проверка IP и скорости"),
-    (ListKind.DIRECT_DOMAIN, "99-other", "Прочее"),
-    (ListKind.DIRECT_IP, "00-steam-valve", "Сети Steam и Valve"),
-    (ListKind.DIRECT_IP, "10-ru-operators", "Сети операторов связи"),
-    (ListKind.DIRECT_IP, "20-ru-hosting-cloud", "Сети хостингов и облаков"),
-    (ListKind.DIRECT_IP, "30-ru-bigtech", "Сети крупных сервисов"),
-    (ListKind.DIRECT_IP, "40-cdn-antiddos", "Сети CDN и антиDDoS"),
-    (ListKind.DIRECT_IP, "50-ru-unrouted", "Немаршрутизируемые сети"),
-    (ListKind.DIRECT_IP, "90-ru-other", "Прочие сети"),
-    (ListKind.PROXY_DOMAIN, "00-own-infra", "Наша инфраструктура"),
-    (ListKind.PROXY_DOMAIN, "10-blocked-ru-hosted", "Заблокированное на российских хостингах"),
+    ("direct_domain", "00-tld-zones", "Зоны верхнего уровня"),
+    ("direct_domain", "01-idn-zones", "Кириллические зоны"),
+    ("direct_domain", "10-yandex", "Яндекс"),
+    ("direct_domain", "11-vk-mail", "VK и Mail.ru"),
+    ("direct_domain", "12-sber", "Сбер"),
+    ("direct_domain", "20-banks-fintech", "Банки и финтех"),
+    ("direct_domain", "21-marketplace-retail", "Маркетплейсы и ритейл"),
+    ("direct_domain", "22-travel-delivery-taxi", "Поездки, такси, доставка"),
+    ("direct_domain", "23-gov-health-edu", "Госуслуги, медицина, образование"),
+    ("direct_domain", "24-maps", "Карты"),
+    ("direct_domain", "26-corporate", "Корпорации"),
+    ("direct_domain", "30-telecom", "Операторы связи"),
+    ("direct_domain", "31-hosting-cloud-cdn", "Хостинги и облака"),
+    ("direct_domain", "32-security-av", "Антивирусы и ИБ"),
+    ("direct_domain", "40-state-media", "Госмедиа"),
+    ("direct_domain", "41-media-streaming", "Кино, музыка, ТВ"),
+    ("direct_domain", "50-games", "Игры"),
+    ("direct_domain", "51-steam-valve", "Steam и Valve"),
+    ("direct_domain", "60-saas-martech", "Сервисы для бизнеса"),
+    ("direct_domain", "70-it-content", "IT-медиа и RuStore"),
+    ("direct_domain", "80-oss-updates", "Свободный софт и обновления"),
+    ("direct_domain", "90-ip-speed-check", "Проверка IP и скорости"),
+    ("direct_domain", "99-other", "Прочее"),
+    ("direct_ip", "00-steam-valve", "Сети Steam и Valve"),
+    ("direct_ip", "10-ru-operators", "Сети операторов связи"),
+    ("direct_ip", "20-ru-hosting-cloud", "Сети хостингов и облаков"),
+    ("direct_ip", "30-ru-bigtech", "Сети крупных сервисов"),
+    ("direct_ip", "40-cdn-antiddos", "Сети CDN и антиDDoS"),
+    ("direct_ip", "50-ru-unrouted", "Немаршрутизируемые сети"),
+    ("direct_ip", "90-ru-other", "Прочие сети"),
+    ("proxy_domain", "00-own-infra", "Наша инфраструктура"),
+    ("proxy_domain", "10-blocked-ru-hosted", "Заблокированное на российских хостингах"),
 )
 
 
@@ -116,24 +115,24 @@ def upgrade() -> None:
     # третий заводится пустым. Пустая строка обязана существовать заранее —
     # `kind` уникален, и создавать её по требованию значило бы ловить гонку
     # двух вкладок.
-    op.execute(f"UPDATE manual_lists SET kind = '{ListKind.DIRECT_DOMAIN}' WHERE kind = 'domain'")
-    op.execute(f"UPDATE manual_lists SET kind = '{ListKind.DIRECT_IP}' WHERE kind = 'ip'")
+    op.execute(f"UPDATE manual_lists SET kind = 'direct_domain' WHERE kind = 'domain'")
+    op.execute(f"UPDATE manual_lists SET kind = 'direct_ip' WHERE kind = 'ip'")
     op.execute(
         "INSERT INTO manual_lists (kind, body, updated_by, updated_at) "
-        f"VALUES ('{ListKind.PROXY_DOMAIN}', '', '', now()) ON CONFLICT (kind) DO NOTHING"
+        f"VALUES ('proxy_domain', '', '', now()) ON CONFLICT (kind) DO NOTHING"
     )
     op.execute(
-        f"UPDATE manual_list_revisions SET kind = '{ListKind.DIRECT_DOMAIN}' WHERE kind = 'domain'"
+        f"UPDATE manual_list_revisions SET kind = 'direct_domain' WHERE kind = 'domain'"
     )
-    op.execute(f"UPDATE manual_list_revisions SET kind = '{ListKind.DIRECT_IP}' WHERE kind = 'ip'")
+    op.execute(f"UPDATE manual_list_revisions SET kind = 'direct_ip' WHERE kind = 'ip'")
 
 
 def downgrade() -> None:
-    op.execute(f"DELETE FROM manual_lists WHERE kind = '{ListKind.PROXY_DOMAIN}'")
-    op.execute(f"UPDATE manual_lists SET kind = 'domain' WHERE kind = '{ListKind.DIRECT_DOMAIN}'")
-    op.execute(f"UPDATE manual_lists SET kind = 'ip' WHERE kind = '{ListKind.DIRECT_IP}'")
+    op.execute(f"DELETE FROM manual_lists WHERE kind = 'proxy_domain'")
+    op.execute(f"UPDATE manual_lists SET kind = 'domain' WHERE kind = 'direct_domain'")
+    op.execute(f"UPDATE manual_lists SET kind = 'ip' WHERE kind = 'direct_ip'")
     op.execute(
-        f"UPDATE manual_list_revisions SET kind = 'domain' WHERE kind = '{ListKind.DIRECT_DOMAIN}'"
+        f"UPDATE manual_list_revisions SET kind = 'domain' WHERE kind = 'direct_domain'"
     )
-    op.execute(f"UPDATE manual_list_revisions SET kind = 'ip' WHERE kind = '{ListKind.DIRECT_IP}'")
+    op.execute(f"UPDATE manual_list_revisions SET kind = 'ip' WHERE kind = 'direct_ip'")
     op.execute("DELETE FROM domain_sources")

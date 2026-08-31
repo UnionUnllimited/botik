@@ -20,37 +20,39 @@ from core.models.base import Base, BigIntPkMixin
 
 
 class ListKind:
-    """Какой из трёх списков собирает источник.
+    """Какой из двух списков собирает источник. Оба ведут **через** туннель.
 
-    PassWall на роутере читает три файла, и у каждого своё назначение:
-
-      * `DIRECT_DOMAIN` → `chnlist_url` при `chn_list 'direct'` — домены
-        **мимо** туннеля. Российские сайты, банки, госуслуги: через туннель
-        они либо не откроются вовсе, либо будут отвечать как из-за рубежа.
-      * `DIRECT_IP` → `chnroute_url` — сети **мимо** туннеля. Ими же держатся
-        напрямую все `*.ru`: PassWall отбрасывает голые зоны из списка доменов.
-      * `PROXY_DOMAIN` → `gfwlist_url` при `gfwlist_update '1'` — домены
-        **через** туннель. Короткий список: наша инфраструктура и то, что
-        заблокировано у российских хостеров.
+      * `PROXY_DOMAIN` → `gfwlist_url` при `gfwlist_update '1'` — домены.
+      * `PROXY_IP` — сети. Штатной настройки под них у PassWall нет:
+        `chnroute_url` — это «мимо туннеля», то есть ровно наоборот. Файл
+        собираем и отдаём по своему адресу, а чем его читает прошивка —
+        её дело.
 
     Всё, чего нет ни в одном списке, идёт по режиму по умолчанию.
-    При совпадении выигрывает proxy: правила добавляются в порядке
-    `use_proxy_list` → `use_gfw_list` → `chn_list`, срабатывает первое.
+
+    **Списков «мимо туннеля» больше нет (31 августа 2026).** Схема менялась
+    дважды и оба раза на противоположную: сначала через туннель шёл короткий
+    список, потом наоборот — короткий мимо, а теперь мимо не идёт ничего.
+    Виды `direct_domain` и `direct_ip` убраны вместе с их адресами; ломать
+    было нечего, парк на тот момент тянул списки со старого сервера
+    и на наши адреса не смотрел.
+
+    Правило на будущее остаётся прежним: **менять смысл списка, не меняя
+    адреса, нельзя**. Роутер, читающий старый адрес, вывернет маршрутизацию
+    молча — заметят это клиенты, а не мы.
 
     Не enum: значение уезжает в чужую админку по HTTP и обратно, а лишний
     тип в схеме усложняет и миграцию, и разбор ответа.
     """
 
-    DIRECT_DOMAIN = "direct_domain"
-    DIRECT_IP = "direct_ip"
     PROXY_DOMAIN = "proxy_domain"
+    PROXY_IP = "proxy_ip"
 
-    ALL = (DIRECT_DOMAIN, DIRECT_IP, PROXY_DOMAIN)
+    ALL = (PROXY_DOMAIN, PROXY_IP)
 
     TITLES: ClassVar[dict[str, str]] = {
-        DIRECT_DOMAIN: "Домены мимо туннеля",
-        DIRECT_IP: "Сети мимо туннеля",
         PROXY_DOMAIN: "Домены через туннель",
+        PROXY_IP: "Сети через туннель",
     }
 
 
@@ -68,7 +70,7 @@ class DomainSource(BigIntPkMixin, Base):
     title: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     """Понятное имя для страницы: «Discord», «Подсети Telegram»."""
 
-    kind: Mapped[str] = mapped_column(String(16), default=ListKind.DIRECT_DOMAIN, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), default=ListKind.PROXY_DOMAIN, nullable=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 

@@ -74,9 +74,8 @@ def clean_ips(raw: str) -> list[str]:
 
 
 CLEANERS = {
-    ListKind.DIRECT_DOMAIN: clean_domains,
-    ListKind.DIRECT_IP: clean_ips,
     ListKind.PROXY_DOMAIN: clean_domains,
+    ListKind.PROXY_IP: clean_ips,
 }
 
 
@@ -156,7 +155,7 @@ def merge(parts: list[list[str]], manual: str, kind: str) -> list[str]:
     for part in parts:
         values.update(part)
     values.update(cleaner(manual))
-    if kind == ListKind.DIRECT_IP:
+    if kind == ListKind.PROXY_IP:
         return sorted(values, key=_network_key)
     # Байтовый порядок, а не алфавитный: `LC_ALL=C` у списков в репозитории.
     # Значения уже приведены к нижнему регистру и состоят из ASCII, поэтому
@@ -167,9 +166,8 @@ def merge(parts: list[list[str]], manual: str, kind: str) -> list[str]:
 # ── Сборка ────────────────────────────────────────────────────────────────────
 
 FILE_NAMES = {
-    ListKind.DIRECT_DOMAIN: "direct-domains.lst",
-    ListKind.DIRECT_IP: "direct-ip.lst",
     ListKind.PROXY_DOMAIN: "proxy-domains.lst",
+    ListKind.PROXY_IP: "proxy-ip.lst",
 }
 """Имена файлов, по которым роутер их забирает.
 
@@ -177,19 +175,21 @@ FILE_NAMES = {
 `testproxy.lst`): адрес попадает в конфиг PassWall и живёт там годами,
 и через полгода «test.lst» не скажет, что внутри и куда оно ведёт.
 
-Прежние `domains.lst` и `ip.lst` убраны намеренно. Смысл списков стал
-обратным — раньше это было «через туннель», теперь «мимо», — и отдавать
-новое содержимое по старому адресу значило бы молча вывернуть маршрутизацию
-у любого роутера, который на него смотрит."""
+Имена, под которыми список уже отдавался с другим смыслом, не переиспользуются
+никогда. Так ушли `domains.lst` и `ip.lst`, так же ушли `direct-domains.lst`
+и `direct-ip.lst`: отдать по прежнему адресу новое содержимое — значит молча
+вывернуть маршрутизацию у любого роутера, который на него смотрит."""
 
 PASSWALL_SETTINGS = {
-    ListKind.DIRECT_DOMAIN: "chnlist_url (при chn_list 'direct')",
-    ListKind.DIRECT_IP: "chnroute_url",
     ListKind.PROXY_DOMAIN: "gfwlist_url (при gfwlist_update '1')",
+    ListKind.PROXY_IP: "штатной настройки нет — прописывается в прошивке вручную",
 }
 """Куда какой адрес прописывается в прошивке. Показывается рядом со ссылкой
-на странице списков: перепутать местами `chnlist_url` и `gfwlist_url` — значит
-пустить российские банки через туннель, а заблокированное напрямую."""
+на странице списков, чтобы оператор не гадал.
+
+У сетей через туннель штатной настройки у PassWall нет вовсе: `chnroute_url`
+ведёт в обратную сторону, и подставить его сюда — значит пустить эти сети
+мимо туннеля, то есть ровно наоборот."""
 
 
 def lists_dir() -> Path:
@@ -346,11 +346,8 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
     # домен, раздающий те же файлы.
     publish_local(conf.get("lists_local_dir", ""), built)
     record.uploaded = await upload(built, conf)
-    # В истории сборок две колонки, а списков теперь три: домены считаем
-    # вместе — и те, что мимо туннеля, и те, что через. Разводить их значило
-    # бы менять схему ради строки, которую читают глазами раз в месяц.
-    record.domains = counts[ListKind.DIRECT_DOMAIN] + counts[ListKind.PROXY_DOMAIN]
-    record.ips = counts[ListKind.DIRECT_IP]
+    record.domains = counts[ListKind.PROXY_DOMAIN]
+    record.ips = counts[ListKind.PROXY_IP]
     record.failed_sources = failed
     record.finished_at = utcnow()
     log.info("domain_lists.built", domains=record.domains, ips=record.ips, failed=failed)

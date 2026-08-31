@@ -37,7 +37,6 @@ from collections.abc import Sequence
 
 from alembic import op
 
-from core.models import ListKind
 
 revision: str = "0019"
 down_revision: str | None = "0018"
@@ -67,7 +66,7 @@ def upgrade() -> None:
     for stem, title, order in _NEW:
         op.execute(
             "INSERT INTO domain_sources (url, title, kind, is_enabled, sort_order) "
-            f"VALUES ('{_url(stem)}', '{title}', '{ListKind.DIRECT_DOMAIN}', true, {order}) "
+            f"VALUES ('{_url(stem)}', '{title}', 'direct_domain', true, {order}) "
             "ON CONFLICT (url) DO NOTHING"
         )
 

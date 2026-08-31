@@ -1598,7 +1598,7 @@ async def lists_state(session: AsyncSession = Depends(get_session)) -> dict:
 async def source_add(payload: dict, session: AsyncSession = Depends(get_transaction)) -> dict:
     """Добавляет источник. Адрес уникален — тот же список дважды не нужен."""
     url = str(payload.get("url") or "").strip()
-    kind = str(payload.get("kind") or ListKind.DIRECT_DOMAIN).strip()
+    kind = str(payload.get("kind") or ListKind.PROXY_DOMAIN).strip()
     if not url.startswith(("http://", "https://")):
         return {"ok": False, "error": "Адрес должен начинаться с http:// или https://"}
     if kind not in ListKind.ALL:

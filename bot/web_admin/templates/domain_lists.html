@@ -74,16 +74,13 @@
   {% endif %}
 
   {# ── Свой список ──────────────────────────────────────────────────────── #}
-  {# Три списка, и путать их нельзя: первые два уводят мимо туннеля,
-     третий — в туннель. Подпись у каждого поля говорит, куда попадёт
-     то, что оператор впишет. #}
+  {# Оба списка ведут через туннель: один доменами, другой сетями.
+     Подпись у каждого поля говорит, куда попадёт то, что оператор впишет. #}
   {% for kind, label, hint in [
-      ('direct_domain', 'Свои домены мимо туннеля',
-       'Пойдут напрямую, минуя наш сервер. По домену на строку, схему и путь уберём сами.'),
-      ('direct_ip', 'Свои сети мимо туннеля',
-       'Тоже напрямую. IPv4, с маской или без: 1.2.3.4 или 10.0.0.0/8.'),
       ('proxy_domain', 'Свои домены через туннель',
-       'Пойдут через наш сервер. Сюда добавляют то, что заблокировано.')] %}
+       'Пойдут через наш сервер. По домену на строку, схему и путь уберём сами.'),
+      ('proxy_ip', 'Свои сети через туннель',
+       'Тоже через наш сервер. IPv4, с маской или без: 1.2.3.4 или 10.0.0.0/8.')] %}
   {% set row = manual.get(kind) or {} %}
   {% set log = history.get(kind) or [] %}
   <div class="tw-card p-4">
@@ -291,8 +288,8 @@
               <div class="{% if not s.is_enabled %}opacity-50{% endif %}">
                 <b>{{ s.title or s.url }}</b>
                 <span class="tw-kbd text-[10px] ml-1">{{
-                  {'direct_domain': 'домены мимо', 'direct_ip': 'сети мимо',
-                   'proxy_domain': 'домены через'}.get(s.kind, s.kind) }}</span>
+                  {'proxy_domain': 'домены через', 'proxy_ip': 'сети через'}.get(
+                    s.kind, s.kind) }}</span>
               </div>
               <div class="text-[11px] tw-text-subtle2 break-all">{{ s.url }}</div>
               {% if s.last_error %}
@@ -329,9 +326,8 @@
       <input type="text" name="title" placeholder="Название" class="tw-input">
       <div class="flex gap-2">
         <select name="kind" class="tw-input">
-          <option value="direct_domain">домены мимо туннеля</option>
-          <option value="direct_ip">сети мимо туннеля</option>
           <option value="proxy_domain">домены через туннель</option>
+          <option value="proxy_ip">сети через туннель</option>
         </select>
         <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">Добавить</button>
       </div>

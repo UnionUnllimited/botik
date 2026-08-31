@@ -30,25 +30,20 @@ def _plain(body: str) -> Response:
     )
 
 
-@router.get("/direct-domains.lst")
-async def direct_domains() -> Response:
-    """Домены мимо туннеля — `chnlist_url` при `chn_list 'direct'`.
+@router.get("/proxy-domains.lst")
+async def proxy_domains() -> Response:
+    """Домены через туннель — `gfwlist_url` при `gfwlist_update '1'`.
 
     Пустой ответ означает, что сборки ещё не было. Пустое, а не 404: прошивка
     на 404 может решить, что адрес сменился, и записать себе пустой список —
     разницы в итоге никакой, а разбираться с этим на роутере у клиента куда
     сложнее, чем посмотреть сюда.
     """
-    return _plain(domain_lists.read_list(ListKind.DIRECT_DOMAIN))
-
-
-@router.get("/direct-ip.lst")
-async def direct_ip() -> Response:
-    """Сети мимо туннеля — `chnroute_url`."""
-    return _plain(domain_lists.read_list(ListKind.DIRECT_IP))
-
-
-@router.get("/proxy-domains.lst")
-async def proxy_domains() -> Response:
-    """Домены через туннель — `gfwlist_url` при `gfwlist_update '1'`."""
     return _plain(domain_lists.read_list(ListKind.PROXY_DOMAIN))
+
+
+@router.get("/proxy-ip.lst")
+async def proxy_ip() -> Response:
+    """Сети через туннель. Штатной настройки у PassWall под них нет —
+    адрес прописывается в прошивке вручную."""
+    return _plain(domain_lists.read_list(ListKind.PROXY_IP))
