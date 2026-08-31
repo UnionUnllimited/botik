@@ -1,6 +1,6 @@
-# Перенос витрины на routers.titanvps.pro
+# Перенос витрины на titanvps.pro
 
-Задача: покупатель заходит на `routers.titanvps.pro`, а имя
+Задача: покупатель заходит на `titanvps.pro`, а имя
 `vbotrouters.titanvps.click` и адрес сервера с приложением
 (`82.197.73.251`) не видит никто.
 
@@ -8,10 +8,18 @@
 встаёт отдельная ВМ, которая принимает клиентов и передаёт запросы внутрь.
 
 ```
-клиент ──443──▶ ВМ-прокси ──443──▶ 82.197.73.251:8443 (приложение)
-                (routers.titanvps.pro)      закрыт файрволом
-                                            на адрес ВМ-прокси
+клиент ──443──▶ ВМ-прокси ──────443──────▶ 82.197.73.251:8443
+                titanvps.pro               приложение, порт закрыт
+                                           файрволом на адрес ВМ
 ```
+
+**Внимание: `titanvps.pro` сейчас занят.** Он резолвится на `5.34.214.243` —
+тот самый хост с remnanode. Витрина на этом имени означает, что A-запись
+apex переезжает на ВМ-прокси, и всё, что сегодня обращается к
+`titanvps.pro`, поедет туда же. Reality ходит на ноду по подставному SNI
+и на имя не смотрит, но перед переносом стоит убедиться, что на apex
+не завязаны ссылки подписок и вход в панель. Если завязаны — либо сначала
+перевести их на своё имя, либо взять для витрины поддомен.
 
 **Прокси ставится на отдельную ВМ, не на ту, где remnanode.** Там 443
 занят нодой, и её пришлось бы двигать, роняя клиентов. На своей ВМ порт
@@ -48,7 +56,7 @@
 На новой ВМ нужен только nginx. Записать её адрес:
 
 ```
-routers.titanvps.pro.  A  <IP ВМ-прокси>
+titanvps.pro.  A  <IP ВМ-прокси>
 ```
 
 `vbotrouters.titanvps.click` пока **не трогать** — на нём работает боевой
@@ -61,7 +69,7 @@ apt update && apt install -y nginx certbot
 ```
 
 ```bash
-certbot certonly --standalone -d routers.titanvps.pro
+certbot certonly --standalone -d titanvps.pro
 ```
 
 `--standalone` сам поднимает временный сервер на 80. Если nginx уже
@@ -76,7 +84,7 @@ certbot certonly --standalone -d routers.titanvps.pro
 больше не будет, значит и в CT-логах его не будет:
 
 ```bash
-mkdir -p /opt/router-shop/deploy/origin-tls && cd /opt/router-shop/deploy/origin-tls && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout origin.key -out origin.crt -subj "/CN=routers.titanvps.pro" -addext "subjectAltName=DNS:routers.titanvps.pro,DNS:cdn.titanvps.pro"
+mkdir -p /opt/router-shop/deploy/origin-tls && cd /opt/router-shop/deploy/origin-tls && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout origin.key -out origin.crt -subj "/CN=titanvps.pro" -addext "subjectAltName=DNS:titanvps.pro,DNS:cdn.titanvps.pro"
 ```
 
 Ключ в репозиторий не попадает — каталог в `.gitignore`. Второе имя
@@ -100,18 +108,18 @@ cd /opt/router-shop && git pull --ff-only && docker compose up -d --remove-orpha
 ufw allow from <IP ВМ-прокси> to any port 8443 proto tcp && ufw deny 8443/tcp
 ```
 
-**На прокси.** `routers-site.conf` → `/etc/nginx/conf.d/`, в нём заменить
+**На прокси.** `shop-site.conf` → `/etc/nginx/conf.d/`, в нём заменить
 `ORIGIN_IP` на `82.197.73.251`. Сертификат origin (`origin.crt` с шага выше)
 скопировать в `/etc/nginx/origin-ca.pem`:
 
 ```bash
-sed -i 's/ORIGIN_IP/82.197.73.251/' /etc/nginx/conf.d/routers-site.conf && nginx -t && systemctl reload nginx
+sed -i 's/ORIGIN_IP/82.197.73.251/' /etc/nginx/conf.d/shop-site.conf && nginx -t && systemctl reload nginx
 ```
 
 Проверить, что витрина открылась и что старого имени в ней нет:
 
 ```bash
-curl -s https://routers.titanvps.pro/ | grep -c "titanvps.click"
+curl -s https://titanvps.pro/ | grep -c "titanvps.click"
 ```
 
 Ноль — чисто. Не ноль — значит остался шаг с `API_PUBLIC_BASE_URL` ниже.
@@ -120,7 +128,7 @@ curl -s https://routers.titanvps.pro/ | grep -c "titanvps.click"
 собираются ссылки:
 
 ```bash
-cd /opt/router-shop && sed -i 's|^API_PUBLIC_BASE_URL=.*|API_PUBLIC_BASE_URL=https://routers.titanvps.pro|' .env && make deploy
+cd /opt/router-shop && sed -i 's|^API_PUBLIC_BASE_URL=.*|API_PUBLIC_BASE_URL=https://titanvps.pro|' .env && make deploy
 ```
 
 Бот и веб-админка ходили к API через публичный домен, то есть через чужой
@@ -157,7 +165,7 @@ curl -sk --max-time 5 https://82.197.73.251:8443/healthz || echo "порт за�
 ```
 
 ```bash
-curl -s https://routers.titanvps.pro/ | grep -o "82\.197\.73\.251\|titanvps\.click" | sort -u
+curl -s https://titanvps.pro/ | grep -o "82\.197\.73\.251\|titanvps\.click" | sort -u
 ```
 
 Пусто — ни адреса, ни старого имени в выдаче нет.

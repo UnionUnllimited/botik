@@ -38,7 +38,7 @@ services:
     ports:
       - "8443:8443"
     environment:
-      ORIGIN_NAME: ${ORIGIN_NAME:-routers.titanvps.pro}
+      ORIGIN_NAME: ${ORIGIN_NAME:-titanvps.pro}
     volumes:
       - ./deploy/nginx/origin:/etc/nginx/templates:ro
       - ./deploy/origin-tls:/etc/nginx/origin-tls:ro
