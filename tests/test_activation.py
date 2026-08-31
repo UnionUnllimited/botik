@@ -621,3 +621,60 @@ class TestOrderIsLoadedReadyForStatusChange:
         )
         order_service.set_status(order, OrderStatus.ACTIVATED, force=True)
         assert delivery.delivered_at is not None
+
+
+class TestSubscriptionCover:
+    """Роутер ходит за подпиской через прикрытие, а не прямо на панель.
+
+    Ссылку выдаёт панель и на себя же: её домен оказывается прописан
+    в прошивке у каждого клиента и достижим из любой домашней сети.
+    """
+
+    @staticmethod
+    def _cover(monkeypatch, host: str) -> None:
+        from core.config import settings
+
+        monkeypatch.setattr(settings.remnawave, "sub_public_host", host)
+
+    def test_host_is_replaced_and_token_kept(self, monkeypatch):
+        from core.services.activation import public_subscription_url
+
+        self._cover(monkeypatch, "r.api1.titanvps.su")
+        assert (
+            public_subscription_url("https://sub-routers.example.online/api/sub/EjdThLb2KC6y1T8q")
+            == "https://r.api1.titanvps.su/api/sub/EjdThLb2KC6y1T8q"
+        )
+
+    def test_scheme_may_be_written_out(self, monkeypatch):
+        """Хост можно задать и со схемой — оператор напишет как привык."""
+        from core.services.activation import public_subscription_url
+
+        self._cover(monkeypatch, "https://r.api1.titanvps.su")
+        assert public_subscription_url("https://panel.example/api/sub/x") == (
+            "https://r.api1.titanvps.su/api/sub/x"
+        )
+
+    def test_empty_host_changes_nothing(self, monkeypatch):
+        """Пусто — ссылка уходит роутеру такой, какой её выдала панель."""
+        from core.services.activation import public_subscription_url
+
+        self._cover(monkeypatch, "")
+        original = "https://panel.example/api/sub/x"
+        assert public_subscription_url(original) == original
+
+    def test_garbage_is_left_alone(self, monkeypatch):
+        """Не ссылка — подменять нечего, и собрать битый адрес хуже, чем отдать как есть."""
+        from core.services.activation import public_subscription_url
+
+        self._cover(monkeypatch, "r.api1.titanvps.su")
+        assert public_subscription_url("не ссылка") == "не ссылка"
+
+    def test_delivery_goes_through_it(self):
+        """Подмена стоит в самой доставке: путей активации несколько,
+        и обойти её мимо одного из них нельзя."""
+        import inspect
+
+        from core.services import activation
+
+        body = inspect.getsource(activation.deliver_subscription)
+        assert "public_subscription_url(url)" in body

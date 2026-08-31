@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from urllib.parse import urlsplit, urlunsplit
 
 import structlog
 from sqlalchemy import select
@@ -509,8 +510,34 @@ async def _ensure_tunnel(session: AsyncSession, device: Device) -> None:
     await sync_frpc_config()
 
 
+def public_subscription_url(url: str) -> str:
+    """Подменяет хост в ссылке подписки на прикрытие, если оно задано.
+
+    Панель отдаёт ссылку на свой домен, и роутер идёт прямо к ней: адрес
+    панели оказывается прописан в прошивке у каждого клиента и достижим
+    из любой домашней сети. С заданным `REMNAWAVE_SUB_PUBLIC_HOST` роутер
+    ходит через него.
+
+    Путь и токен не трогаем — их выдала панель, по ним она узнаёт клиента.
+    Меняется только то, к какой двери роутер подходит.
+    """
+    host = settings.remnawave.sub_public_host.strip()
+    if not host:
+        return url
+    parsed = urlsplit(url)
+    if not parsed.scheme or not parsed.netloc:
+        # Не ссылка, а что-то другое: молча подменять хост тут не в чем,
+        # и лучше отдать как есть, чем собрать битый адрес.
+        return url
+    cover = urlsplit(host if "://" in host else f"https://{host}")
+    return urlunsplit(
+        (cover.scheme or "https", cover.netloc, parsed.path, parsed.query, parsed.fragment)
+    )
+
+
 async def deliver_subscription(device: Device, url: str) -> str:
     """Отдаёт роутеру ссылку подписки скриптом прошивки."""
+    url = public_subscription_url(url)
     safe = url.replace("'", "'\\''")
     result = await router_shell.run(device, f"{APPLY_SCRIPT} '{safe}'", timeout=60)
     if not result.ok:
