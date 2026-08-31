@@ -479,3 +479,68 @@ class TestThreeListsHaveDifferentMeanings:
 
         assert "domains.lst" not in FILE_NAMES.values()
         assert "ip.lst" not in FILE_NAMES.values()
+
+
+class TestSourcesFromOurRepo:
+    """Каждый файл из `parts/` должен быть заведён источником.
+
+    Незаведённый источник не ошибка и не предупреждение: его строки просто
+    не попадают в сборку, и на странице списков это видно как «0 из N» —
+    то есть только если туда заглянуть.
+    """
+
+    @staticmethod
+    def _module(name: str):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[1] / "migrations/versions" / name
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_migration_continues_the_chain(self):
+        later = self._module("0019_more_direct_domain_parts.py")
+        assert later.revision == "0019"
+        assert later.down_revision == "0018"
+
+    def test_new_parts_are_registered(self):
+        """Шесть категорий из `parts/domains/`, которых не было в посеве."""
+        later = self._module("0019_more_direct_domain_parts.py")
+        stems = {stem for stem, _title, _order in later._NEW}
+        assert stems == {
+            "05-own-infra",
+            "81-device-ota",
+            "82-dev-registries",
+            "83-asia",
+            "84-hardware-vendors",
+            "85-desktop-software",
+        }
+
+    def test_they_go_past_the_tunnel(self):
+        """Все шесть лежат в `parts/domains/`, а этой папке отвечает
+        `direct_domain` — мимо туннеля. Ошибиться видом значит завернуть
+        обновления и репозитории в зарубежный канал."""
+        later = self._module("0019_more_direct_domain_parts.py")
+        for stem, _title, _order in later._NEW:
+            assert "/domains/" in later._url(stem)
+
+    def test_addresses_do_not_repeat_the_seed(self):
+        """Адрес уникален в таблице: повтор посева упёрся бы в конфликт,
+        а не добавил бы категорию."""
+        seed = self._module("0018_lists_from_our_repo.py")
+        seeded = {
+            f"{seed._RAW}/{seed._FOLDERS[kind]}/{stem}.lst" for kind, stem, _title in seed._SEED
+        }
+        later = self._module("0019_more_direct_domain_parts.py")
+        assert not seeded & {later._url(stem) for stem, _t, _o in later._NEW}
+
+    def test_order_puts_them_among_neighbours(self):
+        """Сортировка — по соседям с тем же номером, а не в хвост за сетями:
+        иначе `81` окажется ниже списков IP, и найти его будет негде."""
+        later = self._module("0019_more_direct_domain_parts.py")
+        order = {stem: value for stem, _title, value in later._NEW}
+        assert order["05-own-infra"] < order["81-device-ota"]
+        # 80-oss-updates в посеве — двадцать первый по счёту, то есть 210.
+        assert all(210 < order[stem] < 220 for stem in order if stem.startswith("8"))
