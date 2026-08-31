@@ -1,13 +1,20 @@
 # Витрина за прокси на titanvps.pro
 
-Задача: покупатель видит только `routers.titanvps.pro`, роутеры ходят за
-списками и прошивкой на `cdn.titanvps.pro`, а адрес origin
+Задача: покупатель видит только `routers.titanvps.pro`, а адрес origin
 (`82.197.73.251`) и его прежнее имя не видит никто.
+
+**Списки и прошивки в этот заход не входят** — решение заказчика от
+31 августа. Ломать нечего: роутеры тянут списки со старого сервера
+`vm171085`, а адрес манифеста в прошивку ещё не прописан (см. `docs/state.md`,
+раздел про обновление прошивки). Но адрес им понадобится **раньше**, чем
+образ уйдёт в партию: зашитый в прошивку адрес меняется перевыпуском
+образа, а не правкой конфига. Заготовка — в комментариях
+`stream-sni.conf` и `routers-site.conf`.
 
 ```
 клиент ──443──▶ 5.34.214.243 (titanvps.pro)
                  │  nginx stream, читает SNI
-                 ├─ routers/cdn.titanvps.pro ─▶ nginx http ─443─▶ 82.197.73.251 (origin)
+                 ├─ routers.titanvps.pro ────▶ nginx http ─443─▶ 82.197.73.251 (origin)
                  └─ всё остальное ────────────▶ remnanode, как было
 ```
 
@@ -31,11 +38,10 @@
 
 ### 1. DNS
 
-В Spaceship завести две записи:
+В Spaceship завести запись:
 
 ```
 routers.titanvps.pro.  A  5.34.214.243
-cdn.titanvps.pro.      A  5.34.214.243
 ```
 
 Запись `vbotrouters.titanvps.click` пока **не трогать** — на ней всё ещё
@@ -63,7 +69,7 @@ docker compose up -d
 
 ```bash
 apt install -y nginx certbot python3-certbot-nginx
-certbot certonly --standalone -d routers.titanvps.pro -d cdn.titanvps.pro
+certbot certonly --standalone -d routers.titanvps.pro
 ```
 
 `--standalone` берёт 80, который свободен. Если nginx уже слушает 80 —
@@ -107,7 +113,9 @@ openssl s_client -connect 127.0.0.1:443 -servername titanvps.pro </dev/null 2>/d
 mkdir -p /opt/router-shop/deploy/origin-tls && cd /opt/router-shop/deploy/origin-tls && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout origin.key -out origin.crt -subj "/CN=routers.titanvps.pro" -addext "subjectAltName=DNS:routers.titanvps.pro,DNS:cdn.titanvps.pro"
 ```
 
-Ключ в репозиторий не попадает — каталог в `.gitignore`.
+Ключ в репозиторий не попадает — каталог в `.gitignore`. Второе имя в SAN
+стоит с запасом, хотя списки и прошивки отложены: перевыпускать сертификат
+ради добавления имени — это ещё и копировать его заново на прокси.
 
 Дальше origin поднимается своим nginx на 8443, а 80 и 443 остаются чужому
 Caddy. В `.env` меняется набор файлов compose:
@@ -175,9 +183,11 @@ Caddy на origin.
 
   Путь к файлу окружения свой у каждой установки — посмотреть
   `systemctl cat router-bot | grep EnvironmentFile`.
-* **Прошивка роутеров** — адрес манифеста зашит в образ. Он ещё не
-  прописан (см. `docs/state.md`, раздел про обновление прошивки), так что
-  сразу ставить `https://cdn.titanvps.pro/firmware/manifest.json`.
+* **Прошивка и списки** — отложены, но адрес им нужен до выпуска партии:
+  зашитый в образ он меняется только перевыпуском. Когда дойдут руки —
+  поднять `cdn.titanvps.pro` по заготовкам в конфигах и прописать
+  `https://cdn.titanvps.pro/firmware/manifest.json`, а списки перевести
+  туда же со старого `vm171085`.
 * **Вебхук Platega** — адрес колбэка в личном кабинете провайдера.
 * **Документы для клиента** — уже переписаны на `routers.titanvps.pro`.
 
