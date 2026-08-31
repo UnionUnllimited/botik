@@ -474,6 +474,17 @@ def _absolute(url_path: str) -> str:
     return f"{settings.api.public_base_url.rstrip('/')}{url_path}"
 
 
+def _admin_absolute(url_path: str) -> str:
+    """Адрес для ссылок, которые открывает браузер оператора.
+
+    Отдельно от публичного намеренно. Публичный ведёт на витрину, а витрина
+    у нас за прокси на другом континенте — гонять через него стомегабайтный
+    образ прошивки незачем: оператор и приложение стоят рядом. Тем же
+    адресом открывается веб-панель роутера (`fleet_api`), и по той же причине.
+    """
+    return f"{settings.api.admin_base_url.rstrip('/')}{url_path}"
+
+
 def manifest_url() -> str:
     return _absolute(MANIFEST_PATH)
 
@@ -537,7 +548,7 @@ async def issue_ticket(*, release_id: int, model_key: str) -> str:
     target = UploadTarget(release_id=release_id, model_key=model_key)
     await get_redis().set(_ticket_key(ticket_id), json.dumps(asdict(target)), ex=TICKET_TTL_SEC)
     log.info("firmware.ticket_issued", release_id=release_id, model=model_key)
-    return f"{_absolute(URL_PREFIX)}/upload?ticket={_serializer().dumps(ticket_id)}"
+    return f"{_admin_absolute(URL_PREFIX)}/upload?ticket={_serializer().dumps(ticket_id)}"
 
 
 async def redeem_ticket(raw_ticket: str) -> UploadTarget | None:

@@ -572,6 +572,23 @@ class TestTicket:
         return fake
 
     @pytest.mark.asyncio
+    async def test_ticket_points_at_the_admin_address(self, monkeypatch):
+        """Образ грузит браузер оператора, и путь у него должен быть прямой.
+
+        Публичный адрес ведёт на витрину, а она за прокси на другом
+        континенте: собери мы ссылку из него — стомегабайтный образ поехал
+        бы туда и обратно, упираясь по дороге в предел на размер тела.
+        Так и случилось на боевом сервере, и выглядело как «Связь оборвалась».
+        """
+        from core.config import settings
+
+        monkeypatch.setattr(settings.api, "public_base_url", "https://shop.example")
+        monkeypatch.setattr(settings.api, "admin_base_url", "https://inside.example")
+
+        url = await firmware.issue_ticket(release_id=7, model_key=MODEL)
+        assert url.startswith("https://inside.example/firmware/upload?ticket=")
+
+    @pytest.mark.asyncio
     async def test_ticket_is_spent_once(self):
         url = await firmware.issue_ticket(release_id=7, model_key=MODEL)
         raw = url.split("ticket=", 1)[1]
