@@ -1711,13 +1711,15 @@ def _status_notice(order: Order, reason: str, *, instruction_url: str = "") -> s
         notice += "\n\n" + texts.TRACK_INFO.format(track=delivery.tracking_number)
         if delivery.tracking_url:
             notice += "\n" + delivery.tracking_url
-    if order.status is OrderStatus.DELIVERED:
+    if order.status is OrderStatus.DELIVERED and instruction_url:
         # Момент, когда человек держит коробку и не знает, что дальше.
-        # Инструкция лежит на самом роутере: она не может разойтись
-        # с прошивкой и открывается ещё до того, как появится интернет.
-        notice += "\n\n" + texts.DELIVERY_INSTRUCTION.format(
-            instruction=instruction_url or texts.DEFAULT_INSTRUCTION_URL
-        )
+        # Запасного адреса тут нет намеренно: `_setup_url` уже возвращает
+        # либо настройку оператора, либо адрес из `API_PUBLIC_BASE_URL`,
+        # и пустым не бывает. Раньше на этом месте стоял несуществующий
+        # `texts.DEFAULT_INSTRUCTION_URL` — он бы уронил ответ, доведись
+        # ветке сработать. Лучше пропустить абзац, чем звать по ссылке
+        # в никуда.
+        notice += "\n\n" + texts.DELIVERY_INSTRUCTION.format(instruction=instruction_url)
     return notice
 
 
