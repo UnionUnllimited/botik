@@ -1,0 +1,56 @@
+# Оверлей для origin, когда витрина уехала за прокси на другом сервере.
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.origin.yml
+#
+# Публичного имени у origin больше нет, значит нет и сертификата от
+# Let's Encrypt — и записи в CT-логах, по которой его находят. Вместо
+# публичного nginx поднимается свой, отдельным сервисом: он слушает 8443
+# с самоподписанным сертификатом, а 80 и 443 остаются чужому Caddy —
+# он на этом сервере не один.
+#
+# Отдельный сервис, а не переопределение портов у `nginx`: списки в
+# compose при слиянии складываются, а не заменяются, и публикация 80/443
+# осталась бы на месте. `!override` это чинит, но требует Compose 2.24+,
+# и молча ломается на версии постарше.
+#
+# Наружу 8443 закрывается файрволом на адрес прокси — без этого весь
+# смысл теряется, порт просто переезжает. См. deploy/proxy/README.md, шаг 5.
+
+services:
+  nginx:
+    profiles: ["disabled"]
+
+  certbot:
+    profiles: ["disabled"]
+
+  api:
+    # Бот и веб-админка — отдельные процессы на этом же хосте, и до сих пор
+    # они ходили к API через публичный домен, то есть через чужой Caddy.
+    # Домен уезжает, Caddy из цепочки уходит — без локального порта они
+    # остались бы без каталога. Наружу порт не смотрит: только петля.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  nginx-origin:
+    image: nginx:1.29-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "8443:8443"
+    environment:
+      ORIGIN_NAME: ${ORIGIN_NAME:-routers.titanvps.pro}
+    volumes:
+      - ./deploy/nginx/origin:/etc/nginx/templates:ro
+      - ./deploy/origin-tls:/etc/nginx/origin-tls:ro
+    healthcheck:
+      test:
+        - "CMD"
+        - "wget"
+        - "-q"
+        - "-O"
+        - "-"
+        - "--no-check-certificate"
+        - "https://localhost:8443/healthz"
+      interval: 30s
+      timeout: 5s
+      retries: 3

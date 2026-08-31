@@ -42,3 +42,6 @@ bot/web_admin/venv/
 bot/xuiweb/venv/
 bot/website/venv/
 bot/subpage/venv/
+
+# Самоподписанный сертификат origin: приватный ключ, ему в репозитории не место
+deploy/origin-tls/
