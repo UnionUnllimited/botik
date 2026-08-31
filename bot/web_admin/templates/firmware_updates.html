@@ -36,7 +36,7 @@
         {% if current %}
         <div class="text-[22px] font-semibold tw-text-base2">версия {{ current.version }}</div>
         <div class="text-[12px] tw-text-subtle2">
-          опубликована {{ current.published_at[:16].replace('T', ' ') if current.published_at }}{% if current.created_by %}, {{ current.created_by }}{% endif %}
+          опубликована {{ current.published_at|msk_compact if current.published_at }}{% if current.created_by %}, {{ current.created_by }}{% endif %}
         </div>
         {% if current.notes %}
         <div class="text-[12.5px] tw-text-base2 mt-1">{{ current.notes }}</div>
@@ -339,7 +339,7 @@
               {% endif %}
             </td>
             <td class="py-1.5 tw-text-muted2">
-              {% if item.published_at %}{{ item.published_at[:16].replace('T', ' ') }}
+              {% if item.published_at %}{{ item.published_at|msk_compact }}
               {% else %}<span class="text-amber-600">черновик</span>{% endif %}
             </td>
             <td class="py-1.5 tw-text-muted2">

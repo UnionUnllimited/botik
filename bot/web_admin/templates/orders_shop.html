@@ -104,7 +104,7 @@
             <div class="tw-text-muted2 text-[12px]">{{ item.phone or '' }}</div>
           </td>
           <td class="px-3 py-2">{{ item.city or '—' }}</td>
-          <td class="px-3 py-2">{{ item.total }} ₽</td>
+          <td class="px-3 py-2">{{ item.total|money }}</td>
           <td class="px-3 py-2">
             {{ status_titles.get(item.status, item.status) }}
             {% if item.paid %}<span style="color:#16a34a"> ●</span>{% endif %}
@@ -114,7 +114,7 @@
             <div class="text-[11px] text-amber-500">{{ delivery_titles.get('not_quoted') }}</div>
             {% elif item.delivery_state == 'awaiting_payment' %}
             <div class="text-[11px] text-amber-500">
-              {{ delivery_titles.get('awaiting_payment') }} · {{ item.delivery_price }} ₽
+              {{ delivery_titles.get('awaiting_payment') }} · {{ item.delivery_price|money }}
             </div>
             {% endif %}
           </td>

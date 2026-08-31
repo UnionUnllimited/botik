@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,7 +25,7 @@ def make_user(tg_id: int = 123456789) -> User:
 class TestUsername:
     def test_contains_telegram_and_mac(self):
         name = username_for(make_user(), "A0:B1:C2:D3:E4:F5")
-        assert name == "tg123456789_a0b1c2d3e4f5"
+        assert name == "tg123456789_A0B1C2D3E4F5"
 
     def test_separators_are_stripped(self):
         """Панель принимает только латиницу, цифры, дефис и подчёркивание."""
@@ -44,7 +45,7 @@ class TestUsername:
     def test_site_client_gets_name_without_telegram(self):
         """У клиента с сайта tg_id пустой: «tgNone_...» был бы одинаков у всех."""
         name = username_for(User(id=42, email="client@example.com"), "A0:B1:C2:D3:E4:F5")
-        assert name == "id42_a0b1c2d3e4f5"
+        assert name == "id42_A0B1C2D3E4F5"
         assert "None" not in name
 
     def test_site_clients_do_not_collide(self):
@@ -53,9 +54,17 @@ class TestUsername:
         second = username_for(User(id=43, email="b@example.com"), mac)
         assert first != second
 
-    def test_telegram_client_name_is_unchanged(self):
-        """Имена уже заведённых учёток трогать нельзя: панель ищет их по имени."""
-        assert username_for(make_user(), "A0:B1:C2:D3:E4:F5") == "tg123456789_a0b1c2d3e4f5"
+    def test_mac_is_uppercase(self):
+        """MAC в имени — заглавными, тем же видом, что в админке и на наклейке.
+
+        Оператор ищет учётку в панели копипастой из карточки роутера, а поиск
+        там регистр не прощает: строчное имя по такому запросу не находилось.
+
+        Имена уже заведённых учёток при этом остались строчными, и трогать
+        их нельзя — панель ищет по имени. Прикрыто это не здесь, а поиском
+        без учёта регистра, см. `TestAccountLookupIgnoresCase`.
+        """
+        assert username_for(make_user(), "A0:B1:C2:D3:E4:F5") == "tg123456789_A0B1C2D3E4F5"
 
     def test_fits_panel_limit(self):
         name = username_for(User(id=1, tg_id=9999999999999999, first_name="x"), "A0:B1:C2:D3:E4:F5")
@@ -174,13 +183,66 @@ class TestExpirySyncContract:
         assert inspect.signature(sync_panel_expiry).return_annotation == "bool"
 
 
+class TestAccountLookupIgnoresCase:
+    """Учётка ищется без учёта регистра — иначе смена регистра имён плодит вторые.
+
+    Имена стали заглавными, а всё, что заведено до этого, осталось строчным.
+    Точный поиск такую учётку не нашёл бы, панель завела бы вторую на тот же
+    роутер — а он уже ходит по ссылке первой, и продлевали бы не ту.
+    """
+
+    class _Panel:
+        def __init__(self, existing):
+            self.existing = existing
+            self.exact_calls = 0
+
+        async def find_user(self, username):
+            self.exact_calls += 1
+            return next((u for u in self.existing if u.username == username), None)
+
+        async def users(self):
+            return list(self.existing)
+
+    @staticmethod
+    def _account(username):
+        return SimpleNamespace(username=username, uuid="u-1", subscription_url="", expire_at=None)
+
+    @pytest.mark.asyncio
+    async def test_lowercase_account_is_found_by_uppercase_name(self):
+        from core.services.activation import _find_account
+
+        panel = self._Panel([self._account("d4-0d-ab-28-3b-80")])
+        found = await _find_account(panel, "D4-0D-AB-28-3B-80")
+
+        assert found is not None, "старая строчная учётка не нашлась — панель завела бы вторую"
+        assert found.username == "d4-0d-ab-28-3b-80"
+
+    @pytest.mark.asyncio
+    async def test_exact_match_does_not_scan_the_panel(self):
+        """Список всех учёток тянем только когда точного совпадения нет."""
+        from core.services.activation import _find_account
+
+        panel = self._Panel([self._account("D4-0D-AB-28-3B-80")])
+        found = await _find_account(panel, "D4-0D-AB-28-3B-80")
+
+        assert found is not None
+        assert panel.exact_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_account_is_none(self):
+        from core.services.activation import _find_account
+
+        panel = self._Panel([self._account("tg1_AABBCCDDEEFF")])
+        assert await _find_account(panel, "D4-0D-AB-28-3B-80") is None
+
+
 class TestManualActivation:
     """Ручная активация из админки: имя учётки — сам MAC, клиента может не быть."""
 
     def test_username_is_the_mac(self):
         from core.services.activation import manual_username_for
 
-        assert manual_username_for("D4:0D:AB:28:3B:80") == "d4-0d-ab-28-3b-80"
+        assert manual_username_for("D4:0D:AB:28:3B:80") == "D4-0D-AB-28-3B-80"
 
     def test_username_fits_panel_rules(self):
         """Панель принимает только латиницу, цифры, дефис и подчёркивание."""

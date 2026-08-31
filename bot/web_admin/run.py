@@ -27,6 +27,7 @@ mimetypes.add_type('font/otf', '.otf')
 # .mjs Python тоже исторически знает не везде — на всякий случай форсим.
 mimetypes.add_type('text/javascript', '.mjs')
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 from typing import Optional
 
@@ -1708,34 +1709,115 @@ def inject_news_feed_url():
     return dict(news_feed_url=(url or _DEFAULT_NEWS_FEED_URL))
 
 # --- Jinja фильтры ---
+def _to_msk(value):
+    """Разбирает время из базы и переводит в Москву. `None` — если не вышло.
+
+    В базе время в UTC, оператору показывается московское. Разбор собран
+    в одном месте: страницы, которые режут ISO-строку по символам, показывают
+    UTC под видом местного — на три часа назад и без единого признака ошибки.
+    """
+    if value is None:
+        return None
+    dt_obj = None
+    if isinstance(value, str):
+        try:
+            dt_obj = datetime.fromisoformat(value)
+        except Exception:
+            try:
+                dt_obj = datetime.strptime(value[:19], '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return None
+    elif isinstance(value, datetime):
+        dt_obj = value
+    else:
+        return None
+
+    # Наивное время считаем UTC: так его кладёт основное приложение.
+    if dt_obj.tzinfo is None:
+        dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+    return dt_obj.astimezone(pytz.timezone('Europe/Moscow'))
+
+
 @app.template_filter('msk_datetime')
 def msk_datetime_filter(value):
     """Форматирует дату/время в МСК: YYYY.MM.DD HH:MM по MSK."""
     try:
-        dt_obj = None
         if value is None:
             return ''
-        if isinstance(value, str):
-            try:
-                dt_obj = datetime.fromisoformat(value)
-            except Exception:
-                try:
-                    dt_obj = datetime.strptime(value[:19], '%Y-%m-%d %H:%M:%S')
-                except Exception:
-                    return value
-        elif isinstance(value, datetime):
-            dt_obj = value
-        else:
+        dt_msk = _to_msk(value)
+        if dt_msk is None:
             return str(value)
-
-        # Если наивное время — считаем его UTC
-        if dt_obj.tzinfo is None:
-            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
-        msk = pytz.timezone('Europe/Moscow')
-        dt_msk = dt_obj.astimezone(msk)
         return dt_msk.strftime('%Y.%m.%d %H:%M') + ' по MSK'
     except Exception:
         return str(value)
+
+
+@app.template_filter('msk_compact')
+def msk_compact_filter(value):
+    """30.08.2026 23:41 — для таблиц, где «по MSK» стоит в шапке колонки.
+
+    Повторять пояснение в каждой строке незачем: оно раздувает колонку
+    и читается как часть значения.
+    """
+    try:
+        if value is None:
+            return '—'
+        dt_msk = _to_msk(value)
+        return dt_msk.strftime('%d.%m.%Y %H:%M') if dt_msk else str(value)
+    except Exception:
+        return str(value)
+
+
+@app.template_filter('msk_date')
+def msk_date_filter(value):
+    """30.08.2026 — там, где время не нужно.
+
+    Всё равно через Москву: у события в 23:40 UTC московская дата уже
+    следующая, и срезанная строка показала бы вчерашний день.
+    """
+    try:
+        if value is None:
+            return '—'
+        dt_msk = _to_msk(value)
+        return dt_msk.strftime('%d.%m.%Y') if dt_msk else str(value)
+    except Exception:
+        return str(value)
+
+
+@app.template_filter('msk_time')
+def msk_time_filter(value):
+    """Только часы и минуты по Москве — для подписи под датой."""
+    try:
+        if value is None:
+            return ''
+        dt_msk = _to_msk(value)
+        return dt_msk.strftime('%H:%M') if dt_msk else str(value)
+    except Exception:
+        return str(value)
+
+
+@app.template_filter('money')
+def money_filter(value, currency='RUB'):
+    """1500.00 → «1 500 ₽», 122.99 → «122,99 ₽».
+
+    Копейки показываются, только если они есть: ровные суммы с «.00» — это
+    шум, а в таблице из десяти строк он складывается в кашу. Формат тот же,
+    что у бота в сообщениях клиенту (`core.texts.money`), чтобы одна и та же
+    сумма выглядела одинаково в панели и в переписке.
+    """
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value if value is not None else '')
+
+    if amount == amount.to_integral_value():
+        body = f'{amount:,.0f}'.replace(',', ' ')
+    else:
+        body = f'{amount:,.2f}'.replace(',', ' ').replace('.', ',')
+
+    code = (currency or 'RUB').upper()
+    # Чужую валюту показываем кодом: рисовать ей рублёвый знак — врать.
+    return f'{body} ₽' if code in ('RUB', 'RUR', '') else f'{body} {code}'
 
 # --- Статика под секретным префиксом ---
 @app.route('/<path:secret>/static/<path:filename>')

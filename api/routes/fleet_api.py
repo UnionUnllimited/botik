@@ -1023,8 +1023,12 @@ async def _panel_traffic(macs_by_client: dict[str, list[str]]) -> dict[str, dict
         log.warning("fleet.panel_traffic_failed", error=str(exc))
         return {}
 
+    # Ключи в нижнем регистре, и сверяем с ними тоже приведённое имя: имена
+    # учёток стали заглавными, а заведённые раньше остались строчными.
+    # Точное сравнение перестало бы узнавать половину парка, и трафик у этих
+    # клиентов молча показывался бы нулевым.
     by_manual_name = {
-        activation.manual_username_for(mac): tg_id
+        activation.manual_username_for(mac).lower(): tg_id
         for tg_id, macs in macs_by_client.items()
         for mac in macs
     }
@@ -1038,7 +1042,7 @@ async def _panel_traffic(macs_by_client: dict[str, list[str]]) -> dict[str, dict
             candidate = account.username[2:].split("_", 1)[0]
             owner = candidate if candidate in macs_by_client else ""
         if not owner:
-            owner = by_manual_name.get(account.username, "")
+            owner = by_manual_name.get(account.username.strip().lower(), "")
         if not owner:
             continue
 

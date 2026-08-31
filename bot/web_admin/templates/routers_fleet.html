@@ -288,7 +288,7 @@
             <td class="px-3 py-2 font-mono tw-text-muted2 whitespace-nowrap">
               {{ item.visitor_port or '—' }}
               {% if not item.online and item.last_seen %}
-                <div class="text-[11px]">молчит с {{ item.last_seen[:16].replace('T', ' ') }}</div>
+                <div class="text-[11px]">молчит с {{ item.last_seen|msk_compact }}</div>
               {% endif %}
             </td>
           </tr>

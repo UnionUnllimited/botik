@@ -47,9 +47,9 @@
             <div class="tw-text-muted2 text-[12px] font-mono">{{ item.slug }}</div>
           </td>
           <td class="px-3 py-2">
-            {{ item.price }} ₽
+            {{ item.price|money }}
             {% if item.old_price %}
-              <span class="tw-text-muted2 text-[12px]"><s>{{ item.old_price }} ₽</s></span>
+              <span class="tw-text-muted2 text-[12px]"><s>{{ item.old_price|money }}</s></span>
             {% endif %}
           </td>
           <td class="px-3 py-2">

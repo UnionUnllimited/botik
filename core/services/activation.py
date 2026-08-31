@@ -66,7 +66,7 @@ def username_for(user: User, mac: str) -> str:
     )
     raw = template.format(
         tg_id=user.tg_id,
-        mac=mac.replace(":", "").lower(),
+        mac=mac.replace(":", "").upper(),
         user_id=user.id,
     )
     return _USERNAME_ALLOWED.sub("", raw)[:34]
@@ -78,9 +78,31 @@ def manual_username_for(mac: str) -> str:
     Клиента у такого устройства может не быть вовсе, и брать имя не от кого.
     Двоеточия панель не принимает, поэтому разделителем идёт дефис: так строка
     хотя бы читается как MAC, когда её ищут в панели глазами.
+
+    Заглавными — тем же видом, каким MAC показан в админке и напечатан
+    на наклейке. Оператор ищет в панели копипастой, и строчное имя по такому
+    запросу не находилось: поиск в панели регистр не прощает.
     """
-    cleaned = _USERNAME_ALLOWED.sub("", mac.replace(":", "-").lower())
+    cleaned = _USERNAME_ALLOWED.sub("", mac.replace(":", "-").upper())
     return cleaned[:34]
+
+
+async def _find_account(panel: remnawave.RemnawaveClient, username: str):
+    """Учётка по имени, без учёта регистра.
+
+    Точного поиска мало: имена стали заглавными, а всё, что заведено раньше,
+    осталось строчным. Не найдя, панель завела бы **вторую** учётку на тот же
+    роутер — а он к этому моменту уже ходит по ссылке первой, и подписку
+    продлевали бы не ту.
+    """
+    account = await panel.find_user(username)
+    if account is not None:
+        return account
+    key = username.strip().lower()
+    for existing in await panel.users():
+        if existing.username.strip().lower() == key:
+            return existing
+    return None
 
 
 def panel_expiry_of(account: remnawave.RemnaUser | None) -> dt.datetime | None:
@@ -116,7 +138,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
 
     try:
         panel = remnawave.client()
-        account = await panel.find_user(username)
+        account = await _find_account(panel, username)
         if account is None:
             account = await panel.create_user(
                 username=username,
@@ -393,7 +415,10 @@ async def _router_accounts(device: Device) -> list[remnawave.RemnaUser]:
         for account in await remnawave.client().users()
         if account_of_router(account.username, device.mac)
     ]
-    manual = manual_username_for(device.mac)
+    manual = manual_username_for(device.mac).lower()
+    # Сравниваем в нижнем регистре с обеих сторон: имена теперь заглавные,
+    # а заведённые раньше остались строчными — сравнение как есть перестало
+    # бы узнавать ручную учётку, и первой в списке вставала бы клиентская.
     accounts.sort(key=lambda account: account.username.strip().lower() != manual)
     return accounts
 
@@ -587,7 +612,7 @@ async def activate(
 
     # Повторная активация того же роутера не должна плодить учётки.
     try:
-        account = await panel.find_user(username)
+        account = await _find_account(panel, username)
         expire_at = subscriptions.period_end_for(subscription.plan, start=now)
         if account is None:
             account = await panel.create_user(

@@ -63,7 +63,7 @@
   {% if last_build %}
   <div class="tw-card p-3.5 text-[12.5px] tw-text-base2">
     Последняя сборка{% if last_build.finished_at %}:
-    {{ last_build.finished_at[:16].replace('T', ' ') }}{% endif %}.
+    {{ last_build.finished_at|msk_compact }}{% endif %}.
     {% if last_build.failed_sources %}
       <span class="text-amber-600">Источников не ответило: {{ last_build.failed_sources }}.</span>
     {% endif %}
@@ -92,7 +92,7 @@
         <label for="body_{{ kind }}" class="text-[13px] font-semibold tw-text-base2">{{ label }}</label>
         <span class="text-[11px] tw-text-subtle2">
           {%- if row.updated_at %}правил {{ row.updated_by or 'кто-то' }},
-            {{ row.updated_at[:16].replace('T', ' ') }}{% endif -%}
+            {{ row.updated_at|msk_compact }}{% endif -%}
         </span>
       </div>
       <textarea id="body_{{ kind }}" name="body" rows="8" class="tw-input"
@@ -131,7 +131,7 @@
           {% for item in log %}
           <tr class="border-t" style="border-color: var(--admin-border);">
             <td class="py-1.5 pr-2 tw-text-subtle2 whitespace-nowrap">
-              {{ item.created_at[:16].replace('T', ' ') if item.created_at else '—' }}
+              {{ item.created_at|msk_compact if item.created_at else '—' }}
             </td>
             <td class="py-1.5 pr-2">{{ item.author or '—' }}</td>
             <td class="py-1.5 pr-2 whitespace-nowrap">

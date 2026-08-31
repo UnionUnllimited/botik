@@ -552,9 +552,13 @@ def env() -> jinja2.Environment:
         ),
         autoescape=True,
     )
-    # Фильтры их админки — нам важно, что страница собирается, а не как
-    # выглядит дата.
-    environment.filters["msk_datetime"] = lambda value: str(value or "")
+    # Фильтры админки — нам важно, что страница собирается, а не как
+    # выглядит дата и сумма. Список должен совпадать с тем, что регистрирует
+    # `bot/web_admin/run.py`: забыть здесь фильтр значит уронить страницу
+    # на боевом сервере, а тест этого не заметит.
+    for name in ("msk_datetime", "msk_compact", "msk_date", "msk_time"):
+        environment.filters[name] = lambda value: str(value or "")
+    environment.filters["money"] = lambda value, currency="RUB": f"{value} ₽"
     environment.globals.update(
         url_for=lambda endpoint, **kwargs: f"/{endpoint}",
         get_flashed_messages=lambda **kwargs: [],

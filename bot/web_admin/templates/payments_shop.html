@@ -43,7 +43,7 @@
   <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
     <div class="tw-card p-4">
       <div class="text-[12px] tw-text-muted2">Принято всего</div>
-      <div class="text-[22px] font-semibold" style="color:#16a34a">{{ earned }} ₽</div>
+      <div class="text-[22px] font-semibold" style="color:#16a34a">{{ earned|money }}</div>
     </div>
     <div class="tw-card p-4">
       <div class="text-[12px] tw-text-muted2">Платежей в отборе</div>
@@ -62,7 +62,7 @@
           <th class="px-3 py-2 font-medium">Сумма</th>
           <th class="px-3 py-2 font-medium">Состояние</th>
           <th class="px-3 py-2 font-medium">Провайдер</th>
-          <th class="px-3 py-2 font-medium">Создан</th>
+          <th class="px-3 py-2 font-medium">Создан, МСК</th>
           <th class="px-3 py-2 font-medium"></th>
         </tr>
       </thead>
@@ -88,7 +88,7 @@
             {% endif %}
           </td>
           <td class="px-3 py-2">{{ item.purpose_label }}</td>
-          <td class="px-3 py-2 whitespace-nowrap">{{ item.amount }} {{ item.currency }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">{{ item.amount|money(item.currency) }}</td>
           <td class="px-3 py-2 whitespace-nowrap">
             {% if item.status == 'succeeded' %}
             <span style="color:#16a34a">● {{ item.status_label }}</span>
@@ -105,9 +105,9 @@
             {% endif %}
           </td>
           <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
-            {{ item.created_at[:16].replace('T', ' ') if item.created_at else '—' }}
+            {{ item.created_at|msk_compact }}
             {% if item.paid_at %}
-            <div class="text-[11px]" style="color:#16a34a">оплачен {{ item.paid_at[11:16] }}</div>
+            <div class="text-[11px]" style="color:#16a34a">оплачен {{ item.paid_at|msk_time }}</div>
             {% endif %}
           </td>
           {# Отменить можно только висящий: перед отменой основное приложение

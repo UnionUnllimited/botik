@@ -242,7 +242,7 @@
         <tbody>
           {% for event in events %}
           <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
-            <td class="px-2 py-2 tw-text-muted2 whitespace-nowrap">{{ (event.at or '')[:16] | replace('T', ' ') }}</td>
+            <td class="px-2 py-2 tw-text-muted2 whitespace-nowrap">{{ event.at|msk_compact }}</td>
             <td class="px-2 py-2 whitespace-nowrap">{{ event.level }}</td>
             <td class="px-2 py-2">{{ event.message }}</td>
           </tr>

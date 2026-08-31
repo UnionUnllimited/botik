@@ -62,7 +62,7 @@
         {% for event in events %}
         <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
           <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
-            {{ event.at[:16].replace('T', ' ') if event.at else '—' }}
+            {{ event.at|msk_compact if event.at else '—' }}
           </td>
           <td class="px-3 py-2 whitespace-nowrap">
             {% if event.level == 'error' %}<span style="color:#dc2626">{{ event.level }}</span>

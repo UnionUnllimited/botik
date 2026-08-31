@@ -13,7 +13,7 @@
        «Отправлен · оплачен · отправлен»: текущий статус повторялся отметкой. #}
     <p class="text-[13px] tw-text-muted2 mt-1">
       {{ status_titles.get(order.status, order.status) }}
-      {% if order.paid_at %} · оплачен {{ order.paid_at[:10] }}{% endif %}
+      {% if order.paid_at %} · оплачен {{ order.paid_at|msk_date }}{% endif %}
       {% if order.shipped_at %} · отправлен {{ order.shipped_at[:10] }}{% endif %}
       {% if order.delivered_at %} · доставлен {{ order.delivered_at[:10] }}{% endif %}
     </p>
@@ -46,20 +46,20 @@
          метод dict.items, а не состав заказа. Страница падала на этом. #}
       {% for item in order['items'] %}
       <div class="flex justify-between gap-3">
-        <span>{{ item.title }}</span><span>{{ item.total }} ₽</span>
+        <span>{{ item.title }}</span><span>{{ item.total|money }}</span>
       </div>
       {% endfor %}
       {% if order.discount and order.discount != '0.00' %}
       <div class="flex justify-between gap-3 tw-text-muted2">
-        <span>Скидка</span><span>−{{ order.discount }} ₽</span>
+        <span>Скидка</span><span>−{{ order.discount|money }}</span>
       </div>
       {% endif %}
       <div class="flex justify-between gap-3 tw-text-muted2">
-        <span>Доставка</span><span>{{ order.delivery_price }} ₽</span>
+        <span>Доставка</span><span>{{ order.delivery_price|money }}</span>
       </div>
       <div class="flex justify-between gap-3 font-semibold tw-text-base2 pt-2 border-t"
            style="border-color: rgb(var(--admin-border));">
-        <span>Итого</span><span>{{ order.total }} ₽</span>
+        <span>Итого</span><span>{{ order.total|money }}</span>
       </div>
     </div>
   </div>
@@ -204,12 +204,12 @@
       </div>
       {% elif delivery.paid %}
       <div class="text-[12px] tw-text-muted2 mb-2">
-        {{ delivery_titles.get('paid', 'Доставка оплачена') }}: <b>{{ delivery.price }} ₽</b>
+        {{ delivery_titles.get('paid', 'Доставка оплачена') }}: <b>{{ delivery.price|money }}</b>
       </div>
       {% else %}
       <div class="text-[12px] text-amber-500 mb-2">
         {{ delivery_titles.get('awaiting_payment', 'Ждёт оплату доставки') }}:
-        <b>{{ delivery.price }} ₽</b>. Счёт клиенту отправлен, кнопка оплаты
+        <b>{{ delivery.price|money }}</b>. Счёт клиенту отправлен, кнопка оплаты
         всегда есть у него в «Моих заказах».
       </div>
       {% endif %}
@@ -312,7 +312,7 @@
         <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
           <td class="px-3 py-2 font-mono">{{ item.id }}</td>
           <td class="px-3 py-2">{{ item.provider }}</td>
-          <td class="px-3 py-2">{{ item.amount }} ₽</td>
+          <td class="px-3 py-2">{{ item.amount|money }}</td>
           <td class="px-3 py-2">{{ item.status_label }}</td>
         </tr>
         {% endfor %}
