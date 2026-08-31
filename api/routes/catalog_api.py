@@ -1142,13 +1142,26 @@ async def _page_url(session: AsyncSession, key: str, fallback: str) -> str:
     return f"{settings.api.public_base_url.rstrip('/')}{fallback}"
 
 
+ROUTER_LOCAL_INSTRUCTION = "http://192.168.14.1/instruction"
+"""Инструкция, которая лежит на самом роутере.
+
+Адрес локальный и работает только из домашней сети клиента — в этом и смысл:
+она не может разойтись с прошивкой и открывается даже когда интернета нет,
+а «пропал интернет» — как раз тот случай, ради которого её и открывают.
+"""
+
+
 async def _instruction_url(session: AsyncSession) -> str:
     """Постоянная инструкция: пароль от Wi-Fi, срок, продление, «пропал интернет».
 
-    Она у клиента всегда — кнопкой в «Моём роутере». Это не те же шаги, что
-    при распаковке: их читают один раз, а сюда возвращаются потом.
+    Она у клиента всегда — кнопкой в «Моём роутере», и ведёт на сам роутер,
+    а не на сайт. Это не те же шаги, что при распаковке: те читают один раз,
+    пока посылка едет, и живут на витрине (см. `_setup_url`).
     """
-    return await _page_url(session, "router.instruction_url", "/guide")
+    configured = str(
+        await settings_service.get_setting(session, "router.instruction_url") or ""
+    ).strip()
+    return configured or ROUTER_LOCAL_INSTRUCTION
 
 
 async def _setup_url(session: AsyncSession) -> str:
