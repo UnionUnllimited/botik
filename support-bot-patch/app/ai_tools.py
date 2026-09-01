@@ -89,7 +89,7 @@ AI_TOOLS_SPEC = [
     {
         "type": "function",
         "function": {
-            "name": "get_my_traffic",
+            "name": "_disabled_get_my_traffic",
             "description": (
                 "Получить информацию об использованном трафике клиента "
                 "за текущий период подписки: сколько ГБ использовано, "
