@@ -205,7 +205,9 @@ class TestAccountLookupIgnoresCase:
 
     @staticmethod
     def _account(username):
-        return SimpleNamespace(username=username, uuid="u-1", subscription_url="", expire_at=None)
+        return SimpleNamespace(
+            username=username, uid="u-1", uid_key="uuid", subscription_url="", expire_at=None
+        )
 
     @pytest.mark.asyncio
     async def test_lowercase_account_is_found_by_uppercase_name(self):
@@ -265,7 +267,7 @@ class TestManualActivation:
         from core.services.activation import panel_expiry_of
         from core.services.remnawave import RemnaUser
 
-        account = RemnaUser(uuid="u", username="n", subscription_url="", expire_at="2026-09-26T12:00:00.000Z")
+        account = RemnaUser(uid="u", username="n", subscription_url="", expire_at="2026-09-26T12:00:00.000Z")
         assert panel_expiry_of(account) == dt.datetime(2026, 9, 26, 12, tzinfo=dt.UTC)
 
     def test_missing_expiry_is_not_an_error(self):
@@ -274,8 +276,8 @@ class TestManualActivation:
         from core.services.remnawave import RemnaUser
 
         assert panel_expiry_of(None) is None
-        assert panel_expiry_of(RemnaUser(uuid="u", username="n", subscription_url="")) is None
-        garbled = RemnaUser(uuid="u", username="n", subscription_url="", expire_at="скоро")
+        assert panel_expiry_of(RemnaUser(uid="u", username="n", subscription_url="")) is None
+        garbled = RemnaUser(uid="u", username="n", subscription_url="", expire_at="скоро")
         assert panel_expiry_of(garbled) is None
 
 
@@ -311,13 +313,13 @@ class TestRouterRefusalIsExplained:
         from core.services import activation, router_shell
         from core.services.remnawave import RemnaUser
 
-        account = RemnaUser(uuid="u", username="n", subscription_url="https://panel/sub/x")
+        account = RemnaUser(uid="u", username="n", subscription_url="https://panel/sub/x")
 
         class _Panel:
             async def find_user(self, _username):
                 return account
 
-            async def update_expiry(self, **_kwargs):
+            async def update_expiry(self, *_args, **_kwargs):
                 return None
 
         async def _no_tunnel(_session, _device):
@@ -369,7 +371,7 @@ class TestPanelAccountLookup:
         from core.services.remnawave import RemnaUser
 
         return RemnaUser(
-            uuid=f"uuid-{username}",
+            uid=f"uid-{username}",
             username=username,
             subscription_url=f"https://panel/{username}",
             expire_at=expire_at,
@@ -467,8 +469,8 @@ class TestPanelAccountLookup:
             async def users(self):
                 return [account]
 
-            async def update_expiry(self, *, uuid, expire_at):
-                moved.update(uuid=uuid, expire_at=expire_at)
+            async def update_expiry(self, account, *, expire_at):
+                moved.update(uid=account.uid, expire_at=expire_at)
 
         monkeypatch.setattr(activation.remnawave, "client", _Panel)
         monkeypatch.setattr(activation.routers, "add_event", lambda *a, **k: None)
@@ -481,7 +483,7 @@ class TestPanelAccountLookup:
 
         until = await activation.extend_manually(_Session(), device=device, days=30)
 
-        assert moved["uuid"] == account.uuid, "продлевать надо найденную учётку"
+        assert moved["uid"] == account.uid, "продлевать надо найденную учётку"
         assert until > dt.datetime.now(dt.UTC)
 
     @pytest.mark.asyncio
@@ -497,8 +499,8 @@ class TestPanelAccountLookup:
             async def users(self):
                 return [account]
 
-            async def update_expiry(self, *, uuid, expire_at):
-                moved.update(uuid=uuid, expire_at=expire_at)
+            async def update_expiry(self, account, *, expire_at):
+                moved.update(uid=account.uid, expire_at=expire_at)
 
         monkeypatch.setattr(activation.remnawave, "client", _Panel)
         monkeypatch.setattr(activation.routers, "add_event", lambda *a, **k: None)
@@ -517,7 +519,7 @@ class TestPanelAccountLookup:
                 return device if model is Device else owner
 
         assert await activation.sync_panel_expiry(_Session(), subscription) is True
-        assert moved["uuid"] == account.uuid
+        assert moved["uid"] == account.uid
 
     @pytest.mark.asyncio
     async def test_reactivation_moves_the_stale_expiry(self, monkeypatch):
@@ -546,8 +548,8 @@ class TestPanelAccountLookup:
             async def create_user(self, **_kwargs):
                 raise AssertionError("вторая учётка тому же роутеру не нужна")
 
-            async def update_expiry(self, *, uuid, expire_at):
-                moved.update(uuid=uuid, expire_at=expire_at)
+            async def update_expiry(self, account, *, expire_at):
+                moved.update(uid=account.uid, expire_at=expire_at)
 
         plan = Plan(
             id=1, slug="m1", title="1 месяц", months=1, extra_days=0, price=Decimal("399.00")
@@ -577,7 +579,7 @@ class TestPanelAccountLookup:
         await activation.activate(_Session(), user=owner, raw_mac=self.MAC, rate_limited=False)
 
         assert moved, "срок в панели остался прежним, хотя подписка уже новая"
-        assert moved["uuid"] == stale.uuid
+        assert moved["uid"] == stale.uid
         assert moved["expire_at"] > dt.datetime.now(dt.UTC)
 
 

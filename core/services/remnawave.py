@@ -247,9 +247,14 @@ class RemnaSquad:
 class RemnaUser:
     """Учётка клиента в панели. Нас интересует прежде всего ссылка подписки."""
 
-    uuid: str
-    username: str
-    subscription_url: str
+    uid: str
+    """Чем панель называет учётку. До 2.9 это `uuid`, дальше — числовой `id`."""
+    uid_key: str = "uuid"
+    """Каким ключом панель её назвала. Им же отвечаем при изменении: панель
+    старой версии не поймёт `id`, новая — `uuid`, а знать заранее, какая перед
+    нами, неоткуда. Ключ приходит вместе с ответом, и гадать не приходится."""
+    username: str = ""
+    subscription_url: str = ""
     status: str = ""
     expire_at: str = ""
     used_traffic_bytes: int = 0
@@ -264,8 +269,12 @@ class RemnaUser:
     @classmethod
     def parse(cls, item: dict[str, Any]) -> RemnaUser:
         traffic = item.get("userTraffic") or {}
+        # Порядок важен: пока панель отдаёт оба ключа, отвечать надо тем,
+        # который она считает основным. `uuid` исчезнет — останется `id`.
+        uid_key = "uuid" if item.get("uuid") is not None else "id"
         return cls(
-            uuid=str(_pick(item, "uuid", "id", default="")),
+            uid=str(_pick(item, "uuid", "id", default="")),
+            uid_key=uid_key,
             username=str(_pick(item, "username", default="")),
             subscription_url=str(_pick(item, "subscriptionUrl", default="")),
             status=str(_pick(item, "status", default="")),
@@ -447,23 +456,31 @@ class RemnawaveClient:
         created = RemnaUser.parse(answer)
         if not created.subscription_url:
             raise RemnawaveError("Панель завела учётку, но не вернула ссылку подписки")
-        log.info("remnawave.user_created", username=username, uuid=created.uuid)
+        log.info("remnawave.user_created", username=username, uid=created.uid)
         return created
 
-    async def update_expiry(self, *, uuid: str, expire_at: dt.datetime) -> RemnaUser:
+    async def update_expiry(self, account: RemnaUser, *, expire_at: dt.datetime) -> RemnaUser:
         """Двигает срок учётки в панели.
 
         Нужно при продлении: срок ставится один раз при активации, и без этого
         доступ отключился бы по старой дате, хотя клиент оплатил следующий период.
+
+        Принимает саму учётку, а не идентификатор: панель до 2.9 узнаёт её
+        по `uuid`, дальше — по числовому `id`, и назвать ключ правильно может
+        только тот ответ, из которого учётка и пришла.
         """
         payload = {
-            "uuid": uuid,
+            account.uid_key: account.uid,
             "expireAt": expire_at.astimezone(dt.UTC).isoformat().replace("+00:00", "Z"),
         }
         answer = unwrap(await self.request("PATCH", self._config.users_path, json=payload))
         if not isinstance(answer, dict):
             raise RemnawaveError("Панель ответила на продление не объектом")
-        log.info("remnawave.expiry_updated", uuid=uuid, expire_at=payload["expireAt"])
+        log.info(
+            "remnawave.expiry_updated",
+            **{account.uid_key: account.uid},
+            expire_at=payload["expireAt"],
+        )
         return RemnaUser.parse(answer)
 
     async def probe(self) -> PanelStatus:

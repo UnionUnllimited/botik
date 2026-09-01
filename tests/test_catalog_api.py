@@ -275,7 +275,7 @@ class TestPanelTrafficMatching:
 
     def _account(self, username, *, telegram_id=0, used=0):
         return RemnaUser(
-            uuid="u", username=username, subscription_url="",
+            uid="u", username=username, subscription_url="",
             used_traffic_bytes=used, telegram_id=telegram_id,
         )
 

@@ -153,7 +153,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
         else:
             # Повторная активация того же роутера не должна плодить учётки:
             # переиспользуем и просто переставляем срок.
-            await panel.update_expiry(uuid=account.uuid, expire_at=expire_at)
+            await panel.update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.manual_panel_failed", mac=device.mac, error=str(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
@@ -351,7 +351,7 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
         now = utcnow()
         current = panel_expiry_of(account)
         expire_at = max(current or now, now) + dt.timedelta(days=days)
-        await remnawave.client().update_expiry(uuid=account.uuid, expire_at=expire_at)
+        await remnawave.client().update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.manual_extend_failed", mac=device.mac, error=str(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
@@ -593,9 +593,7 @@ async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -
             log.warning("activation.expiry_sync_no_account", mac=device.mac)
             return False
         account = accounts[0]
-        await remnawave.client().update_expiry(
-            uuid=account.uuid, expire_at=subscription.expires_at
-        )
+        await remnawave.client().update_expiry(account, expire_at=subscription.expires_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.expiry_sync_failed", mac=device.mac, error=str(exc))
         return False
@@ -652,7 +650,7 @@ async def activate(
             # Учётка осталась с прошлой активации, и срок в ней прежний —
             # роутер сбрасывали на склад и активируют заново. Без переноса
             # клиент получает ссылку, по которой доступ уже кончился.
-            await panel.update_expiry(uuid=account.uuid, expire_at=expire_at)
+            await panel.update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.panel_failed", mac=mac, error=str(exc))
         raise ActivationError(
