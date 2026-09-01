@@ -25,6 +25,14 @@
           <i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>Открыть панель</span>
         </button>
       </form>
+      {# Живой терминал: нужен там, где разовой команды мало — `top`, `logread -f`,
+         редактор. Открывается в новой вкладке и живёт десять минут. #}
+      <form method="post" target="_blank"
+            action="{{ url_for('admin.router_terminal', device_id=device_id) }}">
+        <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+          <i data-lucide="square-terminal" class="w-3.5 h-3.5"></i><span>Открыть терминал</span>
+        </button>
+      </form>
       {# Пароль root показывается по кнопке и не попадает в разметку страницы:
          в карточку заглядывают чаще, чем он нужен. Считает его основное
          приложение — соль только у него. #}

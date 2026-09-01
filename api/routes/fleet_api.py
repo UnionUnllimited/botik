@@ -50,6 +50,7 @@ from core.services import (
     remnawave,
     router_shell,
     settings_service,
+    terminal_ticket,
 )
 from core.services import routers as routers_service
 from core.services import subscriptions as subscription_service
@@ -1335,6 +1336,28 @@ async def save_note(
     device = await _device_or_404(session, device_id)
     device.admin_note = str(payload.get("note", "")).strip()[:2000] or None
     return {"ok": True}
+
+
+@router.post("/routers/{device_id}/terminal-ticket", dependencies=[Depends(require_token)])
+async def terminal_ticket_for(
+    device_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Разовая ссылка на живой терминал роутера.
+
+    Тем же путём, что и панель, и по той же причине: SSH идёт через туннель
+    нашего контейнера. Отличие в том, что здесь открывается root-сессия,
+    и запрет опасных команд, который стоит у разовых, тут не работает —
+    подробности в `api/routes/terminal.py`.
+    """
+    device = await _device_or_404(session, device_id)
+    if not device.frp_visitor_port:
+        await routers_service.ensure_frp_binding(session, device)
+    if not device.frp_visitor_port:
+        return {"ok": False, "error": "Туннель к роутеру не выделен."}
+
+    ticket = await terminal_ticket.issue(device_id=device.id, mac=device.mac)
+    base = settings.api.admin_base_url.rstrip("/")
+    return {"ok": True, "url": f"{base}/terminal/open?ticket={ticket}"}
 
 
 @router.post("/routers/{device_id}/panel-ticket", dependencies=[Depends(require_token)])

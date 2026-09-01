@@ -334,6 +334,19 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             return redirect(url_for("admin.router_card", device_id=device_id))
         return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
 
+    @admin_bp_instance.route("/routers/<int:device_id>/terminal", methods=["POST"])
+    async def router_terminal(device_id: int):
+        """Живой терминал роутера — тем же путём, что и панель.
+
+        Нужен там, где разовой команды мало: `top`, `logread -f`, `vi` и всё,
+        что ждёт ввода. Открывается в новой вкладке и живёт десять минут.
+        """
+        data, error = await _post(f"/api/v1/fleet/routers/{device_id}/terminal-ticket", {})
+        if error:
+            await flash(error, "danger")
+            return redirect(url_for("admin.router_card", device_id=device_id))
+        return redirect(data.get("url") or url_for("admin.router_card", device_id=device_id))
+
     # ── Списки доменов ────────────────────────────────────────────────────────
 
     async def _render_lists(imported: dict | None = None):

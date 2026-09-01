@@ -155,13 +155,21 @@ def store_password(device: Device, password: str) -> None:
     device.ssh_password_enc = encrypt_secret(password, aad=f"ssh:{device.id}") if password else None
 
 
-async def run(
+async def connect(
     device: Device,
-    command: str,
     *,
-    timeout: float | None = None,  # noqa: ASYNC109 — предел задаёт вызывающий, сессия своя на команду
-) -> CommandResult:
-    """Выполняет одну команду и возвращает её вывод."""
+    timeout: float | None = None,  # noqa: ASYNC109 — предел уходит в asyncssh, а не в asyncio.timeout
+):
+    """Открывает SSH-соединение с роутером, перебирая известные пароли.
+
+    Возвращает соединение — закрывать его вызывающему. Отдельной функцией,
+    потому что подбор пароля нужен и разовой команде, и живому терминалу,
+    а две копии этого цикла разошлись бы на первой же правке.
+
+    Перебираем только отказ логина: на недоступном туннеле следующий пароль
+    ничего не изменит, а лишние попытки удвоят ожидание там, где отвечать
+    всё равно некому.
+    """
     candidates = passwords_for(device)
     if not candidates:
         raise ShellError("Пароль SSH неизвестен: задайте FRP_SSH_PASSWORD_SALT или пароль роутера вручную")
@@ -169,15 +177,10 @@ async def run(
     port = ssh_port_for(device)
     limit = timeout or settings.frp.ssh_timeout_sec
 
-    # Пароли перебираем: парк смешанный, и роутер со стоковым паролем должен
-    # открываться, даже когда соль задана. Перебираем только отказ логина —
-    # на недоступном туннеле следующий пароль ничего не изменит, а лишние
-    # попытки удвоят ожидание там, где отвечать всё равно некому.
-    result = None
     denied: Exception | None = None
     for attempt, password in enumerate(candidates, start=1):
         try:
-            async with asyncssh.connect(
+            return await asyncssh.connect(
                 settings.frp.visitor_host,
                 port=port,
                 username=settings.frp.ssh_user,
@@ -185,9 +188,7 @@ async def run(
                 known_hosts=None,
                 connect_timeout=limit,
                 login_timeout=limit,
-            ) as connection:
-                result = await connection.run(command, check=False, timeout=limit)
-            break
+            )
         except asyncssh.PermissionDenied as exc:
             denied = exc
             log.info(
@@ -200,8 +201,24 @@ async def run(
         except (TimeoutError, asyncssh.Error, OSError) as exc:
             raise ShellError(f"Не удалось подключиться к роутеру: {exc}") from exc
 
-    if result is None:
-        raise ShellError("Роутер отклонил логин или пароль SSH") from denied
+    raise ShellError("Роутер отклонил логин или пароль SSH") from denied
+
+
+async def run(
+    device: Device,
+    command: str,
+    *,
+    timeout: float | None = None,  # noqa: ASYNC109 — предел задаёт вызывающий, сессия своя на команду
+) -> CommandResult:
+    """Выполняет одну команду и возвращает её вывод."""
+    limit = timeout or settings.frp.ssh_timeout_sec
+    connection = await connect(device, timeout=limit)
+    try:
+        result = await connection.run(command, check=False, timeout=limit)
+    except (TimeoutError, asyncssh.Error, OSError) as exc:
+        raise ShellError(f"Не удалось выполнить команду: {exc}") from exc
+    finally:
+        connection.close()
 
     log.info(
         "router_shell.command",
