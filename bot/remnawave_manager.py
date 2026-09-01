@@ -6,7 +6,7 @@ from uuid import UUID
 
 from loguru import logger
 from remnawave import RemnawaveSDK
-from remnawave.models import CreateUserRequestDto, UpdateUserRequestDto
+from remnawave.models import CreateUserRequestDto
 from remnawave.models import CreateConfigProfileRequestDto, UpdateConfigProfileRequestDto
 from remnawave.exceptions import ApiError, NotFoundError
 
@@ -97,12 +97,139 @@ def _coalesce_float(d: Dict[str, Any], *keys: str) -> float:
     return 0.0
 
 
+class PanelUser:
+    """Учётка панели в том виде, в каком её ждёт остальной код.
+
+    С версии 3.4 Remnawave убрала у пользователя `uuid` и перешла на числовой
+    `id`, а SDK 2.8 знает только прежний API — новее её на PyPI нет. Поэтому
+    к пользовательским ручкам ходим сырыми запросами, а ответ заворачиваем
+    сюда: имена полей те же, что были у объектов SDK, и код ниже переписывать
+    не пришлось.
+
+    `uuid` намеренно отдаёт `id`: этим значением код дальше зовёт панель, и оно
+    обязано быть тем, которое она понимает сегодня.
+    """
+
+    __slots__ = (
+        'raw', 'uuid', 'short_uuid', 'username', 'email', 'status', 'expire_at',
+        'traffic_limit_bytes', 'traffic_limit_strategy', 'telegram_id', 'description',
+        'tag', 'hwid_device_limit', 'active_internal_squads', 'subscription_url',
+        'used_traffic_bytes',
+    )
+
+    def __init__(self, raw: Dict[str, Any]):
+        self.raw = raw
+        traffic = raw.get('userTraffic') or {}
+        # `id` с запасным `uuid`: на старой панели первого нет, и до её
+        # обновления бот обязан работать так же, как работал.
+        self.uuid = raw.get('id') if raw.get('uuid') is None else raw.get('uuid')
+        self.short_uuid = raw.get('shortUuid')
+        self.username = raw.get('username')
+        self.email = raw.get('email')
+        self.status = raw.get('status')
+        self.expire_at = _parse_panel_dt(raw.get('expireAt'))
+        self.traffic_limit_bytes = int(raw.get('trafficLimitBytes') or 0)
+        self.traffic_limit_strategy = raw.get('trafficLimitStrategy')
+        self.telegram_id = raw.get('telegramId')
+        self.description = raw.get('description')
+        self.tag = raw.get('tag')
+        self.hwid_device_limit = raw.get('hwidDeviceLimit')
+        self.active_internal_squads = raw.get('activeInternalSquads') or []
+        self.subscription_url = raw.get('subscriptionUrl')
+        self.used_traffic_bytes = int(
+            traffic.get('usedTrafficBytes') or raw.get('usedTrafficBytes') or 0
+        )
+
+
+def _parse_panel_dt(value: Any) -> Optional[datetime]:
+    """Дата из ответа панели. Формат её версии нам не подконтролен, поэтому
+    непрочитанное — это `None`, а не исключение посреди продления подписки."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        logger.warning(f"[REMNAWAVE] не разобрал дату из панели: {value!r}")
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 class RemnawaveManager:
     """Менеджер для работы с Remnawave API"""
-    
+
     def __init__(self):
         self._sdk: Optional[RemnawaveSDK] = None
         self._initialized = False
+
+    # ── Прямые запросы к панели ───────────────────────────────────────────
+    #
+    # SDK 2.8 строит адреса прежнего API, а панель 3.4 их не знает: `uuid`
+    # у пользователя удалён, часть ручек убрана, удаление отвечает `204`
+    # без тела. Транспорт у SDK берём — он держит сессию, токен и повторы,
+    # — а пути и тела составляем сами.
+
+    async def _api(self, method: str, path: str, **kwargs) -> Any:
+        """Запрос к панели. Возвращает тело ответа, развёрнутое из `response`.
+
+        Пустое тело — это `None`, а не ошибка разбора: `DELETE` отвечает `204`,
+        фоновые операции `202`, и оба без содержимого. Код, который раньше звал
+        `resp.json()` следом за удалением, на них падал.
+        """
+        await self._ensure_initialized()
+        response = await self._sdk.users.client.request(method, path, **kwargs)
+        response.raise_for_status()
+        if response.status_code == 204 or not response.content:
+            return None
+        data = response.json()
+        return data.get('response', data) if isinstance(data, dict) else data
+
+    @staticmethod
+    def _as_rows(body: Any) -> List[Dict[str, Any]]:
+        """Список записей из ответа: панель заворачивает его по-разному."""
+        if isinstance(body, list):
+            return [item for item in body if isinstance(item, dict)]
+        if isinstance(body, dict):
+            for key in ('users', 'items', 'data'):
+                inner = body.get(key)
+                if isinstance(inner, list):
+                    return [item for item in inner if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _camel(name: str) -> str:
+        head, *rest = name.split('_')
+        return head + ''.join(part.title() for part in rest)
+
+    async def _update_panel_user(self, user_id: Any, fields: Dict[str, Any]) -> Optional[PanelUser]:
+        """Изменяет учётку. Идентифицирует её по `id`, как требует панель 3.4.
+
+        Поля приходят в том же виде, в каком их собирал код для DTO SDK —
+        со змеиными именами; в camelCase их переводим здесь. Так вызывающие
+        не переписываются, а знание о формате панели остаётся в одном месте.
+        """
+        payload: Dict[str, Any] = {'id': user_id}
+        for key, value in fields.items():
+            if key in ('uuid', 'id') or value is None:
+                continue
+            payload[self._camel(key)] = (
+                value.isoformat().replace('+00:00', 'Z') if isinstance(value, datetime) else value
+            )
+        body = await self._api('PATCH', '/users', json=payload)
+        return PanelUser(body) if isinstance(body, dict) and body else None
+
+    async def _get_panel_user(self, user_id: Any) -> Optional[PanelUser]:
+        """Учётка по её идентификатору. `None` — панель её не знает."""
+        try:
+            body = await self._api('GET', f'/users/{user_id}')
+        except Exception as e:
+            logger.warning(f"[REMNAWAVE] _get_panel_user({user_id}): {type(e).__name__}: {e}")
+            return None
+        if isinstance(body, dict) and body:
+            return PanelUser(body)
+        rows = self._as_rows(body)
+        return PanelUser(rows[0]) if rows else None
     
     async def _ensure_initialized(self):
         """Инициализирует SDK, если еще не инициализирован"""
@@ -245,8 +372,10 @@ class RemnawaveManager:
                 telegram_id=telegram_id,
                 active_internal_squads=active_internal_squads_list if active_internal_squads_list else None,
                 short_uuid=short_uuid,  # Передаем short_uuid из БД, если указан
-                uuid=user_uuid_obj,  # Передаем полный UUID пользователя (remnawave_user_uuid), если указан
-                vless_uuid=user_uuid_obj  # VLESS UUID = xui_client_uuid (тот же, что и user_uuid)
+                # Свой uuid панель с версии 3.4 не принимает: идентификатор
+                # она назначает сама. Остаётся только vless_uuid — он про
+                # протокол, а не про учётку, и никуда не делся.
+                vless_uuid=user_uuid_obj
             )
             
             logger.info(f"[REMNAWAVE] Создание пользователя: username={username}, days={days_valid}, traffic_gb={total_gb}, short_uuid={short_uuid}, user_uuid={user_uuid_obj}, vless_uuid={user_uuid_obj}")
@@ -349,7 +478,9 @@ class RemnawaveManager:
         await self._ensure_initialized()
         
         try:
-            user_response = await self._sdk.users.get_user_by_uuid(user_uuid)
+            user_response = await self._get_panel_user(user_uuid)
+            if user_response is None:
+                return None
             
             return {
                 "uuid": str(user_response.uuid),
@@ -397,7 +528,7 @@ class RemnawaveManager:
         
         try:
             # Получаем текущие данные пользователя
-            current_user = await self._sdk.users.get_user_by_uuid(user_uuid)
+            current_user = await self._get_panel_user(user_uuid)
             if not current_user:
                 logger.error(f"[REMNAWAVE] Пользователь {user_uuid} не найден для обновления")
                 return None
@@ -524,8 +655,6 @@ class RemnawaveManager:
             if current_user.hwid_device_limit is not None and current_user.hwid_device_limit >= 0:
                 update_data["hwid_device_limit"] = current_user.hwid_device_limit
             
-            # Создаем запрос на обновление
-            update_request = UpdateUserRequestDto(**update_data)
             
             logger.info(f"[REMNAWAVE] Обновление подписки: UUID={user_uuid}, +{days_to_add} дней")
             logger.debug(f"[REMNAWAVE] Данные для обновления: {update_data}")
@@ -534,17 +663,20 @@ class RemnawaveManager:
             was_unlimited = not current_user.traffic_limit_bytes or current_user.traffic_limit_bytes == 0
             traffic_was_added = traffic_to_add_gb is not None and traffic_to_add_gb > 0
             
-            updated_user = await self._sdk.users.update_user(update_request)
+            updated_user = await self._update_panel_user(current_user.uuid, update_data)
+            if updated_user is None:
+                logger.error(f"[REMNAWAVE] Панель не вернула учётку после обновления: {user_uuid}")
+                return None
             
             # Если был безлимит и мы добавили трафик, нужно обнулить использованный трафик
             # Это делается после обновления лимита, чтобы не потерять изменения
             if was_unlimited and traffic_was_added:
                 try:
                     # Обнуляем использованный трафик после установки лимита
-                    await self._sdk.users.reset_user_traffic(user_uuid)
+                    await self._api('POST', f'/users/{user_uuid}/actions/reset')
                     logger.info(f"[REMNAWAVE] Использованный трафик обнулен после установки лимита {traffic_to_add_gb}GB (был безлимит)")
                     # Получаем обновленного пользователя после сброса трафика
-                    updated_user = await self._sdk.users.get_user_by_uuid(user_uuid)
+                    updated_user = await self._get_panel_user(user_uuid)
                 except Exception as e:
                     logger.warning(f"[REMNAWAVE] Не удалось обнулить использованный трафик после установки лимита: {e}")
             
@@ -586,11 +718,9 @@ class RemnawaveManager:
         else:
             expire_at = expire_at.astimezone(timezone.utc)
         try:
-            update_request = UpdateUserRequestDto(
-                uuid=UUID(user_uuid),
-                expire_at=expire_at,
-            )
-            updated_user = await self._sdk.users.update_user(update_request)
+            updated_user = await self._update_panel_user(user_uuid, {"expire_at": expire_at})
+            if updated_user is None:
+                return None
             return {
                 "uuid": str(updated_user.uuid),
                 "expire_at": updated_user.expire_at,
@@ -702,7 +832,9 @@ class RemnawaveManager:
         await self._ensure_initialized()
         
         try:
-            await self._sdk.users.delete_user(user_uuid)
+            # Ответ `204` и пустой: разбирать тело или искать в нём
+            # `isDeleted` больше нельзя — панель его не присылает.
+            await self._api('DELETE', f'/users/{user_uuid}')
             logger.info(f"[REMNAWAVE] Пользователь {user_uuid} удален")
             return True
         except ApiError as e:
@@ -726,7 +858,8 @@ class RemnawaveManager:
         await self._ensure_initialized()
         
         try:
-            updated_user = await self._sdk.users.reset_user_traffic(user_uuid)
+            await self._api('POST', f'/users/{user_uuid}/actions/reset')
+            updated_user = await self._get_panel_user(user_uuid)
             logger.success(f"[REMNAWAVE] Трафик сброшен для пользователя {user_uuid}")
             
             # Если нужно применить squad из настроек (для платных операций)
@@ -735,7 +868,7 @@ class RemnawaveManager:
                     default_squad_uuid = app_conf.get('remnawave_default_internal_squad_uuid')
                     if default_squad_uuid:
                         # Получаем текущего пользователя для обновления
-                        current_user = await self._sdk.users.get_user_by_uuid(user_uuid)
+                        current_user = await self._get_panel_user(user_uuid)
                         if current_user:
                             # Подготавливаем список squads из настроек
                             squad_uuids_list = []
@@ -746,22 +879,25 @@ class RemnawaveManager:
                                         squad_uuid_obj = UUID(squad_uuid_str)
                                         squad_uuids_list.append(squad_uuid_obj)
                                 if squad_uuids_list:
-                                    # Обновляем пользователя с новым squad
-                                    from remnawave.models import UpdateUserRequestDto
-                                    update_request = UpdateUserRequestDto(
-                                        uuid=current_user.uuid,
-                                        active_internal_squads=squad_uuids_list,
-                                        expire_at=current_user.expire_at,
-                                        traffic_limit_bytes=current_user.traffic_limit_bytes,
-                                        traffic_limit_strategy=current_user.traffic_limit_strategy,
-                                        status=current_user.status if current_user.status not in ["EXPIRED", "LIMITED"] else None,
-                                        description=current_user.description,
-                                        email=current_user.email,
-                                        telegram_id=current_user.telegram_id,
-                                        hwid_device_limit=current_user.hwid_device_limit,
-                                        tag=current_user.tag if current_user.tag and re.match(r"^[A-Z0-9_]+$", current_user.tag) else None
+                                    # Обновляем пользователя с новым squad.
+                                    # Сквады остались на своих uuid — панель убрала
+                                    # только пользовательский, — поэтому список
+                                    # переводим в строки как есть.
+                                    updated_user = await self._update_panel_user(
+                                        current_user.uuid,
+                                        {
+                                            "active_internal_squads": [str(s) for s in squad_uuids_list],
+                                            "expire_at": current_user.expire_at,
+                                            "traffic_limit_bytes": current_user.traffic_limit_bytes,
+                                            "traffic_limit_strategy": current_user.traffic_limit_strategy,
+                                            "status": current_user.status if current_user.status not in ["EXPIRED", "LIMITED"] else None,
+                                            "description": current_user.description,
+                                            "email": current_user.email,
+                                            "telegram_id": current_user.telegram_id,
+                                            "hwid_device_limit": current_user.hwid_device_limit,
+                                            "tag": current_user.tag if current_user.tag and re.match(r"^[A-Z0-9_]+$", current_user.tag) else None,
+                                        },
                                     )
-                                    updated_user = await self._sdk.users.update_user(update_request)
                                     logger.info(f"[REMNAWAVE] Применен squad из настроек при сбросе трафика для пользователя {user_uuid}")
                             except ValueError as e:
                                 logger.warning(f"[REMNAWAVE] Неверный формат UUID для default internal squad при сбросе трафика: {default_squad_uuid}, ошибка: {e}")
@@ -1739,7 +1875,11 @@ class RemnawaveManager:
             return None, None, str(e)
 
     async def generate_node_secret_key(self) -> tuple[Optional[str], Optional[str]]:
-        """GET /keygen → pubKey (SECRET_KEY для docker-compose)."""
+        """GET /keygen → secretKey (SECRET_KEY для docker-compose).
+
+        До панели 3.4 поле называлось `pubKey`. Читаем оба: пока в парке
+        встречаются узлы, развёрнутые со старой панели, ключ у них прежний.
+        """
         await self._ensure_initialized()
         try:
             resp = await self._sdk._client.get('/keygen')
@@ -1747,9 +1887,15 @@ class RemnawaveManager:
             data = resp.json()
             wrapped = data.get('response', data) if isinstance(data, dict) else data
             if isinstance(wrapped, dict):
-                pub = wrapped.get('pubKey') or wrapped.get('pub_key')
+                pub = (
+                    wrapped.get('secretKey') or wrapped.get('secret_key')
+                    or wrapped.get('pubKey') or wrapped.get('pub_key')
+                )
             else:
-                pub = getattr(wrapped, 'pub_key', None) or getattr(wrapped, 'pubKey', None)
+                pub = (
+                    getattr(wrapped, 'secret_key', None) or getattr(wrapped, 'secretKey', None)
+                    or getattr(wrapped, 'pub_key', None) or getattr(wrapped, 'pubKey', None)
+                )
             if not pub:
                 return None, 'Пустой ответ /keygen'
             return str(pub), None
