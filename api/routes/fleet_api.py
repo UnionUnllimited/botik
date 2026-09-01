@@ -236,6 +236,7 @@ async def list_routers(
     q: str = Query("", max_length=120),
     link: str = Query("", pattern="^(online|offline)?$"),
     client: str = Query("", pattern="^(with|without)?$"),
+    tg_id: int = Query(0, ge=0),
     sub: str = Query("", pattern="^(active|none|expiring|elsewhere)?$"),
     state: str = Query("", max_length=16),
     model: str = Query("", max_length=120),
@@ -263,6 +264,11 @@ async def list_routers(
     if text:
         like = f"%{text}%"
         conditions.append(or_(Device.mac.ilike(like), Device.model.ilike(like)))
+    if tg_id:
+        # Поиск по владельцу: боту поддержки нужен роутер конкретного
+        # клиента, а он знает только Telegram-ID. По MAC и модели, как
+        # ищет q, этого не сделать.
+        conditions.append(Device.user.has(User.tg_id == tg_id))
     if client == "with":
         conditions.append(Device.user_id.is_not(None))
     elif client == "without":
