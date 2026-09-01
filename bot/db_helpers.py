@@ -120,6 +120,15 @@ async def init_db():
             await db.execute("ALTER TABLE users ADD COLUMN remnawave_short_uuid TEXT")
         except aiosqlite.OperationalError:
             pass
+        # Числовой id учётки в панели. С версии 3.4 Remnawave убрала у пользователя
+        # `uuid` и перешла на него: старое поле панель больше не отдаёт и по нему
+        # не ищет. Колонка заводится заранее и заполняется скриптом
+        # `scripts/remnawave_uuid_map.py` ДО обновления панели — после него
+        # сопоставить наши записи с учётками будет неоткуда.
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN remnawave_user_id TEXT")
+        except aiosqlite.OperationalError:
+            pass
         # Индивидуальная настройка показа кнопки партнёрской программы
         try:
             await db.execute("ALTER TABLE users ADD COLUMN show_partner_program_button TEXT DEFAULT NULL")
