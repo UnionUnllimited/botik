@@ -739,35 +739,95 @@ def _format_my_subscription(payload: dict | None) -> tuple[str | None, str | Non
     return "\n".join(lines), sub_page_link
 
 
+def _format_my_router(data: dict) -> str:
+    """Карточка роутера для клиента.
+
+    Показываем только то, что человеку понятно и полезно: связь, когда
+    выходил, сколько устройств, до какого числа подписка. Технику вроде
+    MAC, WAN-адреса и загрузки процессора клиенту знать незачем.
+    """
+    lines: list[str] = ["📶 <b>Мой роутер</b>", ""]
+    routers = data.get("routers") or []
+
+    for i, r in enumerate(routers):
+        if len(routers) > 1:
+            lines.append(f"<b>Роутер {i + 1}</b>")
+
+        if r.get("online"):
+            lines.append("• Связь: 🟢 <b>на связи</b>")
+        else:
+            lines.append("• Связь: 🔴 <b>молчит</b>")
+            seen = _human_dt(r.get("last_seen"))
+            if seen:
+                lines.append(f"• Последний отклик: {seen}")
+
+        model = (r.get("model") or "").strip()
+        if model:
+            lines.append(f"• Модель: {model}")
+
+        clients = r.get("clients_connected")
+        if isinstance(clients, int) and r.get("online"):
+            lines.append(f"• Устройств в сети: <b>{clients}</b>")
+
+        until = _human_dt(r.get("subscription_until"))
+        if until:
+            lines.append(f"• Подписка до: <b>{until}</b>")
+        else:
+            status = (r.get("subscription_status") or "").strip()
+            lines.append(f"• Подписка: {status or 'не оформлена'}")
+
+        fw = (r.get("firmware") or "").strip()
+        if fw:
+            lines.append(f"• Прошивка: {fw}")
+        lines.append("")
+
+    if not any(r.get("online") for r in routers):
+        lines.append(
+            "Роутер не выходит на связь. Проверьте, что он включён в "
+            "розетку, а кабель провайдера — в порту <b>WAN</b>."
+        )
+
+    return "\n".join(lines).strip()
+
+
+def _human_dt(value) -> str | None:
+    """ISO-дата в вид, понятный человеку. Мусор молча пропускаем."""
+    if not value:
+        return None
+    try:
+        s = str(value).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except (ValueError, TypeError):
+        return None
+
+
 @dp.callback_query(F.data == "m_mykey")
 async def cb_mykey(callback: CallbackQuery, state: FSMContext):
-    """Раздел «Мой ключ»: сразу показывает всю инфу о подписке + ключ."""
+    """Раздел «Мой роутер»: состояние устройства и подписки.
+
+    Данные берём из парка устройств, а не из старой панели: подписка
+    привязана к роутеру, и «на связи или молчит» знает только парк.
+    """
     await state.clear()
     user_id = callback.from_user.id
 
     await callback.answer("Загружаю данные…")
 
-    # Свежие данные — клиент мог только что что-то изменить
-    admin_panel.get_client().invalidate(user_id)
+    from app import ai_tools
+    data = await ai_tools.get_my_router(user_id)
 
-    try:
-        payload = await admin_panel.get_client().get_user(user_id)
-    except Exception as e:
-        logger.warning("mykey: ошибка для {}: {}", user_id, e)
-        payload = None
-
-    if payload is None:
-        # Админка недоступна — показываем мягкое сообщение
+    if data.get("error"):
         await safe_edit(callback, T.MYKEY_FETCH_FAIL, mykey_back_keyboard())
         return
 
-    text, sub_page_link = _format_my_subscription(payload)
-    if text is None:
-        # Клиент не зарегистрирован в админке (не покупал ещё)
+    if not data.get("has_router"):
         await safe_edit(callback, T.MYKEY_NOT_REGISTERED, mykey_back_keyboard())
         return
 
-    await safe_edit(callback, text, mykey_main_keyboard(sub_page_link))
+    await safe_edit(callback, _format_my_router(data), mykey_main_keyboard(None))
 
 
 @dp.callback_query(F.data == "mk_reset")

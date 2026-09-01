@@ -63,9 +63,14 @@ def mykey_main_keyboard(sub_page_link: str | None):
 
 
 def mykey_back_keyboard():
-    """Под секциями (сброс, ошибки) — вернуть в «Мой ключ» и в главное меню."""
+    """Под ошибками раздела «Мой роутер».
+
+    Раньше «Назад» вело в m_mykey — то есть в тот же экран, который и
+    выдал ошибку. Сообщение не менялось, Telegram отклонял правку, и
+    кнопка выглядела нерабочей. Теперь: повторить попытку или уйти.
+    """
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="m_mykey")],
+        [InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="m_mykey")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_main")],
     ])
 
