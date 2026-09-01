@@ -792,6 +792,9 @@ def _format_my_router(data: dict) -> str:
 
 def _human_dt(value) -> str | None:
     """ISO-дата в вид, понятный человеку. Мусор молча пропускаем."""
+    # datetime в этом модуле импортируется внутри функций, а не сверху.
+    from datetime import datetime, timezone
+
     if not value:
         return None
     try:
