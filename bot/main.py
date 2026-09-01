@@ -1292,9 +1292,17 @@ async def client_router_mac(user_id: int) -> str:
         from src import shop_api
         data, error = await shop_api.my_router(user_id)
         if error:
+            # Молчать нельзя: снаружи пропажа MAC неотличима от «роутера нет»,
+            # и недоступный каталог так и остаётся незамеченным.
+            logger.warning(f"[SUPPORT] Каталог не ответил про {user_id}: {error}")
             return ""
         router = data.get("router") or {}
-        return str(router.get("mac") or "")
+        mac = str(router.get("mac") or "")
+        if not mac:
+            # Развёрнутая карточка есть не всегда, а список роутеров — да.
+            routers = data.get("routers") or []
+            mac = str((routers[0] or {}).get("mac") or "") if routers else ""
+        return mac
     except Exception as exc:  # noqa: BLE001 — причина в журнал, экран важнее
         logger.warning(f"[SUPPORT] MAC роутера не получен для {user_id}: {exc}")
         return ""
