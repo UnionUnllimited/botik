@@ -137,13 +137,25 @@ def apply(source: Path) -> int:
                 "Она заводится при старте бота — обновите код и перезапустите router-bot."
             )
 
+        # Схема бота от версии к версии разная: колонки под короткий
+        # идентификатор или имя может не быть вовсе. Спрашиваем таблицу,
+        # а не полагаемся на память — иначе падаем на середине работы,
+        # уже успев что-то записать.
+        has_short = "remnawave_short_uuid" in columns
+        has_name = "remnawave_username" in columns
+        if not has_short and not has_name:
+            raise SystemExit(
+                "В таблице users нет ни remnawave_short_uuid, ни remnawave_username — "
+                "связать учётки не по чему."
+            )
+
         by_short = 0
         by_name = 0
         for pair in pairs:
             # Сначала по короткому идентификатору: он уникален и переименование
             # клиента его не трогает. Условие на пустое значение обязательно —
             # без него одна запись с пустым полем собрала бы на себя все id.
-            if pair["shortUuid"]:
+            if has_short and pair["shortUuid"]:
                 cursor = connection.execute(
                     "UPDATE users SET remnawave_user_id = ? "
                     "WHERE remnawave_short_uuid = ? AND remnawave_user_id IS NULL",
@@ -152,7 +164,7 @@ def apply(source: Path) -> int:
                 by_short += cursor.rowcount
                 if cursor.rowcount:
                     continue
-            if pair["username"]:
+            if has_name and pair["username"]:
                 cursor = connection.execute(
                     "UPDATE users SET remnawave_user_id = ? "
                     "WHERE remnawave_username = ? AND remnawave_user_id IS NULL",
@@ -161,10 +173,21 @@ def apply(source: Path) -> int:
                 by_name += cursor.rowcount
         connection.commit()
 
-        left = connection.execute(
-            "SELECT COUNT(*) FROM users "
-            "WHERE remnawave_user_uuid IS NOT NULL AND remnawave_user_id IS NULL"
-        ).fetchone()[0]
+        # Сколько записей осталось без id из тех, у кого вообще есть чем
+        # связаться. Условие собирается из существующих колонок: спросить
+        # про отсутствующую — та же ошибка, что уронила первый заход.
+        linked = [f"COALESCE({name}, '') <> ''" for name, present in (
+            ("remnawave_short_uuid", has_short),
+            ("remnawave_username", has_name),
+        ) if present]
+        # Имена колонок сюда попадают не из ввода, а из PRAGMA этой же
+        # таблицы, и подставлять их параметром SQLite не даёт.
+        condition = " OR ".join(linked)
+        query = (
+            f"SELECT COUNT(*) FROM users WHERE ({condition}) "  # noqa: S608
+            "AND remnawave_user_id IS NULL"
+        )
+        left = connection.execute(query).fetchone()[0]
     finally:
         connection.close()
 
