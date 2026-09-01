@@ -995,24 +995,40 @@ class RemnawaveManager:
             return False
 
     async def get_user_card(self, telegram_id: int) -> Optional[Dict[str, Any]]:
-        """Карточка Remnawave-пользователя по telegram_id (сырой GET /users/by-telegram-id).
+        """Карточка Remnawave-пользователя по telegram_id.
 
-        Возвращает общую инфу: uuid, статус, лимит/использовано трафика, онлайн (last seen),
+        Возвращает общую инфу: id, статус, лимит/использовано трафика, онлайн (last seen),
         срок действия. Сырой запрос — устойчив к изменениям SDK-модели.
+
+        С панели 3.4 ручка `/users/by-telegram-id` удалена, замена — `/users/stream`
+        с фильтром и курсорной постраничностью. Нам нужна первая же запись, поэтому
+        курсор не листаем: у одного telegram_id учётка одна.
+
+        Ключ учётки там же сменился: `uuid` больше не отдаётся, вместо него
+        числовой `id`. Читаем оба — на случай, если панель окажется старой.
         """
         await self._ensure_initialized()
         try:
-            resp = await self._sdk.users.client.get(f'/users/by-telegram-id/{int(telegram_id)}')
+            resp = await self._sdk.users.client.get(
+                '/users/stream',
+                params={'telegramId': int(telegram_id), 'limit': 1},
+            )
             resp.raise_for_status()
             data = resp.json()
             body = data.get('response', data) if isinstance(data, dict) else data
-            users = body if isinstance(body, list) else (body.get('users') if isinstance(body, dict) else None)
+            if isinstance(body, dict):
+                users = body.get('users') or body.get('items') or body.get('data')
+            else:
+                users = body
             if not users:
                 return None
             u = users[0] if isinstance(users, list) else users
             ut = u.get('userTraffic') or {}
             return {
-                'uuid': u.get('uuid'),
+                'id': u.get('id'),
+                # Прежнее имя оставлено ради вызывающих: их много, и менять
+                # их все разом — отдельная работа. Значение теперь числовое.
+                'uuid': u.get('id') if u.get('uuid') is None else u.get('uuid'),
                 'username': u.get('username'),
                 'status': u.get('status'),
                 'traffic_limit_bytes': int(u.get('trafficLimitBytes') or 0),
