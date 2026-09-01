@@ -1,12 +1,16 @@
-"""Выгрузка пар «uuid учётки → числовой id» из панели Remnawave.
+"""Проставление числового `id` учётки Remnawave в базу бота.
 
-**Запускать до обновления панели на 3.4.** С этой версии `uuid` у пользователя
-удалён: панель его не отдаёт и по нему не ищет. В базе бота учётки записаны
-именно по `uuid` (`users.remnawave_user_uuid`), и если обновиться, не сняв
-соответствие, связать клиента с его учёткой будет нечем — останется разбор
-по именам руками.
+С версии 3.4 панель убрала у пользователя `uuid` и перешла на числовой `id`.
+В базе бота учётки записаны по `uuid` (`users.remnawave_user_uuid`), и связать
+их с панелью напрямую больше нечем: старое поле она не отдаёт вовсе.
 
-Два режима, оба безопасные:
+**Сопоставляем по тому, что пережило обновление.** В ответе панели остались
+`shortUuid` и `username`, и оба лежат у бота рядом с uuid —
+`remnawave_short_uuid` и `remnawave_username`. Первым идёт `shortUuid`:
+он уникален и не меняется при переименовании. `username` — запасной,
+для записей, у которых короткого идентификатора не сохранилось.
+
+Два режима:
 
     python scripts/remnawave_uuid_map.py dump -           # выгрузить в stdout
     python scripts/remnawave_uuid_map.py apply <файл>     # проставить в базу бота
@@ -15,9 +19,9 @@
 приложения, где он есть, а снимок забирают перенаправлением. Проставление
 работает с базой бота на хосте и обходится стандартной библиотекой.
 
-Выгрузка ничего не меняет. Проставление трогает только новую колонку
+Выгрузка ничего не меняет. Проставление трогает только колонку
 `remnawave_user_id` и никогда — существующие поля: если сопоставление
-окажется неверным, откат сводится к очистке одной колонки.
+окажется неверным, откат сводится к её очистке.
 
 Адрес и токен панели берутся из окружения основного приложения
 (`REMNAWAVE_BASE_URL`, `REMNAWAVE_TOKEN`) — тех же, которыми оно ходит
@@ -80,27 +84,19 @@ async def _fetch_users() -> list[dict]:
 
 
 def dump(out: Path) -> int:
-    """Скачивает учётки и раскладывает пары в файл.
-
-    Запись синхронная и вынесена из корутины намеренно: писать на диск внутри
-    асинхронной функции — значит держать цикл событий на время записи, а
-    выигрыша тут никакого, файл один.
-    """
+    """Снимает с панели то, по чему учётку можно узнать: id, имя и shortUuid."""
     rows = asyncio.run(_fetch_users())
 
     pairs = []
     for row in rows:
-        uuid = str(row.get("uuid") or "").strip()
         uid = row.get("id")
-        if not uuid or uid is None:
+        if uid is None:
             continue
         pairs.append(
             {
-                "uuid": uuid,
                 "id": str(uid),
-                # Имя кладём рядом не для сопоставления, а для проверки глазами:
-                # если что-то пойдёт не так, по нему видно, чья это учётка.
                 "username": str(row.get("username") or ""),
+                "shortUuid": str(row.get("shortUuid") or ""),
             }
         )
 
@@ -115,14 +111,11 @@ def dump(out: Path) -> int:
         out.write_text(body, encoding="utf-8")
         report = sys.stdout
 
-    without_id = len(rows) - len(pairs)
+    no_id = len(rows) - len(pairs)
     print(f"Учёток в панели: {len(rows)}", file=report)
-    print(f"Пар uuid → id:   {len(pairs)}", file=report)
-    if without_id:
-        print(
-            f"Без одного из полей: {without_id} — их сопоставить не выйдет, проверьте вручную",
-            file=report,
-        )
+    print(f"Снято записей:   {len(pairs)}", file=report)
+    if no_id:
+        print(f"Без id: {no_id} — такие сопоставить не выйдет", file=report)
     if str(out) != "-":
         print(f"Записано в {out}", file=report)
     return len(pairs)
@@ -144,25 +137,46 @@ def apply(source: Path) -> int:
                 "Она заводится при старте бота — обновите код и перезапустите router-bot."
             )
 
-        updated = 0
+        by_short = 0
+        by_name = 0
         for pair in pairs:
-            cursor = connection.execute(
-                "UPDATE users SET remnawave_user_id = ? WHERE remnawave_user_uuid = ?",
-                (pair["id"], pair["uuid"]),
-            )
-            updated += cursor.rowcount
+            # Сначала по короткому идентификатору: он уникален и переименование
+            # клиента его не трогает. Условие на пустое значение обязательно —
+            # без него одна запись с пустым полем собрала бы на себя все id.
+            if pair["shortUuid"]:
+                cursor = connection.execute(
+                    "UPDATE users SET remnawave_user_id = ? "
+                    "WHERE remnawave_short_uuid = ? AND remnawave_user_id IS NULL",
+                    (pair["id"], pair["shortUuid"]),
+                )
+                by_short += cursor.rowcount
+                if cursor.rowcount:
+                    continue
+            if pair["username"]:
+                cursor = connection.execute(
+                    "UPDATE users SET remnawave_user_id = ? "
+                    "WHERE remnawave_username = ? AND remnawave_user_id IS NULL",
+                    (pair["id"], pair["username"]),
+                )
+                by_name += cursor.rowcount
         connection.commit()
+
+        left = connection.execute(
+            "SELECT COUNT(*) FROM users "
+            "WHERE remnawave_user_uuid IS NOT NULL AND remnawave_user_id IS NULL"
+        ).fetchone()[0]
     finally:
         connection.close()
 
-    print(f"Пар в файле:      {len(pairs)}")
-    print(f"Обновлено записей: {updated}")
-    if updated < len(pairs):
+    print(f"Записей в файле:      {len(pairs)}")
+    print(f"Связано по shortUuid: {by_short}")
+    print(f"Связано по username:  {by_name}")
+    if left:
         print(
-            "Разница — это учётки панели, которых нет в базе бота: "
-            "заведённые вручную или оставшиеся от удалённых клиентов. Это нормально."
+            f"Осталось без id:      {left} — у этих записей учётки в панели нет вовсе "
+            "(удалена или заведена в другой панели). Разбирать руками."
         )
-    return updated
+    return by_short + by_name
 
 
 def main() -> None:
