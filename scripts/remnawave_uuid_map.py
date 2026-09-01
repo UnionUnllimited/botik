@@ -8,8 +8,12 @@
 
 Два режима, оба безопасные:
 
-    python scripts/remnawave_uuid_map.py dump             # выгрузить в файл
+    python scripts/remnawave_uuid_map.py dump -           # выгрузить в stdout
     python scripts/remnawave_uuid_map.py apply <файл>     # проставить в базу бота
+
+Выгрузка ходит в панель и требует `httpx` — её запускают в контейнере
+приложения, где он есть, а снимок забирают перенаправлением. Проставление
+работает с базой бота на хосте и обходится стандартной библиотекой.
 
 Выгрузка ничего не меняет. Проставление трогает только новую колонку
 `remnawave_user_id` и никогда — существующие поля: если сопоставление
@@ -29,8 +33,6 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import httpx
-
 BOT_DB = Path(__file__).resolve().parents[1] / "bot" / "router_bot.db"
 DEFAULT_OUT = Path(__file__).resolve().parents[1] / "remnawave-uuid-map.json"
 USERS_PATH = "/api/users"
@@ -43,7 +45,10 @@ def _panel() -> tuple[str, str]:
     if not base or not token:
         raise SystemExit(
             "Нужны REMNAWAVE_BASE_URL и REMNAWAVE_TOKEN в окружении.\n"
-            "На боевом сервере: cd /opt/router-shop && set -a && . ./.env && set +a"
+            "Запускайте выгрузку в контейнере приложения — там они уже есть:\n"
+            "  docker compose run --rm -T api python scripts/remnawave_uuid_map.py dump -\n"
+            "Через `. ./.env` их не подхватить: в файле есть значения с пробелами, "
+            "и оболочка спотыкается на первом же."
         )
     return base, token
 
@@ -62,6 +67,10 @@ def _rows(payload: object) -> list[dict]:
 
 
 async def _fetch_users() -> list[dict]:
+    # Импорт здесь, а не наверху: `httpx` стоит в образе приложения, а `apply`
+    # запускают на хосте, где его нет и не нужно — ему хватает sqlite3.
+    import httpx
+
     base, token = _panel()
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=TIMEOUT_SEC) as client:
@@ -95,13 +104,27 @@ def dump(out: Path) -> int:
             }
         )
 
-    out.write_text(json.dumps(pairs, ensure_ascii=False, indent=2), encoding="utf-8")
+    body = json.dumps(pairs, ensure_ascii=False, indent=2)
+    # `-` означает «вывести в stdout»: так снимок забирается из контейнера
+    # обычным перенаправлением, без возни с томами. Счётчики при этом уходят
+    # в stderr, иначе они попали бы в сам файл.
+    if str(out) == "-":
+        print(body)
+        report = sys.stderr
+    else:
+        out.write_text(body, encoding="utf-8")
+        report = sys.stdout
+
     without_id = len(rows) - len(pairs)
-    print(f"Учёток в панели: {len(rows)}")
-    print(f"Пар uuid → id:   {len(pairs)}")
+    print(f"Учёток в панели: {len(rows)}", file=report)
+    print(f"Пар uuid → id:   {len(pairs)}", file=report)
     if without_id:
-        print(f"Без одного из полей: {without_id} — их сопоставить не выйдет, проверьте вручную")
-    print(f"Записано в {out}")
+        print(
+            f"Без одного из полей: {without_id} — их сопоставить не выйдет, проверьте вручную",
+            file=report,
+        )
+    if str(out) != "-":
+        print(f"Записано в {out}", file=report)
     return len(pairs)
 
 
