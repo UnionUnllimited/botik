@@ -429,3 +429,41 @@ class TestVisitorPortLimit:
         # Имена прокси проставлены: они от порта не зависят.
         assert device.frp_luci_name
         assert device.frp_ssh_name
+
+
+class TestClientModelName:
+    """Клиенту показываем название модели, а не имя платы из телеметрии.
+
+    Решение заказчика от 24 августа 2026: `cudy,wr3000s-v1` клиенту ничего
+    не говорит и рекламирует чужого производителя. Оператору настоящая
+    модель по-прежнему видна в парке и в карточке устройства.
+    """
+
+    def test_wr3000_is_basic(self):
+        from core.texts import router_model_title
+
+        assert router_model_title("cudy,wr3000s-v1") == "Роутер Basic"
+        assert router_model_title("cudy,wr3000e-v1") == "Роутер Basic"
+
+    def test_zbt_is_basic(self):
+        from core.texts import router_model_title
+
+        assert router_model_title("zbtlink,zbt-z8103ax-c") == "Роутер Basic"
+
+    def test_tr3000_is_pro(self):
+        from core.texts import router_model_title
+
+        assert router_model_title("cudy,tr3000-v1") == "Роутер Pro"
+
+    def test_unknown_board_says_nothing(self):
+        """Пусто лучше имени платы: незнакомую модель просто не подписываем."""
+        from core.texts import router_model_title
+
+        assert router_model_title("someone,else-v1") == ""
+        assert router_model_title("") == ""
+
+    def test_case_does_not_matter(self):
+        """Прошивки называют плату по-разному, регистр среди прочего."""
+        from core.texts import router_model_title
+
+        assert router_model_title("Cudy,TR3000-v1") == "Роутер Pro"

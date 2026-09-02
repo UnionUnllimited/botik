@@ -674,7 +674,12 @@ async def my_router(
         router_payload = {
             "id": current.id,
             "mac": current.mac,
-            "model": current.model or "",
+            # Ручка клиентская, поэтому и модель тут клиентская: «Роутер Basic»,
+            # а не `cudy,wr3000s-v1`. Имя платы клиенту ничего не говорит и
+            # рекламирует чужого производителя — решение заказчика от 24 августа
+            # 2026. Оператору настоящая модель видна в парке и в карточке
+            # устройства, куда она и приезжает из телеметрии.
+            "model": texts.router_model_title(current.board or current.model),
             "status": str(current.status),
             "online": current.frp_online
             or current.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
@@ -702,7 +707,7 @@ async def my_router(
             {
                 "id": device.id,
                 "mac": device.mac,
-                "model": device.model or "",
+                "model": texts.router_model_title(device.board or device.model),
                 "online": device.frp_online
                 or device.is_online(
                     threshold_min=settings.subscription.heartbeat_offline_min, now=now

@@ -427,8 +427,11 @@
         + picker
         + '<div class="card">'
         +   '<div class="row"><div class="grow">'
-        +     '<div class="mono" style="font-size:15px">' + esc(r.mac) + '</div>'
-        +     '<div class="muted small">' + esc(r.model || 'Модель не указана') + '</div></div>'
+        // Модель сверху, MAC под ней: человек ищет глазами «какой это из моих»,
+        // а не шестнадцать знаков. Незнакомую модель не подписываем вовсе —
+        // строка «модель не указана» сообщает клиенту о нашей недоработке.
+        +     (r.model ? '<div><b>' + esc(r.model) + '</b></div>' : '')
+        +     '<div class="mono muted small">' + esc(r.mac) + '</div></div>'
         +     '<span class="pill ' + (r.online ? 'ok' : 'off') + '"><i class="dot"></i>'
         +       (r.online ? 'на связи' : 'молчит') + '</span></div>'
         +   (r.until
