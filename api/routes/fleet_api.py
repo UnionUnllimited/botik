@@ -501,10 +501,16 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
     # Срок ручной активации знает только панель. Предел по времени тот же, что был
     # в нашей карточке: страница не должна ждать чужой сервис.
     panel_expires_at = None
+    panel_username = ""
     if settings.remnawave.is_configured:
         try:
             account = await asyncio.wait_for(activation.panel_account_of(device), timeout=3)
             panel_expires_at = activation.panel_expiry_of(account)
+            # Имя берём у самой панели, а не считаем по MAC. Считанное отличается
+            # от заведённого регистром: всё, что создано до перехода на заглавные,
+            # осталось строчным. Поиск в панели регистр не прощает, и оператор,
+            # скопировав имя отсюда, ничего не находил.
+            panel_username = account.username if account is not None else ""
         except TimeoutError:
             log.warning("fleet.panel_timeout", device_id=device_id)
 
@@ -530,7 +536,10 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
             "elsewhere": subscription is None and _elsewhere(client_subscription, device),
         },
         "panel": {
-            "username": activation.manual_username_for(device.mac),
+            # Заведённое имя, если учётка есть; иначе то, каким она будет
+            # заведена — этот случай оператору тоже надо видеть заранее.
+            "username": panel_username or activation.manual_username_for(device.mac),
+            "exists": bool(panel_username),
             "until": _iso(panel_expires_at),
             "active": bool(panel_expires_at and panel_expires_at > now),
         },
