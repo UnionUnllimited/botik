@@ -19,7 +19,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp, MenuButtonDefault, MenuButtonCommands, BotCommand, ErrorEvent, LinkPreviewOptions
 from aiogram.types.input_file import FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.filters import CommandStart, StateFilter, ExceptionTypeFilter
+from aiogram.filters import Command, CommandStart, StateFilter, ExceptionTypeFilter
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from typing import Callable, Dict, Any, Awaitable
@@ -1553,6 +1553,50 @@ async def show_wanted_product(message: Message, product_id: int | None) -> None:
         return
     if error:
         logger.warning(f"[CATALOG] карточка с витрины не открылась ({product_id}): {error}")
+
+
+@dp.message(Command("app"))
+async def handle_miniapp_link(message: Message):
+    """Присылает кнопку, открывающую приложение в Telegram. Только своим.
+
+    Кнопка в сообщении, а не кнопка меню в BotFather: та глобальная, её увидел
+    бы весь парк и упёрся бы в отказ — приложение пока открыто по списку. Эту
+    видит только тот, кому она пришла. Регистрировать приложение в BotFather
+    для такой кнопки не требуется.
+
+    Постороннему не отвечаем вовсе, а не отказом: команды для него нет, и
+    сообщать, что она есть, незачем.
+    """
+    from src.core.utils import is_bot_admin
+
+    user_id = message.from_user.id
+    if not is_bot_admin(user_id):
+        logger.info(f"[MINIAPP] /app от постороннего {user_id} — молчим")
+        return
+
+    # Адрес тот же, откуда бот берёт каталог: приложение живёт на /app того же
+    # API. Отдельной переменной заводить не стали — разъехались бы.
+    base = (os.getenv("FLEET_API_URL") or "").strip().rstrip("/")
+    if not base.startswith("https://"):
+        await message.answer(
+            "Приложение не открыть: в окружении службы нет FLEET_API_URL "
+            "с адресом по https. Telegram открывает приложения только по https."
+        )
+        return
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="🛒 Открыть приложение",
+            web_app=WebAppInfo(url=f"{base}/app"),
+        )
+    ]])
+    await message.answer(
+        "Приложение на обкатке: каталог, профиль, мой роутер и продление.\n\n"
+        "Открывается только у тех, чей id перечислен в <code>MINIAPP_ALLOWED_TG_IDS</code>. "
+        "Остальные увидят отказ, данных они не получат.",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
 
 
 # --- Логирование входа/выхода в каждый handler ---
