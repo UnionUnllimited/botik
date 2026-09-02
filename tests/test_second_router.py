@@ -328,3 +328,93 @@ class TestActivationPicksTheRightSubscription:
                 assert oldest is not None and oldest.id == 1
         finally:
             await engine.dispose()
+
+
+class TestOrderFoundByClient:
+    """Роутер, привязанный к клиенту в обход заказа, всё равно активируется.
+
+    Устройство привязывают кнопкой в топике — тогда у него есть и заказ,
+    и клиент. Но привязать его к клиенту можно и из парка, по MAC с наклейки:
+    тогда `order_id` пуст, и автоактивация раньше не начиналась вовсе. Роутер
+    стоял на связи неделями, а оплаченная подписка ждала устройства — снаружи
+    это выглядело тремя разными неисправностями сразу.
+    """
+
+    async def _prepare(self, session, *, orders: int):
+        from core.enums import OrderStatus
+        from core.models import Device, Order, User
+
+        user = User(tg_id=500, username="kelvin")
+        session.add(user)
+        await session.flush()
+        made = []
+        for number in range(orders):
+            order = Order(
+                public_number=f"R-{number}",
+                user_id=user.id,
+                status=OrderStatus.DONE,
+                paid_at=dt.datetime(2026, 8, 30, tzinfo=dt.UTC),
+                subtotal=0, discount_total=0, delivery_price=0, total=0,
+            )
+            session.add(order)
+            made.append(order)
+        device = Device(mac="D4:0D:AB:2B:A4:EE", user_id=user.id)
+        session.add(device)
+        await session.flush()
+        return device, made
+
+    @pytest.mark.asyncio
+    async def test_single_order_is_found(self):
+        from core.services.activation import _order_awaiting_router
+
+        engine, factory = await _factory()
+        try:
+            async with factory() as session:
+                device, orders = await self._prepare(session, orders=1)
+                found = await _order_awaiting_router(session, device)
+                assert found is not None
+                assert found.id == orders[0].id
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_two_orders_are_left_to_the_operator(self):
+        """С двумя купленными роутерами выбор неоднозначен: ошибка означала бы,
+        что дни ушли не тому устройству."""
+        from core.services.activation import _order_awaiting_router
+
+        engine, factory = await _factory()
+        try:
+            async with factory() as session:
+                device, _ = await self._prepare(session, orders=2)
+                assert await _order_awaiting_router(session, device) is None
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_order_with_its_own_router_is_not_taken(self):
+        """Заказ, которому роутер уже достался, чужому устройству не отдаём."""
+        from core.models import Device
+        from core.services.activation import _order_awaiting_router
+
+        engine, factory = await _factory()
+        try:
+            async with factory() as session:
+                device, orders = await self._prepare(session, orders=1)
+                session.add(Device(mac="AA:BB:CC:DD:EE:FF", order_id=orders[0].id))
+                await session.flush()
+                assert await _order_awaiting_router(session, device) is None
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_device_without_client_finds_nothing(self):
+        from core.models import Device
+        from core.services.activation import _order_awaiting_router
+
+        engine, factory = await _factory()
+        try:
+            async with factory() as session:
+                assert await _order_awaiting_router(session, Device(mac="A0:B1:C2:D3:E4:F5")) is None
+        finally:
+            await engine.dispose()

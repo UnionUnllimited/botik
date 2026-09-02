@@ -79,7 +79,12 @@ async def sync_routers() -> int:
             # Кандидатов на автоактивацию только запоминаем. Условия проверит
             # сама `auto_activate_if_shipped`, здесь достаточно дешёвого отсева
             # по полям, которые уже в памяти.
-            if device.activated_at is None and device.order_id is not None:
+            #
+            # Клиента достаточно: заказ у устройства может быть не проставлен,
+            # если роутер привязали к клиенту в обход заказа. Требуй мы здесь
+            # `order_id`, такое устройство не попадало бы в проверку вовсе —
+            # ровно так подписка и зависала «оплачена, ждёт роутера».
+            if device.activated_at is None and (device.order_id or device.user_id):
                 candidates.append(device.id)
 
         # 2. Кто пропал из списка — офлайн.

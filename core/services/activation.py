@@ -29,7 +29,7 @@ from core import notifications, texts
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
-from core.models import Device, Subscription, User
+from core.models import Device, Order, Subscription, User
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
 from core.services import orders as order_service
@@ -279,6 +279,46 @@ SHIPPED_STATUSES = (
 у мастера, а подписка уедет на устройство, которое ещё никому не отдали."""
 
 
+async def _order_awaiting_router(session: AsyncSession, device: Device) -> Order | None:
+    """Оплаченный заказ клиента, которому не досталось роутера.
+
+    Устройство привязывают к заказу кнопкой в топике, но к клиенту его можно
+    привязать и в обход — из парка, по MAC с наклейки. Тогда `order_id`
+    остаётся пустым, автоактивация не начинается вовсе, и роутер стоит на
+    связи, пока оплаченная подписка ждёт устройства. Снаружи это выглядит
+    тремя разными неисправностями сразу: в парке «подписки нет», у клиента
+    «оплачена, ждёт роутера», а заказ давно завершён.
+
+    Берём заказ, только если он один. У клиента с двумя купленными роутерами
+    выбор неоднозначен, и ошибка означала бы, что дни ушли не тому
+    устройству, — такое разбирать дороже, чем привязать руками.
+    """
+    if not device.user_id:
+        return None
+    taken = select(Device.id).where(Device.order_id == Order.id).exists()
+    found = list(
+        await session.scalars(
+            select(Order)
+            .where(
+                Order.user_id == device.user_id,
+                Order.paid_at.is_not(None),
+                Order.status.in_(SHIPPED_STATUSES),
+                ~taken,
+            )
+            .order_by(Order.id)
+        )
+    )
+    if len(found) != 1:
+        if found:
+            log.info(
+                "activation.order_ambiguous",
+                mac=device.mac,
+                orders=[order.public_number for order in found],
+            )
+        return None
+    return found[0]
+
+
 async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> bool:
     """Активация отгруженного роутера, когда он впервые вышел на связь у клиента.
 
@@ -296,10 +336,28 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
     и первая попытка часто приходится на момент, когда SSH ещё не отвечает.
     Следующий обход попробует снова.
     """
-    if device.activated_at is not None or device.order_id is None:
+    if device.activated_at is not None:
         return False
     if not await settings_service.get_bool(session, "activation.auto_enabled"):
         return False
+
+    if device.order_id is None:
+        # Заказ ищем сами: без него активация раньше молча не начиналась,
+        # и роутер стоял на связи с неотданной подпиской неделями.
+        found = await _order_awaiting_router(session, device)
+        if found is None:
+            return False
+        device.order_id = found.id
+        await session.flush()
+        routers.add_event(
+            session,
+            device_id=device.id,
+            mac=device.mac,
+            level="info",
+            message=f"Заказ {found.public_number} найден по клиенту и привязан",
+            payload={"order_id": found.id},
+        )
+        log.info("activation.order_matched", mac=device.mac, order=found.public_number)
 
     order = await order_service.load_for_status(session, device.order_id)
     if order is None or order.status not in SHIPPED_STATUSES:
