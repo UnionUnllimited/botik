@@ -231,6 +231,20 @@ class TestErrorsLookLikePages:
         for path in ("/cgi-bin/luci", "/luci-static/resources/cbi.js", "/ubus", "/panel/open"):
             assert landing_route.is_page_request(path) is False
 
+    def test_miniapp_data_paths_keep_json(self):
+        """Приложение разбирает ответ как JSON, в том числе на отказе.
+
+        Страница с извинениями вместо `{"error": …}` превращала внятное
+        «Приложение пока открыто не всем» в «Unexpected token '<'».
+        """
+        for path in ("/app/api/home", "/app/api/catalog", "/app/api/renew"):
+            assert landing_route.is_page_request(path) is False
+
+    def test_miniapp_shell_is_still_a_page(self):
+        """А сама оболочка — обычная страница, и на 404 ей полагается наш экран."""
+        assert landing_route.is_page_request("/app") is True
+        assert landing_route.is_page_request("/app/") is True
+
     def test_everything_else_is_a_page(self):
         assert landing_route.is_page_request("/") is True
         assert landing_route.is_page_request("/kupit-router") is True

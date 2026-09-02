@@ -271,8 +271,18 @@ _PAGE = """<!DOCTYPE html>
       'Content-Type': 'application/json'
     });
     return fetch('/app/api' + path, opts).then(function (r) {
-      return r.json().then(function (body) {
-        if (!r.ok) { throw new Error(body && body.detail ? body.detail : 'Ошибка ' + r.status); }
+      // Ответ разбираем через текст, а не сразу как JSON: на пути стоит прокси,
+      // и его страница на 502 или 504 роняла бы разбор с «Unexpected token '<'»
+      // вместо внятного «сервер не ответил».
+      return r.text().then(function (raw) {
+        var body = null;
+        try { body = raw ? JSON.parse(raw) : null; } catch (e) { body = null; }
+        if (!r.ok) {
+          // Наш обработчик кладёт причину в `error`, FastAPI по умолчанию —
+          // в `detail`. Читаем оба, иначе отказ выглядит голым кодом.
+          var reason = body && (body.error || body.detail);
+          throw new Error(reason || 'Ошибка ' + r.status);
+        }
         return body;
       });
     });
