@@ -190,7 +190,16 @@ async def on_button(query: CallbackQuery) -> None:
         # может и не пройти: прав на запись в топик может не быть.
         await query.answer()
         try:
-            await query.message.answer(PROMPTS[action], message_thread_id=thread_id or None)
+            # Через `bot.send_message`, а не `message.answer`: тот сам
+            # подставляет топик из сообщения, и наш аргумент приходил вторым —
+            # вызов падал на «got multiple values for message_thread_id».
+            # Подсказка не уходила вовсе, а снаружи это выглядело так, будто
+            # кнопка мертва: работал один «Статус», он в топик ничего не пишет.
+            await query.bot.send_message(
+                chat_id=chat_id,
+                text=PROMPTS[action],
+                message_thread_id=thread_id or None,
+            )
         except Exception as exc:  # noqa: BLE001 — оператор должен увидеть причину
             _pending.pop((chat_id, thread_id), None)
             logger.warning(f"[TOPICS] подсказка не ушла: {exc}")
@@ -341,9 +350,13 @@ async def on_reply(message: Message) -> None:
     if card_error:
         await message.reply("Готово.")
         return
-    await message.answer(
-        data.get("text", ""),
-        message_thread_id=message.message_thread_id,
+    # Та же причина, что и у подсказки выше: `message.answer` подставляет
+    # топик сам. Здесь ошибка была ещё незаметнее — значение уже сохранилось,
+    # оператор видел «Готово», а карточка оставалась старой.
+    await message.bot.send_message(
+        chat_id=message.chat.id,
+        text=data.get("text", ""),
+        message_thread_id=message.message_thread_id or None,
         reply_markup=markup(data.get("buttons") or []),
         parse_mode="HTML",
         disable_web_page_preview=True,
