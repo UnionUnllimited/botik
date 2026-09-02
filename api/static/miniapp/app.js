@@ -201,26 +201,29 @@
     cancelled: 'off'
   };
 
-  // Номер и состояние слева, деньги справа, всё в одну строку по высоте:
-  // цена над меткой состояния растягивала строку вдвое, и на экран влезало
-  // три заказа вместо шести.
+  // Заказы — не набор карточек, а одна группа строк с волосяными
+  // разделителями: карточка на каждую строку читается как список без начала
+  // и конца, а группа — как один блок, где видно, сколько в нём всего.
   function orderRow(o) {
     var tone = ORDER_TONE[o.status] || 'off';
-    return '<button class="card tight" data-order="' + esc(o.id) + '"'
-      + ' style="display:block;width:100%;text-align:left;font-family:inherit;'
-      + 'color:inherit;cursor:pointer">'
-      + '<div class="row">'
-      +   '<div class="grow">'
-      +     '<div class="mono" style="font-size:14px">' + esc(o.number || ('#' + o.id)) + '</div>'
-      +     '<div style="margin-top:6px"><span class="pill ' + tone + '">'
-      +       esc(o.status_title || o.status) + '</span></div>'
-      +   '</div>'
-      +   '<div style="text-align:right">'
-      +     '<div style="font-weight:650">' + money(o.total, o.currency) + '</div>'
-      +     '<div class="subtle tiny" style="margin-top:5px">' + date(o.created_at) + '</div>'
-      +   '</div>'
-      +   '<span class="subtle">' + icon('chev-r') + '</span>'
-      + '</div></button>';
+    return '<button class="item" data-order="' + esc(o.id) + '">'
+      + '<span class="grow">'
+      +   '<span class="mono" style="display:block;font-size:14px">'
+      +     esc(o.number || ('#' + o.id)) + '</span>'
+      +   '<span style="display:block;margin-top:6px"><span class="pill ' + tone + '">'
+      +     esc(o.status_title || o.status) + '</span></span>'
+      + '</span>'
+      + '<span style="text-align:right">'
+      +   '<span style="display:block;font-weight:650">' + money(o.total, o.currency) + '</span>'
+      +   '<span class="subtle tiny" style="display:block;margin-top:5px">'
+      +     date(o.created_at) + '</span>'
+      + '</span>'
+      + '<span class="chev">' + icon('chev-r') + '</span>'
+      + '</button>';
+  }
+
+  function orderList(items) {
+    return '<div class="list">' + items.map(orderRow).join('') + '</div>';
   }
 
   function bindOrderRows() {
@@ -241,24 +244,26 @@
       var sub = d.subscription || {};
       var active = sub.status === 'active';
       var user = d.user || {};
-      var orders = (d.orders || []).slice(0, 3).map(orderRow).join('');
+      var recent = (d.orders || []).slice(0, 3);
 
       // Ни подписки, ни роутера, ни заказов — человек пришёл впервые. Ему
       // нечего продлевать, и «подписка не активна» с кнопкой продления
       // выглядит поломкой. Показываем, что тут вообще продаётся.
-      if (!active && !d.router_available && !orders) {
+      if (!active && !d.router_available && !recent.length) {
         return api('/pitch').then(function (p) {
           show(
             '<div class="hero"><h1>' + esc(p.hero_title || 'Роутер с доступом') + '</h1>'
             + (p.hero_subtitle ? '<p>' + esc(p.hero_subtitle) + '</p>' : '') + '</div>'
+            + '<div class="list leading">'
             + (p.features || []).slice(0, 3).map(function (f) {
-                return '<div class="card tight"><div class="row" style="align-items:flex-start">'
+                return '<div class="item" style="align-items:flex-start">'
                   + '<span class="ic-box">' + icon('check') + '</span>'
-                  + '<div class="grow"><b>' + esc(f.title) + '</b>'
-                  + '<div class="muted small" style="margin-top:3px">' + esc(f.text) + '</div>'
-                  + '</div></div></div>';
+                  + '<span class="grow"><b>' + esc(f.title) + '</b>'
+                  + '<span class="muted small" style="display:block;margin-top:3px">'
+                  + esc(f.text) + '</span></span></div>';
               }).join('')
-            + '<button class="btn" id="to-catalog" style="margin-top:6px">'
+            + '</div>'
+            + '<button class="btn" id="to-catalog" style="margin-top:14px">'
             + icon('box') + 'Посмотреть роутеры</button>'
           );
           document.getElementById('to-catalog').addEventListener('click', function () {
@@ -271,32 +276,32 @@
       show(
         '<h1>' + esc(user.name || 'Профиль') + '</h1>'
 
-        + '<div class="card">'
-        +   '<div class="row">'
+        // Подписка и роутер — одна группа: это два ответа на один вопрос
+        // «что у меня сейчас есть», и разносить их по карточкам незачем.
+        + '<div class="list leading">'
+        +   '<div class="item">'
         +     '<span class="ic-box">' + icon('shield') + '</span>'
-        +     '<div class="grow"><div class="muted small">Подписка</div>'
-        +       '<div style="margin-top:2px">'
+        +     '<span class="grow"><span class="muted small" style="display:block">Подписка</span>'
+        +       '<span style="display:block;margin-top:2px">'
         +         (active && sub.until ? 'до <b>' + date(sub.until) + '</b>' : 'не активна')
-        +       '</div></div>'
+        +       '</span></span>'
         +     '<span class="pill ' + (active ? 'ok' : 'off') + '"><i class="dot"></i>'
         +       (active ? 'активна' : 'нет') + '</span>'
         +   '</div>'
-        +   '<div class="hr"></div>'
-        +   '<button class="btn" id="renew">' + icon('card') + 'Продлить подписку</button>'
+        +   (d.router_available
+              ? '<button class="item" id="to-router">'
+                + '<span class="ic-box">' + icon('router') + '</span>'
+                + '<span class="grow"><b>Мой роутер</b>'
+                + '<span class="muted small" style="display:block">Связь, срок и обновление</span>'
+                + '</span><span class="chev">' + icon('chev-r') + '</span></button>'
+              : '')
         + '</div>'
 
-        + (d.router_available
-            ? '<button class="card tight" id="to-router" style="display:block;width:100%;'
-              + 'text-align:left;font-family:inherit;color:inherit;cursor:pointer">'
-              + '<div class="row"><span class="ic-box">' + icon('router') + '</span>'
-              + '<div class="grow"><b>Мой роутер</b>'
-              + '<div class="muted small">Связь, срок и обновление</div></div>'
-              + '<span class="subtle">' + icon('chev-r') + '</span></div></button>'
-            : '')
+        + '<button class="btn" id="renew">' + icon('card') + 'Продлить подписку</button>'
 
-        + (orders
-            ? '<div class="sec">Последние заказы</div>' + orders
-              + '<button class="btn quiet" id="all-orders" style="border:0;padding:6px">'
+        + (recent.length
+            ? '<div class="sec">Последние заказы</div>' + orderList(recent)
+              + '<button class="btn quiet" id="all-orders" style="padding:6px">'
               + 'Все заказы' + icon('chev-r') + '</button>'
             : '<div class="card flat muted small">Заказов пока нет. Загляните в каталог — '
               + 'роутер приедет с уже настроенным доступом.</div>')
@@ -488,9 +493,11 @@
 
   views.orders = function () {
     return api('/orders').then(function (d) {
-      var list = (d.orders || []).map(orderRow).join('');
+      var items = d.orders || [];
       show('<h1>Заказы</h1>'
-        + (list || empty('receipt', 'Заказов нет', 'Оформленные заказы появятся здесь.')));
+        + (items.length
+            ? orderList(items)
+            : empty('receipt', 'Заказов нет', 'Оформленные заказы появятся здесь.')));
       bindOrderRows();
     });
   };

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Titan Routers</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="/static/miniapp/app.css?v=2">
+<link rel="stylesheet" href="/static/miniapp/app.css?v=3">
 </head>
 <body>
 
@@ -119,13 +119,15 @@
 
 <div class="wrap" id="screen"></div>
 
+<!-- Значок в плашке, а не сам по себе: плашка подсвечивается у выбранной
+     вкладки и заменяет собой подчёркивание. -->
 <nav id="nav">
-  <button data-tab="home"><svg><use href="#i-user"/></svg>Профиль</button>
-  <button data-tab="router"><svg><use href="#i-router"/></svg>Роутер</button>
-  <button data-tab="orders"><svg><use href="#i-receipt"/></svg>Заказы</button>
-  <button data-tab="catalog"><svg><use href="#i-box"/></svg>Каталог</button>
+  <button data-tab="home"><span class="slot"><svg><use href="#i-user"/></svg></span>Профиль</button>
+  <button data-tab="router"><span class="slot"><svg><use href="#i-router"/></svg></span>Роутер</button>
+  <button data-tab="orders"><span class="slot"><svg><use href="#i-receipt"/></svg></span>Заказы</button>
+  <button data-tab="catalog"><span class="slot"><svg><use href="#i-box"/></svg></span>Каталог</button>
 </nav>
 
-<script src="/static/miniapp/app.js?v=2"></script>
+<script src="/static/miniapp/app.js?v=3"></script>
 </body>
 </html>
