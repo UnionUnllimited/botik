@@ -272,7 +272,7 @@ ADMIN_ANSWERS = {
         "идти в <b>WAN</b>, а не в LAN. И если провайдер даёт "
         "интернет по логину с паролем (PPPoE), их надо ввести в "
         "панели → «Настройки интернета».\n\n"
-        "📖 Подробнее: <code>http://titan.lan/instruction.html</code>"
+        "📖 Подробнее: <code>http://titan.lan/instruction</code>"
     ),
 
     # 2. Сколько устройств можно подключить

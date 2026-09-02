@@ -251,7 +251,7 @@ ROUTER_HOW_START = (
     "логину с паролем (PPPoE), их нужно ввести в панели → "
     "«Настройки интернета».\n\n"
     "\U0001F4D6 Подробная инструкция: "
-    "<code>http://titan.lan/instruction.html</code>"
+    "<code>http://titan.lan/instruction</code>"
 )
 
 ROUTER_SITE_BLOCKED = (
