@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import re
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -181,6 +182,29 @@ def _matches_sub(
     return True
 
 
+_MAC_SEPARATORS = re.compile(r"[\s:.\-]+")
+"""Разделители, которыми MAC пишут в разных местах.
+
+У нас он хранится через двоеточия, в панели живёт двумя видами: через дефис
+у ручных активаций (`f8-5e-3c-92-c0-22`) и слитно у клиентских
+(`tg614685408_d40dab283b80`). Оператор копирует строку из панели и ищет ею
+роутер здесь — и не находил, потому что сравнивали посимвольно.
+"""
+
+
+def _mac_condition(text: str):
+    """Условие поиска по MAC, каким бы способом его ни записали.
+
+    Хвост после подчёркивания — чтобы находилось и по целому имени клиентской
+    учётки (`tg614685408_d40dab283b80`): MAC в наших именах всегда последний,
+    а сам он подчёркиваний не содержит.
+    """
+    bare = _MAC_SEPARATORS.sub("", text).rsplit("_", 1)[-1]
+    if not bare:
+        return None
+    return func.replace(Device.mac, ":", "").ilike(f"%{bare}%")
+
+
 def _iso(value: dt.datetime | None) -> str | None:
     return value.isoformat() if value else None
 
@@ -263,7 +287,11 @@ async def list_routers(
     text = q.strip()
     if text:
         like = f"%{text}%"
-        conditions.append(or_(Device.mac.ilike(like), Device.model.ilike(like)))
+        parts = [Device.mac.ilike(like), Device.model.ilike(like)]
+        bare = _mac_condition(text)
+        if bare is not None:
+            parts.append(bare)
+        conditions.append(or_(*parts))
     if tg_id:
         # Поиск по владельцу: боту поддержки нужен роутер конкретного
         # клиента, а он знает только Telegram-ID. По MAC и модели, как
@@ -1256,11 +1284,16 @@ async def stock_list(
     if text:
         mac = normalize_mac(text)
         pattern = f"%{text}%"
-        condition = or_(
+        parts = [
             Device.mac == mac if mac else Device.mac.ilike(pattern),
             Device.model.ilike(pattern),
             Device.serial.ilike(pattern),
-        )
+        ]
+        # Тот же приём, что и в парке: MAC ищут строкой из панели.
+        bare = _mac_condition(text)
+        if bare is not None:
+            parts.append(bare)
+        condition = or_(*parts)
         query = query.where(condition)
         counter = counter.where(condition)
 

@@ -412,3 +412,36 @@ class TestSorting:
         ).read_text(encoding="utf-8")
         assert "sort_th(" in page
         assert "{{ sort_th('uptime'" in page
+
+
+class TestMacSearchFromPanel:
+    """Строка, скопированная из панели, должна находить роутер здесь.
+
+    У нас MAC хранится через двоеточия, а в панели живёт двумя видами:
+    через дефис у ручных активаций и слитно с приставкой у клиентских.
+    Оператор копирует имя учётки и ищет им роутер — сравнение посимвольно
+    не находило ничего, и это выглядело так, будто роутера нет.
+    """
+
+    def _bare(self, text: str) -> str:
+        from api.routes.fleet_api import _MAC_SEPARATORS
+
+        return _MAC_SEPARATORS.sub("", text).rsplit("_", 1)[-1]
+
+    def test_dashed_name_from_panel(self):
+        assert self._bare("f8-5e-3c-92-c0-22") == "f85e3c92c022"
+
+    def test_colons_as_in_our_admin(self):
+        assert self._bare("F8:5E:3C:92:C0:22") == "F85E3C92C022"
+
+    def test_client_account_name_keeps_only_mac(self):
+        """`tg614685408_d40dab283b80` — приставка отбрасывается, MAC остаётся."""
+        assert self._bare("tg614685408_d40dab283b80") == "d40dab283b80"
+
+    def test_plain_text_is_left_alone(self):
+        """Поиск по модели не должен превращаться во что-то другое."""
+        assert self._bare("cudy") == "cudy"
+
+    def test_separators_only_search_nothing(self):
+        assert self._bare("  ") == ""
+        assert self._bare("-:-") == ""
