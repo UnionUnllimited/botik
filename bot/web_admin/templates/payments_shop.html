@@ -1,9 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Платежи — {{ super() }}{% endblock %}
 
+{# Разметка повторяет страницу платежей бота (payments.html): та обкатана на
+   пяти тысячах клиентов, и заводить здесь собственную раскладку незачем.
+   Оттуда же взяты приёмы, которые тут раньше были нарушены: поле поиска не
+   стоит голым в переносимом ряду, а лежит в блоке, задающем ширину; фильтры
+   вынесены в свою панель под плитками, а не втиснуты в шапку; таблица — для
+   экрана, карточки — для телефона. #}
+
+{% set status_badge = {
+  'succeeded': 'tw-status-succeeded',
+  'pending': 'tw-status-pending',
+  'waiting_for_capture': 'tw-status-processing',
+  'processing': 'tw-status-processing',
+  'canceled': 'tw-status-canceled',
+  'failed': 'tw-status-failed',
+} %}
+
+{% macro status_chip(item) -%}
+  {# Незнакомое состояние показываем серым: красный тут соврал бы про отказ. #}
+  <span class="tw-status-badge {{ status_badge.get(item.status, 'tw-status-canceled') }}">{{ item.status_label }}</span>
+{%- endmacro %}
+
+{% macro cancel_button(item, size='') -%}
+  {# Отменить можно только висящий: перед отменой основное приложение
+     спрашивает провайдера — клиент мог заплатить минуту назад,
+     а уведомление задержаться. #}
+  {% if item.status == 'pending' %}
+  <form method="post"
+        action="{{ url_for('admin.payment_shop_cancel', payment_id=item.id, status=status_filter or None, q=query or None, page=page) }}">
+    <button type="submit" class="tw-btn tw-btn-sm {{ 'w-full' if size == 'wide' }}"
+            onclick="return confirm('Отменить платёж? Ссылка перестанет работать.')">
+      <i data-lucide="x" class="w-3.5 h-3.5"></i><span>Отменить</span>
+    </button>
+  </form>
+  {% endif %}
+{%- endmacro %}
+
 {% block content %}
 <div class="tw-anim space-y-4">
 
+  {# === Заголовок === #}
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
     <div>
       <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Платежи</h1>
@@ -14,25 +51,10 @@
         Оплата роутеров и доставки. Нажмите на номер заказа, чтобы открыть карточку.
       </p>
     </div>
-    <form method="get" class="flex items-center gap-2 flex-wrap">
-      <select name="status" class="tw-select">
-        <option value="">Все состояния</option>
-        {% for item in statuses %}
-        <option value="{{ item.value }}" {% if status_filter == item.value %}selected{% endif %}>
-          {{ item.title }}
-        </option>
-        {% endfor %}
-      </select>
-      <input type="text" name="q" value="{{ query }}" placeholder="Заказ, клиент или id платежа"
-             class="tw-input" style="min-width:240px">
-      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
-        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
-      </button>
-    </form>
   </div>
 
   {% if payments_error %}
-    <div class="tw-card p-4 text-[13px]" style="border-color:#b91c1c">
+    <div class="tw-surface rounded-[var(--radius-card)] p-4 text-[13px]" style="border-color:#b91c1c">
       <div class="flex items-start gap-2">
         <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
         <div>{{ payments_error }}</div>
@@ -40,45 +62,159 @@
     </div>
   {% else %}
 
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-    <div class="tw-card p-4">
-      <div class="text-[12px] tw-text-muted2">Принято всего</div>
-      <div class="text-[22px] font-semibold" style="color:#16a34a">{{ earned|money }}</div>
+  {# === Плитки === #}
+  {# Четыре колонки на две плитки — не описка: так плитка одного размера с
+     парком роутеров и карточкой роутера, где их по четыре. #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Принято всего</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none" style="color:#10b981">{{ earned|money }}</div>
     </div>
-    <div class="tw-card p-4">
-      <div class="text-[12px] tw-text-muted2">Платежей в отборе</div>
-      <div class="text-[22px] font-semibold tw-text-base2">{{ total }}</div>
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Платежей в отборе</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ total }}</div>
     </div>
   </div>
 
+  {# === Поиск + фильтр состояния === #}
+  <div class="tw-surface rounded-[var(--radius-card)] p-3">
+    <form method="get" class="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full"
+          id="paymentsShopFilterForm">
+      {# Ширину задаёт обёртка, поле внутри — w-full. Голое поле в переносимом
+         ряду требует всю строку и выталкивает соседей: так эта панель и
+         разъезжалась лесенкой. #}
+      <div class="relative w-full sm:flex-1 sm:min-w-[220px]">
+        <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 tw-text-subtle2 pointer-events-none"></i>
+        <input type="search" name="q" id="paymentsShopSearchInput"
+               value="{{ query }}"
+               placeholder="Заказ, клиент или id платежа…"
+               autocomplete="off" spellcheck="false"
+               class="tw-input tw-input-sm w-full"
+               style="padding-left: 32px; padding-right: {% if query %}32px{% else %}10px{% endif %};">
+        {% if query %}
+        <a href="{{ url_for('admin.payments_shop', status=status_filter or None) }}"
+           class="absolute right-1.5 top-1/2 -translate-y-1/2 tw-btn tw-btn-ghost tw-btn-icon-sm"
+           title="Сбросить поиск" style="width: 24px; height: 24px;">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </a>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <label for="status" class="text-[12.5px] font-medium tw-text-muted2 shrink-0">Состояние:</label>
+        <select class="tw-select tw-input-sm flex-1 sm:flex-none" id="status" name="status"
+                onchange="this.form.submit()" style="min-width: 0;">
+          <option value="">Все состояния</option>
+          {% for item in statuses %}
+          <option value="{{ item.value }}" {% if status_filter == item.value %}selected{% endif %}>
+            {{ item.title }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+  </div>
+  <script>
+    // Поиск сам уходит через 400 мс после ввода, Enter — сразу.
+    // Взято со страницы платежей бота: оператор там уже привык, что кнопки нет.
+    (function(){
+      var inp = document.getElementById('paymentsShopSearchInput');
+      var form = document.getElementById('paymentsShopFilterForm');
+      if (!inp || !form) return;
+      var t = null;
+      inp.addEventListener('input', function(){
+        if (t) clearTimeout(t);
+        t = setTimeout(function(){ form.submit(); }, 400);
+      });
+      inp.addEventListener('keydown', function(e){
+        if (e.key === 'Enter') { e.preventDefault(); if (t) clearTimeout(t); form.submit(); }
+      });
+    })();
+  </script>
+
   {% if payments %}
-  <div class="tw-card overflow-x-auto">
-    <table class="w-full text-[13px]">
-      <thead>
-        <tr class="tw-text-muted2 text-left">
-          <th class="px-3 py-2 font-medium">Заказ</th>
-          <th class="px-3 py-2 font-medium">Клиент</th>
-          <th class="px-3 py-2 font-medium">За что</th>
-          <th class="px-3 py-2 font-medium">Сумма</th>
-          <th class="px-3 py-2 font-medium">Состояние</th>
-          <th class="px-3 py-2 font-medium">Провайдер</th>
-          <th class="px-3 py-2 font-medium">Создан, МСК</th>
-          <th class="px-3 py-2 font-medium"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in payments %}
-        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
-          <td class="px-3 py-2 whitespace-nowrap">
-            {% if item.order_id %}
-            <a href="{{ url_for('admin.order_shop_card', order_id=item.order_id) }}" class="font-mono">
-              {{ item.order_number or ('#' ~ item.order_id) }}
-            </a>
-            {% else %}
-            <span class="tw-text-muted2">—</span>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 whitespace-nowrap">
+
+  {# === Таблица: экран === #}
+  <div class="hidden md:block tw-surface rounded-[var(--radius-card)] overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="tw-tbl">
+        <thead>
+          <tr>
+            <th style="width: 150px;">Заказ</th>
+            <th style="width: 160px;">Клиент</th>
+            <th style="width: 110px;">За что</th>
+            <th style="width: 110px;">Сумма</th>
+            <th style="width: 120px;">Состояние</th>
+            <th style="width: 190px;">Провайдер</th>
+            <th style="width: 160px;">Создан, МСК</th>
+            <th style="width: 110px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in payments %}
+          <tr>
+            <td>
+              {% if item.order_id %}
+              <a href="{{ url_for('admin.order_shop_card', order_id=item.order_id) }}" class="font-mono">
+                {{ item.order_number or ('#' ~ item.order_id) }}
+              </a>
+              {% else %}
+              <span class="tw-text-subtle2">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.client_tg_id %}
+              <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">
+                {{ item.client or ('id' ~ item.client_tg_id) }}
+              </a>
+              {% else %}
+              {{ item.client or '—' }}
+              {% endif %}
+            </td>
+            <td>{{ item.purpose_label }}</td>
+            <td class="whitespace-nowrap">{{ item.amount|money(item.currency) }}</td>
+            <td>{{ status_chip(item) }}</td>
+            <td class="tw-text-muted2">
+              {{ item.provider }}
+              {% if item.provider_payment_id %}
+              {# Обрезка ровно по 18 знакам разрубала id посередине, и он
+                 выглядел целым. Многоточие показывает, что это не весь номер,
+                 полный остаётся в подсказке — оператор сверяет его с
+                 провайдером. #}
+              <div class="text-[11px] font-mono" title="{{ item.provider_payment_id }}">
+                {{ item.provider_payment_id[:18] }}{% if item.provider_payment_id|length > 18 %}…{% endif %}
+              </div>
+              {% endif %}
+            </td>
+            <td class="tw-text-muted2 whitespace-nowrap">
+              {{ item.created_at|msk_compact }}
+              {% if item.paid_at %}
+              <div class="text-[11px]" style="color:#10b981">оплачен {{ item.paid_at|msk_time }}</div>
+              {% endif %}
+            </td>
+            <td class="text-right">{{ cancel_button(item) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# === Карточки: телефон === #}
+  <div class="md:hidden flex flex-col gap-2.5">
+    {% for item in payments %}
+    <div class="tw-surface rounded-[var(--radius-card)] p-3.5">
+      <div class="flex items-start justify-between gap-2 mb-2.5">
+        <div class="flex-1 min-w-0">
+          <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider mb-1">Заказ</div>
+          {% if item.order_id %}
+          <a href="{{ url_for('admin.order_shop_card', order_id=item.order_id) }}"
+             class="font-mono text-[13.5px] font-medium">
+            {{ item.order_number or ('#' ~ item.order_id) }}
+          </a>
+          {% else %}
+          <span class="tw-text-subtle2">—</span>
+          {% endif %}
+          <div class="text-[11px] tw-text-subtle2 mt-0.5">
             {% if item.client_tg_id %}
             <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">
               {{ item.client or ('id' ~ item.client_tg_id) }}
@@ -86,64 +222,72 @@
             {% else %}
             {{ item.client or '—' }}
             {% endif %}
-          </td>
-          <td class="px-3 py-2">{{ item.purpose_label }}</td>
-          <td class="px-3 py-2 whitespace-nowrap">{{ item.amount|money(item.currency) }}</td>
-          <td class="px-3 py-2 whitespace-nowrap">
-            {% if item.status == 'succeeded' %}
-            <span style="color:#16a34a">● {{ item.status_label }}</span>
-            {% elif item.status in ('pending', 'waiting_for_capture') %}
-            <span class="text-amber-500">○ {{ item.status_label }}</span>
-            {% else %}
-            <span class="tw-text-muted2">{{ item.status_label }}</span>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
-            {{ item.provider }}
-            {% if item.provider_payment_id %}
-            <div class="text-[11px] font-mono">{{ item.provider_payment_id[:18] }}</div>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
-            {{ item.created_at|msk_compact }}
-            {% if item.paid_at %}
-            <div class="text-[11px]" style="color:#16a34a">оплачен {{ item.paid_at|msk_time }}</div>
-            {% endif %}
-          </td>
-          {# Отменить можно только висящий: перед отменой основное приложение
-             спрашивает провайдера — клиент мог заплатить минуту назад,
-             а уведомление задержаться. #}
-          <td class="px-3 py-2 text-right">
-            {% if item.status == 'pending' %}
-            <form method="post"
-                  action="{{ url_for('admin.payment_shop_cancel', payment_id=item.id, status=status_filter or None, q=query or None, page=page) }}">
-              <button type="submit" class="tw-btn tw-btn-sm"
-                      onclick="return confirm('Отменить платёж? Ссылка перестанет работать.')">
-                <i data-lucide="x" class="w-3.5 h-3.5"></i><span>Отменить</span>
-              </button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+          </div>
+        </div>
+        <div>{{ status_chip(item) }}</div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mb-2.5">
+        <div>
+          <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider mb-1">Сумма</div>
+          <div class="text-[15px] font-semibold tw-text-base2">{{ item.amount|money(item.currency) }}</div>
+        </div>
+        <div>
+          <div class="text-[10.5px] tw-text-subtle2 uppercase tracking-wider mb-1">За что</div>
+          <div class="text-[12.5px] tw-text-base2">{{ item.purpose_label }}</div>
+        </div>
+      </div>
+
+      <div class="flex items-end justify-between gap-2 text-[11px] tw-text-muted2">
+        <div class="min-w-0">
+          <div>{{ item.created_at|msk_compact }}</div>
+          {% if item.paid_at %}
+          <div style="color:#10b981">оплачен {{ item.paid_at|msk_time }}</div>
+          {% endif %}
+          <div class="font-mono truncate" title="{{ item.provider_payment_id or '' }}">
+            {{ item.provider }}{% if item.provider_payment_id %} · {{ item.provider_payment_id[:12] }}…{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if item.status == 'pending' %}
+      <div class="mt-2.5">{{ cancel_button(item, 'wide') }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
 
-  {% if pages > 1 %}
-  <div class="flex items-center justify-center gap-3 text-[13px] tw-text-muted2">
-    {% if page > 1 %}
-    <a href="{{ url_for('admin.payments_shop', status=status_filter or None, q=query or None, page=page - 1) }}">← назад</a>
-    {% endif %}
-    <span>{{ page }} из {{ pages }}</span>
-    {% if page < pages %}
-    <a href="{{ url_for('admin.payments_shop', status=status_filter or None, q=query or None, page=page + 1) }}">вперёд →</a>
+  {# === Пагинация === #}
+  <div class="flex justify-center pt-2">
+    {% if pages > 1 %}
+    <nav aria-label="Page navigation" class="tw-pagination">
+      <a class="pg-item {% if page == 1 %}disabled{% endif %}"
+         href="{{ url_for('admin.payments_shop', page=page - 1, status=status_filter or None, q=query or None) }}"
+         aria-label="Предыдущая">
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+      </a>
+      {% set ns = namespace(last_printed=0) %}
+      {% for p in range(1, pages + 1) %}
+        {% if p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+          {% if p > ns.last_printed + 1 %}
+          <span class="pg-item disabled">…</span>
+          {% endif %}
+          <a class="pg-item {% if p == page %}active{% endif %}"
+             href="{{ url_for('admin.payments_shop', page=p, status=status_filter or None, q=query or None) }}">{{ p }}</a>
+          {% set ns.last_printed = p %}
+        {% endif %}
+      {% endfor %}
+      <a class="pg-item {% if page == pages %}disabled{% endif %}"
+         href="{{ url_for('admin.payments_shop', page=page + 1, status=status_filter or None, q=query or None) }}"
+         aria-label="Следующая">
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </a>
+    </nav>
     {% endif %}
   </div>
-  {% endif %}
 
   {% else %}
-  <div class="tw-card p-4 text-[13px] tw-text-muted2">
+  <div class="tw-surface rounded-[var(--radius-card)] p-4 text-[13px] tw-text-muted2">
     {% if query or status_filter %}Ничего не нашлось.{% else %}Платежей пока нет.{% endif %}
   </div>
   {% endif %}
