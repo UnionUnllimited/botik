@@ -115,3 +115,37 @@ class TestIdentityComesFromSignature:
     def test_error_text_explains_itself(self):
         """Отказ должен объяснять причину: иначе первый же тест выглядит поломкой."""
         assert str(InitDataError("Подпись не сошлась"))
+
+
+class TestWhoIsAllowedAsked:
+    """Бот спрашивает у нас, кому открыто приложение, — и не держит копии списка.
+
+    Две копии одного списка однажды разъезжаются, и тогда кнопка приходит
+    тому, кого приложение потом не пускает. Список один, живёт здесь.
+    """
+
+    @pytest.mark.asyncio
+    async def test_allowed_when_in_the_list(self, monkeypatch):
+        from api.routes.fleet_api import miniapp_allowed
+
+        monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(TOKEN))
+        monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [MINE])
+        assert await miniapp_allowed(tg_id=MINE) == {"allowed": True, "configured": True}
+
+    @pytest.mark.asyncio
+    async def test_stranger_is_refused(self, monkeypatch):
+        from api.routes.fleet_api import miniapp_allowed
+
+        monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(TOKEN))
+        monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [MINE])
+        assert (await miniapp_allowed(tg_id=999))["allowed"] is False
+
+    @pytest.mark.asyncio
+    async def test_nobody_while_the_app_is_off(self, monkeypatch):
+        """Список пуст — приложения нет, и кнопку слать некому."""
+        from api.routes.fleet_api import miniapp_allowed
+
+        monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(TOKEN))
+        monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [])
+        answer = await miniapp_allowed(tg_id=MINE)
+        assert answer == {"allowed": False, "configured": False}

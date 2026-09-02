@@ -1344,6 +1344,24 @@ async def save_note(
     return {"ok": True}
 
 
+@router.get("/miniapp/allowed", dependencies=[Depends(require_token)])
+async def miniapp_allowed(tg_id: int = Query(0, ge=0)) -> dict:
+    """Открыто ли приложение этому человеку. Спрашивает бот, прежде чем слать кнопку.
+
+    Список один и живёт здесь, в `MINIAPP_ALLOWED_TG_IDS`. Держать его копию
+    ещё и у бота значило бы однажды поправить в одном месте: кнопка приходила
+    бы тому, кого приложение потом не пускает, — или наоборот, не приходила
+    тому, кому открыто.
+
+    Права проверяет не эта ручка: её зовёт наш же бот по общему токену. Здесь
+    только ответ на вопрос, и ничего, кроме «да» или «нет», он не сообщает.
+    """
+    return {
+        "allowed": settings.miniapp.is_configured and settings.miniapp.is_allowed(tg_id),
+        "configured": settings.miniapp.is_configured,
+    }
+
+
 @router.post("/routers/{device_id}/terminal-ticket", dependencies=[Depends(require_token)])
 async def terminal_ticket_for(
     device_id: int, session: AsyncSession = Depends(get_transaction)

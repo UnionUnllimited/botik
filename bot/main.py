@@ -1564,14 +1564,18 @@ async def handle_miniapp_link(message: Message):
     видит только тот, кому она пришла. Регистрировать приложение в BotFather
     для такой кнопки не требуется.
 
+    Кому открыто, знает основное приложение: список лежит там, в
+    `MINIAPP_ALLOWED_TG_IDS`. Спрашиваем его, а не держим копию у себя —
+    разъехавшись, копии дали бы кнопку тому, кого приложение потом не пустит.
+
     Постороннему не отвечаем вовсе, а не отказом: команды для него нет, и
     сообщать, что она есть, незачем.
     """
-    from src.core.utils import is_bot_admin
+    from src import shop_api
 
     user_id = message.from_user.id
-    if not is_bot_admin(user_id):
-        logger.info(f"[MINIAPP] /app от постороннего {user_id} — молчим")
+    if not await shop_api.miniapp_allowed(user_id):
+        logger.info(f"[MINIAPP] /app от {user_id}: приложение ему не открыто — молчим")
         return
 
     # Адрес тот же, откуда бот берёт каталог: приложение живёт на /app того же

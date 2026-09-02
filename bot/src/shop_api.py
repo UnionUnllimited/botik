@@ -630,3 +630,22 @@ async def promo_create(payload: dict) -> tuple[dict, str]:
 
 async def promo_action(promo_id: int, action: str) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/manage/promos/{promo_id}/{action}", {})
+
+
+# --- Приложение в Telegram ---------------------------------------------------
+
+
+async def miniapp_allowed(tg_id: int) -> bool:
+    """Открыто ли приложение этому человеку.
+
+    Список живёт в окружении основного приложения, у бота его копии нет
+    намеренно: разъехавшись, две копии дали бы кнопку тому, кого приложение
+    потом не пустит.
+
+    Отказ при недоступном API — единственный разумный ответ: кнопку мы всё
+    равно построим на адрес, который сейчас не отвечает.
+    """
+    data, error = await get("/api/v1/fleet/miniapp/allowed", {"tg_id": tg_id})
+    if error:
+        return False
+    return bool(data.get("allowed"))
