@@ -155,11 +155,38 @@ def add_event(
     return event
 
 
-async def allocate_visitor_port(session: AsyncSession) -> int:
-    """Следующий свободный порт visitor'а. Порты не переиспользуются в рамках жизни базы."""
+async def allocate_visitor_port(session: AsyncSession) -> int | None:
+    """Следующий свободный порт visitor'а. Порты не переиспользуются в рамках жизни базы.
+
+    `None` — номера кончились. Такое бывает ровно на одной границе: порт SSH
+    считается как порт панели плюс `ssh_visitor_offset`, и когда порт панели
+    дорастает до `visitor_base_port + ssh_visitor_offset`, он совпадает с
+    SSH-портом самого первого роутера. При нынешних 20000 и 10000 это
+    десятитысячное устройство за всю жизнь базы.
+
+    Отдать такой порт было бы хуже, чем не отдать: два visitor'а в конфиге
+    попросили бы у frpc один и тот же `bindPort`, тот не смог бы его занять,
+    и туннели начали бы отваливаться без внятной причины. Поэтому упираемся
+    молча для парка и громко для журнала — расширять диапазон всё равно
+    оператору.
+    """
     maximum = await session.scalar(select(func.max(Device.frp_visitor_port)))
     base = settings.frp.visitor_base_port
-    return max(int(maximum or 0) + 1, base)
+    port = max(int(maximum or 0) + 1, base)
+
+    limit = base + settings.frp.ssh_visitor_offset
+    if port >= limit:
+        log.error(
+            "router.visitor_ports_exhausted",
+            next_port=port,
+            limit=limit,
+            hint=(
+                "Порты панелей дошли до SSH-диапазона. Поднимите FRP_SSH_VISITOR_OFFSET "
+                "или освободите номера удалённых устройств."
+            ),
+        )
+        return None
+    return port
 
 
 async def get_or_create_by_mac(session: AsyncSession, mac: str, *, model: str = "") -> tuple[Device, bool]:
@@ -185,7 +212,12 @@ async def ensure_frp_binding(session: AsyncSession, device: Device) -> Device:
     device.frp_luci_name = luci_name
     device.frp_ssh_name = ssh_name
     if device.frp_visitor_port is None:
-        device.frp_visitor_port = await allocate_visitor_port(session)
+        port = await allocate_visitor_port(session)
+        if port is None:
+            # Без порта роутер просто не попадёт в конфиг frpc (`render_config`
+            # пропускает такие) — остальной парк работает как работал.
+            return device
+        device.frp_visitor_port = port
         await session.flush()
     return device
 

@@ -364,3 +364,68 @@ class TestLastSeenThrottle:
         await mark_online(self._Session(), device, self._proxy(), now=now)
 
         assert device.frp_last_seen_at == now
+
+
+class TestVisitorPortLimit:
+    """Порты visitor'ов не должны дорасти до SSH-диапазона.
+
+    Порт SSH считается как порт панели плюс смещение. Когда порт панели
+    доходит до `visitor_base_port + ssh_visitor_offset`, он совпадает с
+    SSH-портом самого первого роутера, и два visitor'а в конфиге просят
+    у frpc один `bindPort`. Тот не сможет его занять, и туннели начнут
+    отваливаться без внятной причины — отдавать такой порт нельзя.
+    """
+
+    class _Session:
+        """Из сессии нужен только `scalar`: он отвечает максимумом по колонке."""
+
+        def __init__(self, maximum: int | None) -> None:
+            self._maximum = maximum
+            self.flushed = 0
+
+        async def scalar(self, _statement):
+            return self._maximum
+
+        async def flush(self) -> None:
+            self.flushed += 1
+
+    @pytest.mark.asyncio
+    async def test_first_port_is_the_base(self):
+        from core.services.routers import allocate_visitor_port
+
+        assert await allocate_visitor_port(self._Session(None)) == 20000
+
+    @pytest.mark.asyncio
+    async def test_next_port_follows_the_biggest(self):
+        from core.services.routers import allocate_visitor_port
+
+        assert await allocate_visitor_port(self._Session(20007)) == 20008
+
+    @pytest.mark.asyncio
+    async def test_last_port_before_the_ssh_range_is_given(self):
+        from core.services.routers import allocate_visitor_port
+
+        assert await allocate_visitor_port(self._Session(29998)) == 29999
+
+    @pytest.mark.asyncio
+    async def test_ssh_range_is_never_handed_out(self):
+        """30000 — это SSH-порт первого роутера, отдать его значит сломать оба."""
+        from core.services.routers import allocate_visitor_port
+
+        assert await allocate_visitor_port(self._Session(29999)) is None
+
+    @pytest.mark.asyncio
+    async def test_router_without_port_keeps_working_rest_of_fleet(self):
+        """Упёршийся роутер остаётся без туннеля, но обход не падает."""
+        from core.models import Device
+        from core.services.routers import ensure_frp_binding
+
+        device = Device(mac="A0:B1:C2:D3:E4:F5")
+        session = self._Session(29999)
+
+        await ensure_frp_binding(session, device)
+
+        assert device.frp_visitor_port is None
+        # Имена прокси проставлены: они от порта не зависят.
+        assert device.frp_luci_name
+        assert device.frp_ssh_name
