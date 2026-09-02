@@ -41,13 +41,40 @@ PENDING_TTL_SEC = 30 * 60
 оператор давно забыл, что нажимал, и его следующее сообщение в топике
 уехало бы в поле, которого он не ждал."""
 
-_pending: dict[tuple[int, int], tuple[str, int, float]] = {}
-"""(чат, топик) → (действие, заказ, когда попросили).
+_pending: dict[tuple[int, int], tuple[str, int, float, int, int]] = {}
+"""(чат, топик) → (действие, заказ, когда попросили, подсказка, карточка).
 
 В памяти, а не в базе: если бота перезапустили, ожидание правильнее забыть.
 Восстановленное после перезапуска, оно приняло бы за трек-номер первое же
 сообщение, которое оператор напишет коллеге.
+
+Номер подсказки храним, чтобы её убрать. Иначе они копятся: нажал «Трек-номер»,
+передумал, нажал «Цена доставки» — и в топике две подсказки, а в силе последняя.
+Понять это, глядя на топик, нельзя.
+
+Номер карточки — чтобы поправить её на месте, а не слать новую. Иначе
+после каждой правки в топике оставалась ещё одна карточка, и какая из них
+свежая, было видно только по времени.
 """
+
+
+async def _drop_prompt(bot, chat_id: int, message_id: int) -> None:
+    """Убирает подсказку. Молча: прав на удаление может не быть, а ронять
+    из-за этого действие оператора незачем — подсказка всего лишь мусор."""
+    if not message_id:
+        return
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception as exc:  # noqa: BLE001 — не наше дело, если чат не даёт
+        logger.debug(f"[TOPICS] подсказку не убрать: {exc}")
+
+
+async def _forget(bot, key: tuple[int, int]) -> None:
+    """Забывает ожидание вместе с его подсказкой."""
+    waiting = _pending.pop(key, None)
+    if waiting is not None:
+        await _drop_prompt(bot, key[0], waiting[3])
+
 
 PROMPTS = {
     "track": "Пришлите трек-номер ответом в этот топик.",
@@ -182,8 +209,15 @@ async def on_button(query: CallbackQuery) -> None:
         await query.answer("Статус изменён")
         return
 
+    if action == "cancel":
+        await _forget(query.bot, (chat_id, thread_id))
+        await query.answer("Отменено")
+        return
+
     if action in PROMPTS:
-        _pending[(chat_id, thread_id)] = (action, order_id, time.monotonic())
+        # Прежнюю подсказку убираем: в силе всегда последняя, и две висящие
+        # рядом означают, что оператор гадает, на какую отвечает.
+        await _forget(query.bot, (chat_id, thread_id))
         # Гасим нажатие до отправки подсказки. Не ответишь на callback —
         # Telegram держит кнопку «нажатой» до таймаута, и оператор смотрит
         # на крутящийся кружок, не понимая, дошло или нет. А отправка ниже
@@ -195,15 +229,26 @@ async def on_button(query: CallbackQuery) -> None:
             # вызов падал на «got multiple values for message_thread_id».
             # Подсказка не уходила вовсе, а снаружи это выглядело так, будто
             # кнопка мертва: работал один «Статус», он в топик ничего не пишет.
-            await query.bot.send_message(
+            prompt = await query.bot.send_message(
                 chat_id=chat_id,
                 text=PROMPTS[action],
                 message_thread_id=thread_id or None,
+                # Отмена прямо под подсказкой. Без неё нажатие запирало
+                # оператора: передумал — и либо шли значение, которое не
+                # нужно, либо жди полчаса, пока ожидание протухнет.
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="‹ Отмена", callback_data=f"{PREFIX}:{order_id}:cancel"
+                    )
+                ]]),
             )
         except Exception as exc:  # noqa: BLE001 — оператор должен увидеть причину
-            _pending.pop((chat_id, thread_id), None)
             logger.warning(f"[TOPICS] подсказка не ушла: {exc}")
             await query.answer(f"Не могу написать в этот чат: {exc}"[:190], show_alert=True)
+            return
+        _pending[(chat_id, thread_id)] = (
+            action, order_id, time.monotonic(), prompt.message_id, query.message.message_id
+        )
         return
 
     await query.answer()
@@ -322,11 +367,14 @@ async def on_reply(message: Message) -> None:
     if waiting is None:
         return
 
-    action, order_id, asked_at = waiting
+    action, order_id, asked_at, prompt_id, card_id = waiting
     if time.monotonic() - asked_at > PENDING_TTL_SEC:
-        _pending.pop(key, None)
+        await _forget(message.bot, key)
         return
+    # Подсказку убираем сразу: она своё отработала, и оставлять её в топике
+    # значит показывать оператору просьбу, на которую он уже ответил.
     _pending.pop(key, None)
+    await _drop_prompt(message.bot, key[0], prompt_id)
 
     value = (message.text or "").strip()
     if action == "dm":
@@ -353,6 +401,21 @@ async def on_reply(message: Message) -> None:
     # Та же причина, что и у подсказки выше: `message.answer` подставляет
     # топик сам. Здесь ошибка была ещё незаметнее — значение уже сохранилось,
     # оператор видел «Готово», а карточка оставалась старой.
+    # Правим ту же карточку, а не шлём новую: после трёх правок в топике
+    # лежало четыре карточки, и свежая отличалась от прежних только временем.
+    try:
+        await message.bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=card_id,
+            text=data.get("text", ""),
+            reply_markup=markup(data.get("buttons") or []),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 — карточку могли удалить или она устарела
+        logger.info(f"[TOPICS] карточку не поправить, шлю новую: {exc}")
+
     await message.bot.send_message(
         chat_id=message.chat.id,
         text=data.get("text", ""),
