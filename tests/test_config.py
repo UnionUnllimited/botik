@@ -175,3 +175,45 @@ class TestEncryptionKey:
         monkeypatch.setenv("SECURITY_ENCRYPTION_KEY", "c2hvcnQ=")  # 5 байт
         with pytest.raises(ValueError, match="32 байта"):
             Settings()
+
+
+class TestMiniappToken:
+    """Подпись входа в приложение проверяется токеном бота.
+
+    Держать в окружении второй экземпляр того же секрета — верный способ
+    однажды поменять его в одном месте и полдня искать, почему вход перестал
+    сходиться. Поэтому приложение берёт общий `BOT_TOKEN`, а своя переменная
+    остаётся на случай, когда приложение живёт в отдельном боте.
+    """
+
+    def test_shared_bot_token_is_used(self, monkeypatch):
+        monkeypatch.setenv("BOT_TOKEN", "123:general")
+        monkeypatch.setenv("MINIAPP_BOT_TOKEN", "")
+        assert Settings().miniapp.bot_token.get_secret_value() == "123:general"
+
+    def test_own_token_wins(self, monkeypatch):
+        monkeypatch.setenv("BOT_TOKEN", "123:general")
+        monkeypatch.setenv("MINIAPP_BOT_TOKEN", "456:separate")
+        assert Settings().miniapp.bot_token.get_secret_value() == "456:separate"
+
+    def test_without_any_token_the_app_is_off(self, monkeypatch):
+        monkeypatch.setenv("BOT_TOKEN", "")
+        monkeypatch.setenv("MINIAPP_BOT_TOKEN", "")
+        monkeypatch.setenv("MINIAPP_ALLOWED_TG_IDS", "614685408")
+        assert Settings().miniapp.is_configured is False
+
+    def test_empty_allowlist_means_nobody(self, monkeypatch):
+        """Пустой список — «никому», а не «всем»: приложение на обкатке."""
+        monkeypatch.setenv("BOT_TOKEN", "123:general")
+        monkeypatch.setenv("MINIAPP_ALLOWED_TG_IDS", "")
+        settings = Settings()
+        assert settings.miniapp.is_configured is False
+        assert settings.miniapp.is_allowed(614685408) is False
+
+    def test_allowlist_is_read_from_a_comma_list(self, monkeypatch):
+        monkeypatch.setenv("BOT_TOKEN", "123:general")
+        monkeypatch.setenv("MINIAPP_ALLOWED_TG_IDS", "614685408, 777")
+        settings = Settings()
+        assert settings.miniapp.is_configured is True
+        assert settings.miniapp.is_allowed(614685408) is True
+        assert settings.miniapp.is_allowed(999) is False

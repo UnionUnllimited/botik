@@ -224,6 +224,10 @@ class MiniappSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="MINIAPP_")
 
     bot_token: SecretStr = SecretStr("")
+    """Обычно пусто: токен подставляется из общего `BOT_TOKEN`, потому что
+    приложение открывают из того же бота, что пишет клиенту. Задавать сюда
+    что-то своё нужно ровно в одном случае — если приложение живёт в другом
+    боте; тогда заданное значение главнее."""
     allowed_tg_ids: IdList = Field(default_factory=list)
     """Кому открыто. Пустой список значит «никому», и это намеренно: пока идёт
     обкатка, приложение не должно открыться у клиента по случайно найденной
@@ -581,6 +585,23 @@ class Settings(EnvSettings):
     remnawave: RemnawaveSettings = Field(default_factory=RemnawaveSettings)
     lists: ListsSettings = Field(default_factory=ListsSettings)
     sentry: SentrySettings = Field(default_factory=SentrySettings)
+
+    @model_validator(mode="after")
+    def _share_bot_token(self) -> Settings:
+        """Приложению в Telegram годится общий токен бота.
+
+        Подпись входа проверяется ключом, выведенным из токена того бота, из
+        которого приложение открывают, — а это тот же бот, что пишет клиенту.
+        Держать в `.env` второй экземпляр того же секрета значит однажды
+        поменять его в одном месте и полдня искать, почему вход перестал
+        сходиться.
+
+        Заданный `MINIAPP_BOT_TOKEN` главнее: приложение может жить и в
+        отдельном боте.
+        """
+        if not self.miniapp.bot_token.get_secret_value():
+            self.miniapp.bot_token = self.bot.token
+        return self
 
     @model_validator(mode="after")
     def _validate_prod(self) -> Settings:
