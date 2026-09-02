@@ -301,9 +301,14 @@ class TestSorting:
     оператор увидит те же роутеры, что на первой.
     """
 
+    # Ручку зовём напрямую, минуя FastAPI, и умолчания он за нас не подставит:
+    # пропущенный параметр останется объектом Query и уедет в SQL как значение.
+    # Отсюда правило — здесь должны быть перечислены все аргументы `list_routers`
+    # кроме сессии. Забытый `tg_id` уже ронял всю сортировку на
+    # «type 'Query' is not supported».
     DEFAULTS = {  # noqa: RUF012 — параметры ручки, а не изменяемое состояние
-        "q": "", "link": "", "client": "", "sub": "", "state": "", "model": "",
-        "page": 1, "per_page": 50,
+        "q": "", "link": "", "client": "", "tg_id": 0, "sub": "", "state": "",
+        "model": "", "sort": "", "direction": "desc", "page": 1, "per_page": 50,
     }
 
     async def _fleet(self, session, **kwargs):
