@@ -201,19 +201,25 @@
     cancelled: 'off'
   };
 
+  // Номер и состояние слева, деньги справа, всё в одну строку по высоте:
+  // цена над меткой состояния растягивала строку вдвое, и на экран влезало
+  // три заказа вместо шести.
   function orderRow(o) {
     var tone = ORDER_TONE[o.status] || 'off';
     return '<button class="card tight" data-order="' + esc(o.id) + '"'
-      + ' style="display:block;width:100%;text-align:left;font-family:inherit;color:inherit;cursor:pointer">'
-      + '<div class="row"><div class="grow">'
-      + '<div class="mono small">' + esc(o.number || ('#' + o.id)) + '</div>'
-      + '<div class="muted tiny" style="margin-top:3px">' + date(o.created_at) + '</div>'
-      + '</div>'
-      + '<div style="text-align:right">'
-      + '<div>' + money(o.total, o.currency) + '</div>'
-      + '<span class="pill ' + tone + '" style="margin-top:4px">' + esc(o.status_title || o.status) + '</span>'
-      + '</div>'
-      + '<span class="subtle">' + icon('chev-r') + '</span>'
+      + ' style="display:block;width:100%;text-align:left;font-family:inherit;'
+      + 'color:inherit;cursor:pointer">'
+      + '<div class="row">'
+      +   '<div class="grow">'
+      +     '<div class="mono" style="font-size:14px">' + esc(o.number || ('#' + o.id)) + '</div>'
+      +     '<div style="margin-top:6px"><span class="pill ' + tone + '">'
+      +       esc(o.status_title || o.status) + '</span></div>'
+      +   '</div>'
+      +   '<div style="text-align:right">'
+      +     '<div style="font-weight:650">' + money(o.total, o.currency) + '</div>'
+      +     '<div class="subtle tiny" style="margin-top:5px">' + date(o.created_at) + '</div>'
+      +   '</div>'
+      +   '<span class="subtle">' + icon('chev-r') + '</span>'
       + '</div></button>';
   }
 
@@ -289,8 +295,9 @@
             : '')
 
         + (orders
-            ? '<h2 style="margin-top:18px">Последние заказы</h2>' + orders
-              + '<button class="btn quiet" id="all-orders">Все заказы</button>'
+            ? '<div class="sec">Последние заказы</div>' + orders
+              + '<button class="btn quiet" id="all-orders" style="border:0;padding:6px">'
+              + 'Все заказы' + icon('chev-r') + '</button>'
             : '<div class="card flat muted small">Заказов пока нет. Загляните в каталог — '
               + 'роутер приедет с уже настроенным доступом.</div>')
       );
@@ -400,30 +407,39 @@
           + '</div>'
         : '';
 
-      function stat(iconName, label, value) {
-        return '<div class="row"><span class="muted small">'
-          + '<span style="display:inline-flex;gap:7px;align-items:center">'
-          + icon(iconName) + esc(label) + '</span></span><span>' + value + '</span></div>';
+      // Показания плитками, а не строками: четыре пары «название — значение»
+      // в столбик читаются как накладная, а взгляду нужно охватить их разом.
+      function tile(iconName, label, value) {
+        return '<div class="card tight" style="margin:0">'
+          + '<div class="row"><span class="subtle small">' + esc(label) + '</span>'
+          + '<span class="subtle">' + icon(iconName) + '</span></div>'
+          + '<div style="font-size:19px;font-weight:700;letter-spacing:-.4px;margin-top:6px">'
+          + value + '</div></div>';
       }
 
       show(
         '<h1>Мой роутер</h1>'
         + picker
         + '<div class="card">'
-        +   '<div class="row"><div class="grow"><div class="mono">' + esc(r.mac) + '</div>'
+        +   '<div class="row"><div class="grow">'
+        +     '<div class="mono" style="font-size:15px">' + esc(r.mac) + '</div>'
         +     '<div class="muted small">' + esc(r.model || 'Модель не указана') + '</div></div>'
         +     '<span class="pill ' + (r.online ? 'ok' : 'off') + '"><i class="dot"></i>'
         +       (r.online ? 'на связи' : 'молчит') + '</span></div>'
-        +   (r.until ? '<div class="hr"></div>'
-              + stat('shield', 'Подписка до', '<b>' + date(r.until) + '</b>') : '')
+        +   (r.until
+              ? '<div class="hr"></div>'
+                + '<div class="row"><span class="muted small">Подписка до</span>'
+                + '<span class="big" style="font-size:19px">' + date(r.until) + '</span></div>'
+              : '')
         + '</div>'
 
-        + '<div class="card">'
-        +   '<h2>Показания</h2>'
-        +   stat('wifi', 'Устройств в сети', esc(r.clients == null ? '—' : r.clients))
-        +   stat('clock', 'Аптайм', esc(uptime(r.uptime_sec)))
-        +   stat('gauge', 'Загрузка', r.cpu_pct == null ? '—' : esc(r.cpu_pct) + '%')
-        +   stat('swap', 'Трафик', bytes(r.rx_bytes) + ' / ' + bytes(r.tx_bytes))
+        + '<h2 style="margin:22px 2px 12px">Показания</h2>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+        +   tile('wifi', 'Устройств', esc(r.clients == null ? '—' : r.clients))
+        +   tile('clock', 'Аптайм', esc(uptime(r.uptime_sec)))
+        +   tile('gauge', 'Загрузка', r.cpu_pct == null ? '—' : esc(r.cpu_pct) + '%')
+        +   tile('swap', 'Трафик', bytes(r.rx_bytes) + '<span class="subtle" '
+              + 'style="font-size:13px;font-weight:400"> / ' + bytes(r.tx_bytes) + '</span>')
         + '</div>'
 
         + '<div class="stack">'
@@ -566,13 +582,13 @@
     return api('/pitch').then(function (d) {
       var items = (d.products || []).map(function (p) {
         var specs = (p.specs || []).map(function (pair) {
-          return '<div class="spec"><span class="muted">' + esc(pair[0]) + '</span>'
-            + '<b>' + esc(pair[1]) + '</b></div>';
+          return '<div><dt>' + esc(pair[0]) + '</dt><dd>' + esc(pair[1]) + '</dd></div>';
         }).join('');
 
         return '<div class="card prod">'
-          + (p.photo_url ? '<img src="' + esc(p.photo_url) + '" alt="">' : '')
-          + '<div class="row"><b class="grow">' + esc(p.title) + '</b>'
+          + (p.photo_url
+              ? '<div class="shot"><img src="' + esc(p.photo_url) + '" alt=""></div>' : '')
+          + '<div class="row"><b class="grow" style="font-size:17px">' + esc(p.title) + '</b>'
           +   (p.in_stock
                 ? '<span class="pill ok"><i class="dot"></i>в наличии</span>'
                 : (p.preorder ? '<span class="pill warn">под заказ</span>'
@@ -585,7 +601,7 @@
               ? '<div class="small" style="margin-top:9px;color:var(--muted)">'
                 + esc(p.description) + '</div>'
               : '')
-          + (specs ? '<div class="hr"></div>' + specs : '')
+          + (specs ? '<div class="hr"></div><dl class="specs">' + specs + '</dl>' : '')
           + '<div class="hr"></div>'
           // Старая цена и выгода стоят над ценой, а не рядом: первое число,
           // которое видит человек, задаёт точку отсчёта для второго.
@@ -700,9 +716,9 @@
   function productLine(p, currency) {
     return '<div class="card tight"><div class="row">'
       + '<span class="ic-box">' + icon('box') + '</span>'
-      + '<div class="grow"><b>' + esc(p.title) + '</b>'
-      + '<div class="muted small">Роутер с настроенным доступом</div></div>'
-      + '<span class="price">' + money(p.price, currency) + '</span>'
+      + '<div class="grow ellip"><b>' + esc(p.title) + '</b>'
+      + '<div class="muted small">Настроен до отправки</div></div>'
+      + '<span class="price" style="font-size:21px">' + money(p.price, currency) + '</span>'
       + '</div></div>';
   }
 

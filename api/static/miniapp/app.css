@@ -1,27 +1,39 @@
 /* Оформление приложения в Telegram.
 
-   Цвета свои, а не из темы Telegram: приложение фирменное, и в светлой теме
-   мессенджера оно должно выглядеть так же, как в тёмной. Тема Telegram
-   используется ровно в одном месте — цветом шапки и фона окна, чтобы рамка
-   вокруг приложения не спорила с ним по цвету (см. app.js). */
+   Цвета свои, а не из темы мессенджера: приложение фирменное, и в светлой
+   теме оно должно выглядеть так же, как в тёмной. Тема Telegram трогается
+   ровно в одном месте — цветом шапки и фона окна, чтобы рамка вокруг не
+   спорила с содержимым (см. app.js).
+
+   Главный приём — слоистость. Плоские прямоугольники одного тона читаются
+   как список без начала и конца; поверхность с еле заметным переходом,
+   светлой кромкой сверху и мягкой тенью снизу отделяется от фона сама,
+   без рамок и линеек. */
 
 :root {
-  --bg:        #0b1220;
-  --bg-soft:   #101a2c;
-  --card:      #141f33;
-  --card-up:   #18263e;
-  --line:      rgba(255, 255, 255, .08);
-  --line-firm: rgba(255, 255, 255, .14);
-  --text:      #eaf1fb;
-  --muted:     #8ea3c0;
-  --subtle:    #5f7290;
+  --bg:        #080d17;
+  --bg-soft:   #0d1424;
+  --card-1:    #111a2b;
+  --card-2:    #16203442;
+  --line:      rgba(255, 255, 255, .07);
+  --line-firm: rgba(255, 255, 255, .13);
+  --text:      #eef4fd;
+  --muted:     #93a6c4;
+  --subtle:    #61748f;
   --accent:    #2f8fff;
-  --accent-2:  #21d4fd;
-  --grad:      linear-gradient(135deg, #2f8fff 0%, #21d4fd 100%);
-  --ok:        #35d07f;
-  --warn:      #ffb020;
-  --err:       #ff6b6b;
-  --nav-h:     58px;
+  --accent-2:  #29dcff;
+  --grad:      linear-gradient(135deg, #2f8fff 0%, #29dcff 100%);
+  --ok:        #34d399;
+  --warn:      #fbbf24;
+  --err:       #fb7185;
+
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 11px;
+
+  /* Кромка сверху и тень снизу — вместе они и создают ощущение слоя. */
+  --lift: inset 0 1px 0 rgba(255, 255, 255, .06), 0 10px 28px -18px rgba(0, 0, 0, .9);
+  --nav-h: 60px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -30,248 +42,330 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   -webkit-font-smoothing: antialiased;
+  /* Цифры одной ширины: в столбце цен и показаний прыгающая разрядка
+     заметна сразу и выглядит небрежностью. */
+  font-variant-numeric: tabular-nums;
 }
 
-/* Подсветка сверху: тот же синий, что на баннере, но еле различимый —
-   иначе он спорит с содержимым карточек. */
+/* Свечение вверху экрана: единственный источник «света» в интерфейсе, от
+   него и идёт ощущение объёма у карточек под ним. */
 body::before {
   content: '';
-  position: fixed; left: 0; right: 0; top: 0; height: 220px;
-  background: radial-gradient(120% 100% at 50% 0%, rgba(47, 143, 255, .18), transparent 70%);
-  pointer-events: none;
+  position: fixed; inset: 0 0 auto 0; height: 320px; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(90% 70% at 18% 0%, rgba(47, 143, 255, .22), transparent 62%),
+    radial-gradient(70% 60% at 92% 6%, rgba(41, 220, 255, .13), transparent 60%);
 }
 
-.wrap { padding: 14px 14px 20px; position: relative; }
+.wrap { position: relative; z-index: 1; padding: 12px 16px 24px; }
 
-/* --- Текст ---------------------------------------------------------------- */
+/* --- Типографика ---------------------------------------------------------- */
 
-h1 { font-size: 21px; line-height: 1.2; margin: 4px 0 14px; letter-spacing: -.2px; }
-h2 { font-size: 15px; margin: 0 0 10px; }
+h1 {
+  font-size: 26px; line-height: 1.15; letter-spacing: -.6px;
+  font-weight: 700; margin: 6px 0 16px;
+}
+h2 {
+  font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--subtle); margin: 0 0 12px;
+}
 .muted  { color: var(--muted); }
 .subtle { color: var(--subtle); }
-.small  { font-size: 13px; }
-.tiny   { font-size: 11.5px; }
-.big    { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
-.mono   { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.small  { font-size: 13.5px; }
+.tiny   { font-size: 11.5px; line-height: 1.5; }
+.big    { font-size: 24px; font-weight: 700; letter-spacing: -.5px; }
+.mono   { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .94em; }
 .err    { color: var(--err); }
 .center { text-align: center; }
 .grow   { flex: 1; min-width: 0; }
 .ellip  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* --- Карточки ------------------------------------------------------------- */
+/* --- Поверхности ---------------------------------------------------------- */
 
 .card {
-  background: var(--card);
+  position: relative;
+  background: linear-gradient(180deg, var(--card-1), var(--card-2));
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 14px;
-  margin-bottom: 10px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--lift);
+  padding: 16px;
+  margin-bottom: 12px;
 }
-.card.tight { padding: 12px 14px; }
-.card.flat  { background: var(--bg-soft); }
+.card.tight { padding: 13px 15px; }
+.card.flat  { background: var(--bg-soft); box-shadow: none; }
 
-.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.row + .row { margin-top: 9px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row + .row { margin-top: 11px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .split { display: flex; gap: 10px; }
 .split > * { flex: 1; }
 
-.hr { height: 1px; background: var(--line); margin: 12px -14px; }
+/* Разделитель — не линейка во всю ширину, а тающая к краям нить: сплошная
+   черта режет карточку на две, эта только помечает границу. */
+.hr {
+  height: 1px; margin: 14px -16px; border: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .1) 22%,
+                              rgba(255, 255, 255, .1) 78%, transparent);
+}
+.card.tight .hr { margin-left: -15px; margin-right: -15px; }
 
-/* --- Метки состояний ------------------------------------------------------ */
+/* --- Метки ---------------------------------------------------------------- */
 
 .pill {
-  font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
-  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 11.5px; font-weight: 650; padding: 4px 11px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid transparent;
 }
-.pill.ok   { color: var(--ok);     background: rgba(53, 208, 127, .14); }
-.pill.warn { color: var(--warn);   background: rgba(255, 176, 32, .14); }
-.pill.bad  { color: var(--err);    background: rgba(255, 107, 107, .14); }
-.pill.off  { color: var(--muted);  background: rgba(142, 163, 192, .14); }
+.pill.ok   { color: var(--ok);    background: rgba(52, 211, 153, .12); border-color: rgba(52, 211, 153, .22); }
+.pill.warn { color: var(--warn);  background: rgba(251, 191, 36, .12); border-color: rgba(251, 191, 36, .22); }
+.pill.bad  { color: var(--err);   background: rgba(251, 113, 133, .12); border-color: rgba(251, 113, 133, .22); }
+.pill.off  { color: var(--muted); background: rgba(147, 166, 196, .1); border-color: rgba(147, 166, 196, .18); }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* Точка «на связи» дышит: неподвижная точка ничем не отличается от метки
+   «молчит», а разница между ними — самое важное на экране роутера. */
+.pill.ok .dot { animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
 
 /* --- Кнопки --------------------------------------------------------------- */
 
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; border: 0; border-radius: 12px; padding: 13px 16px;
-  font-size: 15px; font-weight: 600; font-family: inherit;
-  color: #06101f; background: var(--grad); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%; border: 0; border-radius: var(--r-md); padding: 14px 18px;
+  font: 650 15.5px/1 inherit; font-family: inherit;
+  color: #04101f; background: var(--grad); cursor: pointer;
+  box-shadow: 0 10px 26px -14px rgba(47, 143, 255, .95);
+  transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
 }
+.btn:active { transform: translateY(1px) scale(.995); box-shadow: 0 4px 14px -10px rgba(47, 143, 255, .9); }
 .btn.ghost {
-  background: var(--card-up); color: var(--text); border: 1px solid var(--line-firm);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .03));
+  color: var(--text); border: 1px solid var(--line-firm); box-shadow: var(--lift);
 }
-.btn.quiet { background: none; color: var(--muted); border: 1px solid var(--line); }
-.btn.small { padding: 9px 13px; font-size: 13.5px; border-radius: 10px; width: auto; }
+.btn.quiet { background: none; color: var(--muted); border: 1px solid var(--line); box-shadow: none; }
+.btn.small { padding: 10px 15px; font-size: 14px; border-radius: var(--r-sm); width: auto; }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 .btn svg { width: 18px; height: 18px; }
 
 /* --- Поля ----------------------------------------------------------------- */
 
-label.field { display: block; margin-bottom: 12px; }
-label.field > span { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
-.input {
-  width: 100%; background: var(--bg-soft); color: var(--text);
-  border: 1px solid var(--line-firm); border-radius: 11px;
-  padding: 12px 13px; font-size: 15px; font-family: inherit;
+label.field { display: block; margin-bottom: 14px; }
+label.field:last-child { margin-bottom: 0; }
+label.field > span {
+  display: block; font-size: 11.5px; font-weight: 650; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--subtle); margin-bottom: 7px;
 }
-.input:focus { outline: none; border-color: var(--accent); }
-.input.bad { border-color: var(--err); }
-textarea.input { min-height: 76px; resize: vertical; }
-.hint { font-size: 12px; margin-top: 6px; }
+.input {
+  width: 100%; background: rgba(0, 0, 0, .28); color: var(--text);
+  border: 1px solid var(--line-firm); border-radius: var(--r-md);
+  padding: 13px 14px; font-size: 16px; font-family: inherit;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+/* 16px не для красоты: на меньшем размере iOS увеличивает масштаб страницы
+   при попадании в поле, и клиент теряет вёрстку в момент ввода телефона. */
+.input:focus {
+  outline: none; border-color: var(--accent); background: rgba(0, 0, 0, .38);
+  box-shadow: 0 0 0 4px rgba(47, 143, 255, .14);
+}
+.input.bad { border-color: var(--err); box-shadow: 0 0 0 4px rgba(251, 113, 133, .12); }
+textarea.input { min-height: 80px; resize: vertical; line-height: 1.45; }
+.hint { font-size: 12px; margin-top: 7px; }
 
-/* Выбор из нескольких: доставка, перевозчик. Радиокнопки браузера в тёмной
-   теме выглядят чужеродно, поэтому рисуем сами. */
 .choice { display: block; cursor: pointer; }
-.choice + .choice { margin-top: 8px; }
+.choice + .choice { margin-top: 9px; }
 .choice input { position: absolute; opacity: 0; pointer-events: none; }
 .choice .box {
-  display: flex; align-items: flex-start; gap: 11px;
-  border: 1px solid var(--line-firm); border-radius: 12px; padding: 12px 13px;
-  background: var(--bg-soft);
+  display: flex; align-items: flex-start; gap: 12px;
+  border: 1px solid var(--line-firm); border-radius: var(--r-md); padding: 13px 14px;
+  background: rgba(0, 0, 0, .2);
+  transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.choice input:checked + .box { border-color: var(--accent); background: rgba(47, 143, 255, .09); }
+.choice input:checked + .box {
+  border-color: rgba(47, 143, 255, .75);
+  background: linear-gradient(180deg, rgba(47, 143, 255, .16), rgba(47, 143, 255, .06));
+  box-shadow: 0 0 0 3px rgba(47, 143, 255, .1);
+}
 .choice .tick {
-  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 18px; margin-top: 1px;
-  border: 2px solid var(--subtle); position: relative;
+  width: 19px; height: 19px; border-radius: 50%; flex: 0 0 19px; margin-top: 1px;
+  border: 2px solid var(--subtle); position: relative; transition: border-color .15s;
 }
-.choice input:checked + .box .tick { border-color: var(--accent); }
+.choice input:checked + .box .tick { border-color: var(--accent-2); }
 .choice input:checked + .box .tick::after {
-  content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent);
+  content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--grad);
 }
 
 /* --- Иконки --------------------------------------------------------------- */
 
 .ic { width: 20px; height: 20px; flex: 0 0 auto; display: block; }
-.ic-lg { width: 24px; height: 24px; }
+.ic-lg { width: 26px; height: 26px; }
 .ic-box {
-  width: 38px; height: 38px; border-radius: 11px; flex: 0 0 38px;
+  width: 40px; height: 40px; border-radius: var(--r-md); flex: 0 0 40px;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(47, 143, 255, .13); color: var(--accent-2);
+  color: var(--accent-2);
+  background: linear-gradient(180deg, rgba(47, 143, 255, .22), rgba(47, 143, 255, .08));
+  border: 1px solid rgba(47, 143, 255, .2);
 }
 
-/* --- Товар и тарифы ------------------------------------------------------- */
+/* --- Товар ---------------------------------------------------------------- */
 
-.prod img { width: 100%; display: block; border-radius: 12px; margin-bottom: 11px; background: var(--bg-soft); }
-.price { font-size: 19px; font-weight: 650; letter-spacing: -.3px; }
+/* Картинка лежит на подложке со свечением: фотографии роутеров сняты на
+   тёмном, и без неё товар сливается с карточкой в одно пятно. */
+.prod .shot {
+  position: relative; margin: -16px -16px 14px; padding: 22px 16px 18px;
+  background: radial-gradient(80% 100% at 50% 0%, rgba(47, 143, 255, .2), transparent 70%);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.prod .shot img { width: 100%; display: block; border-radius: var(--r-md); }
+
+.price { font-size: 26px; font-weight: 700; letter-spacing: -.7px; line-height: 1; }
+.old { color: var(--subtle); text-decoration: line-through; font-size: 14px; }
+.save {
+  font-size: 11.5px; font-weight: 700; color: var(--ok);
+  background: rgba(52, 211, 153, .12); border: 1px solid rgba(52, 211, 153, .22);
+  border-radius: 999px; padding: 3px 10px;
+}
+
+/* Характеристики парами в две колонки: списком в столбик они растягивают
+   карточку так, что цена уезжает за край экрана. */
+.specs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.specs > div { min-width: 0; }
+.specs dt {
+  font-size: 10.5px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--subtle); margin-bottom: 3px;
+}
+.specs dd { margin: 0; font-size: 13.5px; }
+
+/* --- Сроки ---------------------------------------------------------------- */
 
 .plan {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 13px 0; border-top: 1px solid var(--line);
+  padding: 14px 0; border-top: 1px solid var(--line);
 }
-.plan:first-child { border-top: 0; padding-top: 4px; }
-.plan:last-child { padding-bottom: 4px; }
+.plan:first-child { border-top: 0; padding-top: 2px; }
+.plan:last-child { padding-bottom: 2px; }
+
+.best {
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  color: #04101f; background: var(--grad); border-radius: 999px; padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* --- Витрина -------------------------------------------------------------- */
+
+.hero { padding: 10px 2px 20px; }
+.hero h1 { font-size: 30px; line-height: 1.1; letter-spacing: -.9px; margin: 0 0 10px; }
+.hero p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+.sec {
+  margin: 28px 2px 14px; font-size: 12px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--subtle);
+}
+
+.step { display: flex; gap: 13px; align-items: flex-start; }
+.step + .step { margin-top: 16px; }
+.step .num {
+  width: 27px; height: 27px; flex: 0 0 27px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 800; color: #04101f; background: var(--grad);
+}
+
+.feat { display: flex; gap: 13px; align-items: flex-start; }
+.feat + .feat { margin-top: 16px; }
+
+details.faq { border-top: 1px solid var(--line); }
+details.faq:first-of-type { border-top: 0; }
+details.faq summary {
+  list-style: none; cursor: pointer; padding: 14px 0;
+  display: flex; align-items: center; gap: 10px; font-size: 15px;
+}
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary svg { margin-left: auto; color: var(--subtle); transition: transform .2s; }
+details.faq[open] summary svg { transform: rotate(90deg); }
+details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+
+/* --- Оформление: шаги ------------------------------------------------------ */
+
+.steps-bar { margin: 4px 2px 18px; }
+.steps-bar .track {
+  height: 5px; border-radius: 999px; overflow: hidden;
+  background: rgba(255, 255, 255, .07);
+}
+.steps-bar .fill {
+  height: 100%; background: var(--grad); border-radius: 999px;
+  box-shadow: 0 0 14px rgba(47, 143, 255, .6);
+  transition: width .35s cubic-bezier(.4, 0, .2, 1);
+}
+.steps-bar .label {
+  display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px;
+}
+.steps-bar .label b { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+.steps-bar .label span { font-size: 12px; color: var(--subtle); }
+
+.done-mark {
+  width: 68px; height: 68px; border-radius: 50%; margin: 14px auto 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ok);
+  background: radial-gradient(circle, rgba(52, 211, 153, .22), rgba(52, 211, 153, .06));
+  border: 1px solid rgba(52, 211, 153, .3);
+  animation: pop .45s cubic-bezier(.34, 1.56, .64, 1);
+}
+.done-mark svg { width: 32px; height: 32px; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } }
 
 /* --- Нижняя навигация ----------------------------------------------------- */
 
 nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
-  display: flex; background: rgba(16, 26, 44, .94);
-  backdrop-filter: blur(12px);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: flex; background: rgba(8, 13, 23, .82);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
 nav button {
   flex: 1; background: none; border: 0; cursor: pointer; font-family: inherit;
-  color: var(--subtle); font-size: 10.5px; font-weight: 600;
-  padding: 8px 2px 9px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: var(--subtle); font-size: 10px; font-weight: 650; letter-spacing: .02em;
+  padding: 9px 2px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  position: relative; transition: color .18s;
 }
+nav button svg { width: 22px; height: 22px; transition: transform .18s; }
 nav button.on { color: var(--accent-2); }
-nav button svg { width: 21px; height: 21px; }
-
-/* --- Витрина: почему это стоит купить ------------------------------------- */
-
-.hero { padding: 6px 2px 16px; }
-.hero h1 { font-size: 25px; line-height: 1.15; margin: 0 0 8px; }
-.hero p { margin: 0; color: var(--muted); font-size: 14.5px; }
-
-/* Заголовок раздела продающей части: отделяет блоки без линеек и рамок. */
-.sec { margin: 24px 2px 12px; font-size: 16px; font-weight: 650; letter-spacing: -.2px; }
-
-.old { color: var(--subtle); text-decoration: line-through; font-size: 14px; margin-right: 8px; }
-
-.step { display: flex; gap: 12px; align-items: flex-start; }
-.step + .step { margin-top: 14px; }
-.step .num {
-  width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12.5px; font-weight: 700; color: #06101f; background: var(--grad);
+nav button.on svg { transform: translateY(-1px); }
+/* Полоска над выбранной вкладкой: цветом одним вкладку не выделить, когда
+   иконки все одного веса. */
+nav button.on::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 26px; height: 2px; border-radius: 0 0 3px 3px; background: var(--grad);
 }
-
-.feat { display: flex; gap: 12px; align-items: flex-start; }
-.feat + .feat { margin-top: 14px; }
-
-/* Характеристики: пара «название — значение» без таблицы, чтобы длинные
-   значения переносились, а не растягивали карточку по горизонтали. */
-.spec { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
-.spec + .spec { margin-top: 7px; }
-.spec b { font-weight: 500; text-align: right; }
-
-details.faq { border-top: 1px solid var(--line); }
-details.faq:first-of-type { border-top: 0; }
-details.faq summary {
-  list-style: none; cursor: pointer; padding: 13px 0;
-  display: flex; align-items: center; gap: 10px; font-size: 14.5px;
-}
-details.faq summary::-webkit-details-marker { display: none; }
-details.faq summary svg { margin-left: auto; color: var(--subtle); transition: transform .15s; }
-details.faq[open] summary svg { transform: rotate(90deg); }
-details.faq p { margin: 0 0 13px; color: var(--muted); font-size: 13.5px; }
-
-/* --- Оформление: шаги ------------------------------------------------------ */
-
-/* Полоса пройденного. Форма из девяти полей разом отпугивает; разбитая на
-   три шага с видимым прогрессом она дозаполняется охотнее — человек не
-   бросает начатое, когда видно, сколько осталось. */
-.steps-bar { margin: 2px 2px 16px; }
-.steps-bar .track { height: 4px; border-radius: 999px; background: var(--card-up); overflow: hidden; }
-.steps-bar .fill { height: 100%; background: var(--grad); border-radius: 999px; transition: width .25s; }
-.steps-bar .label {
-  display: flex; justify-content: space-between; align-items: baseline;
-  margin-bottom: 7px; font-size: 12.5px; color: var(--muted);
-}
-.steps-bar .label b { color: var(--text); font-size: 14.5px; font-weight: 600; }
-
-/* Выгодный срок: пометка считается по цене за месяц, а не назначается
-   вручную, — иначе она разъедется с ценами при первой же правке тарифа. */
-.best {
-  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  color: #06101f; background: var(--grad); border-radius: 999px; padding: 3px 8px;
-}
-
-.save {
-  font-size: 12px; font-weight: 600; color: var(--ok);
-  background: rgba(53, 208, 127, .13); border-radius: 999px; padding: 3px 9px;
-}
-
-/* Итог оформления: последнее, что видит клиент перед оплатой. */
-.done-mark {
-  width: 62px; height: 62px; border-radius: 50%; margin: 8px auto 16px;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(53, 208, 127, .14); color: var(--ok);
-}
-.done-mark svg { width: 30px; height: 30px; }
 
 /* --- Служебное ------------------------------------------------------------ */
 
-.empty { padding: 28px 14px; text-align: center; color: var(--muted); }
-.empty .ic-box { margin: 0 auto 12px; width: 46px; height: 46px; flex-basis: 46px; }
+.empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+.empty .ic-box { margin: 0 auto 14px; width: 52px; height: 52px; flex-basis: 52px; }
+.empty b { font-size: 16px; color: var(--text); }
 
-/* Скелет вместо «Загружаем…»: место под содержимое занимается сразу, и экран
-   не прыгает, когда ответ приходит. */
-.skel { border-radius: 12px; background: var(--card); overflow: hidden; position: relative; }
+.skel {
+  border-radius: var(--r-md); overflow: hidden; position: relative;
+  background: var(--card-1);
+}
 .skel::after {
   content: ''; position: absolute; inset: 0; transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .05), transparent);
-  animation: slide 1.2s infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .06), transparent);
+  animation: slide 1.3s infinite;
 }
 @keyframes slide { to { transform: translateX(100%); } }
-.skel.line { height: 14px; margin-bottom: 9px; }
-.skel.block { height: 88px; margin-bottom: 10px; }
+.skel.line { height: 16px; margin-bottom: 10px; }
+.skel.block { height: 96px; margin-bottom: 12px; }
+
+/* Появление экрана: без него переход между вкладками выглядит как подмена
+   картинки, и непонятно, что вообще произошло. */
+.wrap > * { animation: rise .26s cubic-bezier(.22, .8, .3, 1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .skel::after { animation: none; }
+  .skel::after, .pill.ok .dot, .done-mark { animation: none; }
+  .wrap > * { animation: none; }
+  .btn, .steps-bar .fill { transition: none; }
 }
