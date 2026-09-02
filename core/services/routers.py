@@ -252,6 +252,20 @@ def record_metrics(session: AsyncSession, device: Device, stats: RouterStats) ->
     return entry
 
 
+SEEN_WRITE_INTERVAL_SEC = 300
+"""Как часто освежаем отметку «последний раз на связи».
+
+Обход присутствия идёт раз в минуту, и запись отметки каждому роутеру на каждом
+круге — это 144 тысячи UPDATE в сутки на сотне устройств и полтора миллиона на
+тысяче. Ради чего — неясно: точность в минуту не нужна никому. «Молчит»
+считается от суток (`monitoring.SILENT_HOURS`), онлайн на экранах берётся
+из `frp_online`, а тот обновляется каждый круг и стоит бесплатно.
+
+Раз в пять минут отметка остаётся честной для своей задачи — показать
+оператору, когда роутер видели в последний раз, — а обход присутствия при
+неизменившемся составе парка перестаёт писать в базу вовсе."""
+
+
 async def mark_online(
     session: AsyncSession, device: Device, proxy: FrpProxy, *, now: dt.datetime | None = None
 ) -> bool:
@@ -259,7 +273,13 @@ async def mark_online(
     moment = now or utcnow()
     came_back = not device.frp_online
     device.frp_online = True
-    device.frp_last_seen_at = moment
+
+    previous = device.frp_last_seen_at
+    if previous is not None and previous.tzinfo is None:
+        # В базе колонка со временем зоны, но старые записи могли лечь наивными.
+        previous = previous.replace(tzinfo=dt.UTC)
+    if came_back or previous is None or (moment - previous).total_seconds() >= SEEN_WRITE_INTERVAL_SEC:
+        device.frp_last_seen_at = moment
     if came_back:
         add_event(
             session,

@@ -272,3 +272,95 @@ class TestFirmwareBuild:
         device = Device(mac="A0:B1:C2:D3:E4:F5", fw_build=140)
         apply_stats(device, parse_stats({"titan_build": 141}))
         assert device.fw_build == 141
+
+
+class TestLastSeenThrottle:
+    """Отметку «последний раз на связи» пишем не на каждом круге присутствия.
+
+    Обход идёт раз в минуту, и запись каждому роутеру каждый раз — это 144
+    тысячи UPDATE в сутки на сотне устройств и полтора миллиона на тысяче.
+    Точность в минуту при этом не нужна никому: «молчит» считается от суток,
+    а живой признак связи — `frp_online`, он обновляется каждый круг.
+    """
+
+    class _Session:
+        """Сессии здесь нужен только `add`: событие пишется лишь при возвращении."""
+
+        def __init__(self) -> None:
+            self.added: list[object] = []
+
+        def add(self, obj: object) -> None:
+            self.added.append(obj)
+
+    def _proxy(self):
+        from core.services.frp import FrpProxy
+
+        return FrpProxy(name="luciA0B1C2D3E4F5", status="online", mac="A0:B1:C2:D3:E4:F5", kind="luci")
+
+    @pytest.mark.asyncio
+    async def test_fresh_mark_is_not_rewritten(self):
+        """Минуту назад видели — второй раз в базу за этим не ходим."""
+        import datetime as dt
+
+        from core.services.routers import mark_online
+
+        now = dt.datetime(2026, 9, 2, 12, 0, tzinfo=dt.UTC)
+        device = Device(mac="A0:B1:C2:D3:E4:F5")
+        device.frp_online = True
+        device.frp_last_seen_at = now - dt.timedelta(minutes=1)
+        before = device.frp_last_seen_at
+
+        await mark_online(self._Session(), device, self._proxy(), now=now)
+
+        assert device.frp_last_seen_at == before
+
+    @pytest.mark.asyncio
+    async def test_stale_mark_is_refreshed(self):
+        """Прошло больше пяти минут — отметка обновляется."""
+        import datetime as dt
+
+        from core.services.routers import mark_online
+
+        now = dt.datetime(2026, 9, 2, 12, 0, tzinfo=dt.UTC)
+        device = Device(mac="A0:B1:C2:D3:E4:F5")
+        device.frp_online = True
+        device.frp_last_seen_at = now - dt.timedelta(minutes=6)
+
+        await mark_online(self._Session(), device, self._proxy(), now=now)
+
+        assert device.frp_last_seen_at == now
+
+    @pytest.mark.asyncio
+    async def test_return_to_air_is_always_written(self):
+        """Роутер вернулся — отметка и событие нужны немедленно, без порога."""
+        import datetime as dt
+
+        from core.services.routers import mark_online
+
+        now = dt.datetime(2026, 9, 2, 12, 0, tzinfo=dt.UTC)
+        device = Device(mac="A0:B1:C2:D3:E4:F5")
+        device.frp_online = False
+        device.frp_last_seen_at = now - dt.timedelta(seconds=10)
+        session = self._Session()
+
+        came_back = await mark_online(session, device, self._proxy(), now=now)
+
+        assert came_back is True
+        assert device.frp_last_seen_at == now
+        assert len(session.added) == 1
+
+    @pytest.mark.asyncio
+    async def test_naive_mark_from_old_rows_does_not_crash(self):
+        """Старые записи могли лечь без зоны — вычитание не должно падать."""
+        import datetime as dt
+
+        from core.services.routers import mark_online
+
+        now = dt.datetime(2026, 9, 2, 12, 0, tzinfo=dt.UTC)
+        device = Device(mac="A0:B1:C2:D3:E4:F5")
+        device.frp_online = True
+        device.frp_last_seen_at = dt.datetime(2026, 9, 2, 11, 0)  # без зоны
+
+        await mark_online(self._Session(), device, self._proxy(), now=now)
+
+        assert device.frp_last_seen_at == now

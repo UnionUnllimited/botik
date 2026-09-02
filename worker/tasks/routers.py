@@ -59,6 +59,7 @@ async def sync_routers() -> int:
         log.warning("routers.frps_unavailable", error=str(exc))
         return 0
 
+    candidates: list[int] = []
     async with session_scope() as session:
         # 1. Отмечаем тех, кто на связи, и заводим незнакомых.
         for mac, proxy in online.items():
@@ -75,13 +76,11 @@ async def sync_routers() -> int:
             await router_service.ensure_frp_binding(session, device)
             await router_service.mark_online(session, device, proxy)
 
-            # Отгруженный заказ вышел на связь — значит роутер уже у клиента,
-            # и подписку можно отдать без участия оператора. Всё, что не отгружено
-            # (в том числе роутер на столе у мастера), сюда не попадает.
-            try:
-                await activation.auto_activate_if_shipped(session, device)
-            except Exception as exc:  # noqa: BLE001 — один роутер не должен ронять обход
-                log.warning("routers.auto_activation_failed", mac=device.mac, error=str(exc))
+            # Кандидатов на автоактивацию только запоминаем. Условия проверит
+            # сама `auto_activate_if_shipped`, здесь достаточно дешёвого отсева
+            # по полям, которые уже в памяти.
+            if device.activated_at is None and device.order_id is not None:
+                candidates.append(device.id)
 
         # 2. Кто пропал из списка — офлайн.
         known = list(await session.scalars(select(Device).where(Device.frp_online.is_(True))))
@@ -91,7 +90,26 @@ async def sync_routers() -> int:
 
         await session.flush()
 
-    log.info("routers.presence_synced", online=len(online))
+    # Отгруженный заказ вышел на связь — значит роутер уже у клиента, и подписку
+    # можно отдать без участия оператора. Всё, что не отгружено (в том числе
+    # роутер на столе у мастера), внутрь не пройдёт.
+    #
+    # Каждая активация — своя короткая транзакция, и не внутри обхода: она ходит
+    # в панель и по SSH к роутеру домой к клиенту. Раньше это держало транзакцию
+    # присутствия всего парка, и одна задумавшаяся панель растягивала её на весь
+    # круг. Теперь отметки связи уже сохранены, а зависшая активация задерживает
+    # только свой роутер.
+    for device_id in candidates:
+        async with session_scope() as session:
+            device = await session.get(Device, device_id)
+            if device is None:
+                continue
+            try:
+                await activation.auto_activate_if_shipped(session, device)
+            except Exception as exc:  # noqa: BLE001 — один роутер не должен ронять обход
+                log.warning("routers.auto_activation_failed", mac=device.mac, error=str(exc))
+
+    log.info("routers.presence_synced", online=len(online), activations_tried=len(candidates))
     return len(online)
 
 
@@ -117,15 +135,20 @@ async def poll_router_stats() -> int:
             )
         ]
 
-        # Параллельно, но не заваливая туннели.
-        semaphore = asyncio.Semaphore(CONCURRENCY)
+    # Обход — вне транзакции. Один роутер занимает до шестнадцати секунд:
+    # клиент сначала пробует HTTP, потом HTTPS, по восемь на попытку. При
+    # восьми параллельных и сотне устройств молчащий парк растягивал круг на
+    # три минуты, и всё это время висела открытая транзакция на пустом месте:
+    # писать по итогам обхода — работа на секунды.
+    semaphore = asyncio.Semaphore(CONCURRENCY)
 
-        async def guarded(device_id: int, port: int):
-            async with semaphore:
-                return await _poll_one(device_id, port)
+    async def guarded(device_id: int, port: int):
+        async with semaphore:
+            return await _poll_one(device_id, port)
 
-        results = await asyncio.gather(*(guarded(*target) for target in targets))
+    results = await asyncio.gather(*(guarded(*target) for target in targets))
 
+    async with session_scope() as session:
         for device_id, payload, error in results:
             device = await session.get(Device, device_id)
             if device is None:
