@@ -486,6 +486,15 @@ def product_card(product: Product) -> dict[str, Any]:
         "description": product.description or "",
         "price": money(product.price),
         "old_price": money(product.old_price) if product.old_price else "",
+        # Выгода рублями, а не процентами: на цене в тысячи «−2 601 ₽»
+        # читается весомее, чем «−22%», и не требует считать в уме.
+        # Считаем здесь, а не в вёрстке: там цены уже строки с пробелами
+        # и знаком рубля, и вычитать пришлось бы разбором текста.
+        "saving": (
+            money(product.old_price - product.price)
+            if product.old_price and product.old_price > product.price
+            else ""
+        ),
         "in_stock": product.in_stock,
         "preorder": product.stock <= 0 and product.allow_preorder,
         "specs": list((product.specs or {}).items()),

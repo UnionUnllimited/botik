@@ -160,6 +160,20 @@ async def pitch(
     }
 
 
+@router.get("/api/plans")
+async def plans(
+    _: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Сроки подписки для экрана покупки.
+
+    Срок выбирается вместе с роутером и входит в стоимость заказа — так это
+    описано на витрине и так считает `orders/quote`. Без выбора заказ уходил
+    бы с одним роутером, и клиент получил бы устройство без подписки.
+    """
+    return await catalog_api.list_plans(session=session, include_hidden=False)
+
+
 @router.get("/api/router")
 async def my_router(
     device_id: int = 0,

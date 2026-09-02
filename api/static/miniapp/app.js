@@ -62,6 +62,12 @@
     return text + ' ' + (!currency || currency === 'RUB' ? '₽' : currency);
   }
 
+  // Цена за месяц — ориентир для сравнения сроков, а не счёт к оплате.
+  // «349,83 ₽» заставляет вчитываться там, где нужно охватить взглядом.
+  function perMonth(value, currency) {
+    return money(Math.round(Number(value) || 0), currency);
+  }
+
   function bytes(value) {
     var n = Number(value);
     if (!n || isNaN(n)) { return '—'; }
@@ -307,9 +313,28 @@
   views.renew = function () {
     return api('/renew').then(function (d) {
       var sub = d.subscription || {};
+
+      // Из трёх одинаковых на вид сроков человек выбирает дольше всех и чаще
+      // не выбирает вовсе. Пометка снимает этот выбор: она не назначена
+      // руками, а посчитана по цене за месяц — иначе разъедется с ценами
+      // при первой же правке тарифа.
+      var best = null;
+      (d.plans || []).forEach(function (p) {
+        if (Number(p.months) > 1
+            && (!best || Number(p.price_per_month) < Number(best.price_per_month))) {
+          best = p;
+        }
+      });
+
       var plans = (d.plans || []).map(function (p) {
-        return '<div class="plan"><div class="grow"><div><b>' + esc(p.title) + '</b></div>'
-          + '<div class="muted small">' + esc(p.months) + ' мес.</div></div>'
+        return '<div class="plan"><div class="grow">'
+          + '<div><b>' + esc(p.title) + '</b>'
+          + (best && best.id === p.id ? ' <span class="best">выгоднее всего</span>' : '')
+          + '</div>'
+          + '<div class="muted small">' + esc(p.months) + ' мес.'
+          + (Number(p.months) > 1
+              ? ' · ' + perMonth(p.price_per_month, d.currency) + ' в месяц' : '')
+          + '</div></div>'
           + '<button class="btn small" data-plan="' + esc(p.id) + '">'
           + money(p.price, d.currency) + '</button></div>';
       }).join('');
@@ -562,12 +587,21 @@
               : '')
           + (specs ? '<div class="hr"></div>' + specs : '')
           + '<div class="hr"></div>'
+          // Старая цена и выгода стоят над ценой, а не рядом: первое число,
+          // которое видит человек, задаёт точку отсчёта для второго.
+          + (p.old_price
+              ? '<div class="row" style="margin-bottom:6px">'
+                + '<span class="old">' + esc(p.old_price) + '</span>'
+                + (p.saving ? '<span class="save">выгода ' + esc(p.saving) + '</span>' : '')
+                + '</div>'
+              : '')
           + '<div class="row">'
-          +   '<span>' + (p.old_price ? '<span class="old">' + esc(p.old_price) + '</span>' : '')
-          +     '<span class="price">' + esc(p.price) + '</span></span>'
+          +   '<span class="price">' + esc(p.price) + '</span>'
           +   '<button class="btn small" data-buy="' + esc(p.id) + '">'
           +     icon('cart') + 'Купить</button>'
           + '</div>'
+          + '<div class="muted tiny" style="margin-top:9px">Подписка на выбранный срок '
+          + 'входит в стоимость. Роутер приезжает настроенным.</div>'
           + '</div>';
       }).join('');
 
@@ -603,13 +637,17 @@
             + (d.hero_subtitle ? '<p>' + esc(d.hero_subtitle) + '</p>' : '') + '</div>'
           : '<h1>Каталог</h1>')
         + (items || empty('box', 'Пока пусто', 'Товары появятся здесь.'))
-        + (steps ? '<div class="sec">Как это работает</div><div class="card">' + steps + '</div>' : '')
-        + (features ? '<div class="sec">Почему это удобно</div><div class="card">' + features + '</div>' : '')
+        // Стоимость подписки идёт сразу за ценой роутера: «а сколько платить
+        // дальше» — первый вопрос, который возникает у человека после цены,
+        // и оставлять его без ответа до конца страницы значит держать
+        // сомнение всё время, пока он читает остальное.
         + (plans
             ? '<div class="sec">Сколько стоит потом</div><div class="card">' + plans + '</div>'
               + '<div class="muted tiny center">Роутер остаётся вам навсегда. '
               + 'Продлевается только подписка.</div>'
             : '')
+        + (steps ? '<div class="sec">Как это работает</div><div class="card">' + steps + '</div>' : '')
+        + (features ? '<div class="sec">Почему это удобно</div><div class="card">' + features + '</div>' : '')
         + (faq ? '<div class="sec">Вопросы</div><div class="card">' + faq + '</div>' : '')
         + (d.support_contact
             ? '<div class="muted tiny center" style="margin-top:16px">Остались вопросы — '
@@ -626,150 +664,233 @@
     });
   };
 
-  // Ответы формы живут между экранами: клиент уходит на подтверждение и
-  // возвращается поправить телефон, и терять всё введённое при этом нельзя.
-  var form = { name: '', phone: '', city: '', address: '', promo: '', comment: '',
-               speed: '', method: '', toPvz: true };
+  // Ответы формы живут между шагами и экранами: клиент уходит проверять итог
+  // и возвращается поправить телефон, и терять введённое при этом нельзя.
+  var form = { planId: 0, name: '', phone: '', city: '', address: '', promo: '',
+               comment: '', speed: '', method: '', toPvz: true };
+
+  // Справочники спрашиваем один раз на сеанс: товары, сроки и доставка между
+  // шагами не меняются, а лишний запрос на каждом шаге — это пустой экран
+  // на плохой связи ровно там, где человек уже готов платить.
+  var cache = {};
+
+  function once(key, path) {
+    if (cache[key]) { return Promise.resolve(cache[key]); }
+    return api(path).then(function (d) { cache[key] = d; return d; });
+  }
+
+  var STEP_TITLES = ['Срок подписки', 'Куда и кому', 'Проверка заказа'];
+
+  function stepsBar(n) {
+    return '<div class="steps-bar">'
+      + '<div class="label"><b>' + esc(STEP_TITLES[n - 1]) + '</b>'
+      + '<span>Шаг ' + n + ' из 3</span></div>'
+      + '<div class="track"><div class="fill" style="width:'
+      + Math.round(n / STEP_TITLES.length * 100) + '%"></div></div></div>';
+  }
+
+  function productById(id) {
+    return once('catalog', '/catalog').then(function (d) {
+      var found = (d.products || []).filter(function (p) { return p.id === id; })[0];
+      if (!found) { throw new Error('Этого товара больше нет в продаже'); }
+      return { product: found, currency: d.currency };
+    });
+  }
+
+  function productLine(p, currency) {
+    return '<div class="card tight"><div class="row">'
+      + '<span class="ic-box">' + icon('box') + '</span>'
+      + '<div class="grow"><b>' + esc(p.title) + '</b>'
+      + '<div class="muted small">Роутер с настроенным доступом</div></div>'
+      + '<span class="price">' + money(p.price, currency) + '</span>'
+      + '</div></div>';
+  }
 
   views.buy = function (view) {
-    return Promise.all([api('/catalog'), api('/delivery')]).then(function (res) {
-      var product = (res[0].products || []).filter(function (p) {
-        return p.id === view.productId;
-      })[0];
-      if (!product) { throw new Error('Этого товара больше нет в продаже'); }
-
-      var currency = res[0].currency;
-      var speeds = res[1].options || [];
-      var carriers = res[1].carriers || [];
-      if (!form.speed && speeds.length) { form.speed = speeds[0].speed; }
-      if (!form.method && carriers.length) { form.method = carriers[0].method; }
-
-      function field(key, label, placeholder, hint) {
-        return '<label class="field"><span>' + esc(label) + '</span>'
-          + '<input class="input" data-f="' + key + '" value="' + esc(form[key]) + '"'
-          + ' placeholder="' + esc(placeholder) + '" autocomplete="off">'
-          + '<div class="hint muted" data-hint="' + key + '">' + esc(hint || '') + '</div></label>';
-      }
-
-      function choice(group, value, checked, title, note) {
-        return '<label class="choice"><input type="radio" name="' + group + '" value="'
-          + esc(value) + '"' + (checked ? ' checked' : '') + '>'
-          + '<div class="box"><span class="tick"></span><span class="grow">'
-          + '<span>' + esc(title) + '</span>'
-          + (note ? '<span class="muted small" style="display:block;margin-top:2px">'
-                    + esc(note) + '</span>' : '')
-          + '</span></div></label>';
-      }
-
-      show(
-        '<h1>Оформление</h1>'
-
-        + '<div class="card tight"><div class="row">'
-        +   '<span class="ic-box">' + icon('box') + '</span>'
-        +   '<div class="grow"><b>' + esc(product.title) + '</b>'
-        +     '<div class="muted small">Роутер с настроенным доступом</div></div>'
-        +   '<span class="price">' + money(product.price, currency) + '</span>'
-        + '</div></div>'
-
-        + '<div class="card">'
-        +   '<h2>Получатель</h2>'
-        +   field('name', 'Фамилия и имя', 'Иванов Иван')
-        +   field('phone', 'Телефон', '+7 900 123-45-67')
-        +   field('city', 'Город', 'Москва')
-        + '</div>'
-
-        + (speeds.length
-            ? '<div class="card"><h2>Скорость доставки</h2>'
-              + speeds.map(function (s) {
-                  return choice('speed', s.speed, form.speed === s.speed, s.title, s.description);
-                }).join('')
-              + '</div>'
-            : '')
-
-        + '<div class="card">'
-        +   '<h2>Куда везти</h2>'
-        +   choice('where', 'pvz', form.toPvz, 'В пункт выдачи', 'Заберёте сами, обычно дешевле')
-        +   choice('where', 'door', !form.toPvz, 'Курьером на адрес', 'Привезут до двери')
-        +   '<div id="carriers" style="margin-top:12px">'
-        +     (carriers.length
-                  ? '<div class="muted small" style="margin-bottom:8px">Перевозчик</div>'
-                    + carriers.map(function (c) {
-                        return choice('carrier', c.method, form.method === c.method, c.title, '');
-                      }).join('')
-                  : '')
-        +   '</div>'
-        +   '<div style="margin-top:12px">'
-        +     field('address', 'Адрес', 'Улица, дом, квартира')
-        +   '</div>'
-        + '</div>'
-
-        + '<div class="card">'
-        +   field('promo', 'Промокод', 'если есть')
-        +   '<label class="field"><span>Комментарий</span>'
-        +     '<textarea class="input" data-f="comment" placeholder="Что-то важное для курьера">'
-        +       esc(form.comment) + '</textarea></label>'
-        + '</div>'
-
-        + '<button class="btn" id="next">' + icon('chev-r') + 'Посчитать и продолжить</button>'
-        + '<div class="muted tiny center" style="margin-top:10px">Цену доставки назовёт '
-        + 'оператор после оформления: она зависит от города и габаритов.</div>'
-      );
-
-      function pvzMode() { return form.toPvz; }
-
-      function applyMode() {
-        var carriersBox = document.getElementById('carriers');
-        carriersBox.style.display = pvzMode() ? '' : 'none';
-        var addr = screen.querySelector('[data-f="address"]');
-        addr.placeholder = pvzMode() ? 'Адрес пункта выдачи' : 'Улица, дом, квартира';
-        addr.parentNode.querySelector('span').textContent = pvzMode()
-          ? 'Пункт выдачи' : 'Адрес доставки';
-      }
-      applyMode();
-
-      screen.querySelectorAll('[data-f]').forEach(function (input) {
-        input.addEventListener('input', function () { form[input.dataset.f] = input.value; });
-        input.addEventListener('blur', function () { checkField(input); });
-      });
-
-      screen.querySelectorAll('input[name="speed"]').forEach(function (r) {
-        r.addEventListener('change', function () { form.speed = r.value; haptic(); });
-      });
-      screen.querySelectorAll('input[name="carrier"]').forEach(function (r) {
-        r.addEventListener('change', function () { form.method = r.value; haptic(); });
-      });
-      screen.querySelectorAll('input[name="where"]').forEach(function (r) {
-        r.addEventListener('change', function () {
-          form.toPvz = r.value === 'pvz';
-          haptic();
-          applyMode();
-        });
-      });
-
-      document.getElementById('next').addEventListener('click', function () {
-        var btn = this;
-        haptic('medium');
-        btn.disabled = true;
-        // Проверяем поля там же, где их проверит заказ: правила живут на
-        // сервере, и повторять их здесь значит однажды разойтись с ними.
-        var checks = ['name', 'phone', 'city', 'address'].map(function (key) {
-          return checkField(screen.querySelector('[data-f="' + key + '"]'));
-        });
-        Promise.all(checks).then(function (results) {
-          btn.disabled = false;
-          if (results.indexOf(false) >= 0) {
-            tg.showAlert('Проверьте поля, отмеченные красным.');
-            return;
-          }
-          go({ name: 'confirm', productId: view.productId });
-        });
-      });
-    });
+    var step = view.step || 1;
+    if (step === 2) { return buyRecipient(view); }
+    if (step === 3) { return buyConfirm(view); }
+    return buyPlan(view);
   };
 
-  // Возвращает промис с true/false. Поле, которое сервер причесал (телефон
-  // к единому виду), заменяем причёсанным — заказ уедет ровно с тем, что
-  // клиент видит на экране.
+  // Шаг первый — не анкета, а выбор. Спросив сначала имя и телефон, мы бы
+  // потребовали личные данные раньше, чем человек хоть на что-то согласился;
+  // выбранный срок — это уже маленькое решение в пользу покупки, и следующий
+  // шаг после него делается охотнее.
+  function buyPlan(view) {
+    return Promise.all([productById(view.productId), once('plans', '/plans')])
+      .then(function (res) {
+        var p = res[0].product;
+        var currency = res[0].currency;
+        var list = (res[1].plans || []).slice();
+
+        if (!list.length) {
+          // Без сроков заказ уйдёт с одним роутером — это не покупка сервиса.
+          throw new Error('Сроки подписки сейчас недоступны. Напишите в поддержку.');
+        }
+
+        // «Выгоднее всего» считается по цене за месяц, а не назначается
+        // руками: назначенная разъедется с ценами при первой правке тарифа.
+        var best = null;
+        list.forEach(function (x) {
+          if (Number(x.months) > 1
+              && (!best || Number(x.price_per_month) < Number(best.price_per_month))) {
+            best = x;
+          }
+        });
+
+        if (!form.planId) {
+          var preset = list.filter(function (x) { return x.is_default; })[0];
+          form.planId = (preset || best || list[0]).id;
+        }
+
+        function planBox(x) {
+          var months = Number(x.months);
+          return '<label class="choice"><input type="radio" name="plan" value="' + esc(x.id) + '"'
+            + (form.planId === x.id ? ' checked' : '') + '>'
+            + '<div class="box"><span class="tick"></span><span class="grow">'
+            + '<span class="row"><span><b>' + esc(x.title) + '</b>'
+            + (best && best.id === x.id ? ' <span class="best">выгоднее всего</span>' : '')
+            + '</span><span>' + money(x.price, currency) + '</span></span>'
+            + '<span class="row" style="margin-top:3px">'
+            + '<span class="muted small">' + esc(months) + ' мес.'
+            + (x.extra_days ? ' + ' + esc(x.extra_days) + ' дн.' : '') + '</span>'
+            + (months > 1
+                ? '<span class="subtle small">' + perMonth(x.price_per_month, currency)
+                  + ' в месяц</span>'
+                : '')
+            + '</span></span></div></label>';
+        }
+
+        show(
+          stepsBar(1)
+          + productLine(p, currency)
+          + '<div class="card">' + list.map(planBox).join('') + '</div>'
+          + '<div class="muted tiny center" style="margin:-2px 0 14px">Срок входит в стоимость '
+          + 'заказа. Дальше подписку можно продлевать любым сроком.</div>'
+          + '<button class="btn" id="next">' + icon('chev-r') + 'Дальше</button>'
+        );
+
+        screen.querySelectorAll('input[name="plan"]').forEach(function (r) {
+          r.addEventListener('change', function () { form.planId = Number(r.value); haptic(); });
+        });
+        document.getElementById('next').addEventListener('click', function () {
+          haptic('medium');
+          go({ name: 'buy', productId: view.productId, step: 2 });
+        });
+      });
+  }
+
+  function buyRecipient(view) {
+    return Promise.all([productById(view.productId), once('delivery', '/delivery')])
+      .then(function (res) {
+        var speeds = res[1].options || [];
+        var carriers = res[1].carriers || [];
+        if (!form.speed && speeds.length) { form.speed = speeds[0].speed; }
+        if (!form.method && carriers.length) { form.method = carriers[0].method; }
+
+        function field(key, label, placeholder, type) {
+          return '<label class="field"><span>' + esc(label) + '</span>'
+            + '<input class="input" data-f="' + key + '" value="' + esc(form[key]) + '"'
+            + ' placeholder="' + esc(placeholder) + '" autocomplete="off"'
+            + (type ? ' inputmode="' + type + '"' : '') + '>'
+            + '<div class="hint muted" data-hint="' + key + '"></div></label>';
+        }
+
+        function choice(group, value, checked, title, note) {
+          return '<label class="choice"><input type="radio" name="' + group + '" value="'
+            + esc(value) + '"' + (checked ? ' checked' : '') + '>'
+            + '<div class="box"><span class="tick"></span><span class="grow">'
+            + '<span>' + esc(title) + '</span>'
+            + (note ? '<span class="muted small" style="display:block;margin-top:2px">'
+                      + esc(note) + '</span>' : '')
+            + '</span></div></label>';
+        }
+
+        show(
+          stepsBar(2)
+          + '<div class="card">'
+          +   '<h2>Получатель</h2>'
+          +   field('name', 'Фамилия и имя', 'Иванов Иван')
+          +   field('phone', 'Телефон', '+7 900 123-45-67', 'tel')
+          +   field('city', 'Город', 'Москва')
+          + '</div>'
+          + (speeds.length
+              ? '<div class="card"><h2>Скорость доставки</h2>'
+                + speeds.map(function (s) {
+                    return choice('speed', s.speed, form.speed === s.speed, s.title, s.description);
+                  }).join('') + '</div>'
+              : '')
+          + '<div class="card">'
+          +   '<h2>Куда везти</h2>'
+          +   choice('where', 'pvz', form.toPvz, 'В пункт выдачи', 'Заберёте сами, обычно дешевле')
+          +   choice('where', 'door', !form.toPvz, 'Курьером на адрес', 'Привезут до двери')
+          +   '<div id="carriers" style="margin-top:12px">'
+          +     (carriers.length
+                    ? '<div class="muted small" style="margin-bottom:8px">Перевозчик</div>'
+                      + carriers.map(function (c) {
+                          return choice('carrier', c.method, form.method === c.method, c.title, '');
+                        }).join('')
+                    : '')
+          +   '</div>'
+          +   '<div style="margin-top:12px">' + field('address', 'Адрес', '') + '</div>'
+          + '</div>'
+          + '<button class="btn" id="next">' + icon('chev-r') + 'К проверке</button>'
+          + '<div class="muted tiny center" style="margin-top:10px">Цену доставки назовёт '
+          + 'оператор после оформления: она зависит от города и габаритов.</div>'
+        );
+
+        function applyMode() {
+          document.getElementById('carriers').style.display = form.toPvz ? '' : 'none';
+          var addr = screen.querySelector('[data-f="address"]');
+          addr.placeholder = form.toPvz ? 'Адрес пункта выдачи' : 'Улица, дом, квартира';
+          addr.parentNode.querySelector('span').textContent = form.toPvz
+            ? 'Пункт выдачи' : 'Адрес доставки';
+        }
+        applyMode();
+
+        screen.querySelectorAll('[data-f]').forEach(function (input) {
+          input.addEventListener('input', function () { form[input.dataset.f] = input.value; });
+          input.addEventListener('blur', function () { checkField(input); });
+        });
+        screen.querySelectorAll('input[name="speed"]').forEach(function (r) {
+          r.addEventListener('change', function () { form.speed = r.value; haptic(); });
+        });
+        screen.querySelectorAll('input[name="carrier"]').forEach(function (r) {
+          r.addEventListener('change', function () { form.method = r.value; haptic(); });
+        });
+        screen.querySelectorAll('input[name="where"]').forEach(function (r) {
+          r.addEventListener('change', function () {
+            form.toPvz = r.value === 'pvz'; haptic(); applyMode();
+          });
+        });
+
+        document.getElementById('next').addEventListener('click', function () {
+          var btn = this;
+          haptic('medium');
+          btn.disabled = true;
+          // Проверяем теми же правилами, что и заказ: повтори мы их здесь,
+          // они разошлись бы, и перевозчик не дозвонился бы по телефону,
+          // который мы приняли.
+          var checks = ['name', 'phone', 'city', 'address'].map(function (key) {
+            return checkField(screen.querySelector('[data-f="' + key + '"]'));
+          });
+          Promise.all(checks).then(function (results) {
+            btn.disabled = false;
+            if (results.indexOf(false) >= 0) {
+              var bad = screen.querySelector('.input.bad');
+              if (bad) { bad.scrollIntoView({ block: 'center' }); bad.focus(); }
+              return;
+            }
+            go({ name: 'buy', productId: view.productId, step: 3 });
+          });
+        });
+      });
+  }
+
+  // Возвращает промис с true/false. Причёсанное сервером значение (телефон
+  // к единому виду) подставляем обратно — заказ уедет ровно с тем, что клиент
+  // видит на экране.
   function checkField(input) {
     if (!input) { return Promise.resolve(true); }
     var key = input.dataset.f;
@@ -777,20 +898,18 @@
     var field = key === 'address' ? (form.toPvz ? 'pvz' : 'address') : key;
     var value = input.value.trim();
 
-    if (!value) {
+    function complain(text) {
       input.classList.add('bad');
-      if (hint) { hint.textContent = 'Заполните поле'; hint.className = 'hint err'; }
-      return Promise.resolve(false);
+      if (hint) { hint.textContent = text; hint.className = 'hint err'; }
+      return false;
     }
+
+    if (!value) { return Promise.resolve(complain('Заполните поле')); }
 
     return api('/validate', {
       method: 'POST', body: JSON.stringify({ field: field, value: value })
     }).then(function (res) {
-      if (!res.ok) {
-        input.classList.add('bad');
-        if (hint) { hint.textContent = res.error || 'Не подходит'; hint.className = 'hint err'; }
-        return false;
-      }
+      if (!res.ok) { return complain(res.error || 'Не подходит'); }
       input.classList.remove('bad');
       input.value = res.value;
       form[key] = res.value;
@@ -798,19 +917,23 @@
       return true;
     }).catch(function () {
       // Недоступная проверка не должна запирать оформление: сервер проверит
-      // ещё раз при создании заказа и там уже откажет по делу.
+      // ещё раз при создании заказа и там откажет по делу.
       return true;
     });
   }
 
-  views.confirm = function (view) {
-    var payload = {
-      product_id: view.productId,
-      name: form.name, phone: form.phone, city: form.city,
-      address: form.address, promo_code: form.promo, comment: form.comment,
+  function orderPayload(productId) {
+    return {
+      product_id: productId, plan_id: form.planId,
+      name: form.name, phone: form.phone, city: form.city, address: form.address,
+      promo_code: form.promo, comment: form.comment,
       delivery_speed: form.speed, delivery_method: form.method,
       delivery_to_pvz: form.toPvz
     };
+  }
+
+  function buyConfirm(view) {
+    var payload = orderPayload(view.productId);
 
     return api('/orders/quote', { method: 'POST', body: JSON.stringify(payload) })
       .then(function (q) {
@@ -822,14 +945,13 @@
         }
 
         show(
-          '<h1>Проверьте заказ</h1>'
-
+          stepsBar(3)
           + '<div class="card">'
-          +   (q.product ? '<div class="row"><span class="grow ellip">' + esc(q.product.title)
-                  + '</span><span>' + money(q.subtotal, q.currency) + '</span></div>' : '')
+          +   (q.product ? line(q.product.title, money(q.subtotal, q.currency)) : '')
+          +   (q.plan ? line('Подписка · ' + q.plan.title, money(q.plan.price, q.currency)) : '')
           +   (Number(q.discount)
                 ? line('Скидка' + (q.promo ? ' · ' + esc(q.promo.code) : ''),
-                       '−' + money(q.discount, q.currency))
+                       '<span style="color:var(--ok)">−' + money(q.discount, q.currency) + '</span>')
                 : '')
           +   line('Доставка', Number(q.delivery)
                 ? money(q.delivery, q.currency)
@@ -838,26 +960,40 @@
           +   line('К оплате', money(q.total, q.currency), true)
           + '</div>'
 
+          // Промокод спрашиваем здесь, а не в начале: поле в первых шагах
+          // сообщает «у кого-то есть скидка, а у вас нет» и отправляет
+          // человека искать её вместо покупки.
+          + '<div class="card tight">'
+          +   '<label class="field" style="margin:0"><span>Промокод, если есть</span>'
+          +     '<div class="split">'
+          +       '<input class="input" data-f="promo" value="' + esc(form.promo) + '"'
+          +         ' placeholder="Например, TITAN" autocomplete="off">'
+          +       '<button class="btn ghost" id="promo" style="flex:0 0 auto;width:auto">'
+          +         'Применить</button>'
+          +     '</div></label>'
+          + '</div>'
+
           + '<div class="card">'
           +   '<h2>Куда и кому</h2>'
-          +   '<div class="row"><span class="muted small">Получатель</span><span>'
-                + esc(form.name) + '</span></div>'
-          +   '<div class="row"><span class="muted small">Телефон</span><span class="mono">'
-                + esc(form.phone) + '</span></div>'
-          +   '<div class="row"><span class="muted small">Город</span><span>'
-                + esc(form.city) + '</span></div>'
+          +   line('Получатель', esc(form.name))
+          +   line('Телефон', '<span class="mono">' + esc(form.phone) + '</span>')
+          +   line('Город', esc(form.city))
           +   '<div class="row" style="align-items:flex-start">'
           +     '<span class="muted small">' + (form.toPvz ? 'Пункт выдачи' : 'Адрес') + '</span>'
           +     '<span style="text-align:right;max-width:62%">' + esc(form.address) + '</span></div>'
           + '</div>'
 
           + '<button class="btn" id="make">' + icon('check') + 'Оформить и оплатить</button>'
-          + '<button class="btn quiet" id="edit" style="margin-top:8px">Изменить данные</button>'
           + '<div class="muted tiny center" style="margin-top:12px">Платёжная система добавит '
           + 'свою комиссию сверху — в сумму заказа она не входит.</div>'
         );
 
-        document.getElementById('edit').addEventListener('click', function () { haptic(); back(); });
+        var promoInput = screen.querySelector('[data-f="promo"]');
+        promoInput.addEventListener('input', function () { form.promo = promoInput.value.trim(); });
+        document.getElementById('promo').addEventListener('click', function () {
+          haptic();
+          go({ name: 'buy', productId: view.productId, step: 3 }, true);
+        });
 
         document.getElementById('make').addEventListener('click', function () {
           var btn = this;
@@ -867,15 +1003,10 @@
           api('/orders', { method: 'POST', body: JSON.stringify(payload) })
             .then(function (res) {
               if (!res.ok) { throw new Error(res.error || 'Заказ не оформился'); }
-              // Заказ принят, даже если провайдер не дал ссылку: об этом надо
-              // сказать прямо, иначе клиент оформит его второй раз.
-              if (res.pay_url) { tg.openLink(res.pay_url); }
-              else {
-                tg.showAlert('Заказ принят. Ссылку на оплату пришлём — платёжная система '
-                  + 'сейчас не ответила.');
-              }
+              form.promo = '';
               stack = [];
-              openTab('orders');
+              go({ name: 'done', order: res.order || {}, payUrl: res.pay_url || '' });
+              if (res.pay_url) { tg.openLink(res.pay_url); }
             })
             .catch(function (err) {
               btn.disabled = false;
@@ -884,6 +1015,49 @@
             });
         });
       });
+  }
+
+  // Последнее, что человек видит после оплаты, запоминается сильнее середины
+  // пути. Раньше здесь был бросок в список заказов без единого слова — теперь
+  // видно, что заказ принят, под каким номером и что произойдёт дальше.
+  views.done = function (view) {
+    var o = view.order || {};
+    show(
+      '<div class="done-mark">' + icon('check', 'ic-lg') + '</div>'
+      + '<h1 class="center" style="margin-bottom:6px">Заказ принят</h1>'
+      + '<div class="muted small center" style="margin-bottom:16px">Номер '
+      + '<span class="mono">' + esc(o.number || ('#' + o.id)) + '</span></div>'
+
+      + (view.payUrl
+          ? '<button class="btn" id="pay">' + icon('card') + 'Оплатить</button>'
+            + '<div class="muted tiny center" style="margin:10px 0 16px">Ссылка на оплату уже '
+            + 'открылась. Если она закрылась — нажмите кнопку выше.</div>'
+          : '<div class="card"><div class="row" style="align-items:flex-start">'
+            + '<span class="ic-box">' + icon('info') + '</span>'
+            + '<div class="grow">Платёжная система не ответила. Заказ принят — ссылку на '
+            + 'оплату можно взять в карточке заказа через минуту.</div></div></div>')
+
+      + '<div class="card"><h2>Что дальше</h2>'
+      +   '<div class="step"><span class="num">1</span><div class="grow">'
+      +     '<b>Оплата</b><div class="muted small">Как только деньги придут, статус заказа '
+      +     'сменится сам.</div></div></div>'
+      +   '<div class="step"><span class="num">2</span><div class="grow">'
+      +     '<b>Доставка</b><div class="muted small">Оператор посчитает её и свяжется с вами. '
+      +     'Трек-номер появится в карточке заказа.</div></div></div>'
+      +   '<div class="step"><span class="num">3</span><div class="grow">'
+      +     '<b>Включение</b><div class="muted small">Роутер приедет настроенным: воткнуть '
+      +     'кабель провайдера и включить в розетку. Подписка включится сама.</div></div></div>'
+      + '</div>'
+
+      + '<button class="btn ghost" id="to-orders">' + icon('receipt') + 'Мои заказы</button>'
+    );
+
+    var pay = document.getElementById('pay');
+    if (pay) { pay.addEventListener('click', function () { tg.openLink(view.payUrl); }); }
+    document.getElementById('to-orders').addEventListener('click', function () {
+      haptic(); openTab('orders');
+    });
+    return Promise.resolve();
   };
 
   /* --- Запуск ------------------------------------------------------------- */

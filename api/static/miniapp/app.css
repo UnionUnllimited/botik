@@ -221,6 +221,40 @@ details.faq summary svg { margin-left: auto; color: var(--subtle); transition: t
 details.faq[open] summary svg { transform: rotate(90deg); }
 details.faq p { margin: 0 0 13px; color: var(--muted); font-size: 13.5px; }
 
+/* --- Оформление: шаги ------------------------------------------------------ */
+
+/* Полоса пройденного. Форма из девяти полей разом отпугивает; разбитая на
+   три шага с видимым прогрессом она дозаполняется охотнее — человек не
+   бросает начатое, когда видно, сколько осталось. */
+.steps-bar { margin: 2px 2px 16px; }
+.steps-bar .track { height: 4px; border-radius: 999px; background: var(--card-up); overflow: hidden; }
+.steps-bar .fill { height: 100%; background: var(--grad); border-radius: 999px; transition: width .25s; }
+.steps-bar .label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 7px; font-size: 12.5px; color: var(--muted);
+}
+.steps-bar .label b { color: var(--text); font-size: 14.5px; font-weight: 600; }
+
+/* Выгодный срок: пометка считается по цене за месяц, а не назначается
+   вручную, — иначе она разъедется с ценами при первой же правке тарифа. */
+.best {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: #06101f; background: var(--grad); border-radius: 999px; padding: 3px 8px;
+}
+
+.save {
+  font-size: 12px; font-weight: 600; color: var(--ok);
+  background: rgba(53, 208, 127, .13); border-radius: 999px; padding: 3px 9px;
+}
+
+/* Итог оформления: последнее, что видит клиент перед оплатой. */
+.done-mark {
+  width: 62px; height: 62px; border-radius: 50%; margin: 8px auto 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(53, 208, 127, .14); color: var(--ok);
+}
+.done-mark svg { width: 30px; height: 30px; }
+
 /* --- Служебное ------------------------------------------------------------ */
 
 .empty { padding: 28px 14px; text-align: center; color: var(--muted); }
