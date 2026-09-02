@@ -1,0 +1,204 @@
+/* Оформление приложения в Telegram.
+
+   Цвета свои, а не из темы Telegram: приложение фирменное, и в светлой теме
+   мессенджера оно должно выглядеть так же, как в тёмной. Тема Telegram
+   используется ровно в одном месте — цветом шапки и фона окна, чтобы рамка
+   вокруг приложения не спорила с ним по цвету (см. app.js). */
+
+:root {
+  --bg:        #0b1220;
+  --bg-soft:   #101a2c;
+  --card:      #141f33;
+  --card-up:   #18263e;
+  --line:      rgba(255, 255, 255, .08);
+  --line-firm: rgba(255, 255, 255, .14);
+  --text:      #eaf1fb;
+  --muted:     #8ea3c0;
+  --subtle:    #5f7290;
+  --accent:    #2f8fff;
+  --accent-2:  #21d4fd;
+  --grad:      linear-gradient(135deg, #2f8fff 0%, #21d4fd 100%);
+  --ok:        #35d07f;
+  --warn:      #ffb020;
+  --err:       #ff6b6b;
+  --nav-h:     58px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Подсветка сверху: тот же синий, что на баннере, но еле различимый —
+   иначе он спорит с содержимым карточек. */
+body::before {
+  content: '';
+  position: fixed; left: 0; right: 0; top: 0; height: 220px;
+  background: radial-gradient(120% 100% at 50% 0%, rgba(47, 143, 255, .18), transparent 70%);
+  pointer-events: none;
+}
+
+.wrap { padding: 14px 14px 20px; position: relative; }
+
+/* --- Текст ---------------------------------------------------------------- */
+
+h1 { font-size: 21px; line-height: 1.2; margin: 4px 0 14px; letter-spacing: -.2px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+.muted  { color: var(--muted); }
+.subtle { color: var(--subtle); }
+.small  { font-size: 13px; }
+.tiny   { font-size: 11.5px; }
+.big    { font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
+.mono   { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.err    { color: var(--err); }
+.center { text-align: center; }
+.grow   { flex: 1; min-width: 0; }
+.ellip  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- Карточки ------------------------------------------------------------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.card.tight { padding: 12px 14px; }
+.card.flat  { background: var(--bg-soft); }
+
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.row + .row { margin-top: 9px; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.split { display: flex; gap: 10px; }
+.split > * { flex: 1; }
+
+.hr { height: 1px; background: var(--line); margin: 12px -14px; }
+
+/* --- Метки состояний ------------------------------------------------------ */
+
+.pill {
+  font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+}
+.pill.ok   { color: var(--ok);     background: rgba(53, 208, 127, .14); }
+.pill.warn { color: var(--warn);   background: rgba(255, 176, 32, .14); }
+.pill.bad  { color: var(--err);    background: rgba(255, 107, 107, .14); }
+.pill.off  { color: var(--muted);  background: rgba(142, 163, 192, .14); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* --- Кнопки --------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; border: 0; border-radius: 12px; padding: 13px 16px;
+  font-size: 15px; font-weight: 600; font-family: inherit;
+  color: #06101f; background: var(--grad); cursor: pointer;
+}
+.btn.ghost {
+  background: var(--card-up); color: var(--text); border: 1px solid var(--line-firm);
+}
+.btn.quiet { background: none; color: var(--muted); border: 1px solid var(--line); }
+.btn.small { padding: 9px 13px; font-size: 13.5px; border-radius: 10px; width: auto; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.btn svg { width: 18px; height: 18px; }
+
+/* --- Поля ----------------------------------------------------------------- */
+
+label.field { display: block; margin-bottom: 12px; }
+label.field > span { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+.input {
+  width: 100%; background: var(--bg-soft); color: var(--text);
+  border: 1px solid var(--line-firm); border-radius: 11px;
+  padding: 12px 13px; font-size: 15px; font-family: inherit;
+}
+.input:focus { outline: none; border-color: var(--accent); }
+.input.bad { border-color: var(--err); }
+textarea.input { min-height: 76px; resize: vertical; }
+.hint { font-size: 12px; margin-top: 6px; }
+
+/* Выбор из нескольких: доставка, перевозчик. Радиокнопки браузера в тёмной
+   теме выглядят чужеродно, поэтому рисуем сами. */
+.choice { display: block; cursor: pointer; }
+.choice + .choice { margin-top: 8px; }
+.choice input { position: absolute; opacity: 0; pointer-events: none; }
+.choice .box {
+  display: flex; align-items: flex-start; gap: 11px;
+  border: 1px solid var(--line-firm); border-radius: 12px; padding: 12px 13px;
+  background: var(--bg-soft);
+}
+.choice input:checked + .box { border-color: var(--accent); background: rgba(47, 143, 255, .09); }
+.choice .tick {
+  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 18px; margin-top: 1px;
+  border: 2px solid var(--subtle); position: relative;
+}
+.choice input:checked + .box .tick { border-color: var(--accent); }
+.choice input:checked + .box .tick::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent);
+}
+
+/* --- Иконки --------------------------------------------------------------- */
+
+.ic { width: 20px; height: 20px; flex: 0 0 auto; display: block; }
+.ic-lg { width: 24px; height: 24px; }
+.ic-box {
+  width: 38px; height: 38px; border-radius: 11px; flex: 0 0 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(47, 143, 255, .13); color: var(--accent-2);
+}
+
+/* --- Товар и тарифы ------------------------------------------------------- */
+
+.prod img { width: 100%; display: block; border-radius: 12px; margin-bottom: 11px; background: var(--bg-soft); }
+.price { font-size: 19px; font-weight: 650; letter-spacing: -.3px; }
+
+.plan {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 0; border-top: 1px solid var(--line);
+}
+.plan:first-child { border-top: 0; padding-top: 4px; }
+.plan:last-child { padding-bottom: 4px; }
+
+/* --- Нижняя навигация ----------------------------------------------------- */
+
+nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; background: rgba(16, 26, 44, .94);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav button {
+  flex: 1; background: none; border: 0; cursor: pointer; font-family: inherit;
+  color: var(--subtle); font-size: 10.5px; font-weight: 600;
+  padding: 8px 2px 9px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+nav button.on { color: var(--accent-2); }
+nav button svg { width: 21px; height: 21px; }
+
+/* --- Служебное ------------------------------------------------------------ */
+
+.empty { padding: 28px 14px; text-align: center; color: var(--muted); }
+.empty .ic-box { margin: 0 auto 12px; width: 46px; height: 46px; flex-basis: 46px; }
+
+/* Скелет вместо «Загружаем…»: место под содержимое занимается сразу, и экран
+   не прыгает, когда ответ приходит. */
+.skel { border-radius: 12px; background: var(--card); overflow: hidden; position: relative; }
+.skel::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .05), transparent);
+  animation: slide 1.2s infinite;
+}
+@keyframes slide { to { transform: translateX(100%); } }
+.skel.line { height: 14px; margin-bottom: 9px; }
+.skel.block { height: 88px; margin-bottom: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; }
+}

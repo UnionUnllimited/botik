@@ -683,6 +683,10 @@ async def my_router(
             "uptime_sec": current.uptime_sec or 0,
             "rx_bytes": current.rx_bytes or 0,
             "tx_bytes": current.tx_bytes or 0,
+            # `None`, а не ноль, когда роутер ещё не отвечал: ноль процентов
+            # загрузки — это показание, а «не сообщал» — его отсутствие.
+            "cpu_pct": current.cpu_pct,
+            "ram_pct": current.ram_pct,
             "until": panel_until.isoformat() if panel_until else None,
             "active": bool(panel_until and panel_until > now),
         }
@@ -1180,6 +1184,10 @@ def _order_payload(order: Order, *, instruction_url: str = "") -> dict:
         "id": order.id,
         "number": order.public_number,
         "status": str(order.status),
+        # Статус словами отдаём отсюда, а не переводим на той стороне: таблица
+        # одна (`core/texts.ORDER_STATUS_TITLES`), и вторая, заведённая у бота
+        # или в приложении, разошлась бы с ней на первом же новом статусе.
+        "status_title": texts.ORDER_STATUS_TITLES.get(order.status, str(order.status)),
         "subtotal": str(order.subtotal),
         "discount": str(order.discount_total),
         "delivery": str(order.delivery_price),
