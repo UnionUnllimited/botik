@@ -30,6 +30,7 @@ from api.routes import (
     health,
     landing,
     lists_api,
+    miniapp,
     panel_proxy,
     terminal,
     webhooks,
@@ -159,6 +160,8 @@ def create_app() -> FastAPI:
     # Живой терминал — до панели: у той корневые пути, и она перехватила бы
     # `/terminal/*` вместе со всем остальным.
     app.include_router(terminal.router)
+    # Приложение в Telegram — по той же причине до панели: `/app/*`.
+    app.include_router(miniapp.router)
     # Панель роутера отдаётся по корневым путям: LuCI строит абсолютные ссылки.
     app.include_router(panel_proxy.router)
     # Витрина последней: у неё корень, и перехватывать чужие пути ей нечем.

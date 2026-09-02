@@ -212,6 +212,37 @@ class ApiSettings(EnvSettings):
     а не отдаёт список устройств всем желающим."""
 
 
+class MiniappSettings(EnvSettings):
+    """Приложение внутри Telegram: каталог, профиль, роутер, продление.
+
+    Своего бота у нас нет, поэтому токен здесь чужой — того бота, из которого
+    приложение открывают. Нужен он ровно для одного: Telegram подписывает
+    `initData` ключом, выведенным из токена, и без него подпись не проверить.
+    Ничего этим токеном не отправляется.
+    """
+
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="MINIAPP_")
+
+    bot_token: SecretStr = SecretStr("")
+    allowed_tg_ids: IdList = Field(default_factory=list)
+    """Кому открыто. Пустой список значит «никому», и это намеренно: пока идёт
+    обкатка, приложение не должно открыться у клиента по случайно найденной
+    ссылке. Открыть всем — отдельное решение, а не следствие пустой строки."""
+
+    init_data_max_age_sec: int = 86400
+    """Сколько живёт подпись входа. Telegram кладёт в неё `auth_date`, и без
+    проверки срока перехваченная один раз строка открывала бы приложение
+    вечно. Сутки — компромисс: приложение держат открытым долго, и час
+    заставлял бы перезапускать его посреди оформления."""
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.bot_token.get_secret_value()) and bool(self.allowed_tg_ids)
+
+    def is_allowed(self, tg_id: int) -> bool:
+        return tg_id in self.allowed_tg_ids
+
+
 class SecuritySettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="SECURITY_")
 
@@ -542,6 +573,7 @@ class Settings(EnvSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     bot: BotSettings = Field(default_factory=BotSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
+    miniapp: MiniappSettings = Field(default_factory=MiniappSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     subscription: SubscriptionSettings = Field(default_factory=SubscriptionSettings)
     platega: PlategaSettings = Field(default_factory=PlategaSettings)
