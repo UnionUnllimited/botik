@@ -76,13 +76,30 @@ def _page(mac: str) -> str:
 <script src="/static/vendor/xterm.js"></script>
 <script src="/static/vendor/xterm-addon-fit.js"></script>
 <script>
+(function () {{
+  const state = document.getElementById('state');
+
+  // Если библиотеки нет, молчать нельзя. Без этой проверки страница застывала
+  // на «подключаемся…» навсегда: `new Terminal` падал первой же строкой, до
+  // открытия сокета дело не доходило, и понять, что не хватает файла в
+  // /static/vendor/, было неоткуда — ни на экране, ни в шапке.
+  if (typeof Terminal === 'undefined' || typeof FitAddon === 'undefined') {{
+    state.textContent = 'библиотека терминала не загрузилась';
+    document.getElementById('term').innerHTML =
+      '<div style="color:#e0736d;font:13px/1.7 monospace;padding:14px">'
+      + 'Не загрузился <b>/static/vendor/xterm.js</b> — терминал не запустится.<br>'
+      + 'Файлы xterm лежат в образе приложения. Если их там нет, пересоберите его: '
+      + '<b>docker compose up -d --build api</b>.'
+      + '</div>';
+    return;
+  }}
+
   const term = new Terminal({{ fontSize: 13, fontFamily: 'monospace', cursorBlink: true }});
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(document.getElementById('term'));
   fit.fit();
 
-  const state = document.getElementById('state');
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const socket = new WebSocket(scheme + '://' + location.host + '/terminal/ws');
   socket.binaryType = 'arraybuffer';
@@ -112,6 +129,7 @@ def _page(mac: str) -> str:
   }}
   window.addEventListener('resize', function () {{ fit.fit(); sendSize(); }});
   term.focus();
+}})();
 </script>
 </body></html>"""
 
