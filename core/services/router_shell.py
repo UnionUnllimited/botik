@@ -30,6 +30,10 @@ LOG_SOURCES: dict[str, tuple[str, str]] = {
 }
 
 QUICK_COMMANDS: dict[str, tuple[str, str]] = {
+    # `sleep 2` перед перезагрузкой нужен, чтобы SSH успел закрыть сессию:
+    # без задержки роутер уходит перезагружаться прямо в разговоре, вызывающий
+    # получает обрыв и считает команду неудавшейся — хотя она как раз сработала.
+    "reboot": ("Перезагрузить", "sleep 2 && reboot"),
     "uptime": ("Аптайм и нагрузка", "uptime; cat /proc/loadavg"),
     "memory": ("Память и диск", "free; df -h"),
     "network": ("Сеть", "ip -4 addr; ip route"),

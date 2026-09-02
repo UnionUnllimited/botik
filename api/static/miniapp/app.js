@@ -77,12 +77,104 @@
     return n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
   }
 
+  // «10 минут назад» вместо даты: у показаний важен не момент, а давность.
+  function ago(iso) {
+    if (!iso) { return ''; }
+    var then = new Date(iso);
+    if (isNaN(then)) { return ''; }
+    var mins = Math.floor((Date.now() - then.getTime()) / 60000);
+    if (mins < 1) { return 'только что'; }
+    if (mins < 60) { return mins + ' мин назад'; }
+    var hours = Math.floor(mins / 60);
+    if (hours < 24) { return hours + ' ч назад'; }
+    return Math.floor(hours / 24) + ' сут назад';
+  }
+
   function uptime(seconds) {
     var s = Number(seconds);
     if (!s || isNaN(s)) { return '—'; }
     var days = Math.floor(s / 86400);
     var hours = Math.floor((s % 86400) / 3600);
     return days ? days + ' сут ' + hours + ' ч' : hours + ' ч';
+  }
+
+  // Срок словами. Тарифы бывают и в месяцах, и в днях: у дневного `months`
+  // равен нулю, и «0 мес.» под каждым сроком было именно этим.
+  function planPeriod(p) {
+    var months = Number(p.months || 0);
+    var days = Number(p.extra_days || 0);
+    if (months && days) { return months + ' мес. + ' + days + ' дн.'; }
+    if (months) { return months + ' мес.'; }
+    if (days) { return days + ' дн.'; }
+    return '';
+  }
+
+  function planDays(p) {
+    return Number(p.months || 0) * 30 + Number(p.extra_days || 0);
+  }
+
+  // Цена за месяц для сравнения сроков. Считаем из общего числа дней, а не
+  // из поля тарифа: у дневного там лежит полная цена, и «300 ₽ в месяц»
+  // у срока на 30 дней соседствовало бы с «1800 ₽ в месяц» у полугодового.
+  // Меньше двух месяцев не приводим: делить тридцать дней на месяцы незачем.
+  function planPerMonth(p, currency) {
+    var days = planDays(p);
+    if (days < 60) { return ''; }
+    return perMonth(Number(p.price) / (days / 30), currency);
+  }
+
+  // Названия тарифов заводит оператор, и в них попадают эмодзи. В наборе,
+  // где всё остальное — обводка одной толщины, они выглядят случайными.
+  function planTitle(p) {
+    return String(p.title || '').replace(/^[^\p{L}\p{N}]+/u, '').trim() || String(p.title || '');
+  }
+
+  // Самый выгодный срок — тот, у кого день дешевле всех, и только если он
+  // такой один. При ровной сетке (300 / 600 / 900 / 1800 за 30 / 60 / 90 / 180)
+  // выгоды нет ни у кого, и пометка была бы враньём.
+  function bestPlan(plans) {
+    var rates = plans.map(function (p) {
+      var days = planDays(p);
+      return days ? Number(p.price) / days : Infinity;
+    });
+    if (rates.length < 2) { return null; }
+    var min = Math.min.apply(null, rates);
+    var max = Math.max.apply(null, rates);
+    if (!(min < max)) { return null; }
+    var first = rates.indexOf(min);
+    return rates.lastIndexOf(min) === first ? plans[first] : null;
+  }
+
+  // Отказы приходят кодом, чтобы их можно было разобрать; клиенту нужен текст.
+  var REASONS = {
+    offline: 'Роутер сейчас не на связи — команде некуда прийти.',
+    too_often: 'Слишком часто. Подождите и попробуйте ещё раз.',
+    unreachable: 'Роутер не ответил. Попробуйте позже.'
+  };
+
+  // Копирование: в браузере Telegram обычный буфер обмена доступен не везде,
+  // и на отказ надо ответить честно, а не молчанием — MAC называют поддержке.
+  function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).then(
+          function () { return true; }, function () { return false; });
+      }
+    } catch (e) { /* разберёмся запасным путём */ }
+    try {
+      var area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      var done = document.execCommand('copy');
+      document.body.removeChild(area);
+      return Promise.resolve(done);
+    } catch (e) {
+      return Promise.resolve(false);
+    }
   }
 
   /* --- Разговор с сервером ----------------------------------------------- */
@@ -330,22 +422,16 @@
       // не выбирает вовсе. Пометка снимает этот выбор: она не назначена
       // руками, а посчитана по цене за месяц — иначе разъедется с ценами
       // при первой же правке тарифа.
-      var best = null;
-      (d.plans || []).forEach(function (p) {
-        if (Number(p.months) > 1
-            && (!best || Number(p.price_per_month) < Number(best.price_per_month))) {
-          best = p;
-        }
-      });
+      var best = bestPlan(d.plans || []);
 
       var plans = (d.plans || []).map(function (p) {
+        var rate = planPerMonth(p, d.currency);
         return '<div class="plan"><div class="grow">'
-          + '<div><b>' + esc(p.title) + '</b>'
+          + '<div><b>' + esc(planTitle(p)) + '</b>'
           + (best && best.id === p.id ? ' <span class="best">выгоднее всего</span>' : '')
           + '</div>'
-          + '<div class="muted small">' + esc(p.months) + ' мес.'
-          + (Number(p.months) > 1
-              ? ' · ' + perMonth(p.price_per_month, d.currency) + ' в месяц' : '')
+          + '<div class="muted small">' + esc(planPeriod(p))
+          + (rate ? ' · ' + rate + ' в месяц' : '')
           + '</div></div>'
           + '<button class="btn small" data-plan="' + esc(p.id) + '">'
           + money(p.price, d.currency) + '</button></div>';
@@ -431,7 +517,10 @@
         // а не шестнадцать знаков. Незнакомую модель не подписываем вовсе —
         // строка «модель не указана» сообщает клиенту о нашей недоработке.
         +     (r.model ? '<div><b>' + esc(r.model) + '</b></div>' : '')
-        +     '<div class="mono muted small">' + esc(r.mac) + '</div></div>'
+        +     '<button id="mac" style="display:flex;align-items:center;gap:7px;background:none;'
+        +       'border:0;padding:0;font:inherit;color:var(--muted);cursor:pointer">'
+        +       '<span class="mono small">' + esc(r.mac) + '</span>'
+        +       '<span class="subtle">' + icon('copy') + '</span></button></div>'
         +     '<span class="pill ' + (r.online ? 'ok' : 'off') + '"><i class="dot"></i>'
         +       (r.online ? 'на связи' : 'молчит') + '</span></div>'
         +   (r.until
@@ -441,7 +530,10 @@
               : '')
         + '</div>'
 
-        + '<h2 style="margin:22px 2px 12px">Показания</h2>'
+        + '<div class="sec" style="display:flex;justify-content:space-between">'
+        +   '<span>Показания</span>'
+        +   (r.polled_at ? '<span class="subtle">' + esc(ago(r.polled_at)) + '</span>' : '')
+        + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
         +   tile('wifi', 'Устройств', esc(r.clients == null ? '—' : r.clients))
         +   tile('clock', 'Аптайм', esc(uptime(r.uptime_sec)))
@@ -450,13 +542,19 @@
               + 'style="font-size:13px;font-weight:400"> / ' + bytes(r.tx_bytes) + '</span>')
         + '</div>'
 
+        // Порядок по частоте: перезагрузка — первое, что советует поддержка,
+        // и до сих пор ради неё писали в бот и ждали оператора.
         + '<div class="stack">'
-        +   '<button class="btn ghost" id="upd">' + icon('download') + 'Обновить прошивку</button>'
+        +   '<button class="btn ghost" id="reboot">' + icon('power') + 'Перезагрузить роутер</button>'
+        +   '<button class="btn quiet" id="upd">' + icon('download') + 'Обновить прошивку</button>'
         +   (d.instruction_url
                 ? '<button class="btn quiet" id="help">' + icon('info') + 'Инструкция</button>' : '')
+        +   (d.support
+                ? '<button class="btn quiet" id="support">' + icon('chat')
+                  + 'Написать в поддержку</button>' : '')
         + '</div>'
-        + '<div class="muted tiny center" style="margin-top:10px">Обновление идёт в фоне и '
-        + 'занимает несколько минут. Роутер перезагрузится сам.</div>'
+        + '<div class="muted tiny center" style="margin-top:12px">После перезагрузки роутер '
+        + 'молчит около минуты. Обновление идёт в фоне и занимает несколько минут.</div>'
       );
 
       screen.querySelectorAll('[data-dev]').forEach(function (btn) {
@@ -464,6 +562,52 @@
           haptic(); go({ name: 'router', id: Number(btn.dataset.dev) }, true);
         });
       });
+
+      var macBtn = screen.querySelector('#mac');
+      if (macBtn) {
+        macBtn.addEventListener('click', function () {
+          haptic();
+          copyText(r.mac).then(function (done) {
+            tg.showAlert(done ? 'MAC скопирован: ' + r.mac
+                              : 'Скопировать не вышло. MAC: ' + r.mac);
+          });
+        });
+      }
+
+      var support = screen.querySelector('#support');
+      if (support) {
+        support.addEventListener('click', function () {
+          haptic();
+          // Ссылкой на бот, а не на человека: клиент разговаривает с ботом,
+          // а оператор не светит свой аккаунт каждому покупателю.
+          var contact = String(d.support || '').trim().replace(/^@/, '');
+          tg.openTelegramLink('https://t.me/' + encodeURIComponent(contact));
+        });
+      }
+
+      var reboot = screen.querySelector('#reboot');
+      if (reboot) {
+        reboot.addEventListener('click', function () {
+          haptic('medium');
+          tg.showConfirm('Перезагрузить роутер? Интернет пропадёт примерно на минуту.',
+            function (yes) {
+              if (!yes) { return; }
+              reboot.disabled = true;
+              reboot.innerHTML = icon('refresh') + 'Отправляем…';
+              api('/router/reboot', {
+                method: 'POST', body: JSON.stringify({ device_id: r.id })
+              }).then(function (res) {
+                if (!res.ok) { throw new Error(REASONS[res.error] || 'Роутер не ответил'); }
+                reboot.innerHTML = icon('check') + 'Перезагружается';
+                tg.showAlert('Команда ушла. Роутер вернётся на связь примерно через минуту.');
+              }).catch(function (err) {
+                reboot.disabled = false;
+                reboot.innerHTML = icon('power') + 'Перезагрузить роутер';
+                tg.showAlert(err.message || String(err));
+              });
+            });
+        });
+      }
 
       var help = screen.querySelector('#help');
       if (help) {
@@ -480,7 +624,7 @@
         api('/router/update', {
           method: 'POST', body: JSON.stringify({ device_id: r.id })
         }).then(function (res) {
-          if (!res.ok) { throw new Error(res.error || 'Роутер не ответил'); }
+          if (!res.ok) { throw new Error(REASONS[res.error] || 'Роутер не ответил'); }
           btn.innerHTML = icon('check') + 'Команда ушла';
           tg.showAlert('Обновление запущено. Роутер сам перезагрузится через несколько минут.');
         }).catch(function (err) {
@@ -757,13 +901,7 @@
 
         // «Выгоднее всего» считается по цене за месяц, а не назначается
         // руками: назначенная разъедется с ценами при первой правке тарифа.
-        var best = null;
-        list.forEach(function (x) {
-          if (Number(x.months) > 1
-              && (!best || Number(x.price_per_month) < Number(best.price_per_month))) {
-            best = x;
-          }
-        });
+        var best = bestPlan(list);
 
         if (!form.planId) {
           var preset = list.filter(function (x) { return x.is_default; })[0];
@@ -771,20 +909,16 @@
         }
 
         function planBox(x) {
-          var months = Number(x.months);
+          var rate = planPerMonth(x, currency);
           return '<label class="choice"><input type="radio" name="plan" value="' + esc(x.id) + '"'
             + (form.planId === x.id ? ' checked' : '') + '>'
             + '<div class="box"><span class="tick"></span><span class="grow">'
-            + '<span class="row"><span><b>' + esc(x.title) + '</b>'
+            + '<span class="row"><span><b>' + esc(planTitle(x)) + '</b>'
             + (best && best.id === x.id ? ' <span class="best">выгоднее всего</span>' : '')
             + '</span><span>' + money(x.price, currency) + '</span></span>'
             + '<span class="row" style="margin-top:3px">'
-            + '<span class="muted small">' + esc(months) + ' мес.'
-            + (x.extra_days ? ' + ' + esc(x.extra_days) + ' дн.' : '') + '</span>'
-            + (months > 1
-                ? '<span class="subtle small">' + perMonth(x.price_per_month, currency)
-                  + ' в месяц</span>'
-                : '')
+            + '<span class="muted small">' + esc(planPeriod(x)) + '</span>'
+            + (rate ? '<span class="subtle small">' + rate + ' в месяц</span>' : '')
             + '</span></span></div></label>';
         }
 

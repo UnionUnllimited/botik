@@ -692,6 +692,10 @@ async def my_router(
             # загрузки — это показание, а «не сообщал» — его отсутствие.
             "cpu_pct": current.cpu_pct,
             "ram_pct": current.ram_pct,
+            # Когда показания сняты. Без этого клиент читает их как «сейчас»,
+            # а снимаются они раз в полчаса: увидев «на связи» у роутера,
+            # который выключили десять минут назад, он решит, что мы врём.
+            "polled_at": _iso_dt(current.last_poll_at),
             "until": panel_until.isoformat() if panel_until else None,
             "active": bool(panel_until and panel_until > now),
         }
@@ -789,6 +793,77 @@ async def my_router_update(
     )
     await session.commit()
     log.info("catalog.router_update_started", device_id=device.id, tg_id=tg_id)
+    return {"ok": result.ok, "error": "" if result.ok else "unreachable"}
+
+
+REBOOT_ATTEMPTS_PER_HOUR = 3
+"""Сколько раз в час клиент может перезагрузить роутер.
+
+После команды роутер молчит минуты полторы. Клиент в это время видит
+«не отвечает» и жмёт снова — без предела он уводил бы устройство в круг
+перезагрузок ровно тогда, когда пытается починить.
+"""
+
+
+@router.post("/my-router/reboot")
+async def my_router_reboot(
+    payload: dict, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Клиент перезагружает свой роутер сам.
+
+    Первое, что советует поддержка, и до сих пор это можно было сделать
+    только руками оператора: клиент писал в бот, ждал ответа и всё равно
+    выдёргивал питание. Кнопка убирает и ожидание, и обращение.
+
+    Питание при этом остаётся запасным путём: команда идёт по SSH через
+    туннель, а к молчащему роутеру туннеля нет — на такой случай отвечаем
+    «offline», а не тишиной.
+    """
+    tg_id = _int(payload.get("tg_id"))
+    device_id = _int(payload.get("device_id"))
+
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    # Чужой роутер перезагрузить нельзя: device_id приходит из кнопки,
+    # а кнопку можно позвать с любым номером.
+    query = select(Device).where(Device.user_id == user.id)
+    device = await session.scalar(
+        query.where(Device.id == device_id) if device_id else query.order_by(Device.id.desc())
+    )
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    allowed, _ = await RateLimiter().hit(
+        f"router_reboot:{device.id}",
+        limit=REBOOT_ATTEMPTS_PER_HOUR,
+        window_sec=3600,
+    )
+    if not allowed:
+        return {"ok": False, "error": "too_often"}
+
+    online = device.frp_online or device.is_online(
+        threshold_min=settings.subscription.heartbeat_offline_min
+    )
+    if not online:
+        return {"ok": False, "error": "offline"}
+
+    try:
+        result = await router_shell.run_quick(device, "reboot")
+    except router_shell.ShellError as exc:
+        log.warning("catalog.router_reboot_failed", device_id=device.id, error=str(exc))
+        return {"ok": False, "error": "unreachable"}
+
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message="Перезагрузка запущена клиентом",
+    )
+    await session.commit()
+    log.info("catalog.router_reboot_started", device_id=device.id, tg_id=tg_id)
     return {"ok": result.ok, "error": "" if result.ok else "unreachable"}
 
 

@@ -25,6 +25,7 @@ from api.deps import get_session, get_transaction
 from api.routes import catalog_api
 from core.config import settings
 from core.services import landing as landing_service
+from core.services import settings_service
 from core.services.miniapp_auth import InitDataError, TelegramUser, parse_init_data
 
 log = structlog.get_logger("api.miniapp")
@@ -181,9 +182,25 @@ async def my_router(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Экран роутера — тот же, что в боте, вплоть до срока из панели."""
-    return await catalog_api.my_router(
+    data = await catalog_api.my_router(
         tg_id=user.tg_id, device_id=device_id, session=session
     )
+    # Адрес поддержки кладём сюда же: кнопка «написать» нужна именно на этом
+    # экране — за помощью идут, когда роутер не работает. Отдельным запросом
+    # ради одной строки экран бы ждал дважды.
+    data["support"] = await settings_service.get_str(session, "support.contact")
+    return data
+
+
+@router.post("/api/router/reboot")
+async def router_reboot(
+    payload: dict,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Перезагрузка своего роутера. Чужой не перезагрузить: обработчик ищет
+    устройство среди принадлежащих этому клиенту, а клиент — из подписи."""
+    return await catalog_api.my_router_reboot(payload=_signed(payload, user), session=session)
 
 
 @router.get("/api/renew")
