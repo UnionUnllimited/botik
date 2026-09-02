@@ -182,6 +182,45 @@ nav button {
 nav button.on { color: var(--accent-2); }
 nav button svg { width: 21px; height: 21px; }
 
+/* --- Витрина: почему это стоит купить ------------------------------------- */
+
+.hero { padding: 6px 2px 16px; }
+.hero h1 { font-size: 25px; line-height: 1.15; margin: 0 0 8px; }
+.hero p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+/* Заголовок раздела продающей части: отделяет блоки без линеек и рамок. */
+.sec { margin: 24px 2px 12px; font-size: 16px; font-weight: 650; letter-spacing: -.2px; }
+
+.old { color: var(--subtle); text-decoration: line-through; font-size: 14px; margin-right: 8px; }
+
+.step { display: flex; gap: 12px; align-items: flex-start; }
+.step + .step { margin-top: 14px; }
+.step .num {
+  width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 700; color: #06101f; background: var(--grad);
+}
+
+.feat { display: flex; gap: 12px; align-items: flex-start; }
+.feat + .feat { margin-top: 14px; }
+
+/* Характеристики: пара «название — значение» без таблицы, чтобы длинные
+   значения переносились, а не растягивали карточку по горизонтали. */
+.spec { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
+.spec + .spec { margin-top: 7px; }
+.spec b { font-weight: 500; text-align: right; }
+
+details.faq { border-top: 1px solid var(--line); }
+details.faq:first-of-type { border-top: 0; }
+details.faq summary {
+  list-style: none; cursor: pointer; padding: 13px 0;
+  display: flex; align-items: center; gap: 10px; font-size: 14.5px;
+}
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary svg { margin-left: auto; color: var(--subtle); transition: transform .15s; }
+details.faq[open] summary svg { transform: rotate(90deg); }
+details.faq p { margin: 0 0 13px; color: var(--muted); font-size: 13.5px; }
+
 /* --- Служебное ------------------------------------------------------------ */
 
 .empty { padding: 28px 14px; text-align: center; color: var(--muted); }

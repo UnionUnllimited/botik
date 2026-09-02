@@ -231,6 +231,31 @@
       var user = d.user || {};
       var orders = (d.orders || []).slice(0, 3).map(orderRow).join('');
 
+      // Ни подписки, ни роутера, ни заказов — человек пришёл впервые. Ему
+      // нечего продлевать, и «подписка не активна» с кнопкой продления
+      // выглядит поломкой. Показываем, что тут вообще продаётся.
+      if (!active && !d.router_available && !orders) {
+        return api('/pitch').then(function (p) {
+          show(
+            '<div class="hero"><h1>' + esc(p.hero_title || 'Роутер с доступом') + '</h1>'
+            + (p.hero_subtitle ? '<p>' + esc(p.hero_subtitle) + '</p>' : '') + '</div>'
+            + (p.features || []).slice(0, 3).map(function (f) {
+                return '<div class="card tight"><div class="row" style="align-items:flex-start">'
+                  + '<span class="ic-box">' + icon('check') + '</span>'
+                  + '<div class="grow"><b>' + esc(f.title) + '</b>'
+                  + '<div class="muted small" style="margin-top:3px">' + esc(f.text) + '</div>'
+                  + '</div></div></div>';
+              }).join('')
+            + '<button class="btn" id="to-catalog" style="margin-top:6px">'
+            + icon('box') + 'Посмотреть роутеры</button>'
+          );
+          document.getElementById('to-catalog').addEventListener('click', function () {
+            haptic('medium');
+            openTab('catalog');
+          });
+        });
+      }
+
       show(
         '<h1>' + esc(user.name || 'Профиль') + '</h1>'
 
@@ -510,22 +535,87 @@
   /* --- Каталог и покупка -------------------------------------------------- */
 
   views.catalog = function () {
-    return api('/catalog').then(function (d) {
+    // Заголовок, выгоды, шаги и вопросы приходят с витрины — те же, что на
+    // сайте. Свой текст здесь завёл бы второй набор обещаний: поправив цену
+    // или условие на сайте, оператор оставил бы в приложении прежние.
+    return api('/pitch').then(function (d) {
       var items = (d.products || []).map(function (p) {
+        var specs = (p.specs || []).map(function (pair) {
+          return '<div class="spec"><span class="muted">' + esc(pair[0]) + '</span>'
+            + '<b>' + esc(pair[1]) + '</b></div>';
+        }).join('');
+
         return '<div class="card prod">'
           + (p.photo_url ? '<img src="' + esc(p.photo_url) + '" alt="">' : '')
           + '<div class="row"><b class="grow">' + esc(p.title) + '</b>'
-          + '<span class="price">' + money(p.price, d.currency) + '</span></div>'
-          + (p.description
-              ? '<div class="muted small" style="margin-top:7px">' + esc(p.description) + '</div>'
+          +   (p.in_stock
+                ? '<span class="pill ok"><i class="dot"></i>в наличии</span>'
+                : (p.preorder ? '<span class="pill warn">под заказ</span>'
+                              : '<span class="pill off">нет в наличии</span>'))
+          + '</div>'
+          + (p.subtitle
+              ? '<div class="muted small" style="margin-top:6px">' + esc(p.subtitle) + '</div>'
               : '')
-          + '<button class="btn" data-buy="' + esc(p.id) + '" style="margin-top:12px">'
-          + icon('cart') + 'Купить</button>'
+          + (p.description
+              ? '<div class="small" style="margin-top:9px;color:var(--muted)">'
+                + esc(p.description) + '</div>'
+              : '')
+          + (specs ? '<div class="hr"></div>' + specs : '')
+          + '<div class="hr"></div>'
+          + '<div class="row">'
+          +   '<span>' + (p.old_price ? '<span class="old">' + esc(p.old_price) + '</span>' : '')
+          +     '<span class="price">' + esc(p.price) + '</span></span>'
+          +   '<button class="btn small" data-buy="' + esc(p.id) + '">'
+          +     icon('cart') + 'Купить</button>'
+          + '</div>'
           + '</div>';
       }).join('');
 
-      show('<h1>Каталог</h1>'
-        + (items || empty('box', 'Пока пусто', 'Товары появятся здесь.')));
+      var steps = (d.steps || []).map(function (s, i) {
+        return '<div class="step"><span class="num">' + (i + 1) + '</span>'
+          + '<div class="grow"><b>' + esc(s.title) + '</b>'
+          + '<div class="muted small" style="margin-top:3px">' + esc(s.text) + '</div></div></div>';
+      }).join('');
+
+      var features = (d.features || []).map(function (f) {
+        return '<div class="feat"><span class="ic-box">' + icon('check') + '</span>'
+          + '<div class="grow"><b>' + esc(f.title) + '</b>'
+          + '<div class="muted small" style="margin-top:3px">' + esc(f.text) + '</div></div></div>';
+      }).join('');
+
+      var plans = (d.plans || []).map(function (p) {
+        return '<div class="plan"><div class="grow"><div><b>' + esc(p.title) + '</b></div>'
+          + '<div class="muted small">' + esc(p.period || '') + '</div></div>'
+          + '<div style="text-align:right"><div>' + esc(p.price) + '</div>'
+          + (p.per_month
+              ? '<div class="subtle tiny">' + esc(p.per_month) + ' в месяц</div>' : '')
+          + '</div></div>';
+      }).join('');
+
+      var faq = (d.faq || []).map(function (q) {
+        return '<details class="faq"><summary><span class="grow">' + esc(q.question) + '</span>'
+          + icon('chev-r') + '</summary><p>' + esc(q.answer) + '</p></details>';
+      }).join('');
+
+      show(
+        (d.hero_title
+          ? '<div class="hero"><h1>' + esc(d.hero_title) + '</h1>'
+            + (d.hero_subtitle ? '<p>' + esc(d.hero_subtitle) + '</p>' : '') + '</div>'
+          : '<h1>Каталог</h1>')
+        + (items || empty('box', 'Пока пусто', 'Товары появятся здесь.'))
+        + (steps ? '<div class="sec">Как это работает</div><div class="card">' + steps + '</div>' : '')
+        + (features ? '<div class="sec">Почему это удобно</div><div class="card">' + features + '</div>' : '')
+        + (plans
+            ? '<div class="sec">Сколько стоит потом</div><div class="card">' + plans + '</div>'
+              + '<div class="muted tiny center">Роутер остаётся вам навсегда. '
+              + 'Продлевается только подписка.</div>'
+            : '')
+        + (faq ? '<div class="sec">Вопросы</div><div class="card">' + faq + '</div>' : '')
+        + (d.support_contact
+            ? '<div class="muted tiny center" style="margin-top:16px">Остались вопросы — '
+              + esc(d.support_contact) + '</div>'
+            : '')
+      );
 
       screen.querySelectorAll('[data-buy]').forEach(function (btn) {
         btn.addEventListener('click', function () {

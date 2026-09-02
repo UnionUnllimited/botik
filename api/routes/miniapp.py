@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_session, get_transaction
 from api.routes import catalog_api
 from core.config import settings
+from core.services import landing as landing_service
 from core.services.miniapp_auth import InitDataError, TelegramUser, parse_init_data
 
 log = structlog.get_logger("api.miniapp")
@@ -129,6 +130,34 @@ async def catalog(
     """Витрина. `include_hidden` передаём явно: у обработчика это значение
     из `Query(...)`, и без него в выборку уехал бы сам объект параметра."""
     return await catalog_api.list_products(session=session, include_hidden=False)
+
+
+@router.get("/api/pitch")
+async def pitch(
+    _: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Продающая часть каталога: заголовок, выгоды, шаги, вопросы, тарифы.
+
+    Это ровно то же, чем живёт витрина (`core/services/landing.py`), и берётся
+    оттуда целиком. Написать для приложения свой текст значило бы завести
+    второй набор обещаний: поправив цену или условие на сайте, оператор
+    оставил бы в приложении прежние — и клиент увидел бы разные вещи в двух
+    местах об одном товаре.
+    """
+    content = await landing_service.page_content(session)
+    # Всё, что нужно только сайту (иконки, адрес бота, картинка шапки),
+    # наружу не тащим: приложение уже внутри бота и открыто с телефона.
+    return {
+        "hero_title": content.get("hero_title", ""),
+        "hero_subtitle": content.get("hero_subtitle", ""),
+        "products": content.get("products", []),
+        "plans": content.get("plans", []),
+        "steps": content.get("steps", []),
+        "features": content.get("features", []),
+        "faq": content.get("faq", []),
+        "support_contact": content.get("support_contact", ""),
+    }
 
 
 @router.get("/api/router")
