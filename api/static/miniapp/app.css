@@ -23,45 +23,35 @@
 
 /* --- Шрифты ---------------------------------------------------------------
 
-   Те же, что на витрине и на карточках товара: Montserrat в заголовках,
-   Open Sans в тексте. Системным шрифтом приложение выглядело как любая
-   тёмная панель, собранная по умолчанию, — узнать в нём вас было нельзя.
+   Rubik: геометричный, со слегка скруглёнными углами, с полноценной
+   кириллицей. Системным шрифтом приложение выглядело как любая тёмная
+   панель, собранная по умолчанию, — узнать в нём бренд было нельзя.
+
+   Файл один на все толщины: шрифт переменный, ось 300–900. Google на
+   запрос трёх начертаний отдаёт три копии одного файла, и класть их в
+   репозиторий шестью штуками было бы шестикратной пустой тратой.
 
    Файлы свои, из /static/fonts: чужой адрес — лишняя причина увидеть
    вместо каталога пустоту там, где связь плохая.
    -------------------------------------------------------------------- */
 
 @font-face {
-  font-family: 'Open Sans';
+  font-family: 'Rubik';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 300 900;
   font-display: swap;
-  src: url('/static/fonts/open-sans-400-cyrillic.woff2') format('woff2');
+  src: url('/static/fonts/rubik-cyrillic.woff2') format('woff2');
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
-  font-family: 'Open Sans';
+  font-family: 'Rubik';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 300 900;
   font-display: swap;
-  src: url('/static/fonts/open-sans-400-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'Montserrat';
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url('/static/fonts/montserrat-800-cyrillic.woff2') format('woff2');
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
-}
-@font-face {
-  font-family: 'Montserrat';
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url('/static/fonts/montserrat-800-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  src: url('/static/fonts/rubik-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
   font-family: 'Roboto Mono';
@@ -77,7 +67,9 @@
   font-weight: 400;
   font-display: swap;
   src: url('/static/fonts/roboto-mono-400-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 :root {
@@ -119,7 +111,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 15px/1.5 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   -webkit-font-smoothing: antialiased;
   /* Цифры одной ширины: в столбце цен прыгающая разрядка заметна сразу. */
@@ -140,12 +132,12 @@ body::before {
 /* Шкала со ступенями, а не набор близких размеров: 28 / 20 / 17 / 15 / 13 / 11.
    Близкие размеры не создают порядка — глазу не за что зацепиться. */
 
-/* Заголовки — Montserrat 800, как на витрине и на коробке. Один этот шрифт
-   отличает приложение бренда от приложения вообще. */
+/* Заголовки — тот же Rubik, но толщиной 700. Отдельная гарнитура на
+   заголовки здесь не нужна: у переменного шрифта разница в толщине даёт
+   иерархию сама, а вторая гарнитура — это второй файл и второй характер. */
 h1 {
-  font-family: 'Montserrat', 'Open Sans', sans-serif;
-  font-size: 27px; line-height: 1.15; letter-spacing: -.5px;
-  font-weight: 800; margin: 10px 0 18px;
+  font-size: 27px; line-height: 1.16; letter-spacing: -.4px;
+  font-weight: 700; margin: 10px 0 18px;
 }
 h2 { font-size: 17px; font-weight: 650; letter-spacing: -.25px; margin: 0 0 12px; }
 
@@ -159,7 +151,7 @@ h2 { font-size: 17px; font-weight: 650; letter-spacing: -.25px; margin: 0 0 12px
 .subtle { color: var(--subtle); }
 .small  { font-size: 13px; }
 .tiny   { font-size: 11.5px; line-height: 1.45; }
-.big    { font-family: 'Montserrat', sans-serif; font-size: 21px; font-weight: 800; letter-spacing: -.45px; }
+.big    { font-size: 21px; font-weight: 700; letter-spacing: -.5px; }
 .mono   { font-family: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
 .err    { color: var(--err); }
 .center { text-align: center; }
@@ -301,8 +293,7 @@ textarea.input { min-height: 80px; resize: vertical; line-height: 1.45; }
 .prod .shot img { width: 100%; display: block; border-radius: var(--r-md); }
 
 .price {
-  font-family: 'Montserrat', sans-serif;
-  font-size: 24px; font-weight: 800; letter-spacing: -.6px; line-height: 1;
+  font-size: 24px; font-weight: 700; letter-spacing: -.7px; line-height: 1;
 }
 .old { color: var(--subtle); text-decoration: line-through; font-size: 14px; }
 .save {
@@ -334,7 +325,7 @@ textarea.input { min-height: 80px; resize: vertical; line-height: 1.45; }
 /* --- Витрина -------------------------------------------------------------- */
 
 .hero { padding: 10px 4px 18px; }
-.hero h1 { font-size: 26px; line-height: 1.15; letter-spacing: -.5px; margin: 0 0 10px; }
+.hero h1 { font-size: 26px; line-height: 1.18; letter-spacing: -.45px; margin: 0 0 10px; }
 .hero p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; }
 
 .step { display: flex; gap: 14px; align-items: flex-start; }
@@ -370,7 +361,7 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; }
 .steps-bar .label {
   display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px;
 }
-.steps-bar .label b { font-family: 'Montserrat', sans-serif; font-size: 21px; font-weight: 800; letter-spacing: -.4px; }
+.steps-bar .label b { font-size: 21px; font-weight: 700; letter-spacing: -.45px; }
 .steps-bar .label span { font-size: 13px; color: var(--subtle); }
 
 .done-mark {
@@ -390,8 +381,7 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; }
    так, что его видно, не считая в уме. */
 .term { padding: 4px 0 2px; }
 .term .num {
-  font-family: 'Montserrat', sans-serif;
-  font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1;
+  font-size: 34px; font-weight: 700; letter-spacing: -1.2px; line-height: 1;
 }
 .term .track {
   height: 6px; border-radius: 999px; background: var(--surface-3);
