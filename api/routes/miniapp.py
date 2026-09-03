@@ -152,6 +152,7 @@ async def pitch(
     return {
         "hero_title": content.get("hero_title", ""),
         "hero_subtitle": content.get("hero_subtitle", ""),
+        "value": content.get("value", []),
         "products": content.get("products", []),
         "plans": content.get("plans", []),
         "steps": content.get("steps", []),

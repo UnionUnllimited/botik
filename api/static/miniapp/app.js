@@ -869,11 +869,23 @@
           + icon('chev-r') + '</summary><p>' + esc(q.answer) + '</p></details>';
       }).join('');
 
+      // Доводы стоят между заголовком и ценой намеренно: цифра без них
+      // читается как «дорого за роутер», а после них — как «дешевле, чем
+      // я плачу сейчас».
+      var value = (d.value || []).map(function (v) {
+        return '<div class="item" style="align-items:flex-start">'
+          + '<span class="ic-box">' + icon('check') + '</span>'
+          + '<span class="grow"><b>' + esc(v.title) + '</b>'
+          + '<span class="muted small" style="display:block;margin-top:3px">'
+          + esc(v.text) + '</span></span></div>';
+      }).join('');
+
       show(
         (d.hero_title
           ? '<div class="hero"><h1>' + esc(d.hero_title) + '</h1>'
             + (d.hero_subtitle ? '<p>' + esc(d.hero_subtitle) + '</p>' : '') + '</div>'
           : '<h1>Каталог</h1>')
+        + (value ? '<div class="list leading">' + value + '</div>' : '')
         + (items || empty('box', 'Пока пусто', 'Товары появятся здесь.'))
         // Стоимость подписки идёт сразу за ценой роутера: «а сколько платить
         // дальше» — первый вопрос, который возникает у человека после цены,
