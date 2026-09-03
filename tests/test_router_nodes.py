@@ -51,6 +51,19 @@ def test_missing_enabled_means_service_works():
     assert state.enabled is True
 
 
+def test_empty_list_is_success_not_refusal():
+    """Пустой список узлов — не отказ.
+
+    Отказ на `list` уносит с экрана и переключатель сервиса, а он клиенту
+    в этот момент нужнее всего: подписка ещё не прочиталась, доступа нет,
+    и единственное, что он может сделать сам, — выключить и включить.
+    """
+    state = router_nodes.parse('{"enabled":true,"current":"","nodes":[]}')
+
+    assert state.nodes == []
+    assert state.enabled is True
+
+
 def test_explicit_off_is_respected():
     state = router_nodes.parse('{"enabled":false,"nodes":[],"current":""}')
 
@@ -75,6 +88,9 @@ def test_unknown_fields_do_not_break_the_answer():
         ("unknown_node", "больше нет"),
         ("busy", "предыдущую"),
         ("no_nodes", "подписка"),
+        ("no_service", "не настроен"),
+        ("commit_failed", "сохранить"),
+        ("bad_usage", "не понял"),
     ],
 )
 def test_known_refusals_become_human_text(code, expected):
