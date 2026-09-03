@@ -223,6 +223,43 @@ async def router_reboot(
     return await catalog_api.my_router_reboot(payload=_signed(payload, user), session=session)
 
 
+@router.get("/api/router/nodes")
+async def router_nodes(
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Узлы, которые есть на роутере, и выбранный из них.
+
+    Отдельным запросом, а не в составе экрана: список читается с самого
+    устройства по туннелю, и это до пятнадцати секунд. Приложив его к экрану,
+    мы заставили бы ждать столько же и того, кто зашёл посмотреть срок
+    подписки.
+    """
+    return await catalog_api.my_router_nodes(tg_id=user.id, device_id=0, session=session)
+
+
+@router.post("/api/router/node")
+async def router_select_node(
+    payload: dict,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Выбор узла. Чужой роутер не тронуть: клиент берётся из подписи входа."""
+    return await catalog_api.my_router_select_node(
+        payload=_signed(payload, user), session=session
+    )
+
+
+@router.post("/api/router/service")
+async def router_service(
+    payload: dict,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Включение и выключение сервиса доступа на своём роутере."""
+    return await catalog_api.my_router_service(payload=_signed(payload, user), session=session)
+
+
 @router.get("/api/renew")
 async def renew_state(
     user: TelegramUser = Depends(current_user),

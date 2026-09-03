@@ -163,8 +163,16 @@
   var REASONS = {
     offline: 'Роутер сейчас не на связи — команде некуда прийти.',
     too_often: 'Слишком часто. Подождите и попробуйте ещё раз.',
-    unreachable: 'Роутер не ответил. Попробуйте позже.'
+    unreachable: 'Роутер не ответил. Попробуйте позже.',
+    // Причину отказа пишет сам роутер: он один знает, что у него настроено.
+    // Своего текста здесь нет намеренно — «узла больше нет» мы бы выдумали,
+    // а он это знает точно.
+    refused: ''
   };
+
+  function reason(res) {
+    return res.message || REASONS[res.error] || 'Роутер не ответил';
+  }
 
   // Копирование: в браузере Telegram обычный буфер обмена доступен не везде,
   // и на отказ надо ответить честно, а не молчанием — MAC называют поддержке.
@@ -592,6 +600,84 @@
 
   /* --- Роутер ------------------------------------------------------------- */
 
+  // Настройки сервиса доступа: переключатель и выбор сервера.
+  //
+  // Рисуются отдельно от экрана, потому что и приезжают отдельно: список
+  // читается с самого устройства по туннелю, а это до пятнадцати секунд.
+  // Экран, который ждал бы их, заставлял бы ждать столько же и того, кто
+  // зашёл посмотреть срок подписки, — а заходят чаще за этим.
+  function renderAccess(slot, state, deviceId) {
+    function row(node) {
+      var on = node.id === state.current;
+      return '<button class="item" data-node="' + esc(node.id) + '">'
+        + '<span class="grow"><b>' + esc(node.name) + '</b></span>'
+        + (on ? '<span style="color:var(--accent)">' + icon('check') + '</span>'
+              : '<span class="chev">' + icon('chev-r') + '</span>')
+        + '</button>';
+    }
+
+    slot.innerHTML =
+      '<div class="sec" style="margin-top:24px">Сервис доступа</div>'
+      + '<div class="list"><div class="item">'
+      +   '<span class="grow"><b>Доступ к зарубежным ресурсам</b>'
+      +     '<span class="muted small" style="display:block;margin-top:2px">'
+      +     'Российские сайты идут напрямую в любом случае</span></span>'
+      +   '<label class="sw"><input type="checkbox" id="svc"'
+      +     (state.enabled ? ' checked' : '') + '><i></i></label>'
+      + '</div></div>'
+      // Список серверов при выключенном сервисе прячем: выбирать сервер
+      // для выключенного доступа человеку нечего, а строй неактивных кнопок
+      // читается как поломка.
+      + (state.enabled && (state.nodes || []).length > 1
+          ? '<div class="sec">Сервер</div>'
+            + '<div class="list">' + (state.nodes || []).map(row).join('') + '</div>'
+            + '<div class="muted tiny" style="margin:-4px 2px 0">Если какой-то сервис '
+            + 'открывается медленно, попробуйте другой сервер. Переключение занимает '
+            + 'несколько секунд, в которые интернет дома замирает.</div>'
+          : '');
+
+    function apply(request, busyText) {
+      slot.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
+      var note = document.createElement('div');
+      note.className = 'muted tiny center';
+      note.style.marginTop = '10px';
+      note.textContent = busyText;
+      slot.appendChild(note);
+
+      return request.then(function (res) {
+        if (!res.ok) { throw new Error(reason(res)); }
+        renderAccess(slot, res, deviceId);
+      }).catch(function (err) {
+        // Перерисовываем прежним состоянием: оставить переключатель
+        // в новом положении после отказа — соврать о том, что применилось.
+        renderAccess(slot, state, deviceId);
+        tg.showAlert(err.message || String(err));
+      });
+    }
+
+    slot.querySelectorAll('[data-node]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.dataset.node === state.current) { return; }
+        haptic('medium');
+        apply(api('/router/node', {
+          method: 'POST',
+          body: JSON.stringify({ device_id: deviceId, node_id: btn.dataset.node })
+        }), 'Переключаем сервер…');
+      });
+    });
+
+    var svc = slot.querySelector('#svc');
+    if (svc) {
+      svc.addEventListener('change', function () {
+        haptic('medium');
+        apply(api('/router/service', {
+          method: 'POST',
+          body: JSON.stringify({ device_id: deviceId, enabled: svc.checked })
+        }), svc.checked ? 'Включаем…' : 'Выключаем…');
+      });
+    }
+  }
+
   views.router = function (view) {
     var path = view && view.id ? '/router?device_id=' + view.id : '/router';
     return api(path).then(function (d) {
@@ -669,6 +755,10 @@
         + '<div class="muted tiny center" style="margin-top:12px">После перезагрузки роутер '
         + 'молчит около минуты. Обновление идёт в фоне и занимает несколько минут.</div>'
 
+        // Пустое место под настройки сервиса: они читаются с самого роутера
+        // и приезжают позже остального экрана.
+        + '<div id="access"></div>'
+
         // Панель и инструкция живут на самом роутере, по локальному адресу.
         // Снаружи его не существует вовсе, поэтому кнопки отделены от прочих
         // и подписаны: иначе клиент нажимает их из метро и решает, что сломано.
@@ -698,6 +788,16 @@
           haptic(); go({ name: 'router', id: Number(btn.dataset.dev) }, true);
         });
       });
+
+      // Настройки сервиса — отдельным запросом, уже после отрисовки экрана.
+      // Отказ здесь не ошибка: на прошивке без скрипта управления список
+      // не читается вовсе, и блок просто не появляется. Показать вместо него
+      // «не удалось загрузить» значило бы сообщать клиенту о нашей недоделке
+      // на экране, где у него всё работает.
+      var slot = document.getElementById('access');
+      api('/router/nodes').then(function (n) {
+        if (n && n.ok) { renderAccess(slot, n, r.id); } else { slot.remove(); }
+      }).catch(function () { slot.remove(); });
 
       var macBtn = screen.querySelector('#mac');
       if (macBtn) {

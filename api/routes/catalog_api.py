@@ -62,7 +62,14 @@ from core.models import (
 )
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
-from core.services import activation, media, order_topics, router_shell, settings_service
+from core.services import (
+    activation,
+    media,
+    order_topics,
+    router_nodes,
+    router_shell,
+    settings_service,
+)
 from core.services import delivery as delivery_service
 from core.services import orders as order_service
 from core.services import payments as payment_service
@@ -865,6 +872,167 @@ async def my_router_reboot(
     await session.commit()
     log.info("catalog.router_reboot_started", device_id=device.id, tg_id=tg_id)
     return {"ok": result.ok, "error": "" if result.ok else "unreachable"}
+
+
+NODE_SWITCHES_PER_HOUR = 6
+"""Сколько раз в час клиент может переключить узел или тронуть переключатель.
+
+Каждое переключение перезапускает сервис доступа, а перезапуск роняет
+установленные соединения: полсекунды-секунда, в которые дома всё встаёт.
+Шесть — это «попробовал все узлы и выбрал», а не «сижу и щёлкаю».
+"""
+
+
+async def _own_router(session: AsyncSession, tg_id: int, device_id: int) -> Device:
+    """Роутер, принадлежащий этому клиенту.
+
+    `device_id` приходит из кнопки, а кнопку можно позвать с любым номером,
+    поэтому владение проверяется в запросе, а не после него. Без номера
+    берём последний: у клиента с одним роутером кнопка его не передаёт.
+    """
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    query = select(Device).where(Device.user_id == user.id)
+    device = await session.scalar(
+        query.where(Device.id == device_id) if device_id else query.order_by(Device.id.desc())
+    )
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    return device
+
+
+def _reachable(device: Device) -> bool:
+    """На связи ли роутер. Команды идут по туннелю, к молчащему его нет."""
+    return device.frp_online or device.is_online(
+        threshold_min=settings.subscription.heartbeat_offline_min
+    )
+
+
+def _nodes_payload(state: router_nodes.State) -> dict:
+    return {
+        "ok": True,
+        "error": "",
+        "enabled": state.enabled,
+        "current": state.current,
+        "nodes": [{"id": node.id, "name": node.name} for node in state.nodes],
+    }
+
+
+@router.get("/my-router/nodes")
+async def my_router_nodes(
+    tg_id: int = Query(0),
+    device_id: int = Query(0),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Какие узлы есть у роутера и какой выбран.
+
+    Спрашиваем устройство, а не панель: в панели лежит подписка — набор узлов,
+    который клиенту выдан, а на роутере то, что он получил и чем пользуется.
+    Подписка успела обновиться, роутер её ещё не перечитал — и выбор
+    из панельного списка попал бы в пустоту.
+
+    Отказ здесь не ошибка приложения: на прошивке без скрипта управления
+    список просто не читается, и экран показывает роутер без этого блока.
+    """
+    device = await _own_router(session, tg_id, device_id)
+    if not _reachable(device):
+        return {"ok": False, "error": "offline", "nodes": [], "current": "", "enabled": True}
+
+    try:
+        state = await router_nodes.read(device)
+    except (router_nodes.NodeError, router_shell.ShellError) as exc:
+        log.info("catalog.router_nodes_unavailable", device_id=device.id, error=str(exc))
+        return {"ok": False, "error": "unsupported", "nodes": [], "current": "", "enabled": True}
+
+    return _nodes_payload(state)
+
+
+@router.post("/my-router/node")
+async def my_router_select_node(
+    payload: dict, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Клиент выбирает узел сам.
+
+    До сих пор это делал оператор руками через панель роутера, и клиент,
+    у которого один узел отвечает хуже другого, ждал ответа поддержки ради
+    одной настройки.
+    """
+    device = await _own_router(
+        session, _int(payload.get("tg_id")), _int(payload.get("device_id"))
+    )
+    node_id = str(payload.get("node_id") or "").strip()
+
+    allowed, _ = await RateLimiter().hit(
+        f"router_node:{device.id}", limit=NODE_SWITCHES_PER_HOUR, window_sec=3600
+    )
+    if not allowed:
+        return {"ok": False, "error": "too_often"}
+
+    if not _reachable(device):
+        return {"ok": False, "error": "offline"}
+
+    try:
+        state = await router_nodes.select(device, node_id)
+    except router_nodes.NodeError as exc:
+        return {"ok": False, "error": "refused", "message": str(exc)}
+    except router_shell.ShellError as exc:
+        log.warning("catalog.router_node_failed", device_id=device.id, error=str(exc))
+        return {"ok": False, "error": "unreachable"}
+
+    # Событие в журнал устройства: оператор, разбирая обращение «стало хуже»,
+    # должен видеть, что узел сменил клиент, а не круг обновления.
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message=f"Клиент выбрал узел {node_id}",
+    )
+    await session.commit()
+    return _nodes_payload(state)
+
+
+@router.post("/my-router/service")
+async def my_router_service(payload: dict, session: AsyncSession = Depends(get_session)) -> dict:
+    """Переключатель сервиса доступа.
+
+    Российские сайты идут напрямую и без него, поэтому выключают редко — но
+    бывает сервис, который спотыкается именно о зарубежный маршрут, и клиент
+    без этой кнопки идёт в поддержку с «не работает приложение банка».
+    """
+    device = await _own_router(
+        session, _int(payload.get("tg_id")), _int(payload.get("device_id"))
+    )
+    enabled = bool(payload.get("enabled"))
+
+    allowed, _ = await RateLimiter().hit(
+        f"router_node:{device.id}", limit=NODE_SWITCHES_PER_HOUR, window_sec=3600
+    )
+    if not allowed:
+        return {"ok": False, "error": "too_often"}
+
+    if not _reachable(device):
+        return {"ok": False, "error": "offline"}
+
+    try:
+        state = await router_nodes.set_enabled(device, enabled)
+    except router_nodes.NodeError as exc:
+        return {"ok": False, "error": "refused", "message": str(exc)}
+    except router_shell.ShellError as exc:
+        log.warning("catalog.router_service_failed", device_id=device.id, error=str(exc))
+        return {"ok": False, "error": "unreachable"}
+
+    routers_service.add_event(
+        session,
+        device_id=device.id,
+        mac=device.mac,
+        level="info",
+        message="Клиент включил сервис доступа" if enabled else "Клиент выключил сервис доступа",
+    )
+    await session.commit()
+    return _nodes_payload(state)
 
 
 @router.get("/subscriptions")
