@@ -317,6 +317,35 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; }
 .done-mark svg { width: 32px; height: 32px; }
 @keyframes pop { from { transform: scale(.7); opacity: 0; } }
 
+
+/* --- Подписка: сколько осталось ------------------------------------------- */
+
+/* Дата окончания одна ничего не сообщает: «до 1 октября» читается как «ещё
+   долго» и первого сентября, и тридцатого. Полоса показывает остаток срока
+   так, что его видно, не считая в уме. */
+.term { padding: 4px 0 2px; }
+.term .num { font-size: 34px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
+.term .track {
+  height: 6px; border-radius: 999px; background: var(--surface-3);
+  overflow: hidden; margin-top: 12px;
+}
+.term .fill { height: 100%; border-radius: 999px; transition: width .4s cubic-bezier(.4,0,.2,1); }
+.term.ok   .num { color: var(--text); }
+.term.ok   .fill { background: var(--accent); }
+.term.warn .num { color: var(--warn); }
+.term.warn .fill { background: var(--warn); }
+.term.bad  .num { color: var(--err); }
+.term.bad  .fill { background: var(--err); }
+
+/* Карточка-предложение: фон с еле заметным акцентом, чтобы её было видно
+   среди обычных, но она не спорила с главной кнопкой экрана. */
+.offer {
+  background: linear-gradient(135deg, rgba(59, 147, 255, .16), rgba(34, 211, 238, .07));
+  border-radius: var(--r-lg); padding: var(--pad); margin-bottom: 12px;
+}
+.offer h3 { margin: 0 0 4px; font-size: 16px; font-weight: 650; letter-spacing: -.25px; }
+.offer p { margin: 0 0 13px; color: var(--muted); font-size: 13.5px; }
+
 /* --- Нижняя навигация ----------------------------------------------------- */
 
 nav {

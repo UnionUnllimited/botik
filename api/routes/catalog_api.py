@@ -1016,6 +1016,10 @@ async def renew_state(tg_id: int, session: AsyncSession = Depends(get_session)) 
         "subscription": {
             "status": str(subscription.status) if subscription else "",
             "until": _iso_dt(subscription.expires_at) if subscription else None,
+            # Начало срока — чтобы показать, сколько от него осталось, полосой,
+            # а не одной датой. «До 1 октября» человек читает как «ещё долго»
+            # хоть первого сентября, хоть тридцатого.
+            "since": _iso_dt(subscription.started_at) if subscription else None,
         },
         "plans": [_plan_payload(plan) for plan in plans],
     }

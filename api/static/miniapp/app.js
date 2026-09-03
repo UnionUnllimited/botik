@@ -331,12 +331,69 @@
 
   var views = {};
 
+  // Сколько дней осталось и какая часть срока прошла. Дата окончания одна
+  // ничего не сообщает: «до 1 октября» читается как «ещё долго» и первого
+  // сентября, и тридцатого.
+  function termLeft(sub) {
+    if (!sub || !sub.until) { return null; }
+    var until = new Date(sub.until);
+    if (isNaN(until)) { return null; }
+    var left = Math.ceil((until.getTime() - Date.now()) / 86400000);
+    var since = sub.since ? new Date(sub.since) : null;
+    var total = since && !isNaN(since)
+      ? Math.round((until.getTime() - since.getTime()) / 86400000)
+      : 0;
+    return {
+      days: left,
+      // Доля прошедшего. Без начала срока не выдумываем: полоса тогда
+      // отмеряет месяц — столько же, сколько самый короткий тариф.
+      spent: total > 0
+        ? Math.min(100, Math.max(0, Math.round((1 - left / total) * 100)))
+        : Math.min(100, Math.max(0, Math.round((1 - left / 30) * 100))),
+      tone: left <= 3 ? 'bad' : (left <= 10 ? 'warn' : 'ok')
+    };
+  }
+
+  function daysWord(n) {
+    var abs = Math.abs(n) % 100;
+    var tail = abs % 10;
+    if (abs > 10 && abs < 20) { return 'дней'; }
+    if (tail === 1) { return 'день'; }
+    if (tail >= 2 && tail <= 4) { return 'дня'; }
+    return 'дней';
+  }
+
+  // Предложение купить есть на профиле всегда — меняется только повод.
+  // Первый роутер продаётся тому, у кого его нет; второй — тому, у кого он
+  // уже работает: родителям, на дачу, в съёмную квартиру.
+  function buyOffer(hasRouter) {
+    return '<div class="offer">'
+      + '<h3>' + (hasRouter ? 'Ещё один роутер' : 'Роутер с доступом') + '</h3>'
+      + '<p>' + (hasRouter
+          ? 'Родителям, на дачу или в съёмную квартиру. Приедет настроенным '
+            + 'так же — включить в розетку и всё.'
+          : 'Включили в розетку — зарубежные сервисы открываются на всех '
+            + 'устройствах дома. Настраивать нечего.')
+      + '</p>'
+      + '<button class="btn" id="to-catalog">' + icon('box')
+      + (hasRouter ? 'Выбрать модель' : 'Смотреть роутеры') + '</button>'
+      + '</div>';
+  }
+
   views.home = function () {
     return api('/home').then(function (d) {
       var sub = d.subscription || {};
       var active = sub.status === 'active';
       var user = d.user || {};
       var recent = (d.orders || []).slice(0, 3);
+      var term = active ? termLeft(sub) : null;
+
+      function bindCatalog() {
+        var toCatalog = document.getElementById('to-catalog');
+        if (toCatalog) {
+          toCatalog.addEventListener('click', function () { haptic('medium'); openTab('catalog'); });
+        }
+      }
 
       // Ни подписки, ни роутера, ни заказов — человек пришёл впервые. Ему
       // нечего продлевать, и «подписка не активна» с кнопкой продления
@@ -358,45 +415,55 @@
             + '<button class="btn" id="to-catalog" style="margin-top:14px">'
             + icon('box') + 'Посмотреть роутеры</button>'
           );
-          document.getElementById('to-catalog').addEventListener('click', function () {
-            haptic('medium');
-            openTab('catalog');
-          });
+          bindCatalog();
         });
       }
 
       show(
         '<h1>' + esc(user.name || 'Профиль') + '</h1>'
 
-        // Подписка и роутер — одна группа: это два ответа на один вопрос
-        // «что у меня сейчас есть», и разносить их по карточкам незачем.
-        + '<div class="list leading">'
-        +   '<div class="item">'
-        +     '<span class="ic-box">' + icon('shield') + '</span>'
-        +     '<span class="grow"><span class="muted small" style="display:block">Подписка</span>'
-        +       '<span style="display:block;margin-top:2px">'
-        +         (active && sub.until ? 'до <b>' + date(sub.until) + '</b>' : 'не активна')
-        +       '</span></span>'
-        +     '<span class="pill ' + (active ? 'ok' : 'off') + '"><i class="dot"></i>'
-        +       (active ? 'активна' : 'нет') + '</span>'
-        +   '</div>'
-        +   (d.router_available
-              ? '<button class="item" id="to-router">'
-                + '<span class="ic-box">' + icon('router') + '</span>'
-                + '<span class="grow"><b>Мой роутер</b>'
-                + '<span class="muted small" style="display:block">Связь, срок и обновление</span>'
-                + '</span><span class="chev">' + icon('chev-r') + '</span></button>'
-              : '')
-        + '</div>'
+        // Подписка — первым и крупно: это то, за чем сюда заходят повторно,
+        // и то, что приносит деньги после первой покупки.
+        + (term
+            ? '<div class="card"><div class="term ' + term.tone + '">'
+              +   '<div class="row" style="align-items:flex-end">'
+              +     '<div><div class="muted small">Подписка активна</div>'
+              +       '<div class="num" style="margin-top:4px">' + term.days + '</div></div>'
+              +     '<div style="text-align:right">'
+              +       '<div class="muted small">' + daysWord(term.days) + ' осталось</div>'
+              +       '<div class="small" style="margin-top:4px">до ' + date(sub.until) + '</div>'
+              +     '</div>'
+              +   '</div>'
+              +   '<div class="track"><div class="fill" style="width:'
+              +     (100 - term.spent) + '%"></div></div>'
+              + '</div></div>'
+            : '<div class="card"><div class="row">'
+              +   '<span class="ic-box">' + icon('shield') + '</span>'
+              +   '<div class="grow"><div class="muted small">Подписка</div>'
+              +     '<div style="margin-top:2px">не активна</div></div>'
+              +   '<span class="pill off">нет</span>'
+              + '</div></div>')
 
-        + '<button class="btn" id="renew">' + icon('card') + 'Продлить подписку</button>'
+        + '<button class="btn' + (term && term.tone !== 'ok' ? '' : ' ghost') + '" id="renew">'
+        + icon('card') + (term && term.tone !== 'ok' ? 'Продлить сейчас' : 'Продлить подписку')
+        + '</button>'
+
+        + (d.router_available
+            ? '<div class="list leading" style="margin-top:12px">'
+              + '<button class="item" id="to-router">'
+              + '<span class="ic-box">' + icon('router') + '</span>'
+              + '<span class="grow"><b>Мой роутер</b>'
+              + '<span class="muted small" style="display:block">Связь, показания, обновление</span>'
+              + '</span><span class="chev">' + icon('chev-r') + '</span></button></div>'
+            : '')
+
+        + '<div style="margin-top:14px">' + buyOffer(d.router_available) + '</div>'
 
         + (recent.length
             ? '<div class="sec">Последние заказы</div>' + orderList(recent)
               + '<button class="btn quiet" id="all-orders" style="padding:6px">'
               + 'Все заказы' + icon('chev-r') + '</button>'
-            : '<div class="card flat muted small">Заказов пока нет. Загляните в каталог — '
-              + 'роутер приедет с уже настроенным доступом.</div>')
+            : '')
       );
 
       document.getElementById('renew').addEventListener('click', function () {
@@ -408,6 +475,7 @@
       }
       var all = document.getElementById('all-orders');
       if (all) { all.addEventListener('click', function () { haptic(); openTab('orders'); }); }
+      bindCatalog();
       bindOrderRows();
     });
   };
