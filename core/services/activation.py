@@ -47,18 +47,32 @@ class ActivationError(RuntimeError):
     """Понятная клиенту причина отказа: текст уходит прямо в бот."""
 
 
-def username_for(user: User, mac: str) -> str:
-    """Имя учётки в панели: кто клиент и с какого роутера.
+def panel_mac(mac: str) -> str:
+    """MAC в том виде, в каком он живёт в именах учёток панели.
 
-    Панель принимает только латиницу, цифры, дефис и подчёркивание, поэтому
-    разделители MAC убираем, а результат чистим на случай, если шаблон
-    поменяют на что-то с пробелами.
+    Строчными и через дефис. Двоеточия панель в именах не принимает, а дефис
+    оставляет MAC читаемым: `d4-0d-ab-2b-a4-ee` глаз узнаёт, `D40DAB2BA4EE`
+    приходится разбирать. Строчными — потому что такими названы все учётки,
+    заведённые до сих пор, а поиск в панели регистр не прощает.
+    """
+    return _USERNAME_ALLOWED.sub("", mac.replace(":", "-").lower())
+
+
+def username_for(user: User, mac: str) -> str:
+    """Имя клиентской учётки в панели: кто клиент и с какого роутера.
+
+    MAC в имени пишется так же, как его читает оператор, — строчными и через
+    дефис. Раньше он шёл слитно и заглавными (`tg…_D40DAB2BA4EE`), и найти
+    учётку в панели по MAC с наклейки было нельзя: поиск там сравнивает
+    посимвольно.
+
+    Приставку не убираем, хотя она и длинная: по ней клиентская учётка
+    отличается от заведённой руками, а по одному имени ручная активация
+    перезаписала бы срок оплаченной подписки.
 
     У клиента с сайта нет Telegram, и основной шаблон дал бы «tgNone_...» —
-    одно и то же имя всем таким клиентам на одном роутере. Для них берётся
-    отдельный шаблон с нашим id. Имя учётки — ключ поиска в панели, поэтому
-    выбор шаблона обязан зависеть только от того, есть ли у клиента tg_id:
-    иначе повторная активация не найдёт заведённую учётку и создаст вторую.
+    одно имя всем таким клиентам на одном роутере. Для них отдельный шаблон
+    с нашим id.
     """
     template = (
         settings.remnawave.username_template
@@ -67,43 +81,55 @@ def username_for(user: User, mac: str) -> str:
     )
     raw = template.format(
         tg_id=user.tg_id,
-        mac=mac.replace(":", "").upper(),
+        mac=panel_mac(mac),
         user_id=user.id,
     )
-    return _USERNAME_ALLOWED.sub("", raw)[:34]
+    # Обрезаем с начала, а не с конца: панель держит имя в 34 знака, а с
+    # дефисами MAC занимает семнадцать — у длинного Telegram-id обрезка
+    # с конца съела бы как раз его. Учётка ищется по MAC в конце имени
+    # (`account_of_router`), и без него повторная активация завела бы вторую.
+    return _USERNAME_ALLOWED.sub("", raw)[-34:]
 
 
 def manual_username_for(mac: str) -> str:
     """Имя учётки при ручной активации из админки — сам MAC роутера.
 
     Клиента у такого устройства может не быть вовсе, и брать имя не от кого.
-    Двоеточия панель не принимает, поэтому разделителем идёт дефис: так строка
-    хотя бы читается как MAC, когда её ищут в панели глазами.
-
-    Заглавными — тем же видом, каким MAC показан в админке и напечатан
-    на наклейке. Оператор ищет в панели копипастой, и строчное имя по такому
-    запросу не находилось: поиск в панели регистр не прощает.
+    Строчными и через дефис — тем же видом, каким названы все учётки,
+    заведённые до сих пор: разнобой в списке панели мешает искать глазами,
+    а поиск там регистр не прощает.
     """
-    cleaned = _USERNAME_ALLOWED.sub("", mac.replace(":", "-").upper())
-    return cleaned[:34]
+    return panel_mac(mac)[:34]
 
 
-async def _find_account(panel: remnawave.RemnawaveClient, username: str):
-    """Учётка по имени, без учёта регистра.
+async def _find_account(panel: remnawave.RemnawaveClient, username: str, *, mac: str = ""):
+    """Учётка этого роутера, как бы её ни назвали в своё время.
 
-    Точного поиска мало: имена стали заглавными, а всё, что заведено раньше,
-    осталось строчным. Не найдя, панель завела бы **вторую** учётку на тот же
-    роутер — а он к этому моменту уже ходит по ссылке первой, и подписку
-    продлевали бы не ту.
+    Точного поиска по имени мало. Написание менялось трижды: MAC был слитным
+    и заглавным, потом стал строчным через дефис; регистр у заведённых раньше
+    остался прежним. Не найдя, панель завела бы **вторую** учётку на тот же
+    роутер — а он к этому моменту уже ходит по ссылке первой, и продлевали бы
+    не ту.
+
+    Поэтому если имя не совпало дословно, ищем по MAC в конце имени. Учётку,
+    названную одним лишь MAC, при этом пропускаем: так зовётся заведённая
+    руками, и вернув её клиентской активации, мы переписали бы срок, который
+    оператор выдал служебному роутеру, — и наоборот.
     """
     account = await panel.find_user(username)
     if account is not None:
         return account
+
     key = username.strip().lower()
+    manual = manual_username_for(mac).lower() if mac else ""
+    fallback = None
     for existing in await panel.users():
-        if existing.username.strip().lower() == key:
+        name = existing.username.strip().lower()
+        if name == key:
             return existing
-    return None
+        if mac and fallback is None and name != manual and account_of_router(name, mac):
+            fallback = existing
+    return fallback
 
 
 def panel_expiry_of(account: remnawave.RemnaUser | None) -> dt.datetime | None:
@@ -139,7 +165,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
 
     try:
         panel = remnawave.client()
-        account = await _find_account(panel, username)
+        account = await _find_account(panel, username, mac=device.mac)
         if account is None:
             account = await panel.create_user(
                 username=username,
@@ -695,7 +721,7 @@ async def activate(
 
     # Повторная активация того же роутера не должна плодить учётки.
     try:
-        account = await _find_account(panel, username)
+        account = await _find_account(panel, username, mac=mac)
         expire_at = subscriptions.period_end_for(subscription.plan, start=now)
         if account is None:
             account = await panel.create_user(

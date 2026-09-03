@@ -14,7 +14,7 @@ import pytest
 
 from core.enums import OFFERED_DELIVERY_METHODS, DeliveryMethod, DeviceStatus
 from core.models import Device, User
-from core.services.activation import APPLY_SCRIPT, username_for
+from core.services.activation import APPLY_SCRIPT, account_of_router, username_for
 from core.services.delivery import tracking_url
 
 
@@ -23,11 +23,17 @@ def make_user(tg_id: int = 123456789) -> User:
 
 
 class TestUsername:
-    def test_contains_telegram_and_mac(self):
-        name = username_for(make_user(), "A0:B1:C2:D3:E4:F5")
-        assert name == "tg123456789_A0B1C2D3E4F5"
+    """Имя клиентской учётки: кто клиент и с какого роутера.
 
-    def test_separators_are_stripped(self):
+    MAC в нём пишется так же, как его читает оператор, — строчными и через
+    дефис. Раньше он шёл слитно и заглавными, и учётка не находилась в панели
+    по MAC с наклейки: поиск там сравнивает посимвольно.
+    """
+
+    def test_mac_is_written_the_way_the_operator_reads_it(self):
+        assert username_for(make_user(), "A0:B1:C2:D3:E4:F5") == "tg123456789_a0-b1-c2-d3-e4-f5"
+
+    def test_name_fits_panel_rules(self):
         """Панель принимает только латиницу, цифры, дефис и подчёркивание."""
         name = username_for(make_user(), "A0:B1:C2:D3:E4:F5")
         assert ":" not in name
@@ -45,7 +51,7 @@ class TestUsername:
     def test_site_client_gets_name_without_telegram(self):
         """У клиента с сайта tg_id пустой: «tgNone_...» был бы одинаков у всех."""
         name = username_for(User(id=42, email="client@example.com"), "A0:B1:C2:D3:E4:F5")
-        assert name == "id42_A0B1C2D3E4F5"
+        assert name == "id42_a0-b1-c2-d3-e4-f5"
         assert "None" not in name
 
     def test_site_clients_do_not_collide(self):
@@ -54,21 +60,23 @@ class TestUsername:
         second = username_for(User(id=43, email="b@example.com"), mac)
         assert first != second
 
-    def test_mac_is_uppercase(self):
-        """MAC в имени — заглавными, тем же видом, что в админке и на наклейке.
+    def test_accounts_named_the_old_way_are_still_found(self):
+        """Учётки, заведённые прежним написанием, переименовать нельзя —
+        панель не умеет. Поиск идёт по MAC в конце имени, и они находятся."""
+        for old_name in ("tg8152081864_D40DAB2BA4EE", "d4-0d-ab-2b-a4-ee", "id42_D40DAB2BA4EE"):
+            assert account_of_router(old_name, "D4:0D:AB:2B:A4:EE")
 
-        Оператор ищет учётку в панели копипастой из карточки роутера, а поиск
-        там регистр не прощает: строчное имя по такому запросу не находилось.
+    def test_long_telegram_id_does_not_eat_the_mac(self):
+        """Предел панели — 34 знака, а MAC с дефисами занимает семнадцать.
 
-        Имена уже заведённых учёток при этом остались строчными, и трогать
-        их нельзя — панель ищет по имени. Прикрыто это не здесь, а поиском
-        без учёта регистра, см. `TestAccountLookupIgnoresCase`.
+        Обрезка с конца съела бы как раз его, и повторная активация,
+        не найдя учётку, завела бы вторую. Поэтому режется начало.
         """
-        assert username_for(make_user(), "A0:B1:C2:D3:E4:F5") == "tg123456789_A0B1C2D3E4F5"
-
-    def test_fits_panel_limit(self):
-        name = username_for(User(id=1, tg_id=9999999999999999, first_name="x"), "A0:B1:C2:D3:E4:F5")
+        user = User(id=1, tg_id=9999999999999999, first_name="x")
+        name = username_for(user, "A0:B1:C2:D3:E4:F5")
         assert len(name) <= 34
+        assert name.endswith("a0-b1-c2-d3-e4-f5")
+        assert account_of_router(name, "A0:B1:C2:D3:E4:F5")
 
     def test_custom_template(self, monkeypatch):
         from core.config import settings
@@ -242,9 +250,11 @@ class TestManualActivation:
     """Ручная активация из админки: имя учётки — сам MAC, клиента может не быть."""
 
     def test_username_is_the_mac(self):
+        """Строчными и через дефис — тем же видом, каким названы все учётки,
+        заведённые до сих пор: разнобой в списке панели мешает искать."""
         from core.services.activation import manual_username_for
 
-        assert manual_username_for("D4:0D:AB:28:3B:80") == "D4-0D-AB-28-3B-80"
+        assert manual_username_for("D4:0D:AB:28:3B:80") == "d4-0d-ab-28-3b-80"
 
     def test_username_fits_panel_rules(self):
         """Панель принимает только латиницу, цифры, дефис и подчёркивание."""
@@ -680,3 +690,78 @@ class TestSubscriptionCover:
 
         body = inspect.getsource(activation.deliver_subscription)
         assert "public_subscription_url(url)" in body
+
+
+class TestLookupSurvivesRenaming:
+    """Учётка находится, каким бы написанием её ни завели.
+
+    Имя MAC в учётках менялось: слитно и заглавными, потом строчными через
+    дефис. Не найдя прежнюю, активация завела бы вторую учётку тому же
+    роутеру — а он уже ходит по ссылке первой, и продлевали бы не ту.
+
+    При этом ручная учётка клиентской активации не отдаётся: она названа
+    одним лишь MAC, и переписав ей срок, мы отняли бы доступ у служебного
+    роутера — или, наоборот, укоротили бы клиенту оплаченный год.
+    """
+
+    MAC = "D4:0D:AB:28:3B:80"
+
+    class _Account:
+        def __init__(self, username: str) -> None:
+            self.username = username
+            self.uid = username
+            self.expire_at = None
+
+    class _Panel:
+        def __init__(self, accounts) -> None:
+            self.accounts = accounts
+
+        async def find_user(self, username):
+            for account in self.accounts:
+                if account.username == username:
+                    return account
+            return None
+
+        async def users(self):
+            return self.accounts
+
+    @pytest.mark.asyncio
+    async def test_old_bare_mac_name_is_reused(self):
+        from core.services.activation import _find_account
+
+        old = self._Account("tg614685408_d40dab283b80")
+        found = await _find_account(
+            self._Panel([old]), "tg614685408_d4-0d-ab-28-3b-80", mac=self.MAC
+        )
+        assert found is old
+
+    @pytest.mark.asyncio
+    async def test_manual_account_is_not_given_to_the_client(self):
+        from core.services.activation import _find_account
+
+        manual = self._Account("d4-0d-ab-28-3b-80")
+        found = await _find_account(
+            self._Panel([manual]), "tg614685408_d4-0d-ab-28-3b-80", mac=self.MAC
+        )
+        assert found is None, "клиентская активация переписала бы срок ручной учётки"
+
+    @pytest.mark.asyncio
+    async def test_other_router_is_not_taken(self):
+        from core.services.activation import _find_account
+
+        alien = self._Account("tg1_aa-bb-cc-dd-ee-ff")
+        found = await _find_account(
+            self._Panel([alien]), "tg614685408_d4-0d-ab-28-3b-80", mac=self.MAC
+        )
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_exact_name_still_wins(self):
+        from core.services.activation import _find_account
+
+        exact = self._Account("tg614685408_d4-0d-ab-28-3b-80")
+        older = self._Account("tg614685408_d40dab283b80")
+        found = await _find_account(
+            self._Panel([older, exact]), exact.username, mac=self.MAC
+        )
+        assert found is exact

@@ -202,9 +202,19 @@ class TestBulkAndFilterWiring:
 
     def test_reboot_lets_ssh_close_first(self):
         """Без задержки роутер уходит в перезагрузку прямо в разговоре,
-        и сработавшая команда выглядит как оборванная."""
-        api = self._source("api/routes/fleet_api.py")
-        assert "sleep" in api[api.index("REBOOT_COMMAND") : api.index("REBOOT_COMMAND") + 200]
+        и сработавшая команда выглядит как оборванная.
+
+        Проверяем саму команду, а не исходник: она лежит в общем списке
+        (её же нажимает клиент в приложении), и место может переехать
+        снова, а требование к ней — нет.
+        """
+        from api.routes.fleet_api import REBOOT_COMMAND
+        from core.services.router_shell import QUICK_COMMANDS
+
+        assert "sleep" in QUICK_COMMANDS["reboot"][1]
+        assert QUICK_COMMANDS["reboot"][1] == REBOOT_COMMAND, (
+            "парк и приложение должны перезагружать роутер одной командой"
+        )
 
     def test_quick_script_runs_on_many(self):
         """Готовый скрипт — из закрытого набора, тот же, что в карточке.
