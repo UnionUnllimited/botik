@@ -431,6 +431,61 @@ nav button svg { width: 22px; height: 22px; }
 nav button.on { color: var(--accent); }
 nav button.on .slot { background: var(--accent-dim); }
 
+
+/* --- Заставка -------------------------------------------------------------
+
+   Между открытием приложения и первым ответом сервера проходит секунда-полторы.
+   Скелет из серых полос это время объясняет плохо: он выглядит поломкой у тех,
+   кто открывает приложение впервые. Знак и название объясняют лучше — и заодно
+   это единственное место, где бренд виден целиком.
+
+   Держим не меньше 600 мс: заставка, мелькнувшая на 80 мс, читается как сбой
+   отрисовки, а не как заставка.
+   -------------------------------------------------------------------------- */
+
+#splash {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; background: var(--bg);
+  transition: opacity .32s ease, visibility .32s;
+}
+#splash::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(70% 50% at 50% 42%, rgba(59, 147, 255, .16), transparent 70%);
+}
+#splash.gone { opacity: 0; visibility: hidden; }
+
+#splash .mark {
+  position: relative;
+  animation: mark-in .5s cubic-bezier(.22, 1, .3, 1) both;
+}
+#splash .mark img { display: block; }
+@keyframes mark-in { from { opacity: 0; transform: scale(.86); } }
+
+#splash .word {
+  position: relative;
+  font-size: 13px; font-weight: 600; letter-spacing: .32em;
+  color: var(--muted); text-indent: .32em;
+  animation: mark-in .5s .08s cubic-bezier(.22, 1, .3, 1) both;
+}
+
+/* Полоса без процентов: сколько осталось, мы не знаем, а рисовать выдуманный
+   прогресс — врать в первую же секунду знакомства. */
+#splash .bar {
+  position: relative; width: 96px; height: 2px; border-radius: 999px;
+  background: rgba(255, 255, 255, .08); overflow: hidden; margin-top: 6px;
+}
+#splash .bar i {
+  position: absolute; inset: 0; display: block; border-radius: 999px;
+  background: var(--accent);
+  animation: bar-slide 1.1s ease-in-out infinite;
+}
+@keyframes bar-slide {
+  0%   { transform: translateX(-100%) scaleX(.5); }
+  50%  { transform: translateX(0) scaleX(.7); }
+  100% { transform: translateX(100%) scaleX(.5); }
+}
+
 /* --- Служебное ------------------------------------------------------------ */
 
 .empty { padding: 44px 16px; text-align: center; color: var(--muted); }
@@ -455,5 +510,7 @@ nav button.on .slot { background: var(--accent-dim); }
 
 @media (prefers-reduced-motion: reduce) {
   .skel::after, .pill.ok .dot, .done-mark, .wrap > * { animation: none; }
+  #splash .mark, #splash .word, #splash .bar i { animation: none; }
+  #splash { transition: none; }
   .btn, .steps-bar .fill, nav button .slot { transition: none; }
 }

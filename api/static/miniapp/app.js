@@ -20,6 +20,8 @@
       + '<div class="grow"><b>Нужен Telegram</b>'
       + '<div class="muted small">Приложение открывают из бота: подпись входа '
       + 'выдаёт мессенджер, и вне его подтвердить, кто вы, нечем.</div></div></div></div>';
+    var splash = document.getElementById('splash');
+    if (splash) { splash.classList.add('gone'); }
     return;
   }
 
@@ -202,6 +204,24 @@
     });
   }
 
+  // Заставку убираем, когда первый экран отрисован, но не раньше, чем через
+  // 600 мс от запуска: мелькнувшая на мгновение, она читается как сбой.
+  //
+  // Убираем и на ошибке тоже: экран с причиной клиенту нужнее заставки,
+  // а висящая поверх него навсегда — худшее из возможного.
+  var startedAt = Date.now();
+  var splashGone = false;
+
+  function hideSplash() {
+    if (splashGone) { return; }
+    splashGone = true;
+    var wait = Math.max(0, 600 - (Date.now() - startedAt));
+    setTimeout(function () {
+      var splash = document.getElementById('splash');
+      if (splash) { splash.classList.add('gone'); }
+    }, wait);
+  }
+
   /* --- Экраны и переходы -------------------------------------------------- */
 
   var TABS = ['home', 'router', 'orders', 'catalog'];
@@ -272,7 +292,8 @@
     if (!draw) { return failed(new Error('Неизвестный экран: ' + view.name)); }
     Promise.resolve()
       .then(function () { return draw(view); })
-      .catch(failed);
+      .catch(failed)
+      .then(hideSplash, hideSplash);
   }
 
   /* --- Общие куски разметки ---------------------------------------------- */

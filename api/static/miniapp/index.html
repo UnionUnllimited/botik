@@ -7,7 +7,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preload" as="font" type="font/woff2" crossorigin
       href="/static/fonts/rubik-cyrillic.woff2">
-<link rel="stylesheet" href="/static/miniapp/app.css?v=5">
+<link rel="stylesheet" href="/static/miniapp/app.css?v=6">
 </head>
 <body>
 
@@ -135,6 +135,16 @@
   </symbol>
 </svg>
 
+<!-- Заставка. Стоит в разметке, а не рисуется скриптом: между открытием
+     приложения и первым ответом сервера проходит секунда-полторы, и всё это
+     время клиент смотрел на пустоту. Скрипт её только убирает — если он
+     не загрузится вовсе, заставка уйдёт по таймеру, а не останется навсегда. -->
+<div id="splash">
+  <div class="mark"><img src="/static/logo.svg" alt="" width="72" height="72"></div>
+  <div class="word">TITAN ROUTERS</div>
+  <div class="bar"><i></i></div>
+</div>
+
 <div class="wrap" id="screen"></div>
 
 <!-- Значок в плашке, а не сам по себе: плашка подсвечивается у выбранной
@@ -146,6 +156,6 @@
   <button data-tab="catalog"><span class="slot"><svg><use href="#i-box"/></svg></span>Каталог</button>
 </nav>
 
-<script src="/static/miniapp/app.js?v=5"></script>
+<script src="/static/miniapp/app.js?v=6"></script>
 </body>
 </html>
