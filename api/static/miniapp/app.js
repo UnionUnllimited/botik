@@ -179,6 +179,20 @@
     }
   }
 
+  // Локальный адрес роутера. Открываем во внешнем браузере: встроенный
+  // браузер Telegram в домашнюю сеть не ходит, и клиент видел бы пустую
+  // страницу, не понимая, в чём дело. Адрес заодно кладём в буфер — если
+  // и внешний браузер откажется, его можно вставить руками.
+  function openLocal(url) {
+    if (!url) { return; }
+    copyText(url);
+    try {
+      tg.openLink(url, { try_instant_view: false });
+    } catch (e) {
+      tg.showAlert('Откройте в браузере: ' + url);
+    }
+  }
+
   /* --- Разговор с сервером ----------------------------------------------- */
 
   function api(path, options) {
@@ -636,14 +650,35 @@
         + '<div class="stack">'
         +   '<button class="btn ghost" id="reboot">' + icon('power') + 'Перезагрузить роутер</button>'
         +   '<button class="btn quiet" id="upd">' + icon('download') + 'Обновить прошивку</button>'
-        +   (d.instruction_url
-                ? '<button class="btn quiet" id="help">' + icon('info') + 'Инструкция</button>' : '')
         +   (d.support
                 ? '<button class="btn quiet" id="support">' + icon('chat')
                   + 'Написать в поддержку</button>' : '')
         + '</div>'
         + '<div class="muted tiny center" style="margin-top:12px">После перезагрузки роутер '
         + 'молчит около минуты. Обновление идёт в фоне и занимает несколько минут.</div>'
+
+        // Панель и инструкция живут на самом роутере, по локальному адресу.
+        // Снаружи его не существует вовсе, поэтому кнопки отделены от прочих
+        // и подписаны: иначе клиент нажимает их из метро и решает, что сломано.
+        + '<div class="sec" style="margin-top:24px">Из домашней сети</div>'
+        + '<div class="list">'
+        +   (d.panel_url
+                ? '<button class="item" id="panel"><span class="grow"><b>Панель роутера</b>'
+                  + '<span class="muted small" style="display:block">Wi-Fi, пароль, устройства</span>'
+                  + '</span><span class="chev">' + icon('chev-r') + '</span></button>'
+                : '')
+        +   (d.instruction_url
+                ? '<button class="item" id="help"><span class="grow"><b>Инструкция</b>'
+                  + '<span class="muted small" style="display:block">Что делать, если что-то '
+                  + 'не работает</span></span><span class="chev">' + icon('chev-r')
+                  + '</span></button>'
+                : '')
+        + '</div>'
+        + '<div class="muted tiny" style="margin:-4px 2px 0">Открываются, только когда телефон '
+        + 'подключён к Wi-Fi этого роутера: адрес '
+        + '<span class="mono">' + esc(String(d.panel_url || '').replace(/^https?:\/\//, '')
+            .replace(/\/$/, '')) + '</span> существует лишь в вашей домашней сети. '
+        + 'Из мобильного интернета они не откроются.</div>'
       );
 
       screen.querySelectorAll('[data-dev]').forEach(function (btn) {
@@ -702,7 +737,12 @@
       if (help) {
         // Обработчик, а не onclick в разметке: адрес приезжает из базы, и одна
         // кавычка в нём разломала бы кнопку.
-        help.addEventListener('click', function () { tg.openLink(d.instruction_url); });
+        help.addEventListener('click', function () { haptic(); openLocal(d.instruction_url); });
+      }
+
+      var panel = screen.querySelector('#panel');
+      if (panel) {
+        panel.addEventListener('click', function () { haptic(); openLocal(d.panel_url); });
       }
 
       document.getElementById('upd').addEventListener('click', function () {

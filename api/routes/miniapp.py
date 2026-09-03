@@ -18,7 +18,7 @@ from pathlib import Path
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_session, get_transaction
@@ -88,6 +88,21 @@ async def app_page() -> Response:
     if not settings.miniapp.is_configured:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
     return FileResponse(PAGE_FILE, media_type="text/html; charset=utf-8")
+
+
+@router.get("/logo")
+async def logo(session: AsyncSession = Depends(get_session)) -> Response:
+    """Знак для заставки — тот же, что показывает витрина.
+
+    Отдельным адресом, а не ссылкой на файл в разметке: логотип настраивается
+    в админке, и приложение с зашитым `/static/logo.svg` показывало бы старый
+    знак, пока сайт показывает новый. Заставка рисуется до первого запроса
+    к данным, поэтому спросить адрес заранее ей негде — отсюда перенаправление.
+    """
+    from api.routes import landing as landing_route
+
+    target = await landing_service.logo_url(session, landing_route.logo_fallback())
+    return RedirectResponse(target, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.get("/api/home")
@@ -190,6 +205,10 @@ async def my_router(
     # экране — за помощью идут, когда роутер не работает. Отдельным запросом
     # ради одной строки экран бы ждал дважды.
     data["support"] = await settings_service.get_str(session, "support.contact")
+    # Панель роутера и инструкция открываются только из домашней сети клиента:
+    # адрес локальный, снаружи его не существует. Отдаём его вместе с экраном,
+    # а предупреждение о сети пишет само приложение — там оно рядом с кнопкой.
+    data["panel_url"] = landing_service.ROUTER_PANEL_URL
     return data
 
 
