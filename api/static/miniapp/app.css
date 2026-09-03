@@ -236,6 +236,15 @@ button.item:active { background: rgba(255, 255, 255, .05); }
 .btn[disabled] { opacity: .4; pointer-events: none; }
 .btn svg { width: 18px; height: 18px; }
 
+/* Переход внутри строки текста. Кнопкой, а не ссылкой: никуда не ведёт,
+   а только прокручивает страницу, и адреса за ней нет. Подчёркивание
+   оставлено — без него в сплошном мелком тексте её не отличить от слов. */
+.link {
+  border: 0; padding: 0; background: none; cursor: pointer;
+  font: inherit; color: var(--accent); text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* --- Поля ----------------------------------------------------------------- */
 
 label.field { display: block; margin-bottom: 14px; }

@@ -50,6 +50,20 @@
     return '<svg class="' + (cls || 'ic') + '"><use href="#i-' + name + '"/></svg>';
   }
 
+  // Названия тарифов, скоростей доставки и перевозчиков заводит оператор,
+  // и в боте они написаны с эмодзи впереди: в переписке это уместно. Здесь
+  // набор значков свой и одинаковый на всё приложение, и чужая цветная
+  // картинка в начале строки выбивается из него. Срезаем её тут, а не просим
+  // оператора держать два написания одного названия: разъехавшись, они
+  // назовут одну и ту же доставку по-разному в боте и в приложении.
+  //
+  // Если после срезки не осталось ничего — название состоит из одних значков,
+  // и лучше показать его как есть, чем пустоту.
+  function plainTitle(value) {
+    var text = String(value == null ? '' : value);
+    return text.replace(/^[^\p{L}\p{N}]+/u, '').trim() || text;
+  }
+
   function date(iso) {
     if (!iso) { return '—'; }
     var d = new Date(iso);
@@ -125,10 +139,8 @@
     return perMonth(Number(p.price) / (days / 30), currency);
   }
 
-  // Названия тарифов заводит оператор, и в них попадают эмодзи. В наборе,
-  // где всё остальное — обводка одной толщины, они выглядят случайными.
   function planTitle(p) {
-    return String(p.title || '').replace(/^[^\p{L}\p{N}]+/u, '').trim() || String(p.title || '');
+    return plainTitle(p.title);
   }
 
   // Самый выгодный срок — тот, у кого день дешевле всех, и только если он
@@ -862,13 +874,40 @@
     // Заголовок, выгоды, шаги и вопросы приходят с витрины — те же, что на
     // сайте. Свой текст здесь завёл бы второй набор обещаний: поправив цену
     // или условие на сайте, оператор оставил бы в приложении прежние.
-    return api('/pitch').then(function (d) {
+    // Сроки отправки спрашиваем заодно: до сих пор их можно было увидеть
+    // только начав оформление, а «когда приедет» — вопрос, который человек
+    // задаёт себе до кнопки «Купить», а не после неё. Тот же справочник, что
+    // и в оформлении, и тот же кэш — второй раз он уже не запросится.
+    return Promise.all([api('/pitch'), once('delivery', '/delivery')]).then(function (res) {
+      var d = res[0];
+
+      // Два роутера рядом — это развилка, на которой человек чаще всего
+      // уходит думать: характеристики он сравнивать не станет, а ошибиться
+      // на несколько тысяч не хочет. Поэтому «кому какой» отвечаем словами
+      // оператора — подзаголовком товара, тем же, что на витрине, — и только
+      // потом показываем карточки с цифрами. Пишется он в админке; пустой
+      // подзаголовок просто убирает этот блок, выдумывать за оператора,
+      // кому подойдёт его товар, мы не станем.
+      var named = (d.products || []).filter(function (p) { return p.subtitle; });
+      var chooser = named.length > 1
+        ? '<div class="sec">Какой выбрать</div><div class="list leading">'
+          + named.map(function (p) {
+              return '<button class="item" data-jump="p' + esc(p.id) + '">'
+                + '<span class="ic-box">' + icon('router') + '</span>'
+                + '<span class="grow"><b>' + esc(p.title) + '</b>'
+                + '<span class="muted small" style="display:block;margin-top:2px">'
+                + esc(p.subtitle) + '</span></span>'
+                + '<span class="chev">' + icon('chev-r') + '</span></button>';
+            }).join('')
+          + '</div>'
+        : '';
+
       var items = (d.products || []).map(function (p) {
         var specs = (p.specs || []).map(function (pair) {
           return '<div><dt>' + esc(pair[0]) + '</dt><dd>' + esc(pair[1]) + '</dd></div>';
         }).join('');
 
-        return '<div class="card prod">'
+        return '<div class="card prod" id="p' + esc(p.id) + '">'
           + (p.photo_url
               ? '<div class="shot"><img src="' + esc(p.photo_url) + '" alt=""></div>' : '')
           + '<div class="row"><b class="grow" style="font-size:17px">' + esc(p.title) + '</b>'
@@ -877,7 +916,10 @@
                 : (p.preorder ? '<span class="pill warn">под заказ</span>'
                               : '<span class="pill off">нет в наличии</span>'))
           + '</div>'
-          + (p.subtitle
+          // Когда блок «Какой выбрать» собрался, подзаголовок уже сказан
+          // строкой выше — повторять его в карточке значит два раза подряд
+          // написать одно и то же на одном экране.
+          + (p.subtitle && !chooser
               ? '<div class="muted small" style="margin-top:6px">' + esc(p.subtitle) + '</div>'
               : '')
           + (p.description
@@ -900,7 +942,8 @@
           +     icon('cart') + 'Купить</button>'
           + '</div>'
           + '<div class="muted tiny" style="margin-top:9px">Подписка на выбранный срок '
-          + 'входит в стоимость. Роутер приезжает настроенным.</div>'
+          + 'входит в стоимость. Роутер приезжает настроенным — '
+          + '<button class="link" data-jump="ship">сроки отправки</button>.</div>'
           + '</div>';
       }).join('');
 
@@ -941,12 +984,20 @@
           + esc(v.text) + '</span></span></div>';
       }).join('');
 
+      var ship = (res[1].options || []).map(function (s) {
+        return '<div class="feat"><span class="ic-box">' + icon('truck') + '</span>'
+          + '<div class="grow"><b>' + esc(plainTitle(s.title)) + '</b>'
+          + '<div class="muted small" style="margin-top:3px">' + esc(s.description) + '</div>'
+          + '</div></div>';
+      }).join('');
+
       show(
         (d.hero_title
           ? '<div class="hero"><h1>' + esc(d.hero_title) + '</h1>'
             + (d.hero_subtitle ? '<p>' + esc(d.hero_subtitle) + '</p>' : '') + '</div>'
           : '<h1>Каталог</h1>')
         + (value ? '<div class="list leading">' + value + '</div>' : '')
+        + chooser
         + (items || empty('box', 'Пока пусто', 'Товары появятся здесь.'))
         // Стоимость подписки идёт сразу за ценой роутера: «а сколько платить
         // дальше» — первый вопрос, который возникает у человека после цены,
@@ -956,6 +1007,11 @@
             ? '<div class="sec">Сколько стоит потом</div><div class="card">' + plans + '</div>'
               + '<div class="muted tiny center">Роутер остаётся вам навсегда. '
               + 'Продлевается только подписка.</div>'
+            : '')
+        + (ship
+            ? '<div class="sec" id="ship">Когда приедет</div><div class="card">' + ship + '</div>'
+              + '<div class="muted tiny center">Стоимость доставки зависит от города '
+              + 'и габаритов: её посчитает оператор после оформления.</div>'
             : '')
         + (steps ? '<div class="sec">Как это работает</div><div class="card">' + steps + '</div>' : '')
         + (features ? '<div class="sec">Почему это удобно</div><div class="card">' + features + '</div>' : '')
@@ -970,6 +1026,19 @@
         btn.addEventListener('click', function () {
           haptic('medium');
           go({ name: 'buy', productId: Number(btn.dataset.buy) });
+        });
+      });
+
+      // Переходы внутри страницы, а не на отдельный экран: человек читает
+      // каталог и не должен терять место, куда вернуться. Промах по цели
+      // молча ничего не делает — товар мог кончиться между отрисовкой
+      // и нажатием.
+      screen.querySelectorAll('[data-jump]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var target = document.getElementById(btn.dataset.jump);
+          if (!target) { return; }
+          haptic();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
       });
     });
@@ -1119,7 +1188,8 @@
           + (speeds.length
               ? '<div class="card"><h2>Скорость доставки</h2>'
                 + speeds.map(function (s) {
-                    return choice('speed', s.speed, form.speed === s.speed, s.title, s.description);
+                    return choice('speed', s.speed, form.speed === s.speed,
+                                  plainTitle(s.title), s.description);
                   }).join('') + '</div>'
               : '')
           + '<div class="card">'
@@ -1130,7 +1200,8 @@
           +     (carriers.length
                     ? '<div class="muted small" style="margin-bottom:8px">Перевозчик</div>'
                       + carriers.map(function (c) {
-                          return choice('carrier', c.method, form.method === c.method, c.title, '');
+                          return choice('carrier', c.method, form.method === c.method,
+                                        plainTitle(c.title), '');
                         }).join('')
                     : '')
           +   '</div>'
