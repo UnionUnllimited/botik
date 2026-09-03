@@ -50,12 +50,108 @@ class NodeError(RuntimeError):
     """Понятная причина отказа: текст уходит клиенту в приложение."""
 
 
+_PREFIXES = ("router_", "router ", "titan_", "titan ")
+"""Служебные приставки в названиях узлов.
+
+Названия приходят из подписки и написаны для нас: `Router_Германия` говорит,
+что узел роутерный, а не клиентский. Клиенту это не сообщает ничего — он
+и так в приложении своего роутера, — а список из семи строк, начинающихся
+одинаково, читается тяжелее, чем список из семи стран.
+"""
+
+_AUTO = ("titanswitch", "switch", "balancer", "балансер", "авто")
+"""Как в подписке зовётся балансер.
+
+Он выбирает узел сам и остаётся единственным путём вернуться к автовыбору:
+клиент, разок ткнувший страну, без него остался бы на ней навсегда. Поэтому
+не прячем, а называем словом, которое ему что-то говорит.
+"""
+
+AUTO_TITLE = "Авто"
+
+_COUNTRIES = {
+    "герман": "DE", "german": "DE",
+    "финлянд": "FI", "finland": "FI",
+    "польш": "PL", "poland": "PL",
+    "нидерланд": "NL", "голланд": "NL", "netherland": "NL",
+    "эстон": "EE", "estonia": "EE",
+    "латв": "LV", "latvia": "LV",
+    "литв": "LT", "lithuania": "LT",
+    "швец": "SE", "sweden": "SE",
+    "норвег": "NO", "norway": "NO",
+    "дан": "DK", "denmark": "DK",
+    "франц": "FR", "france": "FR",
+    "испан": "ES", "spain": "ES",
+    "итал": "IT", "italy": "IT",
+    "швейцар": "CH", "switzerland": "CH",
+    "австр": "AT", "austria": "AT",
+    "чех": "CZ", "czech": "CZ",
+    "румын": "RO", "romania": "RO",
+    "болгар": "BG", "bulgaria": "BG",
+    "великобритан": "GB", "англ": "GB", "britain": "GB", "london": "GB",
+    "ирланд": "IE", "ireland": "IE",
+    "сша": "US", "америк": "US", "usa": "US", "united states": "US",
+    "канад": "CA", "canada": "CA",
+    "турц": "TR", "turkey": "TR",
+    "казахстан": "KZ", "kazakhstan": "KZ",
+    "армен": "AM", "armenia": "AM",
+    "груз": "GE", "georgia": "GE",
+    "япон": "JP", "japan": "JP",
+    "сингапур": "SG", "singapore": "SG",
+    "гонконг": "HK", "hong kong": "HK",
+    "оаэ": "AE", "эмират": "AE", "dubai": "AE",
+    "росс": "RU", "russia": "RU",
+}
+"""По какому куску названия узнаётся страна.
+
+Совпадение по началу слова, а не целиком: в подписке пишут и «Германия»,
+и «Германия 2», и «Germany DE-1». Список неполный намеренно — незнакомая
+страна остаётся без флага и читается ровно так же, как раньше, а гадать
+по двум буквам значит однажды показать клиенту чужой флаг.
+"""
+
+
+def flag(name: str) -> str:
+    """Флаг страны по названию узла. Не узнали — пустая строка."""
+    lowered = name.lower()
+    for needle, code in _COUNTRIES.items():
+        if needle in lowered:
+            return "".join(chr(0x1F1E6 + ord(letter) - ord("A")) for letter in code)
+    return ""
+
+
+def is_auto(raw: str) -> bool:
+    """Балансер это или обычный узел."""
+    lowered = (raw or "").lower()
+    return any(needle in lowered for needle in _AUTO)
+
+
+def display_name(raw: str, node_id: str) -> str:
+    """Название узла так, как его стоит показать клиенту."""
+    name = (raw or "").strip()
+    lowered = name.lower()
+
+    if is_auto(name):
+        return AUTO_TITLE
+
+    for prefix in _PREFIXES:
+        if lowered.startswith(prefix):
+            name = name[len(prefix):].strip()
+            break
+
+    # Приставку сняли, а под ней пусто — узел назван одной приставкой.
+    # Лучше идентификатор, чем пустая строка в списке.
+    return name.lstrip("_-— ").strip() or node_id
+
+
 @dataclass(frozen=True, slots=True)
 class Node:
     """Узел, как его видит клиент."""
 
     id: str
     name: str
+    flag: str = ""
+    auto: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +191,14 @@ def parse(payload: str) -> State:
         node_id = str(item.get("id") or "")
         if not node_id:
             continue
-        nodes.append(Node(id=node_id, name=str(item.get("name") or "").strip() or node_id))
+        raw = str(item.get("name") or "")
+        title = display_name(raw, node_id)
+        nodes.append(Node(id=node_id, name=title, flag=flag(title), auto=is_auto(raw)))
+
+    # Балансер наверх: это возврат к автовыбору, и искать его в середине
+    # списка стран человеку не приходится. Порядок остальных — как в
+    # конфигурации: его задаёт подписка, и переставлять его нам незачем.
+    nodes.sort(key=lambda node: not node.auto)
 
     return State(
         nodes=nodes,

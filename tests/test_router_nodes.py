@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from core.services import router_nodes
@@ -172,3 +174,71 @@ def _device():
         mac = "aa:bb:cc:dd:ee:ff"
 
     return Fake()
+
+
+class TestNamesAsTheClientSeesThem:
+    """Названия узлов приходят из подписки и написаны для нас, не для клиента."""
+
+    def test_service_prefix_is_dropped(self):
+        """`Router_Германия` говорит, что узел роутерный.
+
+        Клиенту это не сообщает ничего — он и так в приложении своего
+        роутера, — а список из семи строк с одинаковым началом читается
+        тяжелее, чем список из семи стран.
+        """
+        state = router_nodes.parse(
+            '{"nodes":[{"id":"a","name":"Router_Германия"},'
+            '{"id":"b","name":"Router_ Эстония 1"}]}'
+        )
+
+        assert [node.name for node in state.nodes] == ["Германия", "Эстония 1"]
+
+    def test_number_that_tells_nodes_apart_stays(self):
+        """`Финляндия` и `Финляндия 1` — разные узлы, и цифра их различает."""
+        state = router_nodes.parse(
+            '{"nodes":[{"id":"a","name":"Router_Финляндия"},'
+            '{"id":"b","name":"Router_Финляндия 1"}]}'
+        )
+
+        assert [node.name for node in state.nodes] == ["Финляндия", "Финляндия 1"]
+
+    def test_balancer_is_named_and_goes_first(self):
+        """Балансер — единственный путь вернуться к автовыбору.
+
+        Клиент, разок ткнувший страну, без него остался бы на ней навсегда,
+        поэтому его не прячут, а называют понятным словом и ставят наверх,
+        чтобы не искать среди стран.
+        """
+        state = router_nodes.parse(
+            '{"nodes":[{"id":"a","name":"Router_Германия"},'
+            '{"id":"b","name":"TitanSwitch"}]}'
+        )
+
+        assert state.nodes[0].name == router_nodes.AUTO_TITLE
+        assert state.nodes[0].auto is True
+        assert state.nodes[1].auto is False
+
+    def test_name_of_only_a_prefix_falls_back_to_id(self):
+        state = router_nodes.parse('{"nodes":[{"id":"cfg09","name":"Router_"}]}')
+
+        assert state.nodes[0].name == "cfg09"
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("Router_Германия", "\U0001f1e9\U0001f1ea"),
+            ("Router_Нидерланды", "\U0001f1f3\U0001f1f1"),
+            ("Finland 2", "\U0001f1eb\U0001f1ee"),
+            ("TitanSwitch", ""),
+            ("Узел 7", ""),
+        ],
+    )
+    def test_flag_by_country_or_nothing(self, name, expected):
+        """Незнакомая страна остаётся без флага.
+
+        Список стран неполный намеренно: гадать по двум буквам значит
+        однажды показать клиенту чужой флаг, а это хуже, чем его отсутствие.
+        """
+        state = router_nodes.parse('{"nodes":[{"id":"a","name":%s}]}' % json.dumps(name))
+
+        assert state.nodes[0].flag == expected

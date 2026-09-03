@@ -916,7 +916,10 @@ def _nodes_payload(state: router_nodes.State) -> dict:
         "error": "",
         "enabled": state.enabled,
         "current": state.current,
-        "nodes": [{"id": node.id, "name": node.name} for node in state.nodes],
+        "nodes": [
+            {"id": node.id, "name": node.name, "flag": node.flag, "auto": node.auto}
+            for node in state.nodes
+        ],
     }
 
 

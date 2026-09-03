@@ -125,6 +125,20 @@
     return '';
   }
 
+  // Подпись под названием тарифа — только то, чего в названии нет.
+  //
+  // Оператор называет тарифы сроком: «30 дней», «60 дней». Приписка «30 дн.»
+  // под таким названием повторяла его дважды на каждой строке. Сравниваем
+  // числа, а не слова: «1 месяц» и «30 дн.» тоже об одном сроке, но это
+  // разные единицы, и вторая строка там как раз объясняет первую.
+  function periodNote(title, period) {
+    var inPeriod = String(period || '').match(/\d+/g);
+    if (!inPeriod) { return period || ''; }
+    var inTitle = String(title || '').match(/\d+/g) || [];
+    return inPeriod.every(function (n) { return inTitle.indexOf(n) !== -1; })
+      ? '' : period;
+  }
+
   function planDays(p) {
     return Number(p.months || 0) * 30 + Number(p.extra_days || 0);
   }
@@ -548,14 +562,16 @@
       var best = bestPlan(d.plans || []);
 
       var plans = (d.plans || []).map(function (p) {
+        var note = [periodNote(planTitle(p), planPeriod(p))];
         var rate = planPerMonth(p, d.currency);
+        if (rate) { note.push(rate + ' в месяц'); }
+        note = note.filter(Boolean).join(' · ');
         return '<div class="plan"><div class="grow">'
           + '<div><b>' + esc(planTitle(p)) + '</b>'
           + (best && best.id === p.id ? ' <span class="best">выгоднее всего</span>' : '')
           + '</div>'
-          + '<div class="muted small">' + esc(planPeriod(p))
-          + (rate ? ' · ' + rate + ' в месяц' : '')
-          + '</div></div>'
+          + (note ? '<div class="muted small">' + esc(note) + '</div>' : '')
+          + '</div>'
           + '<button class="btn small" data-plan="' + esc(p.id) + '">'
           + money(p.price, d.currency) + '</button></div>';
       }).join('');
@@ -570,8 +586,16 @@
             : '')
         + (plans
             ? '<div class="card">' + plans + '</div>'
-              + '<div class="muted tiny center">Продление считается от текущей даты окончания — '
-              + 'оставшиеся дни не сгорают.</div>'
+              // Называем дату, а не «текущую дату окончания»: человек читает
+              // эту строку, чтобы понять, не пропадут ли его оплаченные дни,
+              // и отвечать на такой вопрос канцелярской формулой незачем.
+              + '<div class="muted tiny center">'
+              + (sub.until
+                  ? 'Оплаченные дни прибавятся к ' + date(sub.until)
+                    + ' — то, что осталось, не сгорает.'
+                  : 'Оплаченные дни прибавятся к текущей подписке — '
+                    + 'то, что осталось, не сгорает.')
+              + '</div>'
             : empty('info', 'Сроков нет', 'Продление сейчас недоступно.'))
       );
 
@@ -610,7 +634,21 @@
     function row(node) {
       var on = node.id === state.current;
       return '<button class="item" data-node="' + esc(node.id) + '">'
-        + '<span class="grow"><b>' + esc(node.name) + '</b></span>'
+        // Флаг — единственная цветная картинка в приложении, и это оправдано:
+        // страну по флагу узнают быстрее, чем прочитывают слово, а рисовать
+        // тридцать флагов обводкой в одну толщину невозможно. Узла без флага
+        // это не касается: значка вместо него не ставим, строка просто
+        // начинается с названия.
+        + (node.flag
+            ? '<span style="font-size:21px;line-height:1;flex:0 0 auto">'
+              + esc(node.flag) + '</span>'
+            : '')
+        + '<span class="grow"><b>' + esc(node.name) + '</b>'
+        + (node.auto
+            ? '<span class="muted small" style="display:block;margin-top:2px">'
+              + 'Сеть подберёт сервер сама</span>'
+            : '')
+        + '</span>'
         + (on ? '<span style="color:var(--accent)">' + icon('check') + '</span>'
               : '<span class="chev">' + icon('chev-r') + '</span>')
         + '</button>';
@@ -1060,8 +1098,10 @@
       }).join('');
 
       var plans = (d.plans || []).map(function (p) {
+        var period = periodNote(p.title, p.period);
         return '<div class="plan"><div class="grow"><div><b>' + esc(p.title) + '</b></div>'
-          + '<div class="muted small">' + esc(p.period || '') + '</div></div>'
+          + (period ? '<div class="muted small">' + esc(period) + '</div>' : '')
+          + '</div>'
           + '<div style="text-align:right"><div>' + esc(p.price) + '</div>'
           + (p.per_month
               ? '<div class="subtle tiny">' + esc(p.per_month) + ' в месяц</div>' : '')
@@ -1227,7 +1267,8 @@
             + (best && best.id === x.id ? ' <span class="best">выгоднее всего</span>' : '')
             + '</span><span>' + money(x.price, currency) + '</span></span>'
             + '<span class="row" style="margin-top:3px">'
-            + '<span class="muted small">' + esc(planPeriod(x)) + '</span>'
+            + '<span class="muted small">'
+            + esc(periodNote(planTitle(x), planPeriod(x))) + '</span>'
             + (rate ? '<span class="subtle small">' + rate + ' в месяц</span>' : '')
             + '</span></span></div></label>';
         }
