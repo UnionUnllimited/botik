@@ -235,7 +235,7 @@ async def router_nodes(
     мы заставили бы ждать столько же и того, кто зашёл посмотреть срок
     подписки.
     """
-    return await catalog_api.my_router_nodes(tg_id=user.id, device_id=0, session=session)
+    return await catalog_api.my_router_nodes(tg_id=user.tg_id, device_id=0, session=session)
 
 
 @router.post("/api/router/node")

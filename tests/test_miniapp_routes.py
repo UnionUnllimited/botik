@@ -149,3 +149,92 @@ class TestWhoIsAllowedAsked:
         monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [])
         answer = await miniapp_allowed(tg_id=MINE)
         assert answer == {"allowed": False, "configured": False}
+
+
+class TestHandlersAskTheUserForFieldsItHas:
+    """Обработчик, спросивший у подписи несуществующее поле, падает на клиенте.
+
+    Ровно это и случилось: ручка узлов брала `user.id`, которого у
+    `TelegramUser` нет, — приложение получало 500 и молча прятало блок
+    настроек, а выглядело это как «прошивка не отвечает». Проверка
+    статическая, потому что динамическая требует поднять каждую ручку
+    с живой базой: здесь важно не поведение, а то, что имя вообще
+    существует.
+    """
+
+    def test_no_handler_reads_a_field_that_does_not_exist(self):
+        import ast
+        import inspect
+        from pathlib import Path
+
+        from core.services.miniapp_auth import TelegramUser
+
+        source = Path(inspect.getfile(miniapp)).read_text(encoding="utf-8")
+        asked = {
+            node.attr
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "user"
+        }
+
+        known = set(dir(TelegramUser))
+        assert asked, "Ни одна ручка не читает подпись — проверка потеряла смысл"
+        assert asked <= known, f"Нет таких полей у подписи: {sorted(asked - known)}"
+
+
+class TestRouterSettingsCarryTheSignedIdentity:
+    """Узлы и переключатель сервиса — те же права, что у перезагрузки."""
+
+    @pytest.mark.asyncio
+    async def test_node_list_asks_for_the_signed_user(self, configured, monkeypatch):
+        seen: dict = {}
+
+        async def fake(*, tg_id, device_id, session):
+            seen.update(tg_id=tg_id, device_id=device_id)
+            return {"ok": True, "nodes": [], "current": "", "enabled": True}
+
+        monkeypatch.setattr(miniapp.catalog_api, "my_router_nodes", fake)
+
+        user = await miniapp.current_user(init_data=make_init_data())
+        answer = await miniapp.router_nodes(user=user, session=None)
+
+        assert seen["tg_id"] == MINE
+        assert answer["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_chosen_node_goes_with_our_own_id(self, configured, monkeypatch):
+        """Номер из тела запроса не должен переключать чужой роутер."""
+        seen: dict = {}
+
+        async def fake(*, payload, session):
+            seen.update(payload)
+            return {"ok": True}
+
+        monkeypatch.setattr(miniapp.catalog_api, "my_router_select_node", fake)
+
+        user = await miniapp.current_user(init_data=make_init_data())
+        await miniapp.router_select_node(
+            payload={"node_id": "cfg01", "tg_id": 999999999}, user=user, session=None
+        )
+
+        assert seen["tg_id"] == MINE
+        assert seen["node_id"] == "cfg01"
+
+    @pytest.mark.asyncio
+    async def test_service_switch_goes_with_our_own_id(self, configured, monkeypatch):
+        seen: dict = {}
+
+        async def fake(*, payload, session):
+            seen.update(payload)
+            return {"ok": True}
+
+        monkeypatch.setattr(miniapp.catalog_api, "my_router_service", fake)
+
+        user = await miniapp.current_user(init_data=make_init_data())
+        await miniapp.router_service(
+            payload={"enabled": False, "tg_id": 999999999}, user=user, session=None
+        )
+
+        assert seen["tg_id"] == MINE
+        assert seen["enabled"] is False
