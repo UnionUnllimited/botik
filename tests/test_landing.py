@@ -272,7 +272,7 @@ class TestRendering:
         assert "?start=buy_" in html
         # «бот», а не «чат»: заказ оформляется именно в боте, а «чат»
         # покупатель принимает за групповой чат или канал.
-        assert "Купить в боте" in html
+        assert "Купить в Telegram" in html
         assert "3 LAN" in html
 
     @pytest.mark.asyncio
