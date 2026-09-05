@@ -25,7 +25,7 @@ import pytest
 SHOP_SYNC = Path(__file__).resolve().parents[1] / "bot" / "src" / "shop_sync.py"
 
 SCHEMA = """
-CREATE TABLE users (telegram_id INTEGER PRIMARY KEY, username TEXT);
+CREATE TABLE users (telegram_id INTEGER PRIMARY KEY, username TEXT, subscription_end_date TEXT);
 CREATE TABLE payments (
     payment_id TEXT PRIMARY KEY, telegram_id INTEGER, amount REAL, currency TEXT,
     status TEXT DEFAULT 'pending', created_at TEXT, metadata_json TEXT,
@@ -33,7 +33,7 @@ CREATE TABLE payments (
     FOREIGN KEY (telegram_id) REFERENCES users (telegram_id)
 );
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, description TEXT);
-INSERT INTO users VALUES (8152081864, 'kelvin');
+INSERT INTO users (telegram_id, username) VALUES (8152081864, 'kelvin');
 """
 
 
@@ -57,6 +57,11 @@ class FakeShop:
         self.limit = limit
         self.error = error
         self.calls: list[str] = []
+        self.subs: list[dict] = []
+        self.subs_error = ""
+
+    async def subscriptions_snapshot(self):
+        return list(self.subs), self.subs_error
 
     async def payments_snapshot(self, since: str = "", limit: int = 500):
         self.calls.append(since)
@@ -206,3 +211,52 @@ async def test_unreachable_shop_changes_nothing(mirror):
 
     assert written == 0
     assert await mirror.rows("SELECT 1 FROM settings") == []
+
+
+SUB = {
+    "tg_id": 8152081864,
+    "until": "2026-10-01T00:00:00+00:00",
+    "panel_username": "tg8152081864_d4-0d-ab-2b-a4-ee",
+    "panel_short_uuid": "abc123",
+}
+
+
+@pytest.mark.asyncio
+async def test_subscription_mirror_adds_its_columns_and_fills_them(mirror):
+    """Ключ учётки едет в свои колонки, а колонки заводятся на месте.
+
+    В их `remnawave_short_uuid` писать нельзя: то поле читают клиентские
+    экраны бота, и роутерная учётка ушла бы клиенту ссылкой на телефон.
+    """
+    await mirror.prepare()
+    mirror.shop.subs = [SUB]
+
+    updated = await mirror.module.sync_subscriptions()
+
+    assert updated == 1
+    rows = await mirror.rows(
+        "SELECT subscription_end_date, shop_panel_username, shop_panel_short_uuid "
+        "FROM users WHERE telegram_id = 8152081864"
+    )
+    assert rows == [("2026-10-01T00:00:00+00:00", "tg8152081864_d4-0d-ab-2b-a4-ee", "abc123")]
+
+
+@pytest.mark.asyncio
+async def test_subscription_mirror_survives_the_second_run(mirror):
+    """Колонки уже есть — повторный ALTER не должен ронять круг."""
+    await mirror.prepare()
+    mirror.shop.subs = [SUB]
+    await mirror.module.sync_subscriptions()
+
+    assert await mirror.module.sync_subscriptions() == 1
+
+
+@pytest.mark.asyncio
+async def test_subscription_without_a_date_is_not_written(mirror):
+    """Ожидающая активации срока не имеет; затирать ею действующую нельзя."""
+    await mirror.prepare()
+    mirror.shop.subs = [dict(SUB, until=None)]
+
+    assert await mirror.module.sync_subscriptions() == 0
+    rows = await mirror.rows("SELECT subscription_end_date FROM users WHERE telegram_id = 8152081864")
+    assert rows == [(None,)]

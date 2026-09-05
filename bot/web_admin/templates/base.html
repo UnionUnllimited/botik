@@ -1582,14 +1582,14 @@
                   return { c: 'is-expired', t: 'Истекла' };
                 }
                 // Если ключа нет — по факту подписка не работает
-                if (!user.xui_client_uuid && !user.remnawave_short_uuid) {
+                if (!user.xui_client_uuid && !user.remnawave_short_uuid && !user.shop_panel_short_uuid) {
                   return { c: 'is-expired', t: 'Без ключа' };
                 }
                 return { c: 'is-active', t: 'Активна' };
               }
             }
             // Нет даты истечения, но есть ключ — выдан, но не привязан к сроку
-            if (user.xui_client_uuid || user.remnawave_short_uuid) {
+            if (user.xui_client_uuid || user.remnawave_short_uuid || user.shop_panel_short_uuid) {
               return { c: 'is-trial', t: 'Активна (без срока)' };
             }
             return { c: 'is-unknown', t: 'Нет подписки' };
@@ -1600,8 +1600,8 @@
 
         // UUID copy
         if (uuidBtnEl) {
-          if (user.xui_client_uuid || user.uuid) {
-            window.__currentUserUuid = user.xui_client_uuid || user.uuid;
+          if (user.xui_client_uuid || user.uuid || user.shop_panel_short_uuid) {
+            window.__currentUserUuid = user.xui_client_uuid || user.uuid || user.shop_panel_short_uuid;
             uuidBtnEl.classList.remove('hidden');
           } else {
             window.__currentUserUuid = null;
@@ -1662,7 +1662,7 @@
         }
         
         // Загружаем ключи подписки через backend-прокси
-        if (user.xui_client_uuid || user.remnawave_short_uuid) {
+        if (user.xui_client_uuid || user.remnawave_short_uuid || user.shop_panel_short_uuid) {
           if (typeof window.loadUserKeys === 'function') {
             window.loadUserKeys(user.telegram_id);
           } else {
@@ -2406,7 +2406,7 @@
           heroClass = '';
           heroStatusPill = '<span class="um-status is-active">Подписка активна</span>';
         }
-      } else if (user.xui_client_uuid || user.remnawave_short_uuid) {
+      } else if (user.xui_client_uuid || user.remnawave_short_uuid || user.shop_panel_short_uuid) {
         heroStatusPill = '<span class="um-status is-trial">Подписка без срока</span>';
       }
 

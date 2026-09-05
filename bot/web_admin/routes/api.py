@@ -1891,14 +1891,21 @@ async def api_user_security(telegram_id: int):
     try:
         # Получаем UUID пользователя из основной БД
         user_row = await async_query_db(
-            "SELECT xui_client_uuid, remnawave_short_uuid FROM users WHERE telegram_id = ?",
+            "SELECT xui_client_uuid, remnawave_short_uuid, shop_panel_short_uuid FROM users WHERE telegram_id = ?",
             (telegram_id,), one=True
         )
 
         if not user_row:
             return jsonify({'ok': True, 'devices': [], 'latest_access': None, 'message': 'Пользователь не найден'})
 
-        uuid = (user_row.get('xui_client_uuid') or user_row.get('remnawave_short_uuid') or '').strip()
+        # Роутерную учётку заводит основное приложение и кладёт ключ в свою
+        # колонку — их собственные поля у такого клиента пусты.
+        uuid = (
+            user_row.get('xui_client_uuid')
+            or user_row.get('remnawave_short_uuid')
+            or user_row.get('shop_panel_short_uuid')
+            or ''
+        ).strip()
         if not uuid:
             return jsonify({'ok': True, 'devices': [], 'latest_access': None, 'message': 'UUID не найден'})
 
@@ -2027,13 +2034,20 @@ async def api_delete_user_device(telegram_id: int, hwid: str):
             return jsonify({'ok': False, 'error': 'Неверный HWID'}), 400
 
         user_row = await async_query_db(
-            "SELECT xui_client_uuid, remnawave_short_uuid FROM users WHERE telegram_id = ?",
+            "SELECT xui_client_uuid, remnawave_short_uuid, shop_panel_short_uuid FROM users WHERE telegram_id = ?",
             (telegram_id,), one=True
         )
         if not user_row:
             return jsonify({'ok': False, 'error': 'Пользователь не найден'}), 404
 
-        uuid = (user_row.get('xui_client_uuid') or user_row.get('remnawave_short_uuid') or '').strip()
+        # Роутерную учётку заводит основное приложение и кладёт ключ в свою
+        # колонку — их собственные поля у такого клиента пусты.
+        uuid = (
+            user_row.get('xui_client_uuid')
+            or user_row.get('remnawave_short_uuid')
+            or user_row.get('shop_panel_short_uuid')
+            or ''
+        ).strip()
         if not uuid:
             return jsonify({'ok': False, 'error': 'UUID не найден'}), 404
 
@@ -2058,14 +2072,21 @@ async def api_user_keys(telegram_id: int):
     """Ключи подписки пользователя — проксируем через xuiweb /api/sub/{uuid}."""
     try:
         user_row = await async_query_db(
-            "SELECT xui_client_uuid, remnawave_short_uuid FROM users WHERE telegram_id = ?",
+            "SELECT xui_client_uuid, remnawave_short_uuid, shop_panel_short_uuid FROM users WHERE telegram_id = ?",
             (telegram_id,), one=True
         )
 
         if not user_row:
             return jsonify({'ok': False, 'error': 'Пользователь не найден'}), 404
 
-        uuid = (user_row.get('xui_client_uuid') or user_row.get('remnawave_short_uuid') or '').strip()
+        # Роутерную учётку заводит основное приложение и кладёт ключ в свою
+        # колонку — их собственные поля у такого клиента пусты.
+        uuid = (
+            user_row.get('xui_client_uuid')
+            or user_row.get('remnawave_short_uuid')
+            or user_row.get('shop_panel_short_uuid')
+            or ''
+        ).strip()
         if not uuid:
             return jsonify({'ok': False, 'error': 'UUID не найден'}), 404
 

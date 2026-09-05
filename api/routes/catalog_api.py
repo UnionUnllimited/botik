@@ -66,6 +66,7 @@ from core.services import (
     activation,
     media,
     order_topics,
+    remnawave,
     router_nodes,
     router_shell,
     settings_service,
@@ -1071,8 +1072,54 @@ async def subscriptions_snapshot(session: AsyncSession = Depends(get_session)) -
             "tg_id": tg_id,
             "status": str(state),
             "until": candidate,
+            "panel_username": "",
+            "panel_short_uuid": "",
         }
+
+    # Учётка панели — вторая половина зеркала. Шапка их карточки и вкладка
+    # «Ключи» смотрят не на срок, а на ключ учётки в их строке клиента;
+    # заводим учётку мы, и без этого поля у клиента с работающим роутером
+    # стояло «Без ключа». Учётки берём по telegramId, который сами же
+    # проставляем при активации.
+    for tg_id, account in (await _router_accounts_by_client()).items():
+        row = latest.get(tg_id)
+        if row is not None:
+            row["panel_username"] = account.username
+            row["panel_short_uuid"] = account.short_uuid
+
     return {"total": len(latest), "subscriptions": list(latest.values())}
+
+
+async def _router_accounts_by_client() -> dict[int, remnawave.RemnaUser]:
+    """Роутерные учётки панели по клиенту — одна на каждого, самая дальняя по сроку.
+
+    Один запрос списком на весь круг, а не по учётке на клиента: панель
+    отвечает списком за то же время, что и одной строкой, а клиентов сотни.
+
+    Учётки подписки для телефона (`tg{id}` без MAC) пропускаем: они боту
+    и так свои, он их завёл сам и держит в собственных полях. Без панели
+    или при её молчании зеркало срока обязано работать как прежде — ключ
+    тогда просто не доезжает до следующего круга.
+    """
+    panel = remnawave.client()
+    if not panel.is_configured:
+        return {}
+    try:
+        accounts = await panel.users()
+    except Exception as exc:  # noqa: BLE001 — панель чужая, причина в лог, срок важнее
+        log.warning("catalog.panel_accounts_unavailable", error=str(exc))
+        return {}
+
+    best: dict[int, remnawave.RemnaUser] = {}
+    for account in accounts:
+        if not account.telegram_id or not account.short_uuid:
+            continue
+        if account.username.strip().lower() == f"tg{account.telegram_id}":
+            continue
+        current = best.get(account.telegram_id)
+        if current is None or account.expire_at > current.expire_at:
+            best[account.telegram_id] = account
+    return best
 
 
 BOT_PAYMENT_STATUSES = {

@@ -263,6 +263,10 @@ class RemnaUser:
     telegram_id: int = 0
     """Проставляется при заведении учётки — по нему учётка находится обратно,
     без разбора имени."""
+    short_uuid: str = ""
+    """Короткий ключ подписки. Им бот зовёт учётку в своих экранах и по нему
+    же строит ссылку на страницу подписки — без него его карточка клиента
+    считает, что ключа нет."""
     online_at: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -288,6 +292,7 @@ class RemnaUser:
                 or _pick(item, "usedTrafficBytes", "lifetimeUsedTrafficBytes", default=0)
             ),
             telegram_id=_int_of(_pick(item, "telegramId", "telegram_id", default=0)),
+            short_uuid=str(_pick(item, "shortUuid", "short_uuid", default="")),
             online_at=str(
                 _pick(traffic, "onlineAt", default="")
                 or _pick(item, "onlineAt", "lastConnectedAt", default="")

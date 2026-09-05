@@ -18,6 +18,7 @@ import asyncio
 import json
 import re
 
+import aiosqlite
 from loguru import logger
 
 import db_helpers
@@ -97,6 +98,24 @@ async def sync_once() -> tuple[dict, str]:
     return data, error
 
 
+PANEL_COLUMNS = ("shop_panel_username", "shop_panel_short_uuid")
+"""Учётка панели у роутерного клиента — в своих колонках, а не в их
+`remnawave_short_uuid`. То поле читают клиентские экраны бота: «мой ключ»,
+кнопки подключения, и записанная туда роутерная учётка ушла бы клиенту
+ссылкой на телефон. Админке же нужен только факт «ключ есть» и сам ключ —
+она научена читать эти колонки рядом с их собственными."""
+
+
+async def _ensure_panel_columns(db) -> None:
+    """Колонки добавляются на месте, как и остальные их миграции: базу
+    заводит их код, и своей миграции у нас здесь нет."""
+    for column in PANEL_COLUMNS:
+        try:
+            await db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
+        except aiosqlite.OperationalError:
+            pass
+
+
 async def sync_subscriptions() -> int:
     """Переносит подписки роутеров в нашу таблицу `users`.
 
@@ -115,13 +134,21 @@ async def sync_subscriptions() -> int:
 
     updated = 0
     async with db_helpers.get_db_connection_safe() as db:
+        await _ensure_panel_columns(db)
         for row in rows:
             until = row.get("until")
             if not row.get("tg_id") or not until:
                 continue
             cursor = await db.execute(
-                "UPDATE users SET subscription_end_date = ? WHERE telegram_id = ?",
-                (until, int(row["tg_id"])),
+                "UPDATE users SET subscription_end_date = ?, "
+                "shop_panel_username = ?, shop_panel_short_uuid = ? "
+                "WHERE telegram_id = ?",
+                (
+                    until,
+                    row.get("panel_username") or "",
+                    row.get("panel_short_uuid") or "",
+                    int(row["tg_id"]),
+                ),
             )
             updated += cursor.rowcount or 0
         await db.commit()
