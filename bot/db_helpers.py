@@ -120,6 +120,23 @@ async def init_db():
             await db.execute("ALTER TABLE users ADD COLUMN remnawave_short_uuid TEXT")
         except aiosqlite.OperationalError:
             pass
+        # Учётка панели у роутерного клиента: заводит её основное приложение,
+        # а сюда она приезжает зеркалом. В свои колонки, а не в remnawave_*:
+        # те читают клиентские экраны, и роутерная учётка ушла бы клиенту
+        # ссылкой на телефон. Здесь, а не только в круге зеркала, потому что
+        # админка читает колонки независимо от того, дошёл ли круг.
+        # shop_subscription — отметка «срок этому клиенту приносит основное
+        # приложение»: по ней уведомитель об истечении обходит клиента,
+        # о нём напоминает уже наш воркер.
+        for shop_column, shop_kind in (
+            ("shop_panel_username", "TEXT"),
+            ("shop_panel_short_uuid", "TEXT"),
+            ("shop_subscription", "INTEGER DEFAULT 0"),
+        ):
+            try:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {shop_column} {shop_kind}")
+            except aiosqlite.OperationalError:
+                pass
         # Индивидуальная настройка показа кнопки партнёрской программы
         try:
             await db.execute("ALTER TABLE users ADD COLUMN show_partner_program_button TEXT DEFAULT NULL")
@@ -1629,7 +1646,10 @@ async def get_users_with_expiring_subscriptions(days_before: int = 1):
     
     async with get_db_connection_safe() as db:
         async with db.execute(
-            "SELECT telegram_id, subscription_end_date FROM users WHERE subscription_end_date IS NOT NULL AND (notified_expiring IS NULL OR notified_expiring = 0) AND is_active = 1"
+            # Клиентов, чей срок приносит основное приложение, не трогаем:
+            # им напоминает его воркер, и второе «завтра» другим текстом
+            # читалось бы как сбой.
+            "SELECT telegram_id, subscription_end_date FROM users WHERE subscription_end_date IS NOT NULL AND (notified_expiring IS NULL OR notified_expiring = 0) AND is_active = 1 AND COALESCE(shop_subscription, 0) = 0"
         ) as cursor:
             result = []
             async for row in cursor:
@@ -1668,10 +1688,11 @@ async def get_users_with_expired_subscriptions():
     async with get_db_connection_safe() as db:
         # Выбираем всех потенциальных кандидатов, проверка даты будет в коде
         async with db.execute(
-            """SELECT telegram_id, subscription_end_date FROM users 
-               WHERE subscription_end_date IS NOT NULL 
+            """SELECT telegram_id, subscription_end_date FROM users
+               WHERE subscription_end_date IS NOT NULL
                AND (notified_expired IS NULL OR notified_expired = 0)
-               AND is_active = 1"""
+               AND is_active = 1
+               AND COALESCE(shop_subscription, 0) = 0"""
         ) as cursor:
             expired_users = []
             async for row in cursor:

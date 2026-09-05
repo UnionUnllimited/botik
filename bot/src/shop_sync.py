@@ -98,20 +98,31 @@ async def sync_once() -> tuple[dict, str]:
     return data, error
 
 
-PANEL_COLUMNS = ("shop_panel_username", "shop_panel_short_uuid")
-"""Учётка панели у роутерного клиента — в своих колонках, а не в их
-`remnawave_short_uuid`. То поле читают клиентские экраны бота: «мой ключ»,
-кнопки подключения, и записанная туда роутерная учётка ушла бы клиенту
-ссылкой на телефон. Админке же нужен только факт «ключ есть» и сам ключ —
-она научена читать эти колонки рядом с их собственными."""
+PANEL_COLUMNS = {
+    "shop_panel_username": "TEXT",
+    "shop_panel_short_uuid": "TEXT",
+    "shop_subscription": "INTEGER DEFAULT 0",
+}
+"""Что зеркало дописывает в их строку клиента.
+
+Учётка панели — в своих колонках, а не в их `remnawave_short_uuid`. То поле
+читают клиентские экраны бота: «мой ключ», кнопки подключения, и записанная
+туда роутерная учётка ушла бы клиенту ссылкой на телефон. Админке же нужен
+только факт «ключ есть» и сам ключ — она научена читать эти колонки рядом
+с их собственными.
+
+`shop_subscription` — отметка, что срок этому клиенту приносит основное
+приложение. По ней их уведомитель об истечении обходит клиента стороной:
+напоминает уже наш воркер, за 7/3/1/0 дней и через день после, и второе
+«заканчивается завтра» другим текстом читалось бы как сбой."""
 
 
 async def _ensure_panel_columns(db) -> None:
-    """Колонки добавляются на месте, как и остальные их миграции: базу
-    заводит их код, и своей миграции у нас здесь нет."""
-    for column in PANEL_COLUMNS:
+    """Колонки добавляются на месте, как и остальные их миграции. Те же
+    строки стоят и в их init_db — для админки, которая круга не ждёт."""
+    for column, kind in PANEL_COLUMNS.items():
         try:
-            await db.execute(f"ALTER TABLE users ADD COLUMN {column} TEXT")
+            await db.execute(f"ALTER TABLE users ADD COLUMN {column} {kind}")
         except aiosqlite.OperationalError:
             pass
 
@@ -127,6 +138,13 @@ async def sync_subscriptions() -> int:
     Пишем только тем, у кого подписка там есть: свои записи, если продукт
     когда-нибудь снова начнут продавать подпиской для телефона, не трогаем.
     """
+    # Колонки — до похода в API, а не после: админка читает их независимо
+    # от того, ответило ли основное приложение, и молчащий при старте API
+    # не должен оставлять её ручки на «no such column».
+    async with db_helpers.get_db_connection_safe() as db:
+        await _ensure_panel_columns(db)
+        await db.commit()
+
     rows, error = await shop_api.subscriptions_snapshot()
     if error:
         logger.debug(f"[SUBS] снимок подписок недоступен: {error}")
@@ -134,14 +152,14 @@ async def sync_subscriptions() -> int:
 
     updated = 0
     async with db_helpers.get_db_connection_safe() as db:
-        await _ensure_panel_columns(db)
         for row in rows:
             until = row.get("until")
             if not row.get("tg_id") or not until:
                 continue
             cursor = await db.execute(
                 "UPDATE users SET subscription_end_date = ?, "
-                "shop_panel_username = ?, shop_panel_short_uuid = ? "
+                "shop_panel_username = ?, shop_panel_short_uuid = ?, "
+                "shop_subscription = 1 "
                 "WHERE telegram_id = ?",
                 (
                     until,

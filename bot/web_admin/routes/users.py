@@ -624,7 +624,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     where_parts.append("AND u.subscription_end_date IS NOT NULL AND u.subscription_end_date <= ? AND u.subscription_end_date > ?")
                     params.extend([in_3_days_utc_str, now_utc_str])
                 if empty_uuid_only:
-                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '')")
+                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '') AND (u.shop_panel_short_uuid IS NULL OR u.shop_panel_short_uuid = '')")
                 if paid_only:
                     where_parts.append("AND EXISTS (SELECT 1 FROM payments p WHERE p.telegram_id = u.telegram_id AND p.status = 'succeeded')")
                 if new_24h_only:
@@ -720,7 +720,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     where_parts.append("AND u.subscription_end_date IS NOT NULL AND u.subscription_end_date <= ? AND u.subscription_end_date > ?")
                     params.extend([in_3_days_utc_str, now_utc_str])
                 if empty_uuid_only:
-                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '')")
+                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '') AND (u.shop_panel_short_uuid IS NULL OR u.shop_panel_short_uuid = '')")
                 if paid_only:
                     where_parts.append("AND EXISTS (SELECT 1 FROM payments p WHERE p.telegram_id = u.telegram_id AND p.status = 'succeeded')")
                 if new_24h_only:
@@ -813,7 +813,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     where_parts.append("u.subscription_end_date IS NOT NULL AND u.subscription_end_date <= ? AND u.subscription_end_date > ?")
                     params.extend([in_3_days_utc_str, now_utc_str])
                 if empty_uuid_only:
-                    where_parts.append("(u.xui_client_uuid IS NULL OR u.xui_client_uuid = '')")
+                    where_parts.append("(u.xui_client_uuid IS NULL OR u.xui_client_uuid = '') AND (u.shop_panel_short_uuid IS NULL OR u.shop_panel_short_uuid = '')")
                 if paid_only:
                     where_parts.append("EXISTS (SELECT 1 FROM payments p WHERE p.telegram_id = u.telegram_id AND p.status = 'succeeded')")
                 if new_24h_only:
@@ -940,7 +940,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     where_parts.append("AND u.subscription_end_date IS NOT NULL AND u.subscription_end_date <= ? AND u.subscription_end_date > ?")
                     params.extend([in_3_days_utc_str, now_utc_str])
                 if empty_uuid_only:
-                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '')")
+                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '') AND (u.shop_panel_short_uuid IS NULL OR u.shop_panel_short_uuid = '')")
                 if paid_only:
                     where_parts.append("AND EXISTS (SELECT 1 FROM payments p WHERE p.telegram_id = u.telegram_id AND p.status = 'succeeded')")
                 if new_24h_only:
@@ -996,7 +996,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     where_parts.append("AND u.subscription_end_date IS NOT NULL AND u.subscription_end_date <= ? AND u.subscription_end_date > ?")
                     params.extend([in_3_days_utc_str, now_utc_str])
                 if empty_uuid_only:
-                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '')")
+                    where_parts.append("AND (u.xui_client_uuid IS NULL OR u.xui_client_uuid = '') AND (u.shop_panel_short_uuid IS NULL OR u.shop_panel_short_uuid = '')")
                 if paid_only:
                     where_parts.append("AND EXISTS (SELECT 1 FROM payments p WHERE p.telegram_id = u.telegram_id AND p.status = 'succeeded')")
                 if new_24h_only:
@@ -1046,7 +1046,7 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                     where_parts.append("u.subscription_end_date IS NOT NULL AND u.subscription_end_date <= ? AND u.subscription_end_date > ?")
                     params.extend([in_3_days_utc_str, now_utc_str])
                 if empty_uuid_only:
-                    where_parts.append("(u.xui_client_uuid IS NULL OR u.xui_client_uuid = '')")
+                    where_parts.append("(u.xui_client_uuid IS NULL OR u.xui_client_uuid = '') AND (u.shop_panel_short_uuid IS NULL OR u.shop_panel_short_uuid = '')")
                 if paid_only:
                     where_parts.append("EXISTS (SELECT 1 FROM payments p WHERE p.telegram_id = u.telegram_id AND p.status = 'succeeded')")
                 if new_24h_only:

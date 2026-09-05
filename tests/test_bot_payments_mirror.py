@@ -235,10 +235,12 @@ async def test_subscription_mirror_adds_its_columns_and_fills_them(mirror):
 
     assert updated == 1
     rows = await mirror.rows(
-        "SELECT subscription_end_date, shop_panel_username, shop_panel_short_uuid "
-        "FROM users WHERE telegram_id = 8152081864"
+        "SELECT subscription_end_date, shop_panel_username, shop_panel_short_uuid, "
+        "shop_subscription FROM users WHERE telegram_id = 8152081864"
     )
-    assert rows == [("2026-10-01T00:00:00+00:00", "tg8152081864_d4-0d-ab-2b-a4-ee", "abc123")]
+    # Последняя единица — «срок приносит основное приложение»: по ней их
+    # уведомитель об истечении обходит клиента, напоминает наш воркер.
+    assert rows == [("2026-10-01T00:00:00+00:00", "tg8152081864_d4-0d-ab-2b-a4-ee", "abc123", 1)]
 
 
 @pytest.mark.asyncio

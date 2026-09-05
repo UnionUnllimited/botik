@@ -142,6 +142,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             routers=data.get("routers", []),
             fleet_error=error,
             auto_enabled=options.get("auto_enabled", False),
+            support_contact=options.get("support_contact", ""),
             filters={key: args.get(key, "") or "" for key in FLEET_FILTER_KEYS},
             models=data.get("models", []),
             states=data.get("states", []),
@@ -209,7 +210,10 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         form = await request.form
         _, error = await _post(
             "/api/v1/fleet/settings",
-            {"auto_enabled": form.get("auto_enabled") == "on"},
+            {
+                "auto_enabled": form.get("auto_enabled") == "on",
+                "support_contact": (form.get("support_contact") or "").strip(),
+            },
         )
         await flash(error or "Настройки сохранены.", "danger" if error else "success")
         return redirect(url_for("admin.routers_fleet"))

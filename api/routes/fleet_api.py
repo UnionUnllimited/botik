@@ -1229,7 +1229,14 @@ async def fleet_settings_read(session: AsyncSession = Depends(get_session)) -> d
     и показывалась оператору, но в активации не читалась ни разу — то есть
     обещала не то, что происходило.
     """
-    return {"auto_enabled": await settings_service.get_bool(session, "activation.auto_enabled")}
+    return {
+        "auto_enabled": await settings_service.get_bool(session, "activation.auto_enabled"),
+        # Контакт поддержки живёт в наших настройках, а правится отсюда:
+        # другой страницы, которая пишет в них, у админки нет. Пустой — и
+        # кнопка «написать в поддержку» в приложении, строка «остались
+        # вопросы» в каталоге и ссылка в подвале сайта молчат все разом.
+        "support_contact": await settings_service.get_str(session, "support.contact"),
+    }
 
 
 @router.post("/settings", dependencies=[Depends(require_token)])
@@ -1239,6 +1246,10 @@ async def fleet_settings_save(
     await settings_service.set_setting(
         session, "activation.auto_enabled", bool(payload.get("auto_enabled"))
     )
+    if "support_contact" in payload:
+        await settings_service.set_setting(
+            session, "support.contact", str(payload.get("support_contact") or "").strip()
+        )
     log.info("fleet.settings_saved", auto_enabled=bool(payload.get("auto_enabled")))
     return {"ok": True}
 

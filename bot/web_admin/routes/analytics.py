@@ -335,6 +335,11 @@ def attach_analytics_routes(admin_bp):
             'subscription':   {'count': 0, 'total': 0.0},
             'traffic_topup':  {'count': 0, 'total': 0.0},
             'device_upgrade': {'count': 0, 'total': 0.0},
+            # Платежи магазина роутеров приезжают зеркалом из основного
+            # приложения. Без своих корзин они падали бы в «Подписки»,
+            # и продажа железа на 9 000 ₽ выглядела бы тридцатью продлениями.
+            'router_order':   {'count': 0, 'total': 0.0},
+            'delivery':       {'count': 0, 'total': 0.0},
         }
 
         for p in succ_rows:
@@ -369,6 +374,8 @@ def attach_analytics_routes(admin_bp):
                 tt = type_agg['traffic_topup']
             elif ptype == 'device_limit_upgrade':
                 tt = type_agg['device_upgrade']
+            elif ptype in ('router_order', 'delivery'):
+                tt = type_agg[ptype]
             else:
                 tt = type_agg['subscription']
             tt['count'] += 1
@@ -385,6 +392,8 @@ def attach_analytics_routes(admin_bp):
             {'key': 'subscription',   'label': 'Подписки',          **type_agg['subscription']},
             {'key': 'traffic_topup',  'label': 'Докупка трафика',   **type_agg['traffic_topup']},
             {'key': 'device_upgrade', 'label': 'Лимит устройств',   **type_agg['device_upgrade']},
+            {'key': 'router_order',   'label': 'Роутеры',           **type_agg['router_order']},
+            {'key': 'delivery',       'label': 'Доставка',          **type_agg['delivery']},
         ]
 
         # Топ-10 клиентов по сумме успешных RUB-платежей за период

@@ -73,6 +73,17 @@
 
     <form method="post" action="{{ url_for('admin.routers_fleet_settings') }}"
           class="tw-card p-5 space-y-4">
+      <div class="text-[13px] font-semibold tw-text-base2">Поддержка</div>
+      <label class="block">
+        <span class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Контакт поддержки</span>
+        <input type="text" name="support_contact" value="{{ support_contact or '' }}"
+               placeholder="@titan_support" class="tw-input">
+      </label>
+      <div class="text-[11px] tw-text-subtle2">
+        Кнопка «Написать в поддержку» в приложении, строка «Остались вопросы» в каталоге
+        и ссылка в подвале сайта. Пусто — и все три молчат.
+      </div>
+
       <div class="text-[13px] font-semibold tw-text-base2">Активация</div>
       <label class="flex items-center gap-2.5 cursor-pointer select-none">
         <input type="checkbox" name="auto_enabled" {% if auto_enabled %}checked{% endif %}

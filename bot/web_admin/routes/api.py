@@ -1834,6 +1834,17 @@ async def api_payment_update_status():
         
         if not payment_id or not new_status:
             return jsonify({'ok': False, 'error': 'payment_id и status обязательны'}), 400
+
+        # Платежи магазина роутеров — зеркало из основного приложения.
+        # Статус, поставленный здесь, настоящего платежа не изменит и через
+        # круг зеркала вернётся прежним: оператор увидел бы «сохранено»,
+        # а через пять минут — прежнее. Менять его — в «Платежах» магазина.
+        if str(payment_id).startswith('SHOP_'):
+            return jsonify({
+                'ok': False,
+                'error': 'Это платёж магазина роутеров: здесь только его отражение. '
+                         'Статус меняется в разделе «Платежи» магазина.',
+            }), 400
         
         # Только админ может менять статус на canceled
         if new_status == 'canceled' and session.get('admin_role') != 'admin':
