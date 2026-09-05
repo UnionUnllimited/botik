@@ -507,6 +507,7 @@ PAGES = {
         ],
         "fleet_error": "",
         "auto_enabled": True,
+        "support_contact": "@titan_support",
         "filters": {
             "q": "", "link": "", "client": "", "sub": "", "state": "", "model": "", "per_page": "",
             "sort": "uptime", "dir": "desc",
