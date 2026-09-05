@@ -90,6 +90,16 @@ def _blocked_filter() -> str:
     return "COALESCE(is_blocked, 0) = 0"
 
 
+def _not_shop_client_filter() -> str:
+    """Роутерные клиенты массовым операциям не принадлежат.
+
+    Их срок приезжает зеркалом из основного приложения, а ключа в наших
+    полях у них нет: «удалить истёкших» снёс бы тех, кому срок просто ещё
+    не продлили в магазине, а «удалить без ключа» — всех роутерных разом.
+    """
+    return "COALESCE(shop_subscription, 0) = 0 AND COALESCE(shop_panel_short_uuid, '') = ''"
+
+
 def _is_db_locked_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     return (
@@ -140,6 +150,7 @@ async def count_expired_users(days: int) -> int:
         WHERE {_blocked_filter()}
           AND subscription_end_date IS NOT NULL
           AND datetime(subscription_end_date) <= datetime('now', 'utc', ?)
+          AND {_not_shop_client_filter()}
         """,
         (f"-{int(days)} days",),
         one=True,
@@ -159,6 +170,7 @@ async def fetch_expired_user_ids(days: int) -> List[int]:
         WHERE {_blocked_filter()}
           AND subscription_end_date IS NOT NULL
           AND datetime(subscription_end_date) <= datetime('now', 'utc', ?)
+          AND {_not_shop_client_filter()}
         ORDER BY subscription_end_date ASC
         """,
         (f"-{int(days)} days",),
@@ -204,7 +216,7 @@ async def count_empty_uuid_users() -> int:
     """
     row = await async_query_db(
         f"SELECT COUNT(*) AS cnt FROM users "
-        f"WHERE {_blocked_filter()} AND COALESCE(xui_client_uuid, '') = ''",
+        f"WHERE {_blocked_filter()} AND COALESCE(xui_client_uuid, '') = '' AND {_not_shop_client_filter()}",
         (),
         one=True,
     )
@@ -214,7 +226,7 @@ async def count_empty_uuid_users() -> int:
 async def fetch_empty_uuid_user_ids() -> List[int]:
     rows = await async_query_db(
         f"SELECT telegram_id FROM users "
-        f"WHERE {_blocked_filter()} AND COALESCE(xui_client_uuid, '') = '' "
+        f"WHERE {_blocked_filter()} AND COALESCE(xui_client_uuid, '') = '' AND {_not_shop_client_filter()} "
         f"ORDER BY telegram_id ASC",
         (),
     )

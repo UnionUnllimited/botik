@@ -19,6 +19,20 @@ import db_helpers
 from tg_sender import send_telegram_message
 from keyboards import get_back_to_main_keyboard, get_success_with_referral_keyboard
 from subscription_manager import grant_subscription
+
+
+async def _is_shop_client(telegram_id: int) -> bool:
+    """Срок этому клиенту приносит основное приложение (зеркалом).
+
+    Их действия над сроком — продлить, убавить — для такого клиента не просто
+    бесполезны, а вредны: grant_subscription завёл бы телефонную учётку,
+    а зеркало через круг вернуло бы прежний срок.
+    """
+    row = await async_query_db(
+        "SELECT COALESCE(shop_subscription, 0) AS shop FROM users WHERE telegram_id = ?",
+        (telegram_id,), one=True,
+    )
+    return bool(row and row['shop'])
 from aiogram.utils.markdown import hcode
 
 # Легаси: локальный словарь для инвалидации после POST.
@@ -1738,6 +1752,17 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
             await flash('Неверное количество дней.', 'danger')
             return redirect(url_for('admin.user_details', telegram_id=telegram_id))
 
+        # Срок роутерного клиента живёт в основном приложении и приезжает
+        # сюда зеркалом. grant_subscription завёл бы ему телефонную учётку,
+        # а зеркало через круг вернуло бы прежний срок: оператор увидел бы
+        # «продлено», клиент — ничего. Продлевают в карточке роутера.
+        if await _is_shop_client(telegram_id):
+            await flash(
+                'Это роутерный клиент: его срок продлевается в карточке роутера, '
+                'здесь только отражение.', 'danger'
+            )
+            return redirect(url_for('admin.user_details', telegram_id=telegram_id))
+
         # Получаем limit_ip до асинхронной функции
         user_row = await async_query_db("SELECT limit_ip FROM users WHERE telegram_id = ?", (telegram_id,), one=True)
         limit_ip_local = user_row['limit_ip'] if user_row and user_row['limit_ip'] is not None else 0
@@ -1811,6 +1836,15 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                 return redirect(url_for('admin.user_details', telegram_id=telegram_id))
         except (ValueError, TypeError):
             await flash('Неверное количество дней.', 'danger')
+            return redirect(url_for('admin.user_details', telegram_id=telegram_id))
+
+        # Та же защита, что у продления: срок роутерного клиента здесь только
+        # отражение, убавлять его — в карточке роутера.
+        if await _is_shop_client(telegram_id):
+            await flash(
+                'Это роутерный клиент: его срок меняется в карточке роутера, '
+                'здесь только отражение.', 'danger'
+            )
             return redirect(url_for('admin.user_details', telegram_id=telegram_id))
 
         # Получаем limit_ip до асинхронной функции
