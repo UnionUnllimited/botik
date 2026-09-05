@@ -184,6 +184,9 @@
                   {% else %}
                     <span class="tw-text-subtle2">—</span>
                   {% endif %}
+                {% elif p.tariff_info.type in ('router_order', 'delivery') %}
+                  <div class="text-[13px] tw-text-base2">{{ p.tariff_info.order_number or p.tariff_info.title or '—' }}</div>
+                  <div class="text-[11px] tw-text-muted2 mt-0.5">{% if p.tariff_info.type == 'delivery' %}доставка заказа{% else %}заказ роутера{% endif %}</div>
                 {% elif p.tariff_info.type == 'device_upgrade' %}
                   <div class="text-[13px] tw-text-base2 inline-flex items-center gap-1.5" title="Расширение лимита устройств">
                     <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
@@ -293,6 +296,9 @@
                   {% elif p.tariff_info.traffic_gb %}
                     +{{ p.tariff_info.traffic_gb }} GB
                   {% else %}—{% endif %}
+                {% elif p.tariff_info.type in ('router_order', 'delivery') %}
+                  <div class="text-[13px] tw-text-base2">{{ p.tariff_info.order_number or p.tariff_info.title or '—' }}</div>
+                  <div class="text-[11px] tw-text-muted2 mt-0.5">{% if p.tariff_info.type == 'delivery' %}доставка заказа{% else %}заказ роутера{% endif %}</div>
                 {% elif p.tariff_info.type == 'device_upgrade' %}
                   <span class="inline-flex items-center gap-1"><i data-lucide="smartphone" class="w-3 h-3"></i>{{ p.tariff_info.old_limit }} → {{ p.tariff_info.new_limit }}</span>
                   <div class="text-[10.5px] tw-text-muted2 mt-0.5">лимит устр.</div>

@@ -853,6 +853,13 @@ async def api_user_details(telegram_id: int):
                             tariff_info = {'type': 'traffic_topup', 'traffic_gb': traffic_to_add_gb}
                         else:
                             tariff_info = None
+                    elif payment_type in ('router_order', 'delivery'):
+                        # Платёж из магазина роутеров: за ним заказ, а не тариф.
+                        tariff_info = {
+                            'type': payment_type,
+                            'order_number': metadata.get('order_number') or '',
+                            'title': metadata.get('description') or '',
+                        }
                     else:
                         # Для обычных платежей используем тарифы подписки
                         tariff_id = metadata.get('tariff_id')

@@ -1075,6 +1075,127 @@ async def subscriptions_snapshot(session: AsyncSession = Depends(get_session)) -
     return {"total": len(latest), "subscriptions": list(latest.values())}
 
 
+BOT_PAYMENT_STATUSES = {
+    PaymentStatus.SUCCEEDED: "succeeded",
+    PaymentStatus.PENDING: "pending",
+    PaymentStatus.WAITING_FOR_CAPTURE: "processing",
+    PaymentStatus.CANCELED: "canceled",
+    PaymentStatus.FAILED: "failed",
+    PaymentStatus.REFUNDED: "refunded",
+}
+"""Наши статусы словами их таблицы: карточка клиента красит их по своему
+словарю, и незнакомое слово там висит серым без перевода."""
+
+BOT_PROVIDER_TITLES = {
+    PaymentProviderName.PLATEGA: "Platega",
+    PaymentProviderName.YOOKASSA: "YooKassa",
+    PaymentProviderName.CRYPTOBOT: "CryptoBot",
+    PaymentProviderName.COD: "При получении",
+    PaymentProviderName.MANUAL: "Вручную",
+}
+
+BOT_PAYMENT_TYPES = {
+    PaymentPurpose.ORDER: "router_order",
+    PaymentPurpose.DELIVERY: "delivery",
+}
+"""Тип платежа в их разметке. Подписка типа не получает: это их родной
+случай, и они показывают его по числу дней, которое мы кладём рядом."""
+
+PAYMENTS_SNAPSHOT_LIMIT = 500
+
+
+def _since(raw: str) -> dt.datetime | None:
+    """Курсор снимка. Кривой — читаем как «с начала», а не падаем: снимок
+    зовёт фоновый круг, и ошибка там означала бы, что зеркало встало."""
+    if not raw:
+        return None
+    try:
+        value = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
+
+
+@router.get("/payments/snapshot")
+async def payments_snapshot(
+    since: str = "",
+    limit: int = Query(default=PAYMENTS_SNAPSHOT_LIMIT, ge=1, le=1000),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Наши платежи — для зеркала в таблице платежей бота.
+
+    Карточка клиента, страница платежей, аналитика, выручка на главной
+    и «оплатил ли приглашённый» у бота читают одну его таблицу. Оплата
+    роутера, доставки и продления проходит через нас и туда не попадает —
+    и у клиента с оплаченным заказом в карточке стояло «Платежей 0».
+    Чинить это по экрану значит чинить вечно: экранов у бота десятки,
+    и каждый новый снова не видел бы наших денег. Поэтому отдаём снимок
+    в их разметке, а бот раскладывает его по своей таблице.
+
+    Снимок по курсору `updated_at`: бот забирает только то, что менялось
+    с прошлого круга, и смена статуса «ожидает → оплачен» доезжает так же,
+    как новый платёж.
+    """
+    query = (
+        select(Payment)
+        .options(selectinload(Payment.user), selectinload(Payment.order))
+        .where(Payment.user.has(User.tg_id.is_not(None)))
+    )
+    cursor = _since(since)
+    if cursor is not None:
+        query = query.where(Payment.updated_at > cursor)
+
+    payments = list(
+        await session.scalars(query.order_by(Payment.updated_at, Payment.id).limit(limit))
+    )
+
+    plan_ids = {payment.plan_id for payment in payments if payment.plan_id}
+    plans = {
+        plan.id: plan
+        for plan in await session.scalars(select(Plan).where(Plan.id.in_(plan_ids or {0})))
+    }
+
+    rows = []
+    for payment in payments:
+        plan = plans.get(payment.plan_id or 0)
+        metadata: dict[str, Any] = {
+            "source": "shop",
+            "purpose": str(payment.purpose),
+            "payment_method": BOT_PROVIDER_TITLES.get(payment.provider, str(payment.provider)),
+            "description": payment.description or "",
+            "order_number": payment.order.public_number if payment.order else "",
+        }
+        payment_type = BOT_PAYMENT_TYPES.get(payment.purpose, "")
+        if payment_type:
+            metadata["payment_type"] = payment_type
+        if plan is not None:
+            # Их разметка подписки: число дней и номер их же тарифа, чтобы
+            # карточка показала название. Наш срок помнит его в slug.
+            metadata["subscription_days"] = plan.months * 30 + plan.extra_days
+            tariff_id = plan.slug.removeprefix(TARIFF_SLUG_PREFIX)
+            if plan.slug != tariff_id and tariff_id.isdigit():
+                metadata["tariff_id"] = int(tariff_id)
+
+        rows.append(
+            {
+                "payment_id": f"SHOP_{payment.id}",
+                "tg_id": payment.user.tg_id,
+                "amount": str(payment.amount),
+                "currency": payment.currency,
+                "status": BOT_PAYMENT_STATUSES.get(payment.status, str(payment.status)),
+                "created_at": _iso_dt(payment.created_at),
+                "paid_at": _iso_dt(payment.paid_at),
+                "metadata": metadata,
+            }
+        )
+
+    return {
+        "payments": rows,
+        "limit": limit,
+        "next_since": _iso_dt(payments[-1].updated_at) if payments else since,
+    }
+
+
 # --- Очередь сообщений -------------------------------------------------------
 #
 # Отправляет их бот: клиент разговаривает с ним, и токен есть только у него.

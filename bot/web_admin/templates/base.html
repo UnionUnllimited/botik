@@ -3219,6 +3219,9 @@
         subscription:   { label: 'Подписка',          icon: 'calendar-check',     color: 'var(--color-brand-500)', bg: 'rgb(99 102 241 / .18)' },
         traffic_topup:  { label: 'Докупка трафика',   icon: 'database',           color: '#10b981',                bg: 'rgb(16 185 129 / .18)' },
         device_upgrade: { label: 'Лимит устройств',   icon: 'monitor-smartphone', color: '#a855f7',                bg: 'rgb(168 85 247 / .18)' },
+        // Платежи магазина роутеров: зеркалятся из основного приложения.
+        router_order:   { label: 'Роутер',            icon: 'router',             color: '#0ea5e9',                bg: 'rgb(14 165 233 / .18)' },
+        delivery:       { label: 'Доставка',          icon: 'truck',              color: '#f59e0b',                bg: 'rgb(245 158 11 / .18)' },
       };
 
       function statusBadge(st, paymentId) {
@@ -3266,6 +3269,21 @@
               <div class="up-tariff-text">
                 <div class="up-tariff-name">${oldL} → ${newL}<span class="up-tariff-diff">${diff > 0 ? `+${diff}` : diff}</span></div>
                 <div class="up-tariff-sub">расширение лимита устройств</div>
+              </div>
+            </div>`;
+        }
+
+        if (t.type === 'router_order' || t.type === 'delivery') {
+          const info = TYPE_INFO[t.type];
+          const name = t.order_number || t.title || '—';
+          return `
+            <div class="up-tariff">
+              <span class="up-tariff-icon" style="background:${info.bg};color:${info.color};">
+                <i data-lucide="${info.icon}"></i>
+              </span>
+              <div class="up-tariff-text">
+                <div class="up-tariff-name">${escapeHtml(name)}</div>
+                <div class="up-tariff-sub">${t.type === 'delivery' ? 'доставка заказа' : 'заказ роутера'}</div>
               </div>
             </div>`;
         }
@@ -3322,7 +3340,7 @@
       // ─── Подсчёт сводки (только succeeded) ───
       const succeeded = payments.filter(p => p.status === 'succeeded');
       const sumByCur = {};
-      const cntByType = { subscription: 0, traffic_topup: 0, device_upgrade: 0 };
+      const cntByType = { subscription: 0, traffic_topup: 0, device_upgrade: 0, router_order: 0, delivery: 0 };
       succeeded.forEach(p => {
         const cur = p.currency || '₽';
         sumByCur[cur] = (sumByCur[cur] || 0) + parseFloat(p.amount || p.price || 0);
@@ -3353,7 +3371,7 @@
           <div class="up-sum-card">
             <div class="up-sum-label">Состав</div>
             <div class="up-sum-types">
-              ${['subscription','traffic_topup','device_upgrade'].map(k => {
+              ${['subscription','traffic_topup','device_upgrade','router_order','delivery'].map(k => {
                 if (!cntByType[k]) return '';
                 const inf = TYPE_INFO[k];
                 return `<span class="up-sum-type" title="${escapeHtml(inf.label)}" style="background:${inf.bg};color:${inf.color};">

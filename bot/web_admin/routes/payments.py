@@ -187,6 +187,13 @@ def attach_payment_routes(admin_bp):
                             'old_limit': old_limit,
                             'new_limit': new_limit,
                         }
+                    elif payment_type in ('router_order', 'delivery'):
+                        # Платёж из магазина роутеров: за ним заказ, а не тариф.
+                        tariff_info = {
+                            'type': payment_type,
+                            'order_number': metadata.get('order_number') or '',
+                            'title': metadata.get('description') or '',
+                        }
                     else:
                         # Для обычных платежей используем тарифы подписки
                         tariff_id = metadata.get('tariff_id')

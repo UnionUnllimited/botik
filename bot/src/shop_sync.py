@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 
 from loguru import logger
-
-import re
 
 import db_helpers
 from src import shop_api
@@ -131,12 +131,129 @@ async def sync_subscriptions() -> int:
     return updated
 
 
+PAYMENTS_CURSOR_KEY = "shop_payments_since"
+"""Докуда зеркало платежей дочитало. Живёт в нашей таблице настроек, а не
+в памяти: после перезапуска бот продолжает с места, а не перечитывает всё."""
+
+_UPSERT_PAYMENT = """
+    INSERT INTO payments
+        (payment_id, telegram_id, amount, currency, status, created_at, metadata_json, pwa_notified)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(payment_id) DO UPDATE SET
+        amount = excluded.amount,
+        currency = excluded.currency,
+        status = excluded.status,
+        metadata_json = excluded.metadata_json
+"""
+"""`pwa_notified` при обновлении не трогаем: это флаг «оператору уже
+сообщили», и смена статуса не должна его сбрасывать."""
+
+
+async def _remember_cursor(value: str) -> None:
+    async with db_helpers.get_db_connection_safe() as db:
+        await db.execute(
+            "INSERT INTO settings (key, value, description) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (PAYMENTS_CURSOR_KEY, value, "Курсор зеркала платежей магазина"),
+        )
+        await db.commit()
+
+
+async def _store_payments(rows: list[dict], *, notified: int) -> tuple[int, int]:
+    """Кладёт пачку в нашу таблицу. Возвращает (записано, пропущено).
+
+    Пропускаем платежи клиентов, которых в `users` нет: база держит
+    внешние ключи включёнными, и такая строка уронила бы всю пачку.
+    Клиент без строки в `users` — тот, кто ни разу не открывал бота,
+    и карточки у него всё равно нет.
+    """
+    tg_ids = sorted({int(row["tg_id"]) for row in rows if row.get("tg_id")})
+    if not tg_ids:
+        return 0, len(rows)
+
+    written = skipped = 0
+    async with db_helpers.get_db_connection_safe() as db:
+        marks = ",".join("?" * len(tg_ids))
+        async with db.execute(
+            f"SELECT telegram_id FROM users WHERE telegram_id IN ({marks})", tg_ids
+        ) as cursor:
+            known = {int(item[0]) for item in await cursor.fetchall()}
+
+        for row in rows:
+            tg_id = int(row.get("tg_id") or 0)
+            if tg_id not in known:
+                skipped += 1
+                continue
+            await db.execute(
+                _UPSERT_PAYMENT,
+                (
+                    row["payment_id"],
+                    tg_id,
+                    float(row.get("amount") or 0),
+                    row.get("currency") or "RUB",
+                    row.get("status") or "pending",
+                    row.get("created_at") or "",
+                    json.dumps(row.get("metadata") or {}, ensure_ascii=False),
+                    notified,
+                ),
+            )
+            written += 1
+        await db.commit()
+    return written, skipped
+
+
+async def sync_payments() -> int:
+    """Переносит платежи магазина в нашу таблицу `payments`.
+
+    Карточка клиента, страница платежей, аналитика, выручка на главной
+    и «оплатил ли приглашённый» читают одну эту таблицу. Оплата роутера,
+    доставки и продления проходит через основное приложение и сюда не
+    попадала — у клиента с оплаченным заказом в карточке стояло
+    «Платежей 0». Чинить это по экрану значит чинить вечно: экранов
+    десятки, и каждый новый снова не видел бы этих денег.
+
+    Первый круг переносит историю целиком и помечает её как «оператору
+    сообщено»: иначе push-рассылка админке выстрелила бы всеми старыми
+    оплатами разом. Дальше — только изменения с прошлого курсора,
+    и о свежих оплатах оператор узнаёт как о своих.
+    """
+    since = await db_helpers.get_setting_by_key(PAYMENTS_CURSOR_KEY, "")
+    first_run = not since
+    total_written = total_skipped = 0
+
+    while True:
+        data, error = await shop_api.payments_snapshot(since)
+        if error:
+            logger.debug(f"[PAYMENTS] снимок платежей недоступен: {error}")
+            break
+        rows = data.get("payments") or []
+        if not rows:
+            break
+
+        written, skipped = await _store_payments(rows, notified=1 if first_run else 0)
+        total_written += written
+        total_skipped += skipped
+
+        since = data.get("next_since") or since
+        await _remember_cursor(since)
+        if len(rows) < int(data.get("limit") or len(rows)):
+            break
+
+    if total_written or total_skipped:
+        logger.info(
+            f"[PAYMENTS] платежей магазина перенесено: {total_written}, "
+            f"пропущено без клиента в базе: {total_skipped}"
+        )
+    return total_written
+
+
 async def sync_loop() -> None:
-    logger.info("[TARIFFS] синхронизация тарифов и подписок с каталогом запущена")
+    logger.info("[TARIFFS] синхронизация тарифов, подписок и платежей с каталогом запущена")
     while True:
         try:
             await sync_once()
             await sync_subscriptions()
+            await sync_payments()
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — цикл переживает что угодно
