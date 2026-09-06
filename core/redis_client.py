@@ -67,6 +67,15 @@ class RateLimiter:
     async def reset(self, bucket: str) -> None:
         await self._redis.delete(settings.redis.key("rl", bucket))
 
+    async def seconds_left(self, bucket: str) -> int:
+        """Сколько секунд до конца окна. Ноль — окна нет.
+
+        Отказ без срока читается как поломка: «слишком часто» и через минуту
+        то же самое. С числом человек знает, что ждать, а не что чинить.
+        """
+        ttl = await self._redis.ttl(settings.redis.key("rl", bucket))
+        return max(int(ttl), 0)
+
 
 class NonceStore:
     """Anti-replay для подписанных запросов устройств."""

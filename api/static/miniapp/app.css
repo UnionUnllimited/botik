@@ -310,6 +310,7 @@ textarea.input { min-height: 80px; resize: vertical; line-height: 1.45; }
   color: var(--accent); background: var(--accent-dim);
 }
 .ic-box svg { width: 19px; height: 19px; }
+.ic-box .flag { font-size: 20px; line-height: 1; }
 
 /* --- Товар ---------------------------------------------------------------- */
 
@@ -319,6 +320,20 @@ textarea.input { min-height: 80px; resize: vertical; line-height: 1.45; }
   border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .prod .shot img { width: 100%; display: block; border-radius: var(--r-md); }
+.prod .shot-empty {
+  display: flex; align-items: center; justify-content: center; height: 84px;
+  color: var(--subtle); background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+}
+.prod .shot-empty svg { width: 34px; height: 34px; }
+
+/* Заготовка под данные, которые едут с роутера. Мерцает, а не крутится:
+   спиннер обещает «вот-вот», а тут честные пятнадцать секунд. */
+.sk {
+  height: 14px; border-radius: 7px;
+  background: linear-gradient(90deg, var(--surface-3) 25%, rgba(255, 255, 255, .09) 50%, var(--surface-3) 75%);
+  background-size: 200% 100%; animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
 
 .price {
   font-size: 24px; font-weight: 700; letter-spacing: -.7px; line-height: 1;

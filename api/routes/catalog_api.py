@@ -875,13 +875,35 @@ async def my_router_reboot(
     return {"ok": result.ok, "error": "" if result.ok else "unreachable"}
 
 
-NODE_SWITCHES_PER_HOUR = 6
-"""Сколько раз в час клиент может переключить узел или тронуть переключатель.
+NODE_SWITCHES_PER_WINDOW = 8
+NODE_SWITCH_WINDOW_SEC = 600
+"""Сколько раз за десять минут клиент может переключить узел или тронуть
+переключатель — вместе, одним счётчиком.
 
 Каждое переключение перезапускает сервис доступа, а перезапуск роняет
-установленные соединения: полсекунды-секунда, в которые дома всё встаёт.
-Шесть — это «попробовал все узлы и выбрал», а не «сижу и щёлкаю».
+установленные соединения: секунда, в которую дома всё встаёт. Предел нужен
+против петли «не помогло — ещё раз», а не против выбора: серверов в списке
+семь, и «шесть в час» не давало перебрать их даже по разу — клиент упирался
+в «слишком часто» на середине списка. Восемь за десять минут — это все
+серверы по разу с запасом, а петля упрётся в предел на первой же минуте.
 """
+
+
+async def _switch_too_often(device: Device) -> int:
+    """Ноль — можно; иначе сколько секунд ждать.
+
+    Счётчик общий на переключатель и выбор узла: роутер перезапускает сервис
+    в обоих случаях, и считать их порознь значило бы разрешить вдвое больше
+    перезапусков, чем задумано.
+    """
+    limiter = RateLimiter()
+    bucket = f"router_node:{device.id}"
+    allowed, _ = await limiter.hit(
+        bucket, limit=NODE_SWITCHES_PER_WINDOW, window_sec=NODE_SWITCH_WINDOW_SEC
+    )
+    if allowed:
+        return 0
+    return max(await limiter.seconds_left(bucket), 1)
 
 
 async def _own_router(session: AsyncSession, tg_id: int, device_id: int) -> Device:
@@ -968,11 +990,9 @@ async def my_router_select_node(
     )
     node_id = str(payload.get("node_id") or "").strip()
 
-    allowed, _ = await RateLimiter().hit(
-        f"router_node:{device.id}", limit=NODE_SWITCHES_PER_HOUR, window_sec=3600
-    )
-    if not allowed:
-        return {"ok": False, "error": "too_often"}
+    wait = await _switch_too_often(device)
+    if wait:
+        return {"ok": False, "error": "too_often", "retry_after": wait}
 
     if not _reachable(device):
         return {"ok": False, "error": "offline"}
@@ -1011,11 +1031,9 @@ async def my_router_service(payload: dict, session: AsyncSession = Depends(get_s
     )
     enabled = bool(payload.get("enabled"))
 
-    allowed, _ = await RateLimiter().hit(
-        f"router_node:{device.id}", limit=NODE_SWITCHES_PER_HOUR, window_sec=3600
-    )
-    if not allowed:
-        return {"ok": False, "error": "too_often"}
+    wait = await _switch_too_often(device)
+    if wait:
+        return {"ok": False, "error": "too_often", "retry_after": wait}
 
     if not _reachable(device):
         return {"ok": False, "error": "offline"}

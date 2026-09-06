@@ -184,7 +184,15 @@
     refused: ''
   };
 
+  // «Слишком часто» без срока читается как поломка: через минуту то же
+  // самое. С числом человек знает, что ждать, а не что чинить.
   function reason(res) {
+    if (res.error === 'too_often' && res.retry_after) {
+      var minutes = Math.max(1, Math.ceil(Number(res.retry_after) / 60));
+      return 'Слишком много переключений подряд: каждое перезапускает сервис и '
+        + 'на секунду роняет интернет дома. Подождите ' + minutes + ' '
+        + plural(minutes, ['минуту', 'минуты', 'минут']) + '.';
+    }
     return res.message || REASONS[res.error] || 'Роутер не ответил';
   }
 
@@ -423,6 +431,16 @@
     };
   }
 
+  // Склонение по числу: 1 минуту, 2 минуты, 5 минут. Формы даёт вызывающий.
+  function plural(n, forms) {
+    var a = Math.abs(n) % 100;
+    var b = a % 10;
+    if (a > 10 && a < 20) { return forms[2]; }
+    if (b > 1 && b < 5) { return forms[1]; }
+    if (b === 1) { return forms[0]; }
+    return forms[2];
+  }
+
   function daysWord(n) {
     var abs = Math.abs(n) % 100;
     var tail = abs % 10;
@@ -639,10 +657,13 @@
         // тридцать флагов обводкой в одну толщину невозможно. Узла без флага
         // это не касается: значка вместо него не ставим, строка просто
         // начинается с названия.
-        + (node.flag
-            ? '<span style="font-size:21px;line-height:1;flex:0 0 auto">'
-              + esc(node.flag) + '</span>'
-            : '')
+        // Плитка одной ширины у каждой строки: у страны в ней флаг, у «Авто» —
+        // значок. Без плитки названия стран и «Авто» начинались бы с разных
+        // отступов, и один список читался бы как два.
+        + '<span class="ic-box">'
+        +   (node.flag ? '<span class="flag">' + esc(node.flag) + '</span>'
+                       : icon(node.auto ? 'swap' : 'router'))
+        + '</span>'
         + '<span class="grow"><b>' + esc(node.name) + '</b>'
         + (node.auto
             ? '<span class="muted small" style="display:block;margin-top:2px">'
@@ -668,7 +689,7 @@
       // читается как поломка.
       + (state.enabled && (state.nodes || []).length > 1
           ? '<div class="sec">Сервер</div>'
-            + '<div class="list">' + (state.nodes || []).map(row).join('') + '</div>'
+            + '<div class="list leading">' + (state.nodes || []).map(row).join('') + '</div>'
             + '<div class="muted tiny" style="margin:-4px 2px 0">Если какой-то сервис '
             + 'открывается медленно, попробуйте другой сервер. Переключение занимает '
             + 'несколько секунд, в которые интернет дома замирает.</div>'
@@ -795,7 +816,15 @@
 
         // Пустое место под настройки сервиса: они читаются с самого роутера
         // и приезжают позже остального экрана.
-        + '<div id="access"></div>'
+        // Не пустое место, а заготовка: список едет с самого роутера, до
+        // пятнадцати секунд, и пустота под кнопками читается как «настроек
+        // нет», а заготовка — как «сейчас будут». Не дождались — уберётся вся.
+        + '<div id="access">'
+        +   '<div class="sec" style="margin-top:24px">Сервис доступа</div>'
+        +   '<div class="card"><div class="sk" style="width:62%"></div>'
+        +     '<div class="sk" style="width:38%;margin-top:10px"></div></div>'
+        +   '<div class="muted tiny center" style="margin-top:8px">Спрашиваем роутер…</div>'
+        + '</div>'
 
         // Панель и инструкция живут на самом роутере, по локальному адресу.
         // Снаружи его не существует вовсе, поэтому кнопки отделены от прочих
@@ -1046,8 +1075,11 @@
         }).join('');
 
         return '<div class="card prod" id="p' + esc(p.id) + '">'
+          // Без фото карточка начиналась бы с заголовка впритык к краю и
+          // выглядела бы обрезанной рядом с соседней, у которой фото есть.
           + (p.photo_url
-              ? '<div class="shot"><img src="' + esc(p.photo_url) + '" alt=""></div>' : '')
+              ? '<div class="shot"><img src="' + esc(p.photo_url) + '" alt=""></div>'
+              : '<div class="shot shot-empty">' + icon('router', 'ic-lg') + '</div>')
           + '<div class="row"><b class="grow" style="font-size:17px">' + esc(p.title) + '</b>'
           +   (p.in_stock
                 ? '<span class="pill ok"><i class="dot"></i>в наличии</span>'
