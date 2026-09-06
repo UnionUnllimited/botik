@@ -570,72 +570,133 @@
   /* --- Подписка ----------------------------------------------------------- */
 
   views.renew = function () {
-    return api('/renew').then(function (d) {
+    // Экран продления собран как шаг выбора срока в покупке: не четыре
+    // ценника, каждый из которых кнопка, а выбор карточками и одна кнопка
+    // внизу. Четыре равноправные кнопки — это четыре решения, и человек
+    // не принимает ни одного; выбор с одной кнопкой — одно решение, уже
+    // наполовину принятое отмеченной карточкой.
+    //
+    // Доводы с витрины стоят выше цены по той же причине, что и в каталоге:
+    // цифра без них читается как «ещё 900 ₽», с ними — как «ещё три месяца
+    // всего дома». Свой текст здесь не пишем: обещания живут на витрине.
+    return Promise.all([api('/renew'), once('pitch', '/pitch')]).then(function (res) {
+      var d = res[0];
       var sub = d.subscription || {};
+      var active = sub.status === 'active';
+      var term = active ? termLeft(sub) : null;
+      var list = (d.plans || []).slice();
+      var best = bestPlan(list);
+      var preset = list.filter(function (x) { return x.is_default; })[0];
+      var chosen = (preset || best || list[0] || {}).id;
 
-      // Из трёх одинаковых на вид сроков человек выбирает дольше всех и чаще
-      // не выбирает вовсе. Пометка снимает этот выбор: она не назначена
-      // руками, а посчитана по цене за месяц — иначе разъедется с ценами
-      // при первой же правке тарифа.
-      var best = bestPlan(d.plans || []);
+      // Новая дата окончания: от текущей, если подписка жива, иначе
+      // от сегодня. Это главный аргумент за длинный срок — не «180 дней»,
+      // а «до марта не вспоминать».
+      function endsAt(p) {
+        var base = active && sub.until ? new Date(sub.until) : new Date();
+        if (isNaN(base)) { base = new Date(); }
+        base.setDate(base.getDate() + planDays(p));
+        return base.toISOString();
+      }
 
-      var plans = (d.plans || []).map(function (p) {
-        var note = [periodNote(planTitle(p), planPeriod(p))];
+      function box(p) {
         var rate = planPerMonth(p, d.currency);
-        if (rate) { note.push(rate + ' в месяц'); }
-        note = note.filter(Boolean).join(' · ');
-        return '<div class="plan"><div class="grow">'
-          + '<div><b>' + esc(planTitle(p)) + '</b>'
-          + (best && best.id === p.id ? ' <span class="best">выгоднее всего</span>' : '')
-          + '</div>'
-          + (note ? '<div class="muted small">' + esc(note) + '</div>' : '')
-          + '</div>'
-          + '<button class="btn small" data-plan="' + esc(p.id) + '">'
-          + money(p.price, d.currency) + '</button></div>';
+        var note = [periodNote(planTitle(p), planPeriod(p)), rate ? rate + ' в месяц' : '']
+          .filter(Boolean).join(' · ');
+        // «Выгоднее всего» считается по цене за месяц и при ровной сетке
+        // не появляется; «рекомендуем» — срок, который оператор отметил
+        // в тарифах, и это его выбор, а не наш.
+        var tag = best && best.id === p.id ? 'выгоднее всего'
+          : (preset && preset.id === p.id ? 'рекомендуем' : '');
+        return '<label class="choice"><input type="radio" name="renew" value="' + esc(p.id) + '"'
+          + (chosen === p.id ? ' checked' : '') + '>'
+          + '<div class="box"><span class="tick"></span><span class="grow">'
+          + '<span class="row"><span><b>' + esc(planTitle(p)) + '</b>'
+          + (tag ? ' <span class="best">' + tag + '</span>' : '') + '</span>'
+          + '<span style="font-weight:700">' + money(p.price, d.currency) + '</span></span>'
+          + (note ? '<span class="muted small" style="display:block;margin-top:3px">'
+                    + esc(note) + '</span>' : '')
+          + '</span></div></label>';
+      }
+
+      var value = (res[1].value || []).slice(0, 3).map(function (v) {
+        return '<span class="chip">' + icon('check') + esc(v.title) + '</span>';
       }).join('');
 
       show(
         '<h1>Подписка</h1>'
-        + (sub.until
-            ? '<div class="card"><div class="row"><div>'
-              + '<div class="muted small">Действует до</div>'
-              + '<div class="big" style="margin-top:2px">' + date(sub.until) + '</div></div>'
-              + '<span class="ic-box">' + icon('shield') + '</span></div></div>'
-            : '')
-        + (plans
-            ? '<div class="card">' + plans + '</div>'
-              // Называем дату, а не «текущую дату окончания»: человек читает
-              // эту строку, чтобы понять, не пропадут ли его оплаченные дни,
-              // и отвечать на такой вопрос канцелярской формулой незачем.
-              + '<div class="muted tiny center">'
-              + (sub.until
+        + (term
+            ? '<div class="card"><div class="term ' + term.tone + '">'
+              +   '<div class="row" style="align-items:flex-end">'
+              +     '<div><div class="muted small">Подписка активна</div>'
+              +       '<div class="num" style="margin-top:4px">' + term.days + '</div></div>'
+              +     '<div style="text-align:right">'
+              +       '<div class="muted small">' + daysWord(term.days) + ' осталось</div>'
+              +       '<div class="small" style="margin-top:4px">до ' + date(sub.until) + '</div>'
+              +     '</div>'
+              +   '</div>'
+              +   '<div class="track"><div class="fill" style="width:'
+              +     (100 - term.spent) + '%"></div></div>'
+              + '</div></div>'
+            : (sub.until
+                ? '<div class="card"><div class="row"><div>'
+                  + '<div class="muted small">Закончилась</div>'
+                  + '<div class="big" style="margin-top:2px">' + date(sub.until) + '</div></div>'
+                  + '<span class="pill bad">не активна</span></div></div>'
+                : ''))
+        + (value ? '<div class="chips">' + value + '</div>' : '')
+        + (list.length
+            ? '<div class="sec">Срок продления</div>'
+              + '<div class="card">' + list.map(box).join('') + '</div>'
+              + '<div class="small center" id="ends" style="margin:-2px 0 12px"></div>'
+              + '<button class="btn" id="pay"></button>'
+              + '<div class="muted tiny center" style="margin-top:10px">'
+              + (active && sub.until
                   ? 'Оплаченные дни прибавятся к ' + date(sub.until)
                     + ' — то, что осталось, не сгорает.'
-                  : 'Оплаченные дни прибавятся к текущей подписке — '
-                    + 'то, что осталось, не сгорает.')
+                  : 'Доступ включится сразу после оплаты.')
               + '</div>'
             : empty('info', 'Сроков нет', 'Продление сейчас недоступно.'))
       );
 
-      screen.querySelectorAll('[data-plan]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          haptic('medium');
-          var was = btn.textContent;
-          btn.disabled = true;
-          btn.textContent = 'Готовим…';
-          api('/renew', { method: 'POST', body: JSON.stringify({ plan_id: Number(btn.dataset.plan) }) })
-            .then(function (res) {
-              if (!res.ok) { throw new Error(res.error || 'Не получилось создать счёт'); }
-              tg.openLink(res.pay_url);
-              btn.disabled = false;
-              btn.textContent = was;
-            })
-            .catch(function (err) {
-              btn.disabled = false;
-              btn.textContent = was;
-              tg.showAlert(err.message || String(err));
-            });
+      if (!list.length) { return; }
+
+      function selected() {
+        return list.filter(function (x) { return x.id === chosen; })[0];
+      }
+
+      // Кнопка и дата переписываются под выбор: человек читает не «оплатить»,
+      // а «продлить на 90 дней за 900 ₽» — и видит, до какого числа.
+      function refresh() {
+        var p = selected();
+        if (!p) { return; }
+        var title = planTitle(p);
+        document.getElementById('ends').innerHTML = 'Будет действовать до <b>'
+          + date(endsAt(p)) + '</b>';
+        document.getElementById('pay').innerHTML = icon('card') + 'Продлить на '
+          + esc(title.charAt(0).toLowerCase() + title.slice(1)) + ' · '
+          + money(p.price, d.currency);
+      }
+      refresh();
+
+      screen.querySelectorAll('input[name="renew"]').forEach(function (r) {
+        r.addEventListener('change', function () {
+          chosen = Number(r.value); haptic(); refresh();
         });
+      });
+
+      document.getElementById('pay').addEventListener('click', function () {
+        var btn = this;
+        haptic('medium');
+        btn.disabled = true;
+        btn.innerHTML = icon('refresh') + 'Готовим счёт…';
+        api('/renew', { method: 'POST', body: JSON.stringify({ plan_id: chosen }) })
+          .then(function (r) {
+            if (!r.ok) { throw new Error(r.error || 'Не получилось создать счёт'); }
+            tg.openLink(r.pay_url);
+          })
+          .catch(function (err) { tg.showAlert(err.message || String(err)); })
+          .then(function () { btn.disabled = false; refresh(); });
       });
     });
   };

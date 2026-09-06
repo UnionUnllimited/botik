@@ -87,7 +87,14 @@ async def app_page() -> Response:
     """
     if not settings.miniapp.is_configured:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
-    return FileResponse(PAGE_FILE, media_type="text/html; charset=utf-8")
+    # Страницу не кэшировать: сами файлы версионированы в её адресах, но
+    # если встроенный браузер запомнит саму страницу, он будет тянуть по ней
+    # прошлые версии скрипта и стилей ещё долго после выката.
+    return FileResponse(
+        PAGE_FILE,
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/logo")

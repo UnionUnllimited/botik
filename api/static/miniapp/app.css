@@ -282,6 +282,15 @@ label.field > span { display: block; font-size: 13px; color: var(--muted); margi
 textarea.input { min-height: 80px; resize: vertical; line-height: 1.45; }
 .hint { font-size: 12.5px; margin-top: 7px; }
 
+/* Доводы одной строкой, до цены: чипами, а не абзацем — на экране, где
+   человек уже решает, читать ему некогда, узнать — есть за что. */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px 6px 9px;
+  border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12.5px;
+}
+.chip svg { width: 14px; height: 14px; color: var(--accent); }
+
 .choice { display: block; cursor: pointer; }
 .choice + .choice { margin-top: 8px; }
 .choice input { position: absolute; opacity: 0; pointer-events: none; }
