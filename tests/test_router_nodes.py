@@ -13,7 +13,6 @@ import pytest
 
 from core.services import router_nodes
 
-
 ANSWER = (
     '{"enabled":true,"current":"cfg02","nodes":['
     '{"id":"cfg01","name":"Amsterdam 1"},'
@@ -97,7 +96,7 @@ def test_unknown_fields_do_not_break_the_answer():
 )
 def test_known_refusals_become_human_text(code, expected):
     with pytest.raises(router_nodes.NodeError) as exc:
-        router_nodes.parse('{"error":"%s"}' % code)
+        router_nodes.parse(json.dumps({"error": code}))
 
     assert expected in str(exc.value)
 
@@ -239,6 +238,6 @@ class TestNamesAsTheClientSeesThem:
         Список стран неполный намеренно: гадать по двум буквам значит
         однажды показать клиенту чужой флаг, а это хуже, чем его отсутствие.
         """
-        state = router_nodes.parse('{"nodes":[{"id":"a","name":%s}]}' % json.dumps(name))
+        state = router_nodes.parse('{"nodes":[{"id":"a","name":' + json.dumps(name) + '}]}')
 
         assert state.nodes[0].flag == expected

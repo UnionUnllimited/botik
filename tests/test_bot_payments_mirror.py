@@ -90,10 +90,11 @@ def mirror(tmp_path, monkeypatch):
             await conn.close()
 
     async def get_setting_by_key(key: str, default: str = "") -> str:
-        async with connection() as db:
-            async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
-                row = await cur.fetchone()
-                return str(row[0]) if row and row[0] is not None else default
+        async with connection() as db, db.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ) as cur:
+            row = await cur.fetchone()
+            return str(row[0]) if row and row[0] is not None else default
 
     fake_db = types.ModuleType("db_helpers")
     fake_db.get_db_connection_safe = connection
@@ -124,9 +125,8 @@ def mirror(tmp_path, monkeypatch):
             await db.executescript(SCHEMA)
 
     async def rows(sql, args=()):
-        async with aiosqlite.connect(db_file) as db:
-            async with db.execute(sql, args) as cur:
-                return await cur.fetchall()
+        async with aiosqlite.connect(db_file) as db, db.execute(sql, args) as cur:
+            return await cur.fetchall()
 
     return types.SimpleNamespace(module=module, shop=shop, prepare=prepare, rows=rows)
 

@@ -133,7 +133,8 @@ async def test_snapshot_rows_carry_the_key(panel):
             ])
             await session.commit()
 
-            rows = {r["tg_id"]: r for r in (await catalog_api.subscriptions_snapshot(session))["subscriptions"]}
+            snapshot = await catalog_api.subscriptions_snapshot(session)
+            rows = {r["tg_id"]: r for r in snapshot["subscriptions"]}
 
         assert rows[614685408]["panel_short_uuid"] == "k1"
         assert rows[614685408]["panel_username"] == "tg614685408_d4-0d-ab-2b-a4-ee"
