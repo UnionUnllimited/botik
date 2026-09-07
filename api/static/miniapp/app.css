@@ -647,3 +647,19 @@ body.pushed { padding-bottom: 24px; }
 /* Карточка выбора отзывается на нажатие, как кнопка. */
 .choice .box { transition: border-color .15s, background .15s, transform .12s; }
 .choice:active .box { transform: scale(.99); }
+
+/* --- Живые подписи и строки-кнопки ---------------------------------------- */
+
+/* Состояние в строке профиля: точка и слово одним цветом. */
+.live { display: inline-flex; align-items: center; gap: 5px; }
+.live.ok  { color: var(--ok); }
+.live.off { color: var(--warn); }
+
+/* Строка, которую можно нажать (трек-номер): без рамки и фона, чтобы
+   читалась текстом, но со значком копирования, чтобы было понятно, зачем. */
+.linkline {
+  display: flex; align-items: center; gap: 7px; margin-top: 5px;
+  background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer;
+  text-align: left;
+}
+.linkline svg { width: 16px; height: 16px; }

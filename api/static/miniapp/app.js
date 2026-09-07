@@ -38,6 +38,60 @@
     try { tg.HapticFeedback.impactOccurred(kind || 'light'); } catch (e) { /* не везде есть */ }
   }
 
+  // Результат — в руку: успех и ошибка отдаются разной вибрацией, как
+  // у самого Telegram. Человек узнаёт исход, не дочитывая надпись.
+  function notify(kind) {
+    try { tg.HapticFeedback.notificationOccurred(kind); } catch (e) { /* не везде есть */ }
+  }
+
+  // Пока человек заполняет доставку, случайный свайв вниз спрашивает,
+  // закрывать ли: набранное с телефона терять обиднее всего.
+  function guardClosing(on) {
+    try {
+      if (on) { tg.enableClosingConfirmation(); } else { tg.disableClosingConfirmation(); }
+    } catch (e) { /* старые клиенты */ }
+  }
+
+  // Получатель запоминается в облаке Telegram: оно личное, по боту, и живёт
+  // между сеансами. Второй роутер — родителям, на дачу — оформляется без
+  // повторного набора имени и телефона. Только поля получателя: адрес
+  // у второго роутера почти всегда другой.
+  var RECIPIENT_KEYS = ['name', 'phone', 'city'];
+
+  function cloud() {
+    var cs = tg.CloudStorage;
+    return cs && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9') ? cs : null;
+  }
+
+  function loadRecipient() {
+    var cs = cloud();
+    if (!cs || RECIPIENT_KEYS.some(function (k) { return form[k]; })) { return Promise.resolve(); }
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() { if (!done) { done = true; resolve(); } }
+      // Облако может не ответить; форма не должна ждать его дольше секунды.
+      window.setTimeout(finish, 800);
+      try {
+        cs.getItems(RECIPIENT_KEYS, function (err, values) {
+          if (!err && values) {
+            RECIPIENT_KEYS.forEach(function (k) {
+              if (values[k] && !form[k]) { form[k] = String(values[k]); }
+            });
+          }
+          finish();
+        });
+      } catch (e) { finish(); }
+    });
+  }
+
+  function saveRecipient() {
+    var cs = cloud();
+    if (!cs) { return; }
+    RECIPIENT_KEYS.forEach(function (k) {
+      try { cs.setItem(k, String(form[k] || '')); } catch (e) { /* не страшно */ }
+    });
+  }
+
   /* --- Мелочи ------------------------------------------------------------ */
 
   function esc(value) {
@@ -353,7 +407,10 @@
   function go(view, replace) {
     if (!view) { return; }
     if (replace && stack.length) { stack[stack.length - 1] = view; }
-    else { stack.push(view); }
+    else {
+      if (stack.length) { stack[stack.length - 1].scroll = window.scrollY; }
+      stack.push(view);
+    }
     motion = stack.length > 1 ? 'push' : 'tab';
     render(view);
   }
@@ -384,6 +441,7 @@
     // и третий ряд управления был бы шумом.
     document.body.classList.toggle('pushed', stack.length > 1);
     mainButton(null);
+    guardClosing(view.name === 'buy' && (view.step || 1) >= 2);
     syncBack();
     skeleton();
     var draw = views[view.name];
@@ -392,6 +450,11 @@
       .then(function () { return draw(view); })
       .catch(failed)
       .then(bridgePrimary, bridgePrimary)
+      // «Назад» возвращает на то место, где человек стоял, а не наверх:
+      // список заказов, открытый на пятом, после карточки снова на пятом.
+      .then(function () {
+        if (view.scroll) { window.scrollTo(0, view.scroll); view.scroll = 0; }
+      })
       .then(hideSplash, hideSplash);
   }
 
@@ -647,7 +710,8 @@
               + '<button class="item" id="to-router">'
               + '<span class="ic-box">' + icon('router') + '</span>'
               + '<span class="grow"><b>Мой роутер</b>'
-              + '<span class="muted small" style="display:block">Связь, показания, обновление</span>'
+              + '<span class="muted small" id="router-line" style="display:block">'
+              + 'Связь, показания, обновление</span>'
               + '</span><span class="chev">' + icon('chev-r') + '</span></button></div>'
             : '')
 
@@ -671,6 +735,23 @@
       if (all) { all.addEventListener('click', function () { haptic(); openTab('orders'); }); }
       bindCatalog();
       bindOrderRows();
+
+      // Строка «Мой роутер» — живая: связь и число устройств, а не подпись.
+      // Отдельным запросом после отрисовки: показания лежат в базе и стоят
+      // копейки, а профиль без них — список ссылок, а не приборная панель.
+      var line = document.getElementById('router-line');
+      if (line) {
+        api('/router').then(function (rd) {
+          var r = rd && rd.router;
+          if (!r) { return; }
+          var n = Number(r.clients);
+          line.innerHTML = r.online
+            ? '<span class="live ok"><i class="dot"></i>На связи</span>'
+              + (isFinite(n) && r.clients != null
+                  ? ' · ' + n + ' ' + plural(n, ['устройство', 'устройства', 'устройств']) : '')
+            : '<span class="live off"><i class="dot"></i>Не на связи</span>';
+        }).catch(function () { /* подпись останется прежней */ });
+      }
     });
   };
 
@@ -878,10 +959,12 @@
       return request.then(function (res) {
         if (!res.ok) { throw new Error(reason(res)); }
         renderAccess(slot, res, deviceId);
+        notify('success');
       }).catch(function (err) {
         // Перерисовываем прежним состоянием: оставить переключатель
         // в новом положении после отказа — соврать о том, что применилось.
         renderAccess(slot, state, deviceId);
+        notify('error');
         tg.showAlert(err.message || String(err));
       });
     }
@@ -913,9 +996,16 @@
     var path = view && view.id ? '/router?device_id=' + view.id : '/router';
     return api(path).then(function (d) {
       if (!d.has_client || !d.router) {
-        return show('<h1>Мой роутер</h1>'
+        // Тупик без выхода — упущенная продажа: у человека нет роутера,
+        // и ровно здесь ему уместно предложить выбрать.
+        show('<h1>Мой роутер</h1>'
           + empty('router', 'Роутера пока нет',
-                  'Как только устройство выйдет на связь, здесь появятся его показания.'));
+                  'Как только устройство выйдет на связь, здесь появятся его показания.')
+          + '<button class="btn ghost" id="to-catalog">' + icon('box') + 'Выбрать роутер</button>');
+        document.getElementById('to-catalog').addEventListener('click', function () {
+          haptic('medium'); openTab('catalog');
+        });
+        return;
       }
       var r = d.router;
       var many = (d.routers || []).length > 1;
@@ -1074,6 +1164,7 @@
               }).then(function (res) {
                 if (!res.ok) { throw new Error(REASONS[res.error] || 'Роутер не ответил'); }
                 reboot.innerHTML = icon('check') + 'Перезагружается';
+                notify('success');
                 tg.showAlert('Команда ушла. Роутер вернётся на связь примерно через минуту.');
               }).catch(function (err) {
                 reboot.disabled = false;
@@ -1124,7 +1215,12 @@
       show('<h1>Заказы</h1>'
         + (items.length
             ? orderList(items)
-            : empty('receipt', 'Заказов нет', 'Оформленные заказы появятся здесь.')));
+            : empty('receipt', 'Заказов нет', 'Оформленные заказы появятся здесь.')
+              + '<button class="btn ghost" id="to-catalog">' + icon('box') + 'Выбрать роутер</button>'));
+      var toCatalog = document.getElementById('to-catalog');
+      if (toCatalog) {
+        toCatalog.addEventListener('click', function () { haptic('medium'); openTab('catalog'); });
+      }
       bindOrderRows();
     });
   };
@@ -1168,8 +1264,9 @@
               + '<span class="ic-box">' + icon('truck') + '</span>'
               + '<div class="grow"><div>' + esc(o.delivery_summary) + '</div>'
               + (o.tracking_number
-                  ? '<div class="muted small" style="margin-top:4px">Трек-номер '
-                    + '<span class="mono">' + esc(o.tracking_number) + '</span></div>' : '')
+                  ? '<button id="track" class="linkline"><span class="muted small">Трек-номер</span>'
+                    + '<span class="mono small">' + esc(o.tracking_number) + '</span>'
+                    + '<span class="subtle">' + icon('copy') + '</span></button>' : '')
               + '</div></div></div>'
             : '')
 
@@ -1179,6 +1276,19 @@
             ? '<button class="btn ghost" id="setup">' + icon('info') + 'Как подключить</button>' : '')
         + '</div>'
       );
+
+      // Трек-номер копируется нажатием, как MAC: его вводят на сайте
+      // перевозчика, а перепечатывать четырнадцать знаков с экрана — ошибки.
+      var track = document.getElementById('track');
+      if (track) {
+        track.addEventListener('click', function () {
+          haptic();
+          copyText(o.tracking_number).then(function (done) {
+            tg.showAlert(done ? 'Трек-номер скопирован: ' + o.tracking_number
+                              : 'Скопировать не вышло. Трек-номер: ' + o.tracking_number);
+          });
+        });
+      }
 
       var pay = document.getElementById('pay');
       if (pay) {
@@ -1497,7 +1607,7 @@
   }
 
   function buyRecipient(view) {
-    return Promise.all([productById(view.productId), once('delivery', '/delivery')])
+    return Promise.all([productById(view.productId), once('delivery', '/delivery'), loadRecipient()])
       .then(function (res) {
         var speeds = res[1].options || [];
         var carriers = res[1].carriers || [];
@@ -1597,8 +1707,10 @@
             if (results.indexOf(false) >= 0) {
               var bad = screen.querySelector('.input.bad');
               if (bad) { bad.scrollIntoView({ block: 'center' }); bad.focus(); }
+              notify('error');
               return;
             }
+            saveRecipient();
             go({ name: 'buy', productId: view.productId, step: 3 });
           });
         });
@@ -1741,6 +1853,7 @@
   // видно, что заказ принят, под каким номером и что произойдёт дальше.
   views.done = function (view) {
     var o = view.order || {};
+    notify('success');
     show(
       '<div class="done-mark">' + icon('check', 'ic-lg') + '</div>'
       + '<h1 class="center" style="margin-bottom:6px">Заказ принят</h1>'
