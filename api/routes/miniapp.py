@@ -34,6 +34,15 @@ router = APIRouter(prefix="/app", tags=["miniapp"], include_in_schema=False)
 
 INIT_DATA_HEADER = "X-Telegram-Init-Data"
 
+SHARE_TEXT = (
+    "Titan Routers — роутер с доступом к зарубежным сервисам на весь дом. "
+    "Приезжает настроенным: включил в розетку — и всё работает."
+)
+"""Что уходит другу вместе со ссылкой из кнопки «Порекомендовать».
+
+Одна фраза о том, что это и зачем, без цен: цены меняются, а пересланное
+сообщение живёт в чате годами."""
+
 
 async def current_user(
     init_data: str = Header(default="", alias=INIT_DATA_HEADER),
@@ -142,6 +151,13 @@ async def home(
         "subscription": state.get("subscription") or {},
         "router_available": bool(available.get("show")),
         "orders": orders.get("orders", []),
+        # Контакт поддержки — для кнопки настроек в шапке: поддержка должна
+        # быть под рукой с любого экрана, а не только с экрана роутера.
+        "support": await settings_service.get_str(session, "support.contact"),
+        # Ссылка «порекомендовать» — их же реферальная: `?start=<tg_id>` бот
+        # записывает в invited_by, и приглашение засчитывается его механикой,
+        # а не новой. Пустая, если имя бота не задано, — кнопки тогда нет.
+        "share": {"url": landing_service.bot_link(str(user.tg_id)), "text": SHARE_TEXT},
     }
 
 

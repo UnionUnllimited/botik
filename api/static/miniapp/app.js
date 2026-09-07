@@ -473,6 +473,30 @@
   var mainHandler = null;
   var primaryWatch = null;
 
+  // Кнопка настроек в шапке ведёт в поддержку: она должна быть под рукой
+  // с любого экрана, а не только с экрана роутера. Показывается, когда
+  // контакт задан; обработчик вешается один раз, контакт — переменной.
+  var supportHandle = '';
+  var settingsBound = false;
+
+  function setupSettings(contact) {
+    var sb = tg.SettingsButton;
+    var handle = String(contact || '').trim().replace(/^@/, '');
+    if (!sb || !tg.isVersionAtLeast || !tg.isVersionAtLeast('7.0')) { return; }
+    try {
+      if (!handle) { sb.hide(); return; }
+      supportHandle = handle;
+      if (!settingsBound) {
+        settingsBound = true;
+        sb.onClick(function () {
+          haptic();
+          tg.openTelegramLink('https://t.me/' + encodeURIComponent(supportHandle));
+        });
+      }
+      sb.show();
+    } catch (e) { /* старые клиенты */ }
+  }
+
   function mainButton(label, onClick) {
     var mb = tg.MainButton;
     if (!mb || !tg.isVersionAtLeast || !tg.isVersionAtLeast('6.1')) { return false; }
@@ -717,6 +741,18 @@
 
         + '<div style="margin-top:14px">' + buyOffer(d.router_available) + '</div>'
 
+        // Самый естественный для Telegram рост — переслать. Ссылка их
+        // реферальная, приглашение засчитывается ботом; текст — с сервера.
+        + (d.share && d.share.url
+            ? '<div class="list leading">'
+              + '<button class="item" id="share">'
+              + '<span class="ic-box">' + icon('share') + '</span>'
+              + '<span class="grow"><b>Порекомендовать</b>'
+              + '<span class="muted small" style="display:block">Отправить другу ссылку '
+              + 'на роутер</span></span>'
+              + '<span class="chev">' + icon('chev-r') + '</span></button></div>'
+            : '')
+
         + (recent.length
             ? '<div class="sec">Последние заказы</div>' + orderList(recent)
               + '<button class="btn quiet" id="all-orders" style="padding:6px">'
@@ -733,6 +769,15 @@
       }
       var all = document.getElementById('all-orders');
       if (all) { all.addEventListener('click', function () { haptic(); openTab('orders'); }); }
+      var share = document.getElementById('share');
+      if (share) {
+        share.addEventListener('click', function () {
+          haptic('medium');
+          tg.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(d.share.url)
+            + '&text=' + encodeURIComponent(d.share.text || ''));
+        });
+      }
+      setupSettings(d.support);
       bindCatalog();
       bindOrderRows();
 
