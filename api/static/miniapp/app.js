@@ -476,22 +476,26 @@
   // Кнопка настроек в шапке ведёт в поддержку: она должна быть под рукой
   // с любого экрана, а не только с экрана роутера. Показывается, когда
   // контакт задан; обработчик вешается один раз, контакт — переменной.
-  var supportHandle = '';
+  var supportUrl = '';
   var settingsBound = false;
 
-  function setupSettings(contact) {
+  // Ссылку собирает сервер: оператор пишет контакт как удобно — «@имя»,
+  // «t.me/имя» или адрес сайта поддержки, — а страница её только открывает.
+  // Телеграмовскую — внутри мессенджера, чужую — во внешнем браузере.
+  function openSupport(url) {
+    if (!url) { return; }
+    if (/^https?:\/\/t\.me\//.test(url)) { tg.openTelegramLink(url); } else { tg.openLink(url); }
+  }
+
+  function setupSettings(url) {
     var sb = tg.SettingsButton;
-    var handle = String(contact || '').trim().replace(/^@/, '');
     if (!sb || !tg.isVersionAtLeast || !tg.isVersionAtLeast('7.0')) { return; }
     try {
-      if (!handle) { sb.hide(); return; }
-      supportHandle = handle;
+      if (!url) { sb.hide(); return; }
+      supportUrl = url;
       if (!settingsBound) {
         settingsBound = true;
-        sb.onClick(function () {
-          haptic();
-          tg.openTelegramLink('https://t.me/' + encodeURIComponent(supportHandle));
-        });
+        sb.onClick(function () { haptic(); openSupport(supportUrl); });
       }
       sb.show();
     } catch (e) { /* старые клиенты */ }
@@ -777,7 +781,7 @@
             + '&text=' + encodeURIComponent(d.share.text || ''));
         });
       }
-      setupSettings(d.support);
+      setupSettings(d.support_url);
       bindCatalog();
       bindOrderRows();
 
@@ -1190,8 +1194,7 @@
           haptic();
           // Ссылкой на бот, а не на человека: клиент разговаривает с ботом,
           // а оператор не светит свой аккаунт каждому покупателю.
-          var contact = String(d.support || '').trim().replace(/^@/, '');
-          tg.openTelegramLink('https://t.me/' + encodeURIComponent(contact));
+          openSupport(d.support_url);
         });
       }
 

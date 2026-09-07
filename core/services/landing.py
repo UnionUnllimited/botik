@@ -12,6 +12,7 @@ Telegram, а привязка подписки у нас идёт по `tg_id`.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from typing import Any
 
@@ -467,6 +468,40 @@ def photo_url(product: Product) -> str:
     return absolute(product.photo_url or "")
 
 
+_TME = re.compile(r"^(?:https?://)?t\.me/([A-Za-z0-9_]{3,})/?$")
+
+
+def support_url(value: str) -> str:
+    """Куда вести по кнопке поддержки.
+
+    Оператор пишет контакт как удобно: `@имя`, `имя`, `t.me/имя` или полную
+    ссылку, в том числе не на Telegram. Приложение и сайт открывают ссылку,
+    и собирать её каждому потребителю по-своему значило бы получить три
+    разных результата из одной строки.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if raw.startswith("t.me/"):
+        return "https://" + raw
+    return "https://t.me/" + raw.lstrip("@")
+
+
+def support_handle(value: str) -> str:
+    """Как контакт показать текстом: `@имя` для Telegram, ссылка — как есть."""
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    match = _TME.match(raw)
+    if match:
+        return "@" + match.group(1)
+    if raw.startswith(("http://", "https://")):
+        return raw
+    return "@" + raw.lstrip("@")
+
+
 def bot_link(payload: str = "") -> str:
     """Ссылка в бота, при необходимости — сразу на нужный экран.
 
@@ -623,7 +658,8 @@ async def page_content(
         "comparison": COMPARISON,
         "faq": FAQ,
         "bot_url": bot_link(),
-        "support_contact": support,
+        "support_contact": support_handle(support),
+        "support_url": support_url(support),
     }
 
 

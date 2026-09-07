@@ -153,7 +153,12 @@ async def home(
         "orders": orders.get("orders", []),
         # Контакт поддержки — для кнопки настроек в шапке: поддержка должна
         # быть под рукой с любого экрана, а не только с экрана роутера.
-        "support": await settings_service.get_str(session, "support.contact"),
+        "support": landing_service.support_handle(
+            await settings_service.get_str(session, "support.contact")
+        ),
+        "support_url": landing_service.support_url(
+            await settings_service.get_str(session, "support.contact")
+        ),
         # Ссылка «порекомендовать» — их же реферальная: `?start=<tg_id>` бот
         # записывает в invited_by, и приглашение засчитывается его механикой,
         # а не новой. Пустая, если имя бота не задано, — кнопки тогда нет.
@@ -227,7 +232,9 @@ async def my_router(
     # Адрес поддержки кладём сюда же: кнопка «написать» нужна именно на этом
     # экране — за помощью идут, когда роутер не работает. Отдельным запросом
     # ради одной строки экран бы ждал дважды.
-    data["support"] = await settings_service.get_str(session, "support.contact")
+    contact = await settings_service.get_str(session, "support.contact")
+    data["support"] = landing_service.support_handle(contact)
+    data["support_url"] = landing_service.support_url(contact)
     # Панель роутера и инструкция открываются только из домашней сети клиента:
     # адрес локальный, снаружи его не существует. Отдаём его вместе с экраном,
     # а предупреждение о сети пишет само приложение — там оно рядом с кнопкой.

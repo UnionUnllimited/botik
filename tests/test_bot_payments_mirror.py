@@ -59,9 +59,14 @@ class FakeShop:
         self.calls: list[str] = []
         self.subs: list[dict] = []
         self.subs_error = ""
+        self.posted: list[tuple[str, dict]] = []
 
     async def subscriptions_snapshot(self):
         return list(self.subs), self.subs_error
+
+    async def post(self, path: str, payload: dict):
+        self.posted.append((path, payload))
+        return {"ok": True}, ""
 
     async def payments_snapshot(self, since: str = "", limit: int = 500):
         self.calls.append(since)
@@ -128,7 +133,7 @@ def mirror(tmp_path, monkeypatch):
         async with aiosqlite.connect(db_file) as db, db.execute(sql, args) as cur:
             return await cur.fetchall()
 
-    return types.SimpleNamespace(module=module, shop=shop, prepare=prepare, rows=rows)
+    return types.SimpleNamespace(module=module, shop=shop, prepare=prepare, rows=rows, db_file=db_file)
 
 
 @pytest.mark.asyncio
@@ -262,3 +267,26 @@ async def test_subscription_without_a_date_is_not_written(mirror):
     assert await mirror.module.sync_subscriptions() == 0
     rows = await mirror.rows("SELECT subscription_end_date FROM users WHERE telegram_id = 8152081864")
     assert rows == [(None,)]
+
+
+@pytest.mark.asyncio
+async def test_support_link_is_mirrored_once_and_never_empty(mirror):
+    """Их «Ссылка на поддержку» уезжает к нам при смене, а не каждый круг,
+    и пустая не уезжает вовсе — иначе стёрла бы заданное у нас."""
+    await mirror.prepare()
+
+    await mirror.module.sync_support()
+    assert mirror.shop.posted == []
+
+    async with aiosqlite.connect(mirror.db_file) as db:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('support_link', 'https://t.me/TitanVPSHelp_bot')"
+        )
+        await db.commit()
+
+    await mirror.module.sync_support()
+    await mirror.module.sync_support()
+
+    assert mirror.shop.posted == [
+        ("/api/v1/fleet/settings", {"support_contact": "https://t.me/TitanVPSHelp_bot"})
+    ]

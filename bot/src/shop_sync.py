@@ -292,6 +292,29 @@ async def sync_payments() -> int:
     return total_written
 
 
+_support_pushed: str | None = None
+
+
+async def sync_support() -> None:
+    """Контакт поддержки — из их настройки, одним источником.
+
+    Их админка знает «Ссылку на поддержку», а наша сторона читала свою
+    настройку — и кнопки поддержки в приложении и на сайте молчали, пока
+    оператор не заполнил бы её второй раз. Зеркалим их значение к нам
+    при каждой смене; пустое не шлём — тогда остаётся то, что задано у нас.
+    """
+    global _support_pushed
+    link = str(await db_helpers.get_setting_by_key("support_link", "") or "").strip()
+    if not link or link == _support_pushed:
+        return
+    _, error = await shop_api.post("/api/v1/fleet/settings", {"support_contact": link})
+    if error:
+        logger.debug(f"[SUPPORT] контакт не уехал в каталог: {error}")
+        return
+    _support_pushed = link
+    logger.info(f"[SUPPORT] контакт поддержки отражён в каталоге: {link}")
+
+
 async def sync_loop() -> None:
     logger.info("[TARIFFS] синхронизация тарифов, подписок и платежей с каталогом запущена")
     while True:
@@ -299,6 +322,7 @@ async def sync_loop() -> None:
             await sync_once()
             await sync_subscriptions()
             await sync_payments()
+            await sync_support()
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — цикл переживает что угодно

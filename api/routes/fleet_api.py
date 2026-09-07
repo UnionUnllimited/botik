@@ -1243,9 +1243,12 @@ async def fleet_settings_read(session: AsyncSession = Depends(get_session)) -> d
 async def fleet_settings_save(
     payload: dict, session: AsyncSession = Depends(get_transaction)
 ) -> dict:
-    await settings_service.set_setting(
-        session, "activation.auto_enabled", bool(payload.get("auto_enabled"))
-    )
+    # Каждое поле — только если прислано: контакт поддержки приезжает
+    # зеркалом от бота одним полем, и «нет ключа» здесь не значит «выключить».
+    if "auto_enabled" in payload:
+        await settings_service.set_setting(
+            session, "activation.auto_enabled", bool(payload.get("auto_enabled"))
+        )
     if "support_contact" in payload:
         await settings_service.set_setting(
             session, "support.contact", str(payload.get("support_contact") or "").strip()

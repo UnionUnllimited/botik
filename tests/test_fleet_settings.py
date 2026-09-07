@@ -78,3 +78,22 @@ async def test_save_without_the_field_leaves_the_contact_alone(monkeypatch):
     await fleet_api.fleet_settings_save(payload={"auto_enabled": False}, session=None)
 
     assert "support.contact" not in written
+
+
+@pytest.mark.asyncio
+async def test_contact_alone_does_not_switch_activation_off(monkeypatch):
+    """Контакт приезжает зеркалом от бота одним полем. Раньше ручка читала
+    `auto_enabled` из того же тела и, не найдя, выключала автоактивацию —
+    каждую минуту, вслед за зеркалом."""
+    written: dict = {}
+
+    async def remember(session, key, value, **kwargs):
+        written[key] = value
+
+    monkeypatch.setattr(fleet_api.settings_service, "set_setting", remember)
+
+    await fleet_api.fleet_settings_save(
+        payload={"support_contact": "https://t.me/TitanVPSHelp_bot"}, session=None
+    )
+
+    assert written == {"support.contact": "https://t.me/TitanVPSHelp_bot"}
