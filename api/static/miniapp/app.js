@@ -379,6 +379,11 @@
         b.classList.toggle('on', b.dataset.tab === tabName);
       });
     }
+    // На подэкране нижняя панель прячется, как у пролистанных экранов
+    // в iOS: назад ведёт кнопка в шапке, вперёд — системная кнопка внизу,
+    // и третий ряд управления был бы шумом.
+    document.body.classList.toggle('pushed', stack.length > 1);
+    mainButton(null);
     syncBack();
     skeleton();
     var draw = views[view.name];
@@ -386,7 +391,60 @@
     Promise.resolve()
       .then(function () { return draw(view); })
       .catch(failed)
+      .then(bridgePrimary, bridgePrimary)
       .then(hideSplash, hideSplash);
+  }
+
+  /* --- Системная кнопка ---------------------------------------------------
+     Главное действие подэкрана — кнопкой Telegram под окном приложения,
+     а не своей. Гайд Telegram прямой: элементы должны повторять поведение
+     уже существующих, а дублирующая навигация — шум. Кнопка красится нашим
+     акцентом; окно под неё Telegram уменьшает сам, содержимое не перекрыто.
+
+     Обработчики экранов не переписаны: системная кнопка просто «нажимает»
+     страничную, а та прячется. Её состояние — текст, занятость — зеркалится
+     наблюдателем: экран продления переписывает подпись при каждом выборе,
+     и кнопка внизу должна говорить то же самое. Клиенту без системной
+     кнопки остаётся страничная, как была. */
+
+  var mainHandler = null;
+  var primaryWatch = null;
+
+  function mainButton(label, onClick) {
+    var mb = tg.MainButton;
+    if (!mb || !tg.isVersionAtLeast || !tg.isVersionAtLeast('6.1')) { return false; }
+    try {
+      if (mainHandler) { mb.offClick(mainHandler); mainHandler = null; }
+      if (!label) { mb.hide(); return true; }
+      mainHandler = onClick;
+      mb.setParams({ text: label, color: '#3b93ff', text_color: '#04121f' });
+      mb.onClick(onClick);
+      mb.show();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function bridgePrimary() {
+    if (primaryWatch) { primaryWatch.disconnect(); primaryWatch = null; }
+    if (stack.length < 2) { return; }
+    var btn = screen.querySelector('#make, #next, #pay');
+    if (!btn) { return; }
+
+    function sync() {
+      var mb = tg.MainButton;
+      var label = btn.textContent.replace(/\s+/g, ' ').trim();
+      try {
+        mb.setText(label.slice(0, 64));
+        if (btn.disabled) { mb.showProgress(false); } else { mb.hideProgress(); }
+      } catch (e) { /* старые клиенты */ }
+    }
+
+    var shown = mainButton(btn.textContent.trim(), function () { btn.click(); });
+    if (!shown) { return; }
+    btn.classList.add('mirrored');
+    sync();
+    primaryWatch = new MutationObserver(sync);
+    primaryWatch.observe(btn, { attributes: true, childList: true, subtree: true, characterData: true });
   }
 
   /* --- Общие куски разметки ---------------------------------------------- */
@@ -478,6 +536,17 @@
     return forms[2];
   }
 
+  // Приветствие по часам телефона: «доброе утро» в час ночи выдаёт
+  // сервер, живущий по своему времени. Ровно одна строка тепла — дальше
+  // экран деловой.
+  function greeting() {
+    var h = new Date().getHours();
+    if (h >= 5 && h < 12) { return 'Доброе утро'; }
+    if (h >= 12 && h < 18) { return 'Добрый день'; }
+    if (h >= 18 && h < 23) { return 'Добрый вечер'; }
+    return 'Доброй ночи';
+  }
+
   function daysWord(n) {
     var abs = Math.abs(n) % 100;
     var tail = abs % 10;
@@ -525,7 +594,7 @@
       if (!active && !d.router_available && !recent.length) {
         return api('/pitch').then(function (p) {
           show(
-            '<div class="hero"><h1>' + esc(p.hero_title || 'Роутер с доступом') + '</h1>'
+            '<div class="hero">' + '<div class="brand"><img src="/app/logo" alt="">Titan Routers</div>' + '<h1>' + esc(p.hero_title || 'Роутер с доступом') + '</h1>'
             + (p.hero_subtitle ? '<p>' + esc(p.hero_subtitle) + '</p>' : '') + '</div>'
             + '<div class="list leading">'
             + (p.features || []).slice(0, 3).map(function (f) {
@@ -544,7 +613,8 @@
       }
 
       show(
-        '<h1>' + esc(user.name || 'Профиль') + '</h1>'
+        '<div class="eyebrow">' + greeting() + '</div>'
+        + '<h1>' + esc(user.name || 'Профиль') + '</h1>'
 
         // Подписка — первым и крупно: это то, за чем сюда заходят повторно,
         // и то, что приносит деньги после первой покупки.
@@ -690,8 +760,11 @@
               + '<div class="muted tiny center" style="margin-top:10px">'
               + (active && sub.until
                   ? 'Оплаченные дни прибавятся к ' + date(sub.until)
-                    + ' — то, что осталось, не сгорает.'
-                  : 'Доступ включится сразу после оплаты.')
+                    + ' — то, что осталось, не сгорает. '
+                  : 'Доступ включится сразу после оплаты. ')
+              // Главный страх у любой подписки — автосписание. У нас его
+              // нет, и об этом надо сказать там, где человек решает.
+              + 'Платёж разовый, без автосписаний.'
               + '</div>'
             : empty('info', 'Сроков нет', 'Продление сейчас недоступно.'))
       );
@@ -871,7 +944,7 @@
         '<h1>Мой роутер</h1>'
         + picker
         + '<div class="card">'
-        +   '<div class="row"><div class="grow">'
+        +   '<div class="row"><span class="ic-box">' + icon('router') + '</span><div class="grow">'
         // Модель сверху, MAC под ней: человек ищет глазами «какой это из моих»,
         // а не шестнадцать знаков. Незнакомую модель не подписываем вовсе —
         // строка «модель не указана» сообщает клиенту о нашей недоработке.
@@ -1264,7 +1337,7 @@
 
       show(
         (d.hero_title
-          ? '<div class="hero"><h1>' + esc(d.hero_title) + '</h1>'
+          ? '<div class="hero">' + '<div class="brand"><img src="/app/logo" alt="">Titan Routers</div>' + '<h1>' + esc(d.hero_title) + '</h1>'
             + (d.hero_subtitle ? '<p>' + esc(d.hero_subtitle) + '</p>' : '') + '</div>'
           : '<h1>Каталог</h1>')
         + (value ? '<div class="list leading">' + value + '</div>' : '')
@@ -1628,6 +1701,8 @@
           + '</div>'
 
           + '<button class="btn" id="make">' + icon('check') + 'Оформить и оплатить</button>'
+          + '<div class="muted tiny center" style="margin-top:10px">Платёж разовый, без '
+          + 'автосписаний. Картой, через СБП или криптовалютой.</div>'
           + '<div class="muted tiny center" style="margin-top:12px">Платёжная система добавит '
           + 'свою комиссию сверху — в сумму заказа она не входит.</div>'
         );
