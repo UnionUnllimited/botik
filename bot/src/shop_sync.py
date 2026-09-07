@@ -294,6 +294,9 @@ async def sync_payments() -> int:
 
 _support_pushed: str | None = None
 
+SUPPORT_KEYS = ("support_link", "support_custom_link", "support_url")
+"""Поля их настроек, где может лежать контакт поддержки, по старшинству."""
+
 
 async def sync_support() -> None:
     """Контакт поддержки — из их настройки, одним источником.
@@ -304,8 +307,20 @@ async def sync_support() -> None:
     при каждой смене; пустое не шлём — тогда остаётся то, что задано у нас.
     """
     global _support_pushed
-    link = str(await db_helpers.get_setting_by_key("support_link", "") or "").strip()
-    if not link or link == _support_pushed:
+    # У них три поля с контактом: основная ссылка, «кастомная» над ней
+    # и адрес для партнёрских выплат. Оператор заполняет какое-то одно,
+    # и какое именно — заранее не известно; берём первое непустое.
+    link = ""
+    for key in SUPPORT_KEYS:
+        link = str(await db_helpers.get_setting_by_key(key, "") or "").strip()
+        if link:
+            break
+    if not link:
+        if _support_pushed is None:
+            logger.info("[SUPPORT] контакт поддержки в настройках бота не задан — зеркалить нечего")
+            _support_pushed = ""
+        return
+    if link == _support_pushed:
         return
     _, error = await shop_api.post("/api/v1/fleet/settings", {"support_contact": link})
     if error:

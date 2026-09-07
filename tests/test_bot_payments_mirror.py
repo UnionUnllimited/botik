@@ -270,6 +270,24 @@ async def test_subscription_without_a_date_is_not_written(mirror):
 
 
 @pytest.mark.asyncio
+async def test_custom_support_link_counts_too(mirror):
+    """Оператор мог заполнить «кастомную» ссылку, а не основную, — контакт
+    всё равно должен доехать: какое поле выбрано, заранее не известно."""
+    await mirror.prepare()
+    async with aiosqlite.connect(mirror.db_file) as db:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('support_custom_link', 'https://t.me/TitanVPSHelp_bot')"
+        )
+        await db.commit()
+
+    await mirror.module.sync_support()
+
+    assert mirror.shop.posted == [
+        ("/api/v1/fleet/settings", {"support_contact": "https://t.me/TitanVPSHelp_bot"})
+    ]
+
+
+@pytest.mark.asyncio
 async def test_support_link_is_mirrored_once_and_never_empty(mirror):
     """Их «Ссылка на поддержку» уезжает к нам при смене, а не каждый круг,
     и пустая не уезжает вовсе — иначе стёрла бы заданное у нас."""
