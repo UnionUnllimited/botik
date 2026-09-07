@@ -287,9 +287,41 @@
   var stack = [];          // история переходов внутри вкладки
   var current = null;
 
+  // Откуда приехал экран: вкладка поднимается снизу, подэкран въезжает
+  // справа, возврат — слева. Движение объясняет, куда ведёт «Назад»,
+  // раньше, чем человек его нажмёт.
+  var motion = 'tab';
+
   function show(html) {
+    screen.className = 'wrap m-' + motion;
     screen.innerHTML = html;
     window.scrollTo(0, 0);
+    countNumbers();
+  }
+
+  // Числа с data-count набегают от нуля. Только там, где число — смысл
+  // экрана (дни подписки), а не везде: считающиеся цены выглядят как торг.
+  function countNumbers() {
+    var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    screen.querySelectorAll('[data-count]').forEach(function (el) {
+      var target = Number(el.dataset.count);
+      if (still || !isFinite(target) || target <= 0) { return; }
+      var startedAt = null;
+      var span = 650;
+      function step(ts) {
+        if (startedAt === null) { startedAt = ts; }
+        var k = Math.min(1, (ts - startedAt) / span);
+        var eased = 1 - Math.pow(1 - k, 3);
+        el.textContent = Math.round(target * eased);
+        if (k < 1) { window.requestAnimationFrame(step); }
+      }
+      el.textContent = '0';
+      window.requestAnimationFrame(step);
+      // Страховка: если кадры не идут (окно скрыто, экономия батареи),
+      // число всё равно доезжает до цели — ноль вместо «24» хуже,
+      // чем отсутствие анимации.
+      window.setTimeout(function () { el.textContent = String(target); }, span + 120);
+    });
   }
 
   function skeleton() {
@@ -322,15 +354,17 @@
     if (!view) { return; }
     if (replace && stack.length) { stack[stack.length - 1] = view; }
     else { stack.push(view); }
+    motion = stack.length > 1 ? 'push' : 'tab';
     render(view);
   }
 
   function back() {
-    if (stack.length > 1) { stack.pop(); render(stack[stack.length - 1]); }
+    if (stack.length > 1) { stack.pop(); motion = 'pop'; render(stack[stack.length - 1]); }
   }
 
   function openTab(name) {
     stack = [];
+    motion = 'tab';
     document.querySelectorAll('nav button').forEach(function (b) {
       b.classList.toggle('on', b.dataset.tab === name);
     });
@@ -518,7 +552,7 @@
             ? '<div class="card"><div class="term ' + term.tone + '">'
               +   '<div class="row" style="align-items:flex-end">'
               +     '<div><div class="muted small">Подписка активна</div>'
-              +       '<div class="num" style="margin-top:4px">' + term.days + '</div></div>'
+              +       '<div class="num" data-count="' + term.days + '" style="margin-top:4px">' + term.days + '</div></div>'
               +     '<div style="text-align:right">'
               +       '<div class="muted small">' + daysWord(term.days) + ' осталось</div>'
               +       '<div class="small" style="margin-top:4px">до ' + date(sub.until) + '</div>'
@@ -632,7 +666,7 @@
             ? '<div class="card"><div class="term ' + term.tone + '">'
               +   '<div class="row" style="align-items:flex-end">'
               +     '<div><div class="muted small">Подписка активна</div>'
-              +       '<div class="num" style="margin-top:4px">' + term.days + '</div></div>'
+              +       '<div class="num" data-count="' + term.days + '" style="margin-top:4px">' + term.days + '</div></div>'
               +     '<div style="text-align:right">'
               +       '<div class="muted small">' + daysWord(term.days) + ' осталось</div>'
               +       '<div class="small" style="margin-top:4px">до ' + date(sub.until) + '</div>'
@@ -692,7 +726,7 @@
         var btn = this;
         haptic('medium');
         btn.disabled = true;
-        btn.innerHTML = icon('refresh') + 'Готовим счёт…';
+        btn.innerHTML = icon('refresh', 'ic spin') + 'Готовим счёт…';
         api('/renew', { method: 'POST', body: JSON.stringify({ plan_id: chosen }) })
           .then(function (r) {
             if (!r.ok) { throw new Error(r.error || 'Не получилось создать счёт'); }
@@ -734,7 +768,7 @@
               + 'Сеть подберёт сервер сама</span>'
             : '')
         + '</span>'
-        + (on ? '<span style="color:var(--accent)">' + icon('check') + '</span>'
+        + (on ? '<span class="pop" style="color:var(--accent)">' + icon('check') + '</span>'
               : '<span class="chev">' + icon('chev-r') + '</span>')
         + '</button>';
     }
@@ -762,9 +796,10 @@
     function apply(request, busyText) {
       slot.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
       var note = document.createElement('div');
-      note.className = 'muted tiny center';
+      note.className = 'muted tiny center busy';
       note.style.marginTop = '10px';
-      note.textContent = busyText;
+      note.innerHTML = icon('refresh', 'ic spin') + '<span></span>';
+      note.lastChild.textContent = busyText;
       slot.appendChild(note);
 
       return request.then(function (res) {
@@ -960,7 +995,7 @@
             function (yes) {
               if (!yes) { return; }
               reboot.disabled = true;
-              reboot.innerHTML = icon('refresh') + 'Отправляем…';
+              reboot.innerHTML = icon('refresh', 'ic spin') + 'Отправляем…';
               api('/router/reboot', {
                 method: 'POST', body: JSON.stringify({ device_id: r.id })
               }).then(function (res) {
@@ -992,7 +1027,7 @@
         var btn = this;
         haptic('medium');
         btn.disabled = true;
-        btn.innerHTML = icon('refresh') + 'Отправляем…';
+        btn.innerHTML = icon('refresh', 'ic spin') + 'Отправляем…';
         api('/router/update', {
           method: 'POST', body: JSON.stringify({ device_id: r.id })
         }).then(function (res) {
@@ -1077,7 +1112,7 @@
         pay.addEventListener('click', function () {
           haptic('medium');
           pay.disabled = true;
-          pay.innerHTML = icon('refresh') + 'Готовим…';
+          pay.innerHTML = icon('refresh', 'ic spin') + 'Готовим…';
           api('/orders/' + view.id + '/pay', { method: 'POST', body: '{}' })
             .then(function (res) {
               if (!res.ok || !res.pay_url) { throw new Error(res.error || 'Счёт не создался'); }
@@ -1608,7 +1643,7 @@
           var btn = this;
           haptic('medium');
           btn.disabled = true;
-          btn.innerHTML = icon('refresh') + 'Оформляем…';
+          btn.innerHTML = icon('refresh', 'ic spin') + 'Оформляем…';
           api('/orders', { method: 'POST', body: JSON.stringify(payload) })
             .then(function (res) {
               if (!res.ok) { throw new Error(res.error || 'Заказ не оформился'); }

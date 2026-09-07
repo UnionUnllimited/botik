@@ -248,7 +248,9 @@ button.item:active { background: rgba(255, 255, 255, .05); }
 }
 .sw i::after {
   content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
-  border-radius: 50%; background: #fff; transition: transform .16s ease;
+  border-radius: 50%; background: #fff;
+  /* С пружиной: кружок чуть перелетает и возвращается, как системный. */
+  transition: transform .26s cubic-bezier(.34, 1.56, .64, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
 }
 .sw input:checked + i { background: var(--accent); }
@@ -439,7 +441,13 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; }
   height: 6px; border-radius: 999px; background: var(--surface-3);
   overflow: hidden; margin-top: 12px;
 }
-.term .fill { height: 100%; border-radius: 999px; transition: width .4s cubic-bezier(.4,0,.2,1); }
+.term .fill {
+  height: 100%; border-radius: 999px; transition: width .4s cubic-bezier(.4,0,.2,1);
+  /* Полоса заполняется до своей ширины при появлении: сколько осталось —
+     главное число экрана, и его стоит показать движением, а не только цифрой. */
+  animation: grow .8s cubic-bezier(.22, .8, .3, 1) .12s both;
+}
+@keyframes grow { from { width: 0; } }
 .term.ok   .num { color: var(--text); }
 .term.ok   .fill { background: var(--accent); }
 .term.warn .num { color: var(--warn); }
@@ -557,7 +565,22 @@ nav button.on .slot { background: var(--accent-dim); }
 
 /* Появление экрана: без него переход между вкладками выглядит подменой
    картинки, и непонятно, что произошло. */
-.wrap > * { animation: rise .24s cubic-bezier(.22, .8, .3, 1) both; }
+.wrap > * { animation: rise .26s cubic-bezier(.22, .8, .3, 1) both; }
+/* Каскад: блоки появляются сверху вниз с шагом в тридцать миллисекунд.
+   Восьми ступеней хватает — дальше человек уже листает, а не смотрит. */
+.wrap > :nth-child(2) { animation-delay: .03s; }
+.wrap > :nth-child(3) { animation-delay: .06s; }
+.wrap > :nth-child(4) { animation-delay: .09s; }
+.wrap > :nth-child(5) { animation-delay: .12s; }
+.wrap > :nth-child(6) { animation-delay: .15s; }
+.wrap > :nth-child(7) { animation-delay: .18s; }
+.wrap > :nth-child(n + 8) { animation-delay: .21s; }
+/* Подэкран въезжает справа, возврат — слева: движение объясняет, куда
+   ведёт «Назад». Вкладки поднимаются снизу — у них нет «откуда». */
+.wrap.m-push > * { animation-name: slide-in; }
+.wrap.m-pop > * { animation-name: slide-back; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(22px); } }
+@keyframes slide-back { from { opacity: 0; transform: translateX(-22px); } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 
 @media (prefers-reduced-motion: reduce) {
@@ -565,4 +588,28 @@ nav button.on .slot { background: var(--accent-dim); }
   #splash .mark, #splash .word, #splash .bar i { animation: none; }
   #splash { transition: none; }
   .btn, .steps-bar .fill, nav button .slot { transition: none; }
+}
+
+/* --- Движение ------------------------------------------------------------- */
+
+/* Значок на кнопке во время запроса крутится: статичный он выглядел
+   как кнопка, которую можно нажать ещё раз. */
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.busy { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.busy svg { width: 14px; height: 14px; }
+
+/* Галочка у применённого выбора выпрыгивает: подтверждение, что нажатие
+   дошло, — без отдельного «готово». */
+.pop { display: inline-flex; animation: pop .3s cubic-bezier(.34, 1.56, .64, 1) both; }
+
+/* Вкладки: подсветка перетекает, а нажатие чуть вжимает плашку. */
+#nav button { transition: color .18s; }
+#nav .slot { transition: background .18s, transform .16s; }
+#nav button:active .slot { transform: scale(.9); }
+
+/* Кому движение мешает — тому его нет. Системная настройка, не наша. */
+@media (prefers-reduced-motion: reduce) {
+  .wrap > *, .term .fill, .pop, .sk, #splash .bar i { animation: none !important; }
+  .sw i::after, #nav .slot { transition: none; }
 }
