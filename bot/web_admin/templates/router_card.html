@@ -65,7 +65,7 @@
         <div class="text-[18px] font-semibold" style="color:{{ '#16a34a' if router.online else 'inherit' }}">
           {{ 'на связи' if router.online else 'молчит' }}
         </div>
-        <div class="text-[12px] tw-text-muted2 mt-1">отклик {{ router.last_seen or '—' }}</div>
+        <div class="text-[12px] tw-text-muted2 mt-1">отклик {{ router.last_seen|msk_datetime if router.last_seen else '—' }}</div>
       </div>
       <div class="tw-card p-4">
         <div class="text-[12px] tw-text-muted2">Устройств в сети</div>

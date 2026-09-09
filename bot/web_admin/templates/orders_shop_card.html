@@ -14,8 +14,8 @@
     <p class="text-[13px] tw-text-muted2 mt-1">
       {{ status_titles.get(order.status, order.status) }}
       {% if order.paid_at %} · оплачен {{ order.paid_at|msk_date }}{% endif %}
-      {% if order.shipped_at %} · отправлен {{ order.shipped_at[:10] }}{% endif %}
-      {% if order.delivered_at %} · доставлен {{ order.delivered_at[:10] }}{% endif %}
+      {% if order.shipped_at %} · отправлен {{ order.shipped_at|msk_date }}{% endif %}
+      {% if order.delivered_at %} · доставлен {{ order.delivered_at|msk_date }}{% endif %}
     </p>
   </div>
 
