@@ -1651,7 +1651,10 @@ def _order_payload(order: Order, *, instruction_url: str = "") -> dict:
         "items": [
             {"title": item.title, "total": str(item.total_price)} for item in (order.items or [])
         ],
-        "delivery_summary": order_service.delivery_summary(order.delivery),
+        # Пустая строка, а не «—»: прочерк нужен таблице оператора, где пустая
+        # ячейка читается как незагруженная, а карточке клиента он рисовал
+        # плашку доставки с одним тире.
+        "delivery_summary": order_service.delivery_summary(order.delivery) if order.delivery else "",
         "delivery_price": str(order.delivery.price) if order.delivery else "0.00",
         "awaiting_quote": delivery_service.awaiting_quote(order.delivery),
         "paid": order.paid_at is not None,

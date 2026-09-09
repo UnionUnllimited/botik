@@ -1596,8 +1596,7 @@ async def handle_miniapp_link(message: Message):
     ]])
     await message.answer(
         "Приложение на обкатке: каталог, профиль, мой роутер и продление.\n\n"
-        "Открывается только у тех, чей id перечислен в <code>MINIAPP_ALLOWED_TG_IDS</code>. "
-        "Остальные увидят отказ, данных они не получат.",
+        "Пока открыто не всем — только тем, кого позвали на тест.",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
