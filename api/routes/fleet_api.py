@@ -28,6 +28,7 @@ from sqlalchemy.orm import selectinload
 
 from api.deps import get_session, get_transaction
 from api.service_auth import require_token
+from core import texts
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
@@ -1116,6 +1117,49 @@ def _client_router_row(device: Device, *, now) -> dict:
         "tx_bytes": device.tx_bytes or 0,
         "wan_ip": device.last_wan_ip or "",
     }
+
+
+@router.get("/clients/{tg_id}/keys", dependencies=[Depends(require_token)])
+async def client_keys(tg_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    """Ссылки подписки роутеров клиента — то, что у телефонного клиента
+    зовётся ключами.
+
+    Вкладка «Ключи» в их админке просила их у службы xuiweb, которой на
+    сервере нет, и падала пятисоткой на каждом клиенте. У роутерного клиента
+    ключ — это ссылка подписки его учётки в панели: по ней оператор
+    перепрошивает роутер вручную или проверяет, ту ли учётку тот получил.
+    Хост в ссылке — публичный, как и у роутера: адрес панели наружу не идёт.
+    """
+    now = utcnow()
+    user = await session.scalar(select(User).where(User.tg_id == tg_id))
+    if user is None:
+        return {"has_client": False, "keys": []}
+    devices = list(
+        await session.scalars(
+            select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+        )
+    )
+    keys = []
+    for device in devices:
+        account = None
+        if settings.remnawave.is_configured:
+            try:
+                account = await asyncio.wait_for(activation.panel_account_of(device), timeout=3)
+            except TimeoutError:
+                log.warning("fleet.panel_timeout", tg_id=tg_id, mac=device.mac)
+        until = activation.panel_expiry_of(account) if account else None
+        url = account.subscription_url if account else ""
+        keys.append(
+            {
+                "mac": device.mac,
+                "model": texts.router_model_title(device.board or device.model),
+                "username": account.username if account else "",
+                "subscription_url": activation.public_subscription_url(url) if url else "",
+                "until": _iso(until),
+                "active": bool(until and until > now),
+            }
+        )
+    return {"has_client": True, "keys": keys}
 
 
 @router.get("/clients/{tg_id}/routers", dependencies=[Depends(require_token)])

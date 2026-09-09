@@ -1920,6 +1920,33 @@ async def api_user_security(telegram_id: int):
         if not uuid:
             return jsonify({'ok': True, 'devices': [], 'latest_access': None, 'message': 'UUID не найден'})
 
+        # Роутерный клиент: устройства у него — роутеры, и вкладка показывает
+        # их, а не «нет данных». Строка собирается в поля, которые страница
+        # уже умеет рисовать: имя, MAC вместо HWID, WAN-адрес, последний выход
+        # на связь, прошивка вместо версии ОС.
+        own_key = (user_row.get('xui_client_uuid') or user_row.get('remnawave_short_uuid') or '').strip()
+        if not own_key and user_row.get('shop_panel_short_uuid'):
+            from src import shop_api
+            data, error = await shop_api.client_routers(telegram_id)
+            if error:
+                return jsonify({'ok': True, 'devices': [], 'latest_access': None,
+                                'message': f'Каталог не ответил: {error}'})
+            routers = []
+            for r in data.get('routers') or []:
+                routers.append({
+                    'custom_name': f"Роутер {r.get('model') or ''}".strip(),
+                    'hwid': r.get('mac') or '',
+                    'ip_address': r.get('wan_ip') or '',
+                    'last_access': r.get('last_seen') or '',
+                    'os': 'OpenWrt',
+                    'os_version': r.get('fw_version') or '',
+                    'model': r.get('model') or '',
+                    'user_agent': '',
+                    'access_count': r.get('clients') or 0,
+                })
+            return jsonify({'ok': True, 'devices': routers, 'latest_access': None,
+                            'message': '' if routers else 'Роутеров у клиента нет'})
+
         # ── Запрос к xuiweb ───────────────────────────────────────────────────
         xuiweb_base = os.getenv('XUIWEB_INTERNAL_URL', 'http://127.0.0.1:8282').rstrip('/')
         try:
@@ -2100,6 +2127,29 @@ async def api_user_keys(telegram_id: int):
         ).strip()
         if not uuid:
             return jsonify({'ok': False, 'error': 'UUID не найден'}), 404
+
+        # Роутерный клиент: ключей от телефона у него нет, а ключ роутера —
+        # это ссылка подписки его учётки в панели. Её знает основное
+        # приложение; xuiweb для таких клиентов ни при чём, и ходить туда
+        # значило бы падать пятисоткой на каждом из них — так и было.
+        own_key = (user_row.get('xui_client_uuid') or user_row.get('remnawave_short_uuid') or '').strip()
+        if not own_key and user_row.get('shop_panel_short_uuid'):
+            from urllib.parse import quote
+
+            from src import shop_api
+            data, error = await shop_api.get(f"/api/v1/fleet/clients/{telegram_id}/keys")
+            if error:
+                return jsonify({'ok': False, 'error': f'Каталог не ответил: {error}'}), 502
+            links = []
+            for key in data.get('keys') or []:
+                url = str(key.get('subscription_url') or '')
+                if not url:
+                    continue
+                # Подпись — в якоре ссылки: страница берёт имя ключа оттуда,
+                # а роутеру якорь безразличен — HTTP его не передаёт.
+                label = f"Роутер {key.get('model') or ''} · {key.get('mac') or ''}".strip()
+                links.append(f"{url}#{quote(label)}")
+            return jsonify({'ok': True, 'isFound': True, 'links': links})
 
         xuiweb_base = os.getenv('XUIWEB_INTERNAL_URL', 'http://127.0.0.1:8282').rstrip('/')
         async with httpx.AsyncClient(timeout=8, verify=False) as client:
