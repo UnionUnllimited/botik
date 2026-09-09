@@ -397,7 +397,7 @@ REST_TEXTS: list[tuple[str, str, str]] = [
         "Ссылка в Telegram: <code>{ref_link}</code>\n"
         "Ссылка на сайт: <code>{ref_link_url}</code>\n"
         "Приглашения: {used_invites}/{max_per_day} · осталось {remaining_invites}\n"
-        "Бонус: {join_days} дней за подключение · {payment_days} дней за оплату",
+        "Бонус: {join_days} дн. за подключение · {payment_days} дн. за оплату",
         "Реферальная программа. Переменные: {ref_link}, {ref_link_url}, "
         "{used_invites}, {remaining_invites}, {max_per_day}, {join_days}, {payment_days}",
     ),

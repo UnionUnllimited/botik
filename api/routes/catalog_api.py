@@ -651,9 +651,22 @@ async def my_router(
     if user is None:
         return {"has_client": False, "routers": [], "router": None, "order": None}
 
+    # Роутер клиента — привязанный к нему либо к его заказу, но ещё ни к кому:
+    # привязка «к заказу» не всегда проставляет клиента, и экран «Мой роутер»
+    # отвечал «не числится» рядом с заказом «✓ Роутер работает». Чужой
+    # роутер по своему заказу не показываем: его могли передать другому
+    # клиенту по гарантии, и тогда он уже не этого клиента.
+    own_orders = select(Order.id).where(Order.user_id == user.id)
     devices = list(
         await session.scalars(
-            select(Device).where(Device.user_id == user.id).order_by(Device.id.desc())
+            select(Device)
+            .where(
+                or_(
+                    Device.user_id == user.id,
+                    and_(Device.user_id.is_(None), Device.order_id.in_(own_orders)),
+                )
+            )
+            .order_by(Device.id.desc())
         )
     )
     order = await session.scalar(
