@@ -2248,6 +2248,11 @@ async def manage_order_status(
     # у которого свой предел применений, и общему счётчику кода.
     if order.status in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
         await promo_service.release_usage(session, order_id=order.id)
+    # Оплату переводом или наличными проводит оператор, а подписку заводило
+    # только проведение платежа. Без этого клиент, заплативший мимо провайдера,
+    # утыкался при активации в «Нет оплаченной подписки».
+    if order.status is OrderStatus.PAID:
+        await subscription_service.ensure_for_order(session, order)
     await session.flush()
     # Карточка в топике должна догонять любое изменение: оператор нажал
     # кнопку с телефона и смотрит туда же, а не в веб-админку.

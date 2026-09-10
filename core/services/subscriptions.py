@@ -16,8 +16,8 @@ from sqlalchemy.orm import object_session, selectinload
 
 from core.config import settings
 from core.dates import add_period, ensure_utc, utcnow
-from core.enums import SubscriptionEventType, SubscriptionStatus
-from core.models import Plan, Subscription, SubscriptionEvent
+from core.enums import OrderItemType, SubscriptionEventType, SubscriptionStatus
+from core.models import Order, OrderItem, Plan, Subscription, SubscriptionEvent
 
 log = structlog.get_logger("services.subscriptions")
 
@@ -264,6 +264,65 @@ async def create_pending(
         comment=f"Тариф {plan.title}",
     )
     log.info("subscription.created_pending", user_id=user_id, plan_id=plan.id, order_id=order_id)
+    return subscription
+
+
+async def ensure_for_order(
+    session: AsyncSession, order: Order, *, source: str = "manual"
+) -> Subscription | None:
+    """Заводит подписку заказу, за который заплатили мимо провайдера.
+
+    Оператор ставит «Оплачен» руками, когда деньги пришли переводом, наличными
+    курьеру или картой в чате. Платежа у нас при этом нет, а подписку заводит
+    как раз проведение платежа — и её не появлялось вовсе. Роутер приезжал,
+    клиент нажимал «Активировать» и читал «Нет оплаченной подписки», хотя
+    заплатил всё до копейки. Разбирать это приходилось руками, по одному.
+
+    Возвращает заведённую подписку или `None`, если заводить нечего: подписка
+    у заказа уже есть, тарифа в заказе нет или заказ ничей.
+    """
+    if order.user_id is None:
+        return None
+
+    existing = await session.scalar(
+        select(Subscription).where(Subscription.order_id == order.id).limit(1)
+    )
+    if existing is not None:
+        return None
+
+    plan_id = await session.scalar(
+        select(OrderItem.plan_id)
+        .where(
+            OrderItem.order_id == order.id,
+            OrderItem.item_type == OrderItemType.PLAN,
+            OrderItem.plan_id.is_not(None),
+        )
+        .order_by(OrderItem.id.asc())
+        .limit(1)
+    )
+    if plan_id is None:
+        # Заказ без тарифа — например, доплата или один роутер к уже
+        # работающей подписке. Заводить нечего.
+        return None
+
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        return None
+
+    subscription = await create_pending(
+        session,
+        user_id=order.user_id,
+        plan=plan,
+        order_id=order.id,
+        source=source,
+    )
+    await session.flush()
+    log.info(
+        "subscription.created_for_manual_payment",
+        order_id=order.id,
+        subscription_id=subscription.id,
+        plan_id=plan.id,
+    )
     return subscription
 
 
