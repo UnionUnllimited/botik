@@ -307,6 +307,13 @@ class SubscriptionSettings(EnvSettings):
     devices_per_user: int = 1
     activation_deadline_days: int = 180
     """Оплаченная, но не активированная подписка сгорает через N дней (напоминаем заранее)."""
+    activation_reminder_days: IdList = Field(default_factory=lambda: [30, 7, 1])
+    """За сколько дней до сгорания напоминаем, что роутер пора включить.
+
+    Полгода — ровно тот срок, за который про отложенную коробку успевают
+    забыть. Первое напоминание за месяц: столько нужно, чтобы дойти до
+    роутера или дозвониться в поддержку, а не чтобы узнать обо всём
+    накануне."""
 
     heartbeat_interval_min: int = 10
     heartbeat_offline_min: int = 15

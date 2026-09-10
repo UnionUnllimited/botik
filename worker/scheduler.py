@@ -118,6 +118,15 @@ def create_scheduler() -> AsyncIOScheduler:
         id="subscription_reminders",
         name="Напоминания об окончании подписки (10:00 МСК)",
     )
+    # Следом за напоминаниями об окончании срока: у этих двух писем один
+    # адресат и один смысл — «доступ скоро пропадёт», — и приходить они
+    # должны в одно утро, а не будить человека дважды.
+    scheduler.add_job(
+        instrumented("remind_unactivated", subscriptions.remind_unactivated),
+        CronTrigger(hour=7, minute=5),
+        id="remind_unactivated",
+        name="Напоминания включить роутер (10:05 МСК)",
+    )
     # Раз в сутки: чаще напоминать про неоплаченную доставку незачем,
     # реже — посылка стоит и ждёт дольше нужного.
     scheduler.add_job(
