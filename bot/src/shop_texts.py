@@ -9,6 +9,20 @@
 доступа к зарубежным ресурсам клиент продлевает в своём разделе.
 """
 
+import re
+
+STEP_COUNTER = re.compile(r"Шаг\s+(\d+)\s+из\s+(\d+)")
+"""Счётчик шагов внутри правимого текста.
+
+Оформление — шесть вопросов подряд, и число в каждом должно сходиться с
+остальными. Число это не вкус оператора, а факт о самом опросе: когда
+появился выбор перевозчика, «из 5» стало враньём, но правились только те
+тексты, что в живой базе слово в слово совпали с прежним дефолтом.
+Остальные так и остались, и клиент читал «Шаг 3 из 6», а следом «Шаг 4
+из 5».
+"""
+
+
 CATALOG_TEXTS: list[tuple[str, str, str]] = [
     (
         "text_catalog_intro",
@@ -352,6 +366,33 @@ ROUTER_PROFILE: list[tuple[str, str, str]] = [
 """
 
 PROFILE_MARK = "router_profile_applied"
+
+
+def step_counters() -> dict[str, str]:
+    """Ключ → каким должен быть его счётчик: «Шаг 3 из 6».
+
+    Берётся из текущих дефолтов, поэтому седьмой вопрос в опросе поправит
+    все шесть текстов сам, без ещё одной разовой миграции.
+    """
+    found: dict[str, str] = {}
+    for key, value, _ in CATALOG_TEXTS:
+        match = STEP_COUNTER.search(value)
+        if match:
+            found[key] = match.group(0)
+    return found
+
+
+def fix_step_counter(key: str, value: str) -> str:
+    """Приводит счётчик в тексте оператора к правильному.
+
+    Всё остальное — слова, эмодзи, переносы — остаётся его: правится только
+    само «Шаг N из M». Если счётчика в тексте нет, оператор убрал его
+    намеренно, и возвращать не надо.
+    """
+    correct = step_counters().get(key)
+    if not correct or not STEP_COUNTER.search(value):
+        return value
+    return STEP_COUNTER.sub(correct, value, count=1)
 
 
 def catalog_defaults() -> list[tuple[str, str, str]]:

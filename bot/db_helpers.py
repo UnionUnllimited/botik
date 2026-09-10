@@ -511,6 +511,8 @@ async def populate_default_settings():
             REDESIGN_MARK,
             ROUTER_PROFILE,
             catalog_defaults,
+            fix_step_counter,
+            step_counters,
         )
         for key, value, description in catalog_defaults():
             await db.execute(
@@ -538,6 +540,26 @@ async def populate_default_settings():
                 (REDESIGN_MARK, "Редизайн текстов каталога 08.2026 применён"),
             )
             logger.info("Редизайн текстов каталога: нетронутые дефолты обновлены")
+
+        # Счётчик шагов — факт об опросе, а не вкус оператора: шесть вопросов
+        # должны называться шестью во всех шести текстах. Разовая правка выше
+        # их не выровняла — она трогает только те, что совпали с прежним
+        # значением слово в слово, — и клиент читал «Шаг 3 из 6», а следом
+        # «Шаг 4 из 5». Сверяем каждый запуск: после первого менять нечего,
+        # а слова оператора при этом остаются его.
+        for key, correct in step_counters().items():
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None or not row[0]:
+                continue
+            fixed = fix_step_counter(key, row[0])
+            if fixed != row[0]:
+                await db.execute(
+                    "UPDATE settings SET value = ? WHERE key = ?", (fixed, key)
+                )
+                logger.info("Счётчик шагов выровнен (%s): %s", key, correct)
 
         # Профиль роутеров: выключаем то, что осталось от подписки для телефона.
         # Один раз и с отметкой — иначе мы бы каждым запуском отменяли решение
