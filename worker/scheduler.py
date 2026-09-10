@@ -135,6 +135,14 @@ def create_scheduler() -> AsyncIOScheduler:
         id="remind_unpaid_delivery",
         name="Напоминания о неоплаченной доставке (11:00 МСК)",
     )
+    # Ночью, до напоминаний: клиент, которому утром напишут «подписка
+    # заканчивается», к этому часу уже должен иметь в панели правильный срок.
+    scheduler.add_job(
+        instrumented("resync_panel_expiry", subscriptions.resync_panel_expiry),
+        CronTrigger(hour=3, minute=30),
+        id="resync_panel_expiry",
+        name="Сверка срока подписки с панелью",
+    )
     scheduler.add_job(
         instrumented("expire_unactivated", subscriptions.expire_unactivated),
         CronTrigger(hour=4, minute=10),

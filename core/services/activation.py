@@ -632,14 +632,21 @@ async def deliver_subscription(device: Device, url: str) -> str:
     return result.output[:2000]
 
 
-async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -> bool:
+async def sync_panel_expiry(
+    session: AsyncSession, subscription: Subscription, *, only_forward: bool = False
+) -> bool:
     """Переносит срок подписки в учётку панели.
 
     Вызывается после любого продления. Ничего не бросает: подписка у нас уже
     продлена и оплата принята, и падать из-за недоступной панели нельзя —
-    расхождение поправит следующий вызов или админ руками.
+    расхождение подберёт ночная сверка.
 
-    Возвращает True, если срок в панели обновлён.
+    `only_forward` — для этой самой сверки: она ходит по всему парку каждую
+    ночь, и отматывать срок назад ей нельзя. Оператор мог продлить учётку
+    прямо в панели, и сверка отбирала бы выданные им дни каждую ночь.
+    Сразу после оплаты наоборот: наша дата и есть правильная.
+
+    Возвращает True, если срок в панели сошёлся с нашим.
     """
     if subscription.expires_at is None:
         return False
@@ -677,6 +684,22 @@ async def sync_panel_expiry(session: AsyncSession, subscription: Subscription) -
             log.warning("activation.expiry_sync_no_account", mac=device.mac)
             return False
         account = accounts[0]
+        known = panel_expiry_of(account)
+        if known is not None:
+            # Секунды по дороге теряются на разборе формата, и сравнивать их
+            # в лоб значит переписывать учётку каждую ночь без повода.
+            apart = (subscription.expires_at - known).total_seconds()
+            if abs(apart) < 60:
+                return True
+            if only_forward and apart < 0:
+                # Панель знает срок больше нашего: это выданные оператором
+                # дни. Ночная сверка их не отбирает.
+                log.info(
+                    "activation.expiry_sync_panel_ahead",
+                    mac=device.mac,
+                    days=round(-apart / 86400, 1),
+                )
+                return True
         await remnawave.client().update_expiry(account, expire_at=subscription.expires_at)
     except remnawave.RemnawaveError as exc:
         log.warning("activation.expiry_sync_failed", mac=device.mac, error=str(exc))

@@ -16,6 +16,7 @@ from core.enums import SubscriptionStatus
 from core.models import Subscription, User
 from core.notifications import notify_admins, send_message
 from core.services import subscriptions as subscription_service
+from core.services.subscriptions import LIVE_STATUSES
 
 log = structlog.get_logger("worker.subscriptions")
 
@@ -207,6 +208,48 @@ async def expire_unactivated() -> int:
     if count:
         log.info("subscriptions.unactivated_expired", count=count)
     return count
+
+
+async def resync_panel_expiry(limit: int = 200) -> int:
+    """Сверяет срок в панели с оплаченным и дотягивает отставший.
+
+    Перенос срока в панель делался ровно один раз — в момент проведения
+    оплаты, — и молча сдавался: недоступная панель, учётка не нашлась,
+    ответ не тот. Клиент при этом платил, у нас всё выглядело продлённым,
+    а доступ обрывался в старую дату, потому что отключает его панель по
+    своей. Узнавали об этом от клиента.
+
+    Ходит только вперёд: если панель знает срок больше нашего, это выданные
+    оператором дни, и отбирать их сверка не должна.
+    """
+    from core.services.activation import sync_panel_expiry
+
+    fixed = 0
+    async with session_scope() as session:
+        rows = await session.scalars(
+            select(Subscription)
+            .where(
+                Subscription.status.in_(LIVE_STATUSES),
+                Subscription.expires_at.is_not(None),
+                Subscription.device_id.is_not(None),
+            )
+            .order_by(Subscription.id)
+            .limit(limit)
+        )
+        for subscription in rows:
+            if not await sync_panel_expiry(session, subscription, only_forward=True):
+                # Ни учётки, ни ответа панели. Молчать нельзя: у клиента с
+                # оплаченной подпиской доступа сейчас может не быть вовсе.
+                log.warning(
+                    "subscriptions.panel_out_of_sync",
+                    subscription_id=subscription.id,
+                    device_id=subscription.device_id,
+                )
+                continue
+            fixed += 1
+
+    log.info("subscriptions.panel_resynced", checked=fixed)
+    return fixed
 
 
 def next_reminder_run(now: dt.datetime | None = None) -> dt.datetime:
