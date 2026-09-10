@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -96,6 +96,69 @@ def public_number(order_id: int, created_at: dt.datetime) -> str:
     return f"R-{to_display(created_at):%y%m%d}-{order_id:04d}"
 
 
+SOLD_OUT_STATUSES = (OrderStatus.CANCELLED, OrderStatus.REFUNDED)
+"""Заказы, которые предел не занимают: отменённые и возвращённые."""
+
+
+async def sold_units(session: AsyncSession, product_id: int) -> int:
+    """Сколько роутеров этой модели уже разобрано заказами.
+
+    Считаем по заказам, а не списываем число у товара. Списание пришлось бы
+    возвращать при каждой отмене и возврате, а забытый возврат тихо съедает
+    остаток: товар «кончился», хотя роутеры лежат. Счёт по заказам чинится сам.
+    """
+    total = await session.scalar(
+        select(func.coalesce(func.sum(OrderItem.quantity), 0))
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            OrderItem.product_id == product_id,
+            Order.status.notin_(SOLD_OUT_STATUSES),
+        )
+    )
+    return int(total or 0)
+
+
+async def units_left(session: AsyncSession, product: Product) -> int:
+    """Сколько ещё можно продать по нынешнему пределу. Меньше нуля не бывает."""
+    return max((product.stock or 0) - await sold_units(session, product.id), 0)
+
+
+async def units_left_map(session: AsyncSession, products: list[Product]) -> dict[int, int]:
+    """Пределы сразу для списка товаров — одним запросом.
+
+    Витрину открывает случайный человек из поиска, и запрос на каждую
+    карточку там лишний: моделей две сегодня и десять завтра, а страница
+    одна и та же.
+    """
+    if not products:
+        return {}
+    rows = await session.execute(
+        select(OrderItem.product_id, func.coalesce(func.sum(OrderItem.quantity), 0))
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            OrderItem.product_id.in_([product.id for product in products]),
+            Order.status.notin_(SOLD_OUT_STATUSES),
+        )
+        .group_by(OrderItem.product_id)
+    )
+    sold = {product_id: int(total or 0) for product_id, total in rows}
+    return {
+        product.id: max((product.stock or 0) - sold.get(product.id, 0), 0)
+        for product in products
+    }
+
+
+def sellable(product: Product, left: int | None) -> bool:
+    """Показывать ли товар как доступный.
+
+    Предзаказ продаётся всегда — на то он и предзаказ. `left is None` значит,
+    что вызывающий предел не считал: тогда судим по самому числу, как раньше.
+    """
+    if product.allow_preorder:
+        return True
+    return product.stock > 0 if left is None else left > 0
+
+
 async def calculate_totals(
     session: AsyncSession,
     *,
@@ -109,7 +172,10 @@ async def calculate_totals(
         product = await session.get(Product, draft.product_id)
         if product is None or not product.is_active:
             raise OrderError("Этот роутер больше не продаётся")
-        if not product.in_stock:
+        # Остаток — предел, который оператор ставит руками: сколько роутеров
+        # он готов продать сейчас. Прошиты они или ещё лежат в коробке — его
+        # дело; наше дело не принять заказов больше предела.
+        if not sellable(product, await units_left(session, product)):
             raise OrderError("Роутера нет в наличии")
         totals.product = product
         totals.subtotal += product.price

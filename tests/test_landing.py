@@ -18,7 +18,7 @@ from sqlalchemy.ext.compiler import compiles
 
 from api.routes import landing as landing_route
 from core.config import settings
-from core.models import Plan, Product, Setting
+from core.models import Order, OrderItem, Plan, Product, Setting, User
 from core.models.base import Base
 from core.services import landing
 
@@ -68,7 +68,12 @@ async def _session():
         await connection.run_sync(
             lambda sync_connection: Base.metadata.create_all(
                 sync_connection,
-                tables=[Product.__table__, Plan.__table__, Setting.__table__],
+                # Заказы — ради предела продаж: витрина не предлагает то,
+                # чего оператор продавать больше не готов.
+                tables=[
+                    Product.__table__, Plan.__table__, Setting.__table__,
+                    User.__table__, Order.__table__, OrderItem.__table__,
+                ],
             )
         )
     return engine, async_sessionmaker(engine, expire_on_commit=False)

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.models import Plan, Product
+from core.services import orders as order_service
 from core.services import settings_service
 
 # Значки той же типографской семьи, что в боте: ▣ ⊕ ↻ ▤ ◇ ◈ ⓘ.
@@ -556,7 +557,7 @@ async def favicon_url(session: AsyncSession, fallback: str = DEFAULT_FAVICON_URL
     return configured or fallback
 
 
-def product_card(product: Product) -> dict[str, Any]:
+def product_card(product: Product, *, left: int | None = None) -> dict[str, Any]:
     """Карточка для витрины.
 
     `model_code` наружу не идёт: клиенту показывается название товара,
@@ -579,7 +580,7 @@ def product_card(product: Product) -> dict[str, Any]:
             if product.old_price and product.old_price > product.price
             else ""
         ),
-        "in_stock": product.in_stock,
+        "in_stock": order_service.sellable(product, left),
         "preorder": product.stock <= 0 and product.allow_preorder,
         "specs": list((product.specs or {}).items()),
         "photo_url": photo_url(product),
@@ -640,7 +641,10 @@ async def page_content(
     hero_subtitle = await settings_service.get_str(session, "landing.hero_subtitle")
     support = await settings_service.get_str(session, "support.contact")
 
-    cards = [product_card(product) for product in products]
+    # Предел считается по заказам, поэтому карточки собираются с ним:
+    # витрина не должна предлагать то, чего оператор продавать не готов.
+    left = await order_service.units_left_map(session, products)
+    cards = [product_card(product, left=left.get(product.id)) for product in products]
     return {
         "brand": settings.app.brand,
         "hero_image": await hero_image(session, cards),

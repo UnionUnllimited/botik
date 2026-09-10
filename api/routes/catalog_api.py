@@ -99,8 +99,12 @@ def _photo_url(product: Product) -> str:
     return f"{settings.api.public_base_url.rstrip('/')}{raw}"
 
 
-def _product_payload(product: Product) -> dict[str, Any]:
-    """Деньги строкой, а не числом: float по дороге теряет копейки."""
+def _product_payload(product: Product, *, left: int | None = None) -> dict[str, Any]:
+    """Деньги строкой, а не числом: float по дороге теряет копейки.
+
+    `left` — сколько ещё можно продать по нынешнему пределу; считает
+    вызывающий, потому что счёт идёт по заказам, а сборка синхронная.
+    """
     return {
         "id": product.id,
         "slug": product.slug,
@@ -112,8 +116,10 @@ def _product_payload(product: Product) -> dict[str, Any]:
         "old_price": str(product.old_price) if product.old_price is not None else "",
         "vat_code": str(product.vat_code),
         "stock": product.stock,
+        # Сколько осталось продать. `None` — вызывающий предел не считал.
+        "stock_left": left,
         "allow_preorder": product.allow_preorder,
-        "in_stock": product.in_stock,
+        "in_stock": order_service.sellable(product, left),
         "is_active": product.is_active,
         "sort_order": product.sort_order,
         "specs": product.specs or {},
@@ -132,10 +138,13 @@ async def list_products(
     if not include_hidden:
         query = query.where(Product.is_active.is_(True))
     products = list(await session.scalars(query))
+    left = await order_service.units_left_map(session, products)
     return {
         "total": len(products),
         "currency": settings.app.currency,
-        "products": [_product_payload(product) for product in products],
+        "products": [
+            _product_payload(product, left=left[product.id]) for product in products
+        ],
     }
 
 
