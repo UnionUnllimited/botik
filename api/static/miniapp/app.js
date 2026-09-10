@@ -22,6 +22,11 @@
       + 'выдаёт мессенджер, и вне его подтвердить, кто вы, нечем.</div></div></div></div>';
     var splash = document.getElementById('splash');
     if (splash) { splash.classList.add('gone'); }
+    // Вкладки внизу живут в разметке, а обработчики им навешиваются в самом
+    // конце этого кода — до которого мы уже не дойдём. Оставленные на месте,
+    // они нажимаются и не делают ничего: приложение выглядит зависшим.
+    var nav = document.querySelector('nav');
+    if (nav) { nav.remove(); }
     return;
   }
 
@@ -302,7 +307,13 @@
       'X-Telegram-Init-Data': tg.initData || '',
       'Content-Type': 'application/json'
     });
-    return fetch('/app/api' + path, opts).then(function (r) {
+    return fetch('/app/api' + path, opts).catch(function () {
+      // Сорванный fetch — это не ответ сервера, а обрыв связи, и разбор ниже
+      // до него не доходит. Браузер отдаёт «Failed to fetch» или «Load
+      // failed», и клиент читал это дословно: приложение открывают в метро
+      // и в лифте чаще, чем за столом.
+      throw new Error('Нет связи. Проверьте интернет и попробуйте ещё раз.');
+    }).then(function (r) {
       // Разбираем через текст: на пути стоит прокси, и его страница на 502
       // роняла бы разбор с «Unexpected token '<'» вместо внятной причины.
       return r.text().then(function (raw) {
@@ -909,11 +920,15 @@
       // а «продлить на 90 дней за 900 ₽» — и видит, до какого числа.
       function refresh() {
         var p = selected();
-        if (!p) { return; }
+        var ends = document.getElementById('ends');
+        var pay = document.getElementById('pay');
+        // Счёт готовится не мгновенно, и к ответу клиент может быть уже на
+        // другом экране. Тогда переписывать нечего: без этой проверки
+        // обращение к исчезнувшей строке роняло обработчик.
+        if (!p || !ends || !pay) { return; }
         var title = planTitle(p);
-        document.getElementById('ends').innerHTML = 'Будет действовать до <b>'
-          + date(endsAt(p)) + '</b>';
-        document.getElementById('pay').innerHTML = icon('card') + 'Продлить на '
+        ends.innerHTML = 'Будет действовать до <b>' + date(endsAt(p)) + '</b>';
+        pay.innerHTML = icon('card') + 'Продлить на '
           + esc(title.charAt(0).toLowerCase() + title.slice(1)) + ' · '
           + money(p.price, d.currency);
       }
@@ -1173,7 +1188,7 @@
       // «не удалось загрузить» значило бы сообщать клиенту о нашей недоделке
       // на экране, где у него всё работает.
       var slot = document.getElementById('access');
-      api('/router/nodes').then(function (n) {
+      api('/router/nodes?device_id=' + r.id).then(function (n) {
         if (n && n.ok) { renderAccess(slot, n, r.id); } else { slot.remove(); }
       }).catch(function () { slot.remove(); });
 

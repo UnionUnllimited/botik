@@ -255,6 +255,7 @@ async def router_reboot(
 
 @router.get("/api/router/nodes")
 async def router_nodes(
+    device_id: int = 0,
     user: TelegramUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -264,8 +265,17 @@ async def router_nodes(
     устройства по туннелю, и это до пятнадцати секунд. Приложив его к экрану,
     мы заставили бы ждать столько же и того, кто зашёл посмотреть срок
     подписки.
+
+    `device_id` обязателен для клиента с двумя роутерами: без него бралось
+    последнее по номеру устройство, и на экране старого роутера показывалось
+    состояние нового — включён доступ или выключен, какой сервер выбран.
+    Нажатие при этом уходило на правильный роутер, а прочитанное перед
+    нажатием было чужим. Владение всё равно проверяет обработчик, и чужой
+    номер отсюда роутер не откроет.
     """
-    return await catalog_api.my_router_nodes(tg_id=user.tg_id, device_id=0, session=session)
+    return await catalog_api.my_router_nodes(
+        tg_id=user.tg_id, device_id=device_id, session=session
+    )
 
 
 @router.post("/api/router/node")
