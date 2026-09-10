@@ -2244,6 +2244,10 @@ async def manage_order_status(
         return {"ok": False, "error": str(exc)}
     log.info("catalog.order_status_set", order_id=order.id, was=was, now=str(order.status))
 
+    # Отменённый или возвращённый заказ отдаёт промокод обратно — и клиенту,
+    # у которого свой предел применений, и общему счётчику кода.
+    if order.status in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+        await promo_service.release_usage(session, order_id=order.id)
     await session.flush()
     # Карточка в топике должна догонять любое изменение: оператор нажал
     # кнопку с телефона и смотрит туда же, а не в веб-админку.
@@ -2939,6 +2943,8 @@ async def cancel_order(
         .where(Payment.order_id == order.id, Payment.status == PaymentStatus.PENDING)
         .values(status=PaymentStatus.CANCELED, error_message="Заказ отменён клиентом")
     )
+    # Промокод возвращается клиенту: он им не воспользовался.
+    await promo_service.release_usage(session, order_id=order.id)
     log.info("catalog.order_cancelled", order_id=order.id, number=order.public_number)
     return {"ok": True}
 

@@ -6,6 +6,7 @@ import datetime as dt
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +14,9 @@ from core.enums import OrderStatus, PromoDiscountType
 from core.models import Order, PromoCode, PromoUsage
 
 MONEY = Decimal("0.01")
+
+
+log = structlog.get_logger("services.promo")
 
 
 class PromoError(Exception):
@@ -103,6 +107,30 @@ async def validate(
     if discount <= 0:
         raise PromoError("Промокод не даёт скидку на этот заказ")
     return PromoResult(promo=promo, discount=discount)
+
+
+async def release_usage(session: AsyncSession, *, order_id: int) -> bool:
+    """Возвращает промокод, применённый к отменённому заказу.
+
+    Применение записывается при оформлении, а не при оплате: иначе предел
+    «столько-то раз» обходился бы десятком неоплаченных заказов сразу.
+    Но брошенный или отменённый заказ забирал код навсегда — клиент видел
+    «вы уже использовали этот промокод», не заплатив ни разу, а код на сто
+    применений выгорал корзинами, которые никто не оплатил.
+
+    Возвращает True, если применение нашлось и снято.
+    """
+    usage = await session.scalar(select(PromoUsage).where(PromoUsage.order_id == order_id))
+    if usage is None:
+        return False
+    promo = await session.get(PromoCode, usage.promo_code_id)
+    if promo is not None:
+        # Ниже нуля счётчик не опускаем: он и так справочный, а отрицательное
+        # число в админке выглядит поломкой, а не возвратом.
+        promo.used_count = max((promo.used_count or 0) - 1, 0)
+    await session.delete(usage)
+    log.info("promo.usage_released", order_id=order_id, promo_code_id=usage.promo_code_id)
+    return True
 
 
 async def register_usage(
