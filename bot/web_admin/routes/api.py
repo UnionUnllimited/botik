@@ -2147,7 +2147,9 @@ async def api_user_keys(telegram_id: int):
                     continue
                 # Подпись — в якоре ссылки: страница берёт имя ключа оттуда,
                 # а роутеру якорь безразличен — HTTP его не передаёт.
-                label = f"Роутер {key.get('model') or ''} · {key.get('mac') or ''}".strip()
+                # Название модели уже начинается со слова «Роутер»
+                # (`texts.router_model_title`), второе тут было лишним.
+                label = f"{key.get('model') or 'Роутер'} · {key.get('mac') or ''}".strip()
                 links.append(f"{url}#{quote(label)}")
             return jsonify({'ok': True, 'isFound': True, 'links': links})
 
