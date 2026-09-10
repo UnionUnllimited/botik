@@ -65,6 +65,10 @@ async def daily_digest() -> int:
             (order.public_number, device.mac, max(0, (now - order.shipped_at).days))
             for order, device in digest.shipped_silent
         ]
+        stuck = [
+            (order.public_number, device.mac, device.user.display_name if device.user else "")
+            for order, device in digest.stuck
+        ]
         expiring = [
             (
                 user.display_name,
@@ -75,9 +79,11 @@ async def daily_digest() -> int:
         ]
 
         await notify_admins(
-            ru.fleet_digest(silent=silent, shipped_silent=shipped, expiring=expiring),
+            ru.fleet_digest(
+                silent=silent, shipped_silent=shipped, stuck=stuck, expiring=expiring
+            ),
             session=session,
         )
-        total = len(silent) + len(shipped) + len(expiring)
+        total = len(silent) + len(shipped) + len(stuck) + len(expiring)
         log.info("monitoring.digest_sent", total=total)
         return total

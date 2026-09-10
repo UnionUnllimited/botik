@@ -238,6 +238,7 @@ def fleet_digest(
     silent: list[tuple[str, str, str]],
     shipped_silent: list[tuple[str, str, int]],
     expiring: list[tuple[str, str, int]],
+    stuck: list[tuple[str, str, str]] | None = None,
 ) -> str:
     """Сводка оператору: что в парке требует внимания.
 
@@ -263,6 +264,14 @@ def fleet_digest(
             blocks.append(f"Заказ <b>{number}</b> · <code>{mac}</code> — {_plural_days(days)} в пути")
         if len(shipped_silent) > limit:
             blocks.append(f"…и ещё {len(shipped_silent) - limit}")
+
+    if stuck:
+        blocks.append(f"\n<b>На связи, а подписка не включилась</b> — {len(stuck)}")
+        for number, mac, client in stuck[:limit]:
+            who = f" · {client}" if client else ""
+            blocks.append(f"Заказ <b>{number}</b> · <code>{mac}</code>{who}")
+        if len(stuck) > limit:
+            blocks.append(f"…и ещё {len(stuck) - limit}")
 
     if expiring:
         blocks.append(f"\n<b>Подписка кончается, продления нет</b> — {len(expiring)}")
