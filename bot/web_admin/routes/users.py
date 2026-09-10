@@ -98,43 +98,76 @@ def _format_last_online(online_at):
         }
 
 
-def _users_search_query(column_names, *, search_email, search_username, rw_plain):
+def _users_search_query(column_names, *, search_email, search_username, rw_plain, now_utc_str):
     """Запрос поиска клиентов по почте, имени или @username.
 
-    Собирается по фактическому набору колонок. `email` и `real_username`
-    добавляются миграциями, и на базе, где миграция не прошла, прежний
-    запрос спрашивал их напрямую: страница отвечала пятисоткой на любой
-    нецифровой ввод в строке поиска, а поиск по Telegram ID работал —
-    он этих колонок не касается. Остальные запросы в этом файле набор
-    колонок давно спрашивают; этот был единственным, кто брал их на веру.
+    Собирается по фактическому набору колонок — целиком, а не по паре
+    заведомо необязательных. Схема этой базы наращивалась миграциями годами,
+    и какие из них прошли на конкретной установке, заранее не известно:
+    любая колонка, взятая на веру, отвечает «no such column» и роняет
+    страницу пятисоткой. Поиск по Telegram ID при этом работал — он берёт
+    меньше колонок, поэтому промах и дожил до боевого сервера.
 
-    Возвращает `(select_sql, where_clause, where_params, order_clause)`
-    или `None`, если искать не по чему.
+    Значение подставляется параметром; в строку запроса попадают только
+    имена колонок, которые вернула сама база.
+
+    Возвращает `(select_sql, head_params, count_sql, count_params)`, где
+    `select_sql` заканчивается на `LIMIT ? OFFSET ?`, а вызывающему остаётся
+    дописать к `head_params` размер страницы и смещение. Параметры собираются
+    здесь же: без этого их порядок разъезжается с колонками при первой правке.
+    `None` — искать не по чему.
     """
-    optional = [name for name in ('real_username', 'email') if name in column_names]
-    select_cols = ', '.join(
-        ['telegram_id', 'username', *optional, 'subscription_end_date', 'is_trial_used',
-         'current_server_id', 'xui_client_email', 'xui_client_uuid',
-         'COALESCE(limit_ip,0) as limit_ip',
-         'COALESCE(is_blocked,0) as is_blocked',
-         'CASE WHEN subscription_end_date IS NOT NULL AND subscription_end_date > ? '
-         'THEN 1 ELSE 0 END as is_active',
-         'user_tag', 'created_at',
-         "COALESCE(registration_type,'') as registration_type"],
-    ) + rw_plain
+    have = set(column_names or ())
+
+    # Порядок как был: телеграм-идентификатор, имена, срок, всё остальное.
+    plain = [
+        name for name in (
+            'telegram_id', 'username', 'real_username', 'email',
+            'subscription_end_date', 'is_trial_used', 'current_server_id',
+            'xui_client_email', 'xui_client_uuid', 'user_tag', 'created_at',
+        ) if name in have
+    ]
+    if 'telegram_id' not in plain:
+        return None
+
+    wrapped = [
+        (name, expr) for name, expr in (
+            ('limit_ip', 'COALESCE(limit_ip,0) as limit_ip'),
+            ('is_blocked', 'COALESCE(is_blocked,0) as is_blocked'),
+            ('registration_type', "COALESCE(registration_type,'') as registration_type"),
+        ) if name in have
+    ]
+
+    head_params = []
+    if 'subscription_end_date' in have:
+        active_expr = (
+            'CASE WHEN subscription_end_date IS NOT NULL AND subscription_end_date > ? '
+            'THEN 1 ELSE 0 END as is_active'
+        )
+        head_params.append(now_utc_str)
+    else:
+        active_expr = '0 as is_active'
+
+    select_cols = ', '.join([*plain, *(expr for _name, expr in wrapped), active_expr]) + rw_plain
 
     if search_email:
-        # Почты в базе нет — искать по ней нечего, и это не повод падать.
-        if 'email' not in column_names:
+        if 'email' not in have:
             return None
-        value = search_email.lower()
-        return select_cols, 'WHERE LOWER(email) = ?', (value,), ''
+        where = 'WHERE LOWER(email) = ?'
+        where_params = (search_email.lower(),)
+        order = ''
+    else:
+        name_cols = [name for name in ('username', 'real_username') if name in have]
+        if not name_cols:
+            return None
+        where = 'WHERE ' + ' OR '.join(f'LOWER({col}) LIKE LOWER(?)' for col in name_cols)
+        like = f'%{search_username}%'
+        where_params = tuple(like for _ in name_cols)
+        order = 'ORDER BY created_at DESC' if 'created_at' in have else ''
 
-    like = f'%{search_username}%'
-    name_cols = ['username'] + (['real_username'] if 'real_username' in column_names else [])
-    where = 'WHERE ' + ' OR '.join(f'LOWER({col}) LIKE LOWER(?)' for col in name_cols)
-    order = 'ORDER BY created_at DESC' if 'created_at' in column_names else ''
-    return select_cols, where, tuple(like for _ in name_cols), order
+    select_sql = f'SELECT {select_cols} FROM users {where} {order} LIMIT ? OFFSET ?'
+    count_sql = f'SELECT COUNT(*) as cnt FROM users {where}'
+    return select_sql, (*head_params, *where_params), count_sql, where_params
 
 
 def _users_rw_traffic_cols_plain(column_names, alias: str = '') -> str:
@@ -551,31 +584,22 @@ def attach_user_routes(admin_bp_instance, query_db_func, execute_db_func):
                 search_email=search_email,
                 search_username=search_username,
                 rw_plain=rw_plain,
+                now_utc_str=now_utc_str,
             )
             if built is None:
-                # Искать не по чему: колонки почты в этой базе нет. Пустой
+                # Искать не по чему: нужных колонок в этой базе нет. Пустой
                 # список честнее пятисотки — оператор видит «никого не нашли».
                 found = []
                 total_users = 0
                 total_pages = 1
             else:
-                select_cols, where_clause, where_params, order_clause = built
-                count_row = await async_query_db(
-                    f"SELECT COUNT(*) as cnt FROM users {where_clause}",
-                    where_params, one=True
-                )
+                select_sql, head_params, count_sql, count_params = built
+                count_row = await async_query_db(count_sql, count_params, one=True)
                 total_users = count_row['cnt'] if count_row else 0
                 total_pages = max(1, (total_users + per_page - 1) // per_page)
                 page = max(1, min(page, total_pages))
                 offset = (page - 1) * per_page
-
-                sql = (
-                    f"SELECT {select_cols} FROM users {where_clause} {order_clause} "
-                    "LIMIT ? OFFSET ?"
-                )
-                found = await async_query_db(
-                    sql, (now_utc_str, *where_params, per_page, offset)
-                )
+                found = await async_query_db(select_sql, (*head_params, per_page, offset))
 
             users_list_local = []
             for u in (found or []):
