@@ -312,7 +312,13 @@ def extend(
     old_expires_at = subscription.expires_at
 
     if subscription.status is SubscriptionStatus.PENDING:
-        # Ещё не активирована — просто складываем оплаченные периоды.
+        # Срок ещё не пошёл, и прибавить оплаченные дни некуда: при активации
+        # он считается по тарифу самой подписки. Отодвигаем только предел,
+        # до которого роутер можно включить, — и зовём человека, потому что
+        # деньги за этот период взяты, а дни клиент не получит.
+        #
+        # Счёт на такое продление больше не выдаётся (см. `renew_start`),
+        # так что сюда попадает только оплата счёта, выставленного раньше.
         subscription.pending_expires_at = max(
             subscription.pending_expires_at or moment,
             moment + dt.timedelta(days=settings.subscription.activation_deadline_days),
@@ -323,7 +329,13 @@ def extend(
             old_expires_at=old_expires_at,
             payment_id=payment_id,
             admin_id=admin_id,
-            comment=f"Оплачен ещё один период: {plan.title}",
+            comment=f"Оплачен период {plan.title} до активации — дни не начислены",
+        )
+        log.warning(
+            "subscription.paid_before_activation",
+            subscription_id=subscription.id,
+            payment_id=payment_id,
+            plan=plan.title,
         )
         return subscription
 

@@ -46,6 +46,7 @@ from core.enums import (
     PaymentPurpose,
     PaymentStatus,
     PromoDiscountType,
+    SubscriptionStatus,
     VatCode,
 )
 from core.models import (
@@ -1459,6 +1460,17 @@ async def renew_start(payload: dict, session: AsyncSession = Depends(get_transac
         return {
             "ok": False,
             "error": "Подписки нет. Она появится, когда приедет роутер.",
+        }
+    if subscription.status is SubscriptionStatus.PENDING:
+        # Срок ещё не пошёл: он начнётся, когда роутер первый раз выйдет
+        # на связь. Продление к нему прибавить некуда — оплаченные дни
+        # такого счёта просто пропадали бы, а деньги мы бы взяли.
+        return {
+            "ok": False,
+            "error": (
+                "Срок ещё не идёт — он начнётся, когда роутер выйдет на связь. "
+                "Продлить можно будет после этого."
+            ),
         }
 
     alive = await _alive_payment(
