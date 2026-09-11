@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_session, get_transaction
-from core.services import firmware
+from core.services import firmware, object_storage
 
 log = structlog.get_logger("api.firmware")
 
@@ -75,14 +75,18 @@ async def upload(
             {"ok": False, "error": "Выпуск не найден."}, status_code=404, headers=headers
         )
 
+    storage = await object_storage.current(session)
     try:
         saved = await firmware.save_upload(
             version=release.version,
             model_key=target.model_key,
             file_name=image.filename or "",
             source=image,
+            storage=storage,
         )
-        await firmware.attach_image(session, release, model_key=target.model_key, saved=saved)
+        await firmware.attach_image(
+            session, release, model_key=target.model_key, saved=saved, storage=storage
+        )
     except firmware.FirmwareError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400, headers=headers)
 
@@ -93,6 +97,10 @@ async def upload(
             "file_name": saved.file_name,
             "sha256": saved.sha256,
             "size": saved.size_bytes,
+            # Хранилище настроено, а образ туда не доехал — оператору это
+            # видно сразу, а не в момент, когда он удивится трафику.
+            "stored": bool(saved.remote_url),
+            "storage_configured": storage.configured,
         },
         headers=headers,
     )

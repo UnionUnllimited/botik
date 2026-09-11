@@ -209,7 +209,7 @@
          занимает больше всего остального. Поэтому свёрнуто. #}
       <details class="pt-2 border-t" style="border-color: var(--admin-border);">
         <summary class="text-[12.5px] font-semibold tw-text-base2 cursor-pointer">
-          Куда сливать копию списков
+          Объектное хранилище
           {% if config.get('lists_s3_bucket') %}
             <span class="tw-kbd text-[10px] ml-1">{{ config.get('lists_s3_bucket') }}</span>
           {% else %}
@@ -218,14 +218,20 @@
         </summary>
 
       <div class="text-[12px] tw-text-subtle2 py-2">
-        Списки роутеры и так забирают с нашего домена:
-        <code class="tw-kbd text-[11px]">/lists/domains.lst</code> и
-        <code class="tw-kbd text-[11px]">/lists/ip.lst</code>.
-        Копия в объектном хранилище нужна на случай, когда наш сервер
-        перезапускается выкатом, а парк приходит за обновлением. Пусто —
-        выкладка выключена, на раздачу это не влияет.
+        Одно хранилище на списки и на прошивки — настраивается здесь, а
+        используется и на странице «Обновление роутеров».
+        <br>Списки роутеры и так забирают с нашего домена
+        (<code class="tw-kbd text-[11px]">/lists/proxy-domains.lst</code> и
+        <code class="tw-kbd text-[11px]">/lists/proxy-ip.lst</code>), копия нужна
+        на случай, когда наш сервер перезапускается выкатом, а парк приходит
+        за обновлением. Образ прошивки — другое дело: он весит до 54 МБ, и за
+        ним приходит весь парк разом. Настроено хранилище — манифест ведёт
+        роутеры туда, и этот трафик уходит с нашего канала.
+        <br>Пусто — выкладка выключена, всё раздаётся с нашего домена, как раньше.
         <br>Yandex: <code class="tw-kbd text-[11px]">https://storage.yandexcloud.net</code> ·
         VK: <code class="tw-kbd text-[11px]">https://hb.vkcs.cloud</code>
+        <br><b>Бакет должен быть публичным на чтение:</b> за файлом приходит
+        прошивка роутера, ключей у неё нет.
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -248,6 +254,12 @@
           <label for="lists_s3_prefix">Префикс ключа</label>
           <input type="text" class="tw-input" id="lists_s3_prefix" name="lists_s3_prefix"
                  value="{{ config.get('lists_s3_prefix', 'lists/') }}">
+        </div>
+        <div class="ss-field sm:col-span-2">
+          <label for="lists_s3_public_url">Адрес раздачи <span class="tw-text-subtle2 font-normal">— если перед бакетом стоит CDN</span></label>
+          <input type="text" class="tw-input" id="lists_s3_public_url" name="lists_s3_public_url"
+                 value="{{ config.get('lists_s3_public_url', '') }}"
+                 placeholder="пусто — собираем из адреса хранилища и бакета">
         </div>
         <div class="ss-field">
           <label for="lists_s3_access_key">Access key</label>

@@ -16,11 +16,12 @@ import json
 
 import pytest
 from sqlalchemy import BigInteger
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
 from core.config import settings
-from core.models import FirmwareImage, FirmwareRelease
+from core.models import FirmwareImage, FirmwareRelease, Setting
 from core.models.base import Base
 from core.services import firmware
 
@@ -71,13 +72,25 @@ def _bigint_for_sqlite(_type, _compiler, **_kwargs) -> str:
     return "INTEGER"
 
 
+@compiles(JSONB, "sqlite")
+def _jsonb_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    """Настройки хранят значение в JSONB — здесь это обычный JSON."""
+    return "JSON"
+
+
 async def _session():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         await connection.run_sync(
             lambda sync_connection: Base.metadata.create_all(
                 sync_connection,
-                tables=[FirmwareRelease.__table__, FirmwareImage.__table__],
+                # `Setting` — настройки хранилища: их читает приём образа,
+                # чтобы решить, уезжает файл в бакет или остаётся у нас.
+                tables=[
+                    FirmwareRelease.__table__,
+                    FirmwareImage.__table__,
+                    Setting.__table__,
+                ],
             )
         )
     return engine, async_sessionmaker(engine, expire_on_commit=False)

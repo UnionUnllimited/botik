@@ -48,6 +48,7 @@ from core.services import (
     activation,
     domain_lists,
     firmware,
+    object_storage,
     panel_ticket,
     remnawave,
     router_shell,
@@ -1906,6 +1907,7 @@ async def lists_build(session: AsyncSession = Depends(get_transaction)) -> dict:
 
 
 def _firmware_release_payload(release: FirmwareRelease) -> dict:
+    _base = settings.api.public_base_url.rstrip("/")
     images = {
         image.model_key: {
             "file_name": image.file_name,
@@ -1919,6 +1921,11 @@ def _firmware_release_payload(release: FirmwareRelease) -> dict:
             # при публикации.
             "build": firmware.build_number(image.file_name),
             "name_mismatch": firmware.name_mismatch(image.file_name, release.version),
+            # Откуда его заберёт роутер. Видно должно быть именно это, а не
+            # «настроено ли хранилище»: настроено оно на выпуск целиком,
+            # а доехать мог не каждый образ.
+            "stored": bool(image.remote_url),
+            "download_url": image.remote_url or f"{_base}{image.url_path}",
         }
         for image in release.images
     }
@@ -1938,6 +1945,10 @@ def _firmware_release_payload(release: FirmwareRelease) -> dict:
         # а штатный способ приостановить одну модель, и на странице это должно
         # читаться как решение, а не как «забыли загрузить».
         "missing": [key for key in firmware.MODEL_KEYS if key not in images],
+        # Сколько образов раздаётся с нашего канала. Пока их ноль, выпуск
+        # не стоит нам трафика; иначе оператор увидит, что часть парка
+        # придёт за полусотней мегабайт к нам.
+        "served_by_us": sum(1 for item in images.values() if not item["stored"]),
     }
 
 
@@ -2038,7 +2049,12 @@ async def firmware_publish(
     """Публикует выпуск: с этой секунды он и есть манифест."""
     release = await _firmware_or_404(session, release_id)
     try:
-        await firmware.publish(session, release, rollout=payload.get("rollout", 0))
+        await firmware.publish(
+            session,
+            release,
+            rollout=payload.get("rollout", 0),
+            storage=await object_storage.current(session),
+        )
     except firmware.FirmwareError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "release": _firmware_release_payload(release)}
@@ -2050,7 +2066,12 @@ async def firmware_image_delete(
 ) -> dict:
     """Убирает модель из выпуска — штатный способ приостановить её одну."""
     release = await _firmware_or_404(session, release_id)
-    removed = await firmware.detach_image(session, release, str(payload.get("model") or ""))
+    removed = await firmware.detach_image(
+        session,
+        release,
+        str(payload.get("model") or ""),
+        storage=await object_storage.current(session),
+    )
     if not removed:
         return {"ok": False, "error": "Образа для этой модели в выпуске нет."}
     return {"ok": True}
@@ -2063,7 +2084,9 @@ async def firmware_release_delete(
     """Удаляет выпуск вместе с файлами. Раздаваемый сейчас не отдаём."""
     release = await _firmware_or_404(session, release_id)
     try:
-        await firmware.delete_release(session, release)
+        await firmware.delete_release(
+            session, release, storage=await object_storage.current(session)
+        )
     except firmware.FirmwareError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True}

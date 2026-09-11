@@ -81,6 +81,19 @@ class FirmwareImage(BigIntPkMixin, Base):
 
     file_name: Mapped[str] = mapped_column(String(200), nullable=False)
     url_path: Mapped[str] = mapped_column(String(300), nullable=False)
+    """Где образ лежит у нас на диске, в виде адреса: `/firmware/images/v140/…`.
+    Остаётся заполненным всегда, даже когда образ уехал в хранилище: это
+    запасной адрес и единственный способ удалить файл за собой."""
+
+    remote_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    """Адрес в объектном хранилище, если образ туда доехал. Пусто — раздаём
+    со своего домена.
+
+    Хранится готовым адресом, а не флагом: бакет и CDN оператор может сменить,
+    а роутеры в этот момент качают по тем ссылкам, которые уже прочитали
+    из манифеста. Собирать адрес заново на каждый запрос значило бы менять
+    его под парком на ходу."""
+
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
 

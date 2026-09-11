@@ -26,7 +26,7 @@ from core.config import settings
 from core.dates import utcnow
 from core.models import DomainBuild, DomainSource, ListKind, ManualList, ManualListRevision
 from core.notifications import notify_admins
-from core.services import settings_service
+from core.services import object_storage, settings_service
 
 log = structlog.get_logger(__name__)
 
@@ -432,22 +432,10 @@ def publish_local(directory: str, values_by_kind: dict[str, list[str]]) -> bool:
 # ── Копия в объектном хранилище ───────────────────────────────────────────────
 
 
-def _s3_client(conf: dict[str, str]):
-    """Клиент к S3-совместимому хранилищу. Один на оба провайдера.
-
-    Yandex и VK различаются только адресом, поэтому выбор — это `endpoint_url`
-    из настроек, а не два разных клиента. Импорт внутри: `boto3` нужен только
-    тут, а тянуть его при каждом старте API незачем.
-    """
-    import boto3
-
-    return boto3.client(
-        "s3",
-        endpoint_url=conf["lists_s3_endpoint"],
-        region_name=conf.get("lists_s3_region") or "ru-central1",
-        aws_access_key_id=conf["lists_s3_access_key"],
-        aws_secret_access_key=conf["lists_s3_secret_key"],
-    )
+def list_key(prefix: str, kind: str) -> str:
+    """Имя объекта в хранилище. Префикс задаёт оператор, имя файла — мы:
+    роутер ищет его по постоянному имени, и подставить туда своё нельзя."""
+    return f"{(prefix or 'lists/').lstrip('/')}{FILE_NAMES[kind]}"
 
 
 async def upload(values_by_kind: dict[str, list[str]], conf: dict[str, str] | None = None) -> bool:
@@ -455,48 +443,38 @@ async def upload(values_by_kind: dict[str, list[str]], conf: dict[str, str] | No
 
     Выкладка мягкая: список уже собран и отдаётся с нашего домена, и падать
     из-за недоступного хранилища нельзя — пропущенный круг повторит следующий.
-    Тот же размен, что с синхронизацией срока в панели.
-
-    Загрузка блокирующая (`boto3` синхронный), поэтому уходит в поток: держать
-    ею event loop на паре мегабайт незачем.
+    Тот же размен, что с синхронизацией срока в панели. С прошивкой так
+    нельзя, и поэтому решение принимается здесь, а не в самом хранилище.
     """
     conf = conf or {}
-    if not (conf.get("lists_s3_bucket") and conf.get("lists_s3_endpoint")
-            and conf.get("lists_s3_access_key") and conf.get("lists_s3_secret_key")):
+    storage = object_storage.from_mapping(conf)
+    if not storage.configured:
         return False
 
-    def _put() -> None:
-        client = _s3_client(conf)
-        for kind, values in values_by_kind.items():
-            body = ("\n".join(values) + ("\n" if values else "")).encode()
-            client.put_object(
-                Bucket=conf["lists_s3_bucket"],
-                Key=f"{(conf.get('lists_s3_prefix') or 'lists/').lstrip('/')}{FILE_NAMES[kind]}",
-                Body=body,
-                ContentType="text/plain; charset=utf-8",
-            )
-
-    try:
-        await asyncio.to_thread(_put)
-    except Exception as exc:  # noqa: BLE001 — причин у чужого хранилища много, все одинаково нефатальны
-        log.warning("domain_lists.upload_failed", error=str(exc))
-        return False
-    log.info("domain_lists.uploaded", bucket=conf["lists_s3_bucket"])
+    prefix = conf.get("lists_s3_prefix") or "lists/"
+    for kind, values in values_by_kind.items():
+        body = ("\n".join(values) + ("\n" if values else "")).encode()
+        trouble = await object_storage.put_bytes(
+            storage, list_key(prefix, kind), body, "text/plain; charset=utf-8"
+        )
+        if trouble:
+            log.warning("domain_lists.upload_failed", error=trouble)
+            return False
+    log.info("domain_lists.uploaded", bucket=storage.bucket)
     return True
+
 
 # ── Настройки, правимые на странице ───────────────────────────────────────────
 
-SETTING_KEYS = (
+OWN_KEYS = (
     "lists_auto_enabled",
     "lists_poll_interval_min",
     "lists_local_dir",
-    "lists_s3_bucket",
-    "lists_s3_endpoint",
-    "lists_s3_region",
-    "lists_s3_prefix",
-    "lists_s3_access_key",
-    "lists_s3_secret_key",
 )
+"""Что относится только к спискам. Настройки самого хранилища — общие
+с прошивкой и живут в `object_storage`."""
+
+SETTING_KEYS = OWN_KEYS + object_storage.KEYS
 """Живут в базе, а не только в окружении: оператор меняет их из панели,
 и требовать ради смены интервала правки `.env` с перезапуском — перебор.
 Значение из `.env` остаётся значением по умолчанию, пока в базе пусто."""
@@ -508,7 +486,7 @@ POLL_INTERVALS = (5, 10, 15, 30, 60, 180, 360, 720, 1440)
 версии, и осмысленных значений тут десяток. Полем же вводят «0» — и это
 круг без пауз по чужому GitHub, который отвечает на такое запретом."""
 
-SECRET_KEYS = frozenset({"lists_s3_access_key", "lists_s3_secret_key"})
+SECRET_KEYS = object_storage.SECRET_KEYS
 """Наружу отдаются не значением, а признаком «задано»: страница открыта
 оператору, а ключ от хранилища ему смотреть незачем."""
 
@@ -522,12 +500,7 @@ async def config(session: AsyncSession) -> dict[str, str]:
         "lists_auto_enabled": "1",
         "lists_poll_interval_min": str(env.poll_interval_min),
         "lists_local_dir": env.local_dir,
-        "lists_s3_bucket": env.s3_bucket,
-        "lists_s3_endpoint": env.s3_endpoint,
-        "lists_s3_region": env.s3_region,
-        "lists_s3_prefix": env.s3_prefix,
-        "lists_s3_access_key": env.s3_access_key.get_secret_value(),
-        "lists_s3_secret_key": env.s3_secret_key.get_secret_value(),
+        **object_storage.defaults(),
     }
     out: dict[str, str] = {}
     for key in SETTING_KEYS:

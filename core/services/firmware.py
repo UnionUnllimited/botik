@@ -39,6 +39,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.models import FirmwareImage, FirmwareRelease
 from core.redis_client import get_redis
+from core.services import object_storage
+from core.services.object_storage import Storage
 
 log = structlog.get_logger("services.firmware")
 
@@ -159,12 +161,29 @@ class SavedImage:
     url_path: str
     sha256: str
     size_bytes: int
+    remote_url: str = ""
 
 
 CHUNK = 1024 * 1024
 
+STORAGE_PREFIX = "firmware/"
+"""Свой префикс в хранилище, отдельно от списков: там текстовые файлы в пару
+мегабайт, которые переписываются каждый круг, здесь — образы по полсотни,
+которые лежат, пока жив выпуск."""
 
-async def save_upload(*, version: int, model_key: str, file_name: str, source: Chunked) -> SavedImage:
+
+def storage_key(version: int, file_name: str) -> str:
+    return f"{STORAGE_PREFIX}v{version}/{file_name}"
+
+
+async def save_upload(
+    *,
+    version: int,
+    model_key: str,
+    file_name: str,
+    source: Chunked,
+    storage: Storage | None = None,
+) -> SavedImage:
     """Кладёт образ на диск, считая sha256 и размер по дороге.
 
     Пишем во временный файл рядом и переименовываем: за образом приходит парк,
@@ -237,6 +256,19 @@ async def save_upload(*, version: int, model_key: str, file_name: str, source: C
         bytes=size,
         sha256=saved.sha256,
     )
+
+    # В хранилище — после того, как файл целиком лёг на диск. Отказ здесь
+    # не отменяет загрузку: образ уже принят, посчитан и раздаётся с нашего
+    # домена. Выпуск при этом не станет хуже — он станет дороже по трафику,
+    # и это видно на странице.
+    if storage is not None and storage.configured:
+        key = storage_key(version, name)
+        trouble = await object_storage.put_file(storage, key, target, "application/octet-stream")
+        if trouble:
+            log.warning("firmware.storage_upload_failed", version=version, name=name, error=trouble)
+        else:
+            saved.remote_url = storage.url_of(key)
+
     return saved
 
 
@@ -379,7 +411,42 @@ async def set_rollout(session: AsyncSession, release: FirmwareRelease, value: An
     return rollout
 
 
-async def publish(session: AsyncSession, release: FirmwareRelease, *, rollout: Any = 0) -> None:
+async def check_remote(release: FirmwareRelease, storage: Storage | None) -> list[str]:
+    """Сверяет образы, объявленные в хранилище, с тем, что там лежит.
+
+    Манифест отдаёт по одному адресу на модель, и промахнуться им дороже
+    всего: роутер молча бросает закачку и ждёт следующих суток, а сказать
+    нам об этом ему нечем. Поэтому перед публикацией спрашиваем размер
+    каждого объекта — это единственная проверка, которую можно сделать
+    не выкачивая полсотни мегабайт обратно.
+
+    Сверяем размер, а не только наличие: недолитый объект существует,
+    отдаётся и не сходится по sha256 — то есть выглядит как рабочая ссылка
+    ровно до момента, когда по ней придёт парк.
+    """
+    if storage is None or not storage.configured:
+        return []
+    wrong: list[str] = []
+    for image in release.images:
+        if not image.remote_url:
+            continue
+        size = await size_of_remote(storage, release.version, image.file_name)
+        if size != image.size_bytes:
+            wrong.append(image.file_name)
+    return wrong
+
+
+async def size_of_remote(storage: Storage, version: int, file_name: str) -> int | None:
+    return await object_storage.size_of(storage, storage_key(version, file_name))
+
+
+async def publish(
+    session: AsyncSession,
+    release: FirmwareRelease,
+    *,
+    rollout: Any = 0,
+    storage: Storage | None = None,
+) -> None:
     """Публикует выпуск: с этой секунды он и есть манифест.
 
     Без образов публиковать нечего: манифест с пустым `images` роутеры прочтут
@@ -400,6 +467,14 @@ async def publish(session: AsyncSession, release: FirmwareRelease, *, rollout: A
             "прошивку, назовётся другой версией и назавтра начнёт всё сначала."
         )
 
+    missing = await check_remote(release, storage)
+    if missing:
+        raise FirmwareError(
+            f"В хранилище не сходятся образы: {', '.join(sorted(missing))}. "
+            "Манифест повёл бы парк по этим адресам, а роутер на битой закачке "
+            "молча ждёт следующих суток. Загрузите эти образы заново."
+        )
+
     if release.published_at is None:
         release.published_at = dt.datetime.now(dt.UTC)
     release.rollout = normalize_rollout(rollout)
@@ -413,7 +488,9 @@ async def publish(session: AsyncSession, release: FirmwareRelease, *, rollout: A
     )
 
 
-async def delete_release(session: AsyncSession, release: FirmwareRelease) -> None:
+async def delete_release(
+    session: AsyncSession, release: FirmwareRelease, storage: Storage | None = None
+) -> None:
     """Убирает выпуск вместе с файлами. Раздающийся сейчас не отдаём:
     роутеры в эту минуту качают по этим ссылкам."""
     current = await current_release(session)
@@ -423,20 +500,42 @@ async def delete_release(session: AsyncSession, release: FirmwareRelease) -> Non
             "удалять то, что качают роутеры, нельзя."
         )
     version = release.version
+    # Ключи в хранилище собираем до удаления записей: после `delete` спросить
+    # у выпуска, какие у него были образы, уже не у кого.
+    remote_keys = [
+        storage_key(version, image.file_name) for image in release.images if image.remote_url
+    ]
     await session.delete(release)
     await session.flush()
     delete_release_dir(version)
+    if storage is not None:
+        for key in remote_keys:
+            await object_storage.remove(storage, key)
     log.info("firmware.release_deleted", version=version)
 
 
+async def _forget_everywhere(
+    image: FirmwareImage, version: int, storage: Storage | None
+) -> None:
+    """Убирает файл образа и с диска, и из хранилища."""
+    delete_file(image.url_path)
+    if image.remote_url and storage is not None:
+        await object_storage.remove(storage, storage_key(version, image.file_name))
+
+
 async def attach_image(
-    session: AsyncSession, release: FirmwareRelease, *, model_key: str, saved: SavedImage
+    session: AsyncSession,
+    release: FirmwareRelease,
+    *,
+    model_key: str,
+    saved: SavedImage,
+    storage: Storage | None = None,
 ) -> FirmwareImage:
     """Кладёт образ в выпуск, заменяя прежний для этой же модели."""
     existing = next((item for item in release.images if item.model_key == model_key), None)
     if existing is not None:
         if existing.url_path != saved.url_path:
-            delete_file(existing.url_path)
+            await _forget_everywhere(existing, release.version, storage)
         release.images.remove(existing)
         await session.flush()
 
@@ -445,6 +544,7 @@ async def attach_image(
         model_key=model_key,
         file_name=saved.file_name,
         url_path=saved.url_path,
+        remote_url=saved.remote_url,
         sha256=saved.sha256,
         size_bytes=saved.size_bytes,
     )
@@ -454,13 +554,18 @@ async def attach_image(
     return image
 
 
-async def detach_image(session: AsyncSession, release: FirmwareRelease, model_key: str) -> bool:
+async def detach_image(
+    session: AsyncSession,
+    release: FirmwareRelease,
+    model_key: str,
+    storage: Storage | None = None,
+) -> bool:
     """Убирает модель из выпуска — штатный способ приостановить её одну:
     модели нет в `images`, и роутеры этой модели ничего не делают."""
     image = next((item for item in release.images if item.model_key == model_key), None)
     if image is None:
         return False
-    delete_file(image.url_path)
+    await _forget_everywhere(image, release.version, storage)
     release.images.remove(image)
     await session.flush()
     log.info("firmware.image_detached", version=release.version, model=model_key)
@@ -505,7 +610,11 @@ def manifest_of(release: FirmwareRelease | None) -> dict[str, Any]:
     body["rollout"] = release.rollout
     body["images"] = {
         image.model_key: {
-            "url": _absolute(image.url_path),
+            # Хранилище, если образ туда доехал: за ним приходит весь парк
+            # разом, и полсотни мегабайт на устройство с нашего канала —
+            # это тот же канал, по которому работают витрина, панель
+            # и туннели. Не доехал — раздаём сами, как раньше.
+            "url": image.remote_url or _absolute(image.url_path),
             "sha256": image.sha256,
             "size": image.size_bytes,
         }

@@ -212,12 +212,12 @@ class TestUpload:
     @pytest.mark.asyncio
     async def test_broken_storage_does_not_raise(self, monkeypatch):
         """Хранилище недоступно — сборка всё равно должна досчитаться."""
-        from core.services import domain_lists
+        from core.services import domain_lists, object_storage
 
-        def _boom(_conf):
+        def _boom(_storage):
             raise RuntimeError("хранилище недоступно")
 
-        monkeypatch.setattr(domain_lists, "_s3_client", _boom)
+        monkeypatch.setattr(object_storage, "_client", _boom)
         assert await domain_lists.upload({ListKind.PROXY_DOMAIN: ["a.com"]}, self.CONF) is False
 
 
