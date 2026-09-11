@@ -192,3 +192,38 @@ class TestHowLongWeHaveBeenSilent:
     def test_a_round_hour_keeps_both_digits(self):
         """«3 ч 0 мин» читается как оборванная строка."""
         assert task._phrase(180) == "3 ч 00 мин"
+
+
+@pytest.mark.asyncio
+async def test_the_api_reports_the_same_queue():
+    """Метрики живут в своём процессе, а сторож ходит в воркере.
+
+    На метриках API его числа не видны вовсе, а скребут обычно именно этот
+    адрес — поэтому очередь считается и там.
+    """
+    from core.metrics import refresh_business_gauges
+    from core.models import Device, Order, Payment, Subscription, User
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync: Base.metadata.create_all(
+                    sync,
+                    tables=[
+                        Notification.__table__, Device.__table__, Order.__table__,
+                        Payment.__table__, Subscription.__table__, User.__table__,
+                    ],
+                )
+            )
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            session.add(_queued(minutes_ago=45))
+            await session.commit()
+
+            await refresh_business_gauges(session, force=True)
+
+        assert outbox_pending._value.get() == 1
+        assert outbox_oldest_seconds._value.get() >= 45 * 60
+    finally:
+        await engine.dispose()

@@ -10,8 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.dates import ensure_utc
 from core.enums import OrderStatus, PaymentStatus, SubscriptionStatus
-from core.models import Device, Order, Payment, Subscription
+from core.models import Device, Notification, Order, Payment, Subscription
+from core.notifications import OUTBOX_MAX_ATTEMPTS
 
 METRICS_CONTENT_TYPE = CONTENT_TYPE_LATEST
 
@@ -106,6 +108,20 @@ async def refresh_business_gauges(session: AsyncSession, *, force: bool = False)
         )
     )
     revenue_today.set(float(revenue or 0))
+
+    # Очередь сообщений клиентам. Её же меряет сторож в воркере, но метрики
+    # живут в своём процессе, и на метриках API его числа не видны. Считаем
+    # и здесь: скребут обычно именно этот адрес, а запрос дешёвый и под кэшем.
+    waiting = select(Notification).where(
+        Notification.sent_at.is_(None),
+        Notification.attempts < OUTBOX_MAX_ATTEMPTS,
+    ).subquery()
+    pending = await session.scalar(select(func.count()).select_from(waiting))
+    outbox_pending.set(pending or 0)
+    oldest = await session.scalar(select(func.min(waiting.c.created_at)))
+    outbox_oldest_seconds.set(
+        (utc_now - ensure_utc(oldest)).total_seconds() if oldest else 0
+    )
 
 
 def render_metrics() -> bytes:
