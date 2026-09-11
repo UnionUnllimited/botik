@@ -16,8 +16,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import client_ip, get_session
+from core import texts
 from core.config import settings
 from core.enums import PaymentProviderName, PaymentStatus
+from core.notifications import notify_admins
 from core.payments import get_provider
 from core.services import payments as payment_service
 from core.services.notifier import notify_payment_result
@@ -82,7 +84,18 @@ async def platega_webhook(
         # публичный приёмник один, и чужое он передаёт дальше как есть.
         # Раньше здесь стоял голый 200: клиент платил за подписку, а она
         # не включалась, потому что бот об оплате не узнавал.
-        await _forward_to_partner(body, headers)
+        trouble = await _forward_to_partner(body, headers)
+        if trouble:
+            await notify_admins(
+                texts.ADMIN_PARTNER_CALLBACK_LOST.format(
+                    transaction=data.get("id") or "—",
+                    amount=texts.money(data["amount"]) if data.get("amount") is not None else "—",
+                    status=data.get("status") or "—",
+                    reason=trouble,
+                ),
+                session=session,
+            )
+            await session.commit()
         return Response(status_code=200)
 
     # Сообщение клиенту кладётся в очередь строкой в базе, поэтому коммит
@@ -102,24 +115,22 @@ async def platega_webhook(
     return Response(status_code=200)
 
 
-async def _forward_to_partner(body: bytes, headers: dict[str, str]) -> None:
-    """Отдаёт чужой колбэк боту. Ошибку не поднимает наверх.
+async def _forward_to_partner(body: bytes, headers: dict[str, str]) -> str:
+    """Отдаёт чужой колбэк боту. Возвращает причину неудачи или пустую строку.
 
-    Провайдеру мы уже ответили 200 — и обязаны ответить, иначе он будет слать
-    повторы вечно. Если бот в этот момент перезапускается, уведомление
-    потеряется: у него для таких случаев есть свой опрос статуса платежей.
-    Ронять из-за этого ответ провайдеру нельзя.
+    Ошибку наверх не поднимает: провайдеру мы уже обязаны ответить 200, иначе
+    он будет слать повторы вечно. Но и проглатывать её нельзя — у бота для
+    этого провайдера опроса статуса нет («только webhook»), поэтому не дошло
+    уведомление значит клиент заплатил и не получил ничего. Причину отдаём
+    зовущему: он позовёт оператора.
 
     Заголовки подлинности передаём: бот проверяет их так же, как мы.
     Остальные (Host, Content-Length) выбрасываем — их подставит клиент.
     """
     url = settings.platega.partner_callback_url.strip()
     if not url:
-        # Молча терять чужой колбэк нельзя: клиент заплатил, подписка
-        # не включилась, и в журнале об этом не будет ни строчки. Адрес
-        # задаётся PLATEGA_PARTNER_CALLBACK_URL.
         log.warning("webhook.partner_url_missing")
-        return
+        return "адрес бота не задан"
 
     passthrough = {
         key: value
@@ -131,5 +142,10 @@ async def _forward_to_partner(body: bytes, headers: dict[str, str]) -> None:
             response = await client.post(url, content=body, headers=passthrough)
     except httpx.HTTPError as exc:
         log.warning("webhook.forward_failed", url=url, error=str(exc))
-        return
+        return f"бот не ответил ({exc.__class__.__name__})"
+    if response.status_code >= 400:
+        # Ответ бота — единственное подтверждение, что он уведомление принял.
+        log.warning("webhook.forward_rejected", url=url, status=response.status_code)
+        return f"бот ответил {response.status_code}"
     log.info("webhook.forwarded", url=url, status=response.status_code)
+    return ""
