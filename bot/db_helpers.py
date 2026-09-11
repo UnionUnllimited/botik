@@ -1,4 +1,4 @@
-import aiosqlite
+﻿import aiosqlite
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
@@ -128,10 +128,14 @@ async def init_db():
         # shop_subscription — отметка «срок этому клиенту приносит основное
         # приложение»: по ней уведомитель об истечении обходит клиента,
         # о нём напоминает уже наш воркер.
+        # shop_subscription_status — состояние подписки словом. Нужно ровно
+        # там, где даты нет: без него «ждёт первого включения роутера»
+        # и «оплаченное сгорело» выглядят одинаково, а значат обратное.
         for shop_column, shop_kind in (
             ("shop_panel_username", "TEXT"),
             ("shop_panel_short_uuid", "TEXT"),
             ("shop_subscription", "INTEGER DEFAULT 0"),
+            ("shop_subscription_status", "TEXT"),
         ):
             try:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {shop_column} {shop_kind}")

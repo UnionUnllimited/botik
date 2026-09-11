@@ -102,6 +102,7 @@ PANEL_COLUMNS = {
     "shop_panel_username": "TEXT",
     "shop_panel_short_uuid": "TEXT",
     "shop_subscription": "INTEGER DEFAULT 0",
+    "shop_subscription_status": "TEXT",
 }
 """Что зеркало дописывает в их строку клиента.
 
@@ -114,7 +115,12 @@ PANEL_COLUMNS = {
 `shop_subscription` — отметка, что срок этому клиенту приносит основное
 приложение. По ней их уведомитель об истечении обходит клиента стороной:
 напоминает уже наш воркер, за 7/3/1/0 дней и через день после, и второе
-«заканчивается завтра» другим текстом читалось бы как сбой."""
+«заканчивается завтра» другим текстом читалось бы как сбой.
+
+`shop_subscription_status` — состояние подписки словом. Нужно ровно там,
+где даты нет: без него «ждёт первого включения роутера» и «оплаченное
+сгорело, роутер так и не вышел на связь» выглядят в базе одинаково, а
+означают противоположное."""
 
 
 async def _ensure_panel_columns(db) -> None:
@@ -163,20 +169,22 @@ async def sync_subscriptions() -> int:
                 # предлагал пробный период, а на нажатие отвечал «ошибка
                 # создания пользователя», и клиент шёл в поддержку.
                 cursor = await db.execute(
-                    "UPDATE users SET shop_subscription = 1 WHERE telegram_id = ?",
-                    (int(row["tg_id"]),),
+                    "UPDATE users SET shop_subscription = 1, "
+                    "shop_subscription_status = ? WHERE telegram_id = ?",
+                    (row.get("status") or "", int(row["tg_id"])),
                 )
                 updated += cursor.rowcount or 0
                 continue
             cursor = await db.execute(
                 "UPDATE users SET subscription_end_date = ?, "
                 "shop_panel_username = ?, shop_panel_short_uuid = ?, "
-                "shop_subscription = 1 "
+                "shop_subscription = 1, shop_subscription_status = ? "
                 "WHERE telegram_id = ?",
                 (
                     until,
                     row.get("panel_username") or "",
                     row.get("panel_short_uuid") or "",
+                    row.get("status") or "",
                     int(row["tg_id"]),
                 ),
             )
