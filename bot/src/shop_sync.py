@@ -153,8 +153,20 @@ async def sync_subscriptions() -> int:
     updated = 0
     async with db_helpers.get_db_connection_safe() as db:
         for row in rows:
+            if not row.get("tg_id"):
+                continue
             until = row.get("until")
-            if not row.get("tg_id") or not until:
+            if not until:
+                # Срок ещё не идёт: клиент купил роутер и не включил его.
+                # Даты нет, и писать её некуда — но клиент уже наш с момента
+                # оплаты. Без отметки бот считал его человеком без подписки:
+                # предлагал пробный период, а на нажатие отвечал «ошибка
+                # создания пользователя», и клиент шёл в поддержку.
+                cursor = await db.execute(
+                    "UPDATE users SET shop_subscription = 1 WHERE telegram_id = ?",
+                    (int(row["tg_id"]),),
+                )
+                updated += cursor.rowcount or 0
                 continue
             cursor = await db.execute(
                 "UPDATE users SET subscription_end_date = ?, "

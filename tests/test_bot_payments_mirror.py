@@ -259,14 +259,36 @@ async def test_subscription_mirror_survives_the_second_run(mirror):
 
 
 @pytest.mark.asyncio
-async def test_subscription_without_a_date_is_not_written(mirror):
+async def test_a_subscription_without_a_date_does_not_overwrite_one(mirror):
     """Ожидающая активации срока не имеет; затирать ею действующую нельзя."""
     await mirror.prepare()
     mirror.shop.subs = [dict(SUB, until=None)]
 
-    assert await mirror.module.sync_subscriptions() == 0
+    await mirror.module.sync_subscriptions()
+
     rows = await mirror.rows("SELECT subscription_end_date FROM users WHERE telegram_id = 8152081864")
     assert rows == [(None,)]
+
+
+@pytest.mark.asyncio
+async def test_a_client_becomes_ours_from_the_moment_he_paid(mirror):
+    """Отметка ставится и до активации, когда срока ещё нет.
+
+    Между оплатой и первым выходом роутера на связь клиент выглядел
+    человеком без подписки: бот звал его на пробный период, а на нажатие
+    отвечал «ошибка создания пользователя» — учётку роутерному клиенту там
+    заводить нельзя. По этой же отметке ему не правят срок руками из
+    админки и не шлют чужих напоминаний об истечении.
+    """
+    await mirror.prepare()
+    mirror.shop.subs = [dict(SUB, until=None)]
+
+    assert await mirror.module.sync_subscriptions() == 1
+
+    rows = await mirror.rows(
+        "SELECT subscription_end_date, shop_subscription FROM users WHERE telegram_id = 8152081864"
+    )
+    assert rows == [(None, 1)]
 
 
 @pytest.mark.asyncio

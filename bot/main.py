@@ -1366,7 +1366,15 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
     except Exception as e:
         logger.error(f"Не удалось установить кнопку меню для {user_id}: {e}")
 
-    kbd = await keyboards.get_main_keyboard(not is_trial_used and not has_active_sub, has_active_sub, sub_uuid=sub_uuid, user_id=user_id)
+    # Роутерному клиенту пробный период не предлагаем. Между оплатой и первым
+    # выходом роутера на связь срок ещё не идёт, даты в нашей базе нет — и без
+    # этой проверки он выглядел человеком без подписки: бот звал попробовать
+    # бесплатно, а на нажатие отвечал «ошибка создания пользователя», потому
+    # что учётку роутерному клиенту здесь заводить нельзя.
+    is_shop_client = bool((user_db_data or {}).get('shop_subscription'))
+    trial_offered = not is_trial_used and not has_active_sub and not is_shop_client
+
+    kbd = await keyboards.get_main_keyboard(trial_offered, has_active_sub, sub_uuid=sub_uuid, user_id=user_id)
 
     safe_user_name = html.escape(user_name)
     welcome_tpl = app_conf.get('text_welcome_message') or DEFAULT_WELCOME
@@ -1417,6 +1425,16 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         sub_info = _filter_empty_menu_fields(sub_info)
         if sub_info:
             text_to_send += "\n\n" + sub_info
+    elif is_shop_client:
+        # Роутер куплен и оплачен, но ещё ни разу не выходил на связь: срок
+        # не идёт, и даты здесь нет. Прежние две ветки отвечали такому
+        # клиенту «подписка истекла» или звали на пробный период — первому
+        # он не верил, а второе не работало.
+        text_to_send += (
+            "\n\nПодписка оплачена и ждёт роутера. "
+            "Отсчёт начнётся, когда роутер первый раз выйдет на связь, — "
+            "дни доставки не сгорают."
+        )
     elif is_trial_used and not has_active_sub:
          # Показываем стандартный текст для пользователей без активной подписки
          text_to_send += "\n\n" + (app_conf.get('text_subscription_expired_main') or DEFAULT_SUBSCRIPTION_EXPIRED)

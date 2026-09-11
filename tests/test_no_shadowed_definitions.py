@@ -35,9 +35,12 @@ def _modules() -> list[Path]:
 
 def _shadowed(path: Path) -> list[str]:
     """Имена, объявленные в модуле или классе больше одного раза."""
+    # `utf-8-sig`, а не `utf-8`: их `main.py` начинается с BOM, и на обычном
+    # чтении разбор падал синтаксической ошибкой — файл на восемь тысяч строк
+    # молча выпадал из проверки целиком.
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
-    except SyntaxError:
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+    except (SyntaxError, UnicodeDecodeError):
         # Чужой файл может быть под другую версию питона: не наше дело.
         return []
 
@@ -78,3 +81,19 @@ def test_nothing_is_declared_twice(path: Path):
 def test_there_are_modules_to_check():
     """Сломайся обход — проверка выше прошла бы на пустом списке."""
     assert len(MODULES) > 100
+
+
+def test_nothing_is_skipped_quietly():
+    """Непрочитанный файл — это проверка, которая всегда зелёная.
+
+    Так и вышло в первой версии: их `main.py` начинается с BOM, разбор падал
+    синтаксической ошибкой, а обработчик молча возвращал пустой список. Файл
+    на восемь тысяч строк — самый нужный здесь — не проверялся вовсе.
+    """
+    unreadable = []
+    for path in MODULES:
+        try:
+            ast.parse(path.read_text(encoding="utf-8-sig"))
+        except (SyntaxError, UnicodeDecodeError) as exc:
+            unreadable.append((str(path.relative_to(ROOT)), type(exc).__name__))
+    assert not unreadable, f"не разбираются: {unreadable}"
