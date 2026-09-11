@@ -105,7 +105,20 @@ class TestWhatTheClientReadsWhenSomethingGoesWrong:
         # Ловим именно обрыв, а не ответ сервера: разбор кода состояния ниже
         # должен остаться, иначе «Сервер ответил 500» подменится связью.
         assert body.index(".catch(") < body.index("r.text()")
-        assert "Сервер ответил " in body
+        # Код состояния остаётся в тексте: клиенту он ничего не говорит, но
+        # назвать его поддержке — единственное, чем он может помочь.
+        assert "r.status" in body
+
+    def test_a_technical_code_never_reaches_the_client(self):
+        """`detail` — код для разбора, а не текст.
+
+        Клиент читал на экране «Не получилось — not_found» и шёл в поддержку
+        выяснять, что это значит.
+        """
+        head = APP_JS.index("function api(path, options)")
+        body = APP_JS[head : APP_JS.index("\n  //", head)]
+        assert "CODES[body && body.detail]" in body
+        assert "body.detail)" not in body, "код показывается только через словарь"
 
 
 class TestALateAnswerBreaksNothing:
@@ -124,11 +137,24 @@ class TestOutsideTelegram:
 
 
 def test_the_asset_version_moved():
-    """Иначе клиент открывает приложение и получает старый файл из кэша."""
+    """Иначе клиент открывает приложение и получает старый файл из кэша.
+
+    Номер поднимает тот, кто правил файл, — проверить это на месте нельзя.
+    Здесь ловим то, что ловится: разъехавшиеся номера у стилей и скрипта
+    (подняли один, забыли второй — и половина приложения старая) и откат
+    назад ниже того номера, на котором это правило завели.
+    """
+    import re
+
     index = (ROOT / "api" / "static" / "miniapp" / "index.html").read_text(encoding="utf-8")
-    assert "app.js?v=19" in index
-    assert "app.css?v=19" in index
-    assert "?v=18" not in index
+    versions = {
+        name: int(version)
+        for name, version in re.findall(r"app\.(js|css)\?v=(\d+)", index)
+    }
+
+    assert set(versions) == {"js", "css"}, "оба файла должны быть с номером"
+    assert versions["js"] == versions["css"], f"номера разъехались: {versions}"
+    assert versions["js"] >= 20, "номер не откатывают назад"
 
 
 def test_a_device_that_never_reported_is_still_a_device():
