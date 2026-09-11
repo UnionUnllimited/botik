@@ -1619,8 +1619,10 @@ async def handle_miniapp_link(message: Message):
         return
 
     # Адрес тот же, откуда бот берёт каталог: приложение живёт на /app того же
-    # API. Отдельной переменной заводить не стали — разъехались бы.
-    base = (os.getenv("FLEET_API_URL") or "").strip().rstrip("/")
+    # API. Отдельной переменной заводить не стали — разъехались бы. Читаем его
+    # тем же кодом, что и остальные: своё чтение разъезжается ничуть не хуже
+    # отдельной переменной.
+    base, _token = shop_api.fleet_config()
     if not base.startswith("https://"):
         await message.answer(
             "Приложение не открыть: в окружении службы нет FLEET_API_URL "

@@ -51,10 +51,20 @@ def is_configured() -> bool:
     return bool(base and token)
 
 
-def _config() -> tuple[str, str]:
+def fleet_config() -> tuple[str, str]:
+    """Адрес нашего API и токен к нему. Одно чтение на обе службы.
+
+    Бот ходит к нам за каталогом, админка — за парком роутеров, и обе
+    читали эти две переменные своим кодом. Добавь кто-нибудь запасное имя
+    или другую обрезку — и одна половина продолжит работать, а вторая
+    начнёт отвечать «токен не подошёл»."""
     base = (os.getenv("FLEET_API_URL") or "").strip().rstrip("/")
     token = (os.getenv("FLEET_API_TOKEN") or "").strip()
     return base, token
+
+
+# Прежнее имя: им пользуется этот же файл.
+_config = fleet_config
 
 
 def landing_url(configured: str = "") -> str:

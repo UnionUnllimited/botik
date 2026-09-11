@@ -9,24 +9,21 @@
 только процесс в его сети. Мы отсюда лишь нажимаем кнопку.
 """
 
-import os
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 from quart import flash, jsonify, redirect, render_template, request, url_for
 
 from src import shop_api
+# Адрес API и токен читаются одним кодом на обе службы: бот ходит к нам за
+# каталогом, админка — за парком, и своё чтение здесь однажды разошлось бы
+# с тамошним.
+from src.shop_api import fleet_config as _fleet_config
 
 FLEET_TIMEOUT_SEC = 8
 ACTION_TIMEOUT_SEC = 90
 """Активация идёт до самого роутера по SSH и занимает до минуты."""
 
-
-def _fleet_config() -> tuple[str, str]:
-    """Адрес API и токен. Задаются переменными окружения службы админки."""
-    base = (os.getenv("FLEET_API_URL") or "").strip().rstrip("/")
-    token = (os.getenv("FLEET_API_TOKEN") or "").strip()
-    return base, token
 
 
 def _explain(response: httpx.Response) -> str:
