@@ -159,8 +159,17 @@ async def _product_or_404(session: AsyncSession, product_id: int) -> Product:
 
 @router.get("/products/{product_id}")
 async def product_card(product_id: int, session: AsyncSession = Depends(get_session)) -> dict:
+    """Карточка одного товара — с тем же пределом, что и список.
+
+    Без предела карточка считала наличие по числу на складе и звала
+    покупать роутер, разобранный заказами: в списке он был «нет в наличии»,
+    а внутри — с кнопкой «Купить», по которой приходил отказ."""
     product = await _product_or_404(session, product_id)
-    return {"product": _product_payload(product), "currency": settings.app.currency}
+    left = await order_service.units_left(session, product)
+    return {
+        "product": _product_payload(product, left=left),
+        "currency": settings.app.currency,
+    }
 
 
 def _iso_dt(value) -> str | None:

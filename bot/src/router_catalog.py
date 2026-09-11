@@ -201,8 +201,25 @@ def is_positive(raw) -> bool:
         return False
 
 
+def units_left(product: dict) -> int:
+    """Сколько ещё можно продать. Пусто — предел не считали, судим по складу."""
+    left = product.get("stock_left")
+    if left is None:
+        left = product.get("stock", 0)
+    try:
+        return max(int(left), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def stock_line(product: dict) -> str:
-    if product.get("stock", 0) > 0:
+    """Строка наличия обязана сходиться с кнопкой «Купить».
+
+    Кнопка смотрит на `in_stock` — предел продаж, посчитанный по живым
+    заказам. Здесь стояло сырое число со склада, и роутер, разобранный
+    заказами, показывал «В наличии» без кнопки: клиент читал это как
+    поломку бота и шёл в поддержку."""
+    if units_left(product) > 0:
         return "✓ В наличии"
     if product.get("allow_preorder"):
         return "▸ Под заказ"
