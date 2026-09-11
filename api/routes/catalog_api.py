@@ -467,6 +467,20 @@ async def sync_plans(payload: dict, session: AsyncSession = Depends(get_transact
         if not tariff_id or days <= 0:
             continue
 
+        price = _price(raw.get("price"), "0")
+        if price is None:
+            # Отрицательная цена тарифа не отказ оформления: она вычтется из
+            # суммы заказа и уйдёт клиенту скидкой. Такой тариф пропускаем —
+            # он не попадёт в `seen` и будет выключен ниже вместе с прочими
+            # исчезнувшими. Продавать по цене, которой быть не может, хуже,
+            # чем не продавать.
+            log.warning(
+                "catalog.tariff_price_negative",
+                tariff_id=tariff_id,
+                price=str(raw.get("price")),
+            )
+            continue
+
         slug = f"{TARIFF_SLUG_PREFIX}{tariff_id}"
         seen.add(slug)
         plan = await session.scalar(select(Plan).where(Plan.slug == slug))
@@ -483,7 +497,7 @@ async def sync_plans(payload: dict, session: AsyncSession = Depends(get_transact
         # и «месяц» — разные сроки в феврале.
         plan.months = 0
         plan.extra_days = days
-        plan.price = _decimal(raw.get("price"), "0")
+        plan.price = price
         plan.is_active = bool(raw.get("is_active", True))
         plan.sort_order = _int(raw.get("sort_order"), 100)
 

@@ -164,3 +164,35 @@ async def test_a_brand_new_plan_saves_without_extra_days():
         assert answer["plan"]["extra_days"] == 0
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_tariff_with_a_broken_price_is_not_sold():
+    """Тарифы приезжают зеркалом из их админки — цену там тоже печатают руками.
+
+    Отрицательная цена тарифа не отказ оформления: она вычтется из суммы
+    заказа и уйдёт клиенту скидкой. Такой тариф пропускаем и выключаем —
+    продавать по цене, которой быть не может, хуже, чем не продавать.
+    """
+    engine, factory = await _world()
+    try:
+        async with factory() as session:
+            answer = await catalog_api.sync_plans(
+                payload={
+                    "tariffs": [
+                        {"id": 1, "days": 30, "name": "30 дней", "price": "300"},
+                        {"id": 2, "days": 90, "name": "90 дней", "price": "-900"},
+                    ]
+                },
+                session=session,
+            )
+
+            assert answer["ok"] is True
+            assert answer["created"] == 1, "заведён только тариф с честной ценой"
+
+            from sqlalchemy import select
+
+            plans = list(await session.scalars(select(Plan)))
+            assert [p.title for p in plans] == ["30 дней"]
+    finally:
+        await engine.dispose()
