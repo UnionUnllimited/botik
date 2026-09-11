@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hmac
 import ipaddress
 from typing import Any
 
@@ -61,7 +62,8 @@ async def platega_webhook(
         return Response(status_code=403)
 
     provider = get_provider(PaymentProviderName.PLATEGA)
-    if not provider.verify_webhook(headers, body):
+    ours = provider.verify_webhook(headers, body)
+    if not ours and not _is_partners(headers):
         # У провайдера нет HMAC-подписи: подлинность подтверждают заголовки
         # X-MerchantId/X-Secret, которые он присылает обратно.
         log.warning("webhook.auth_failed", ip=ip)
@@ -72,6 +74,11 @@ async def platega_webhook(
     except orjson.JSONDecodeError:
         log.warning("webhook.bad_json", ip=ip)
         return Response(status_code=400)
+
+    if not ours:
+        # Реквизиты бота: такой платёж нашим не бывает по определению,
+        # искать его у себя незачем — передаём и отвечаем «принято».
+        return await _hand_over(session, body, headers, data)
 
     payment, applied = await payment_service.handle_webhook(
         session,
@@ -84,19 +91,7 @@ async def platega_webhook(
         # публичный приёмник один, и чужое он передаёт дальше как есть.
         # Раньше здесь стоял голый 200: клиент платил за подписку, а она
         # не включалась, потому что бот об оплате не узнавал.
-        trouble = await _forward_to_partner(body, headers)
-        if trouble:
-            await notify_admins(
-                texts.ADMIN_PARTNER_CALLBACK_LOST.format(
-                    transaction=data.get("id") or "—",
-                    amount=texts.money(data["amount"]) if data.get("amount") is not None else "—",
-                    status=data.get("status") or "—",
-                    reason=trouble,
-                ),
-                session=session,
-            )
-            await session.commit()
-        return Response(status_code=200)
+        return await _hand_over(session, body, headers, data)
 
     # Сообщение клиенту кладётся в очередь строкой в базе, поэтому коммит
     # обязан быть последним: зависимость `get_session` сама не коммитит,
@@ -112,6 +107,47 @@ async def platega_webhook(
         status=str(payment.status),
         applied=applied,
     )
+    return Response(status_code=200)
+
+
+def _is_partners(headers: dict[str, str]) -> bool:
+    """Реквизиты бота, если он торгует под своим мерчантом.
+
+    Признать колбэк чужим — это не пустить его дальше, а наоборот: своим
+    платежом он после этого стать не может, и единственное, что с ним
+    происходит, — пересылка боту, который проверит те же заголовки сам.
+    """
+    merchant = settings.platega.partner_merchant_id
+    secret = settings.platega.partner_secret.get_secret_value()
+    if not (merchant and secret):
+        return False
+    normalized = {key.lower(): value for key, value in headers.items()}
+    return hmac.compare_digest(
+        normalized.get("x-merchantid", ""), merchant
+    ) and hmac.compare_digest(normalized.get("x-secret", ""), secret)
+
+
+async def _hand_over(
+    session: AsyncSession, body: bytes, headers: dict[str, str], data: dict[str, Any]
+) -> Response:
+    """Отдаёт колбэк боту и зовёт оператора, если не вышло.
+
+    Провайдеру отвечаем «принято» в любом случае: повтор нам не поможет —
+    чужой платёж мы и во второй раз не узнаем, а вечные повторы он
+    в какой-то момент бросит совсем.
+    """
+    trouble = await _forward_to_partner(body, headers)
+    if trouble:
+        await notify_admins(
+            texts.ADMIN_PARTNER_CALLBACK_LOST.format(
+                transaction=data.get("id") or "—",
+                amount=texts.money(data["amount"]) if data.get("amount") is not None else "—",
+                status=data.get("status") or "—",
+                reason=trouble,
+            ),
+            session=session,
+        )
+        await session.commit()
     return Response(status_code=200)
 
 

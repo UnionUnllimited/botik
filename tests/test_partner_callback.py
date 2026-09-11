@@ -22,6 +22,7 @@ import httpx
 import orjson
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from api.deps import get_session
 from api.routes import webhooks
@@ -35,6 +36,10 @@ CALLBACK = {
     "currency": "RUB",
     "payload": "bot-sub-42",
 }
+
+
+BOT_HEADERS = {"X-MerchantId": "bot-merchant", "X-Secret": "bot-secret"}
+"""Реквизиты бота у провайдера, если мерчант у него свой."""
 
 
 class _Answer:
@@ -165,11 +170,13 @@ def alien_callback(monkeypatch):
         app.dependency_overrides.pop(get_session, None)
 
 
-def _post(payload: dict) -> httpx.Response:
+def _post(payload: dict, headers: dict[str, str] | None = None) -> httpx.Response:
     from api.main import app
 
     with TestClient(app) as client:
-        return client.post("/webhooks/platega", content=orjson.dumps(payload))
+        return client.post(
+            "/webhooks/platega", content=orjson.dumps(payload), headers=headers or {}
+        )
 
 
 class TestWhenItDoesNotReachTheBot:
@@ -200,6 +207,79 @@ class TestWhenItDoesNotReachTheBot:
         assert _post(CALLBACK).status_code == 200
         assert alien_callback.alerts == []
         assert alien_callback.session.commits == 0
+
+
+class TestWhenTheBotTradesUnderItsOwnMerchant:
+    """Реквизиты в колбэке — бота, а не наши.
+
+    Наша сверка такой колбэк не признаёт, и до пересылки дело не доходило:
+    401, провайдер несколько раз повторяет и бросает. Опроса статуса у бота
+    для этого провайдера нет — клиент заплатил и не получил ничего.
+
+    Признать колбэк чужим — это не ослабить проверку, а наоборот: нашим
+    платежом он после этого стать не может, единственное, что с ним
+    происходит, — пересылка боту, который проверит те же заголовки сам.
+    """
+
+    @pytest.fixture
+    def partner(self, monkeypatch):
+        monkeypatch.setattr(settings.platega, "partner_merchant_id", "bot-merchant")
+        monkeypatch.setattr(settings.platega, "partner_secret", SecretStr("bot-secret"))
+
+    @pytest.fixture
+    def strangers(self, alien_callback, monkeypatch):
+        """Наша сверка говорит «не наш» — как на реквизитах бота."""
+        monkeypatch.setattr(
+            webhooks,
+            "get_provider",
+            lambda _name: SimpleNamespace(verify_webhook=lambda _h, _b: False),
+        )
+        return alien_callback
+
+    def test_it_is_handed_over_not_refused(self, strangers, partner, bot_at):
+        client = bot_at(_Answer(200))
+        assert _post(CALLBACK, headers=BOT_HEADERS).status_code == 200
+        assert client.sent, "колбэк не дошёл до бота"
+
+    def test_we_do_not_look_for_it_among_our_payments(
+        self, strangers, partner, bot_at, monkeypatch
+    ):
+        """Платёж под чужим мерчантом нашим не бывает: искать его незачем."""
+        bot_at(_Answer(200))
+        looked = []
+
+        async def _remember(*_args, **_kwargs):
+            looked.append(1)
+            return None, False
+
+        monkeypatch.setattr(webhooks.payment_service, "handle_webhook", _remember)
+        _post(CALLBACK, headers=BOT_HEADERS)
+        assert looked == []
+
+    def test_a_lost_one_still_calls_the_operator(self, strangers, partner, bot_at):
+        bot_at(httpx.ConnectError("connection refused"))
+        _post(CALLBACK, headers=BOT_HEADERS)
+        assert strangers.alerts, "оплата пропала, и никто об этом не узнал"
+
+    def test_someone_elses_credentials_are_still_refused(self, strangers, partner, bot_at):
+        """Пересылка открыта ровно под одну пару реквизитов, а не под любые."""
+        bot_at(_Answer(200))
+        wrong = {"X-MerchantId": "bot-merchant", "X-Secret": "guessed-secret"}
+        assert _post(CALLBACK, headers=wrong).status_code == 401
+
+    def test_unset_partner_changes_nothing(self, strangers, bot_at, monkeypatch):
+        """Мерчант общий — вторая пара не заполнена и ничего не открывает."""
+        monkeypatch.setattr(settings.platega, "partner_merchant_id", "")
+        monkeypatch.setattr(settings.platega, "partner_secret", SecretStr(""))
+        bot_at(_Answer(200))
+        assert _post(CALLBACK, headers=BOT_HEADERS).status_code == 401
+
+    def test_an_empty_header_does_not_match_an_empty_setting(self, strangers, bot_at, monkeypatch):
+        """Иначе пустая настройка пускала бы кого угодно без заголовков."""
+        monkeypatch.setattr(settings.platega, "partner_merchant_id", "")
+        monkeypatch.setattr(settings.platega, "partner_secret", SecretStr(""))
+        bot_at(_Answer(200))
+        assert _post(CALLBACK, headers={"X-MerchantId": "", "X-Secret": ""}).status_code == 401
 
 
 class TestTheAlertItself:
