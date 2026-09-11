@@ -34,7 +34,7 @@ from api.deps import get_session, get_transaction
 from api.service_auth import require_token
 from core import texts, validators
 from core.config import settings
-from core.dates import to_display, utcnow
+from core.dates import days_left, to_display, utcnow
 from core.enums import (
     OFFERED_DELIVERY_METHODS,
     DeliveryMethod,
@@ -1454,6 +1454,15 @@ async def renew_state(tg_id: int, session: AsyncSession = Depends(get_session)) 
             # а не одной датой. «До 1 октября» человек читает как «ещё долго»
             # хоть первого сентября, хоть тридцатого.
             "since": _iso_dt(subscription.started_at) if subscription else None,
+            # Сколько дней осталось, считаем здесь, а не в приложении. По этому
+            # же числу уходят напоминания, и второй счёт на экране с ним
+            # расходился: приложение округляло вверх и показывало «4 дня»,
+            # а сообщение в тот же час говорило «через 3 дня».
+            "left": (
+                days_left(subscription.expires_at)
+                if subscription is not None and subscription.expires_at is not None
+                else None
+            ),
         },
         "plans": [_plan_payload(plan) for plan in plans],
     }

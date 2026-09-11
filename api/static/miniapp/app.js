@@ -626,7 +626,14 @@
     if (!sub || !sub.until) { return null; }
     var until = new Date(sub.until);
     if (isNaN(until)) { return null; }
-    var left = Math.ceil((until.getTime() - Date.now()) / 86400000);
+    // Число даёт сервер: по нему же уходят напоминания, и свой счёт здесь
+    // с ними расходился — приложение округляло вверх и показывало «4 дня»,
+    // а сообщение в тот же час говорило «через 3». Своё считаем только
+    // запасным путём, если поле не приехало, и тем же способом — полными
+    // сутками, а не вверх.
+    var left = typeof sub.left === 'number'
+      ? sub.left
+      : Math.floor((until.getTime() - Date.now()) / 86400000);
     var since = sub.since ? new Date(sub.since) : null;
     var total = since && !isNaN(since)
       ? Math.round((until.getTime() - since.getTime()) / 86400000)
@@ -661,6 +668,12 @@
     if (h >= 12 && h < 18) { return 'Добрый день'; }
     if (h >= 18 && h < 23) { return 'Добрый вечер'; }
     return 'Доброй ночи';
+  }
+
+  // «3 дня осталось», но на последнем дне — «последний день»: «0 дней
+  // осталось» читается как поломка счётчика, а не как «сегодня отключат».
+  function leftWord(n) {
+    return n > 0 ? daysWord(n) + ' осталось' : 'последний день';
   }
 
   function daysWord(n) {
@@ -740,7 +753,7 @@
               +     '<div><div class="muted small">Подписка активна</div>'
               +       '<div class="num" data-count="' + term.days + '" style="margin-top:4px">' + term.days + '</div></div>'
               +     '<div style="text-align:right">'
-              +       '<div class="muted small">' + daysWord(term.days) + ' осталось</div>'
+              +       '<div class="muted small">' + leftWord(term.days) + '</div>'
               +       '<div class="small" style="margin-top:4px">до ' + date(sub.until) + '</div>'
               +     '</div>'
               +   '</div>'
@@ -893,7 +906,7 @@
               +     '<div><div class="muted small">Подписка активна</div>'
               +       '<div class="num" data-count="' + term.days + '" style="margin-top:4px">' + term.days + '</div></div>'
               +     '<div style="text-align:right">'
-              +       '<div class="muted small">' + daysWord(term.days) + ' осталось</div>'
+              +       '<div class="muted small">' + leftWord(term.days) + '</div>'
               +       '<div class="small" style="margin-top:4px">до ' + date(sub.until) + '</div>'
               +     '</div>'
               +   '</div>'
