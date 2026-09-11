@@ -1324,6 +1324,30 @@ async def client_router_mac(user_id: int) -> str:
         return ""
 
 
+async def miniapp_menu_button():
+    """Что поставить на кнопку у поля ввода: приложение или список команд.
+
+    Приложение — если оно открыто всем и адрес по https. Telegram открывает
+    приложения только по https, и кнопка на http молча не срабатывает: человек
+    решит, что сломан бот.
+
+    Иначе список команд, как было. Пока идёт обкатка и приложение открыто по
+    списку, кнопка приложения привела бы любого в отказ.
+    """
+    from src import shop_api
+
+    try:
+        if await shop_api.miniapp_open_to_all():
+            base, _token = shop_api.fleet_config()
+            if base.startswith('https://'):
+                return MenuButtonWebApp(
+                    text='Приложение', web_app=WebAppInfo(url=f'{base}/app')
+                )
+    except Exception as exc:  # noqa: BLE001 — кнопка меню не повод не открыть меню
+        logger.warning(f"[MINIAPP] кнопку меню не собрать: {exc}")
+    return MenuButtonCommands()
+
+
 async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message: bool = False):
     user_id = message_or_query.from_user.id
     user_name = (message_or_query.from_user.first_name or "")[:32]
@@ -1376,9 +1400,22 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
             sub_uuid = last_sub['xui_client_uuid']
 
     # --- Установка кнопки меню (Menu Button) ---
+    #
+    # Кнопка у поля ввода одна: либо список команд, либо приложение. Ставим
+    # приложение — оно так оказывается в одном касании с любого экрана
+    # переписки, а не только с главного меню. Команда там одна, `/start`,
+    # и она же первой строкой в самом меню.
+    #
+    # Пока приложение открыто по списку, оставляем команды: кнопка привела бы
+    # любого в «приложение пока открыто не всем».
     try:
-        await bot.set_my_commands([BotCommand(command='start', description='Главное меню')], scope={'type': 'chat', 'chat_id': user_id})
-        await bot.set_chat_menu_button(chat_id=user_id, menu_button=MenuButtonCommands())
+        await bot.set_my_commands(
+            [BotCommand(command='start', description='Главное меню')],
+            scope={'type': 'chat', 'chat_id': user_id},
+        )
+        await bot.set_chat_menu_button(
+            chat_id=user_id, menu_button=await miniapp_menu_button()
+        )
     except Exception as e:
         logger.error(f"Не удалось установить кнопку меню для {user_id}: {e}")
 

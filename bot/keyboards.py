@@ -48,6 +48,25 @@ async def _resolve_main_menu_button(key: str, *, user_id, has_active_sub, sub_uu
         }[key]
         return btn(key, callback_data=callback)
 
+    if key == 'btn_miniapp':
+        # Приложение — вторая дверь в ту же комнату, а не замена меню.
+        # Всё, что в нём есть, доступно и здесь, кнопками: приложению нужны
+        # https, живой API и свежий Telegram, а чату — только бот.
+        #
+        # Пока приложение открыто по списку, кнопки нет: она привела бы
+        # любого в «приложение пока открыто не всем». Позванные на тест
+        # открывают его командой /app.
+        from src import shop_api
+
+        if not await shop_api.miniapp_open_to_all():
+            return None
+        base, _token = shop_api.fleet_config()
+        if not base.startswith('https://'):
+            # Telegram открывает приложения только по https. Без него кнопка
+            # молча не сработает, и человек решит, что сломан бот.
+            return None
+        return btn('btn_miniapp', web_app=WebAppInfo(url=f'{base}/app'))
+
     if key == 'btn_renew_sub':
         # Продление одно и наше. Родное двигает срок у учётки `tg{id}` —
         # подписки для приложения на телефоне, — а роутеру доступ выдан

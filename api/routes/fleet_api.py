@@ -1458,10 +1458,16 @@ async def miniapp_allowed(tg_id: int = Query(0, ge=0)) -> dict:
 
     Права проверяет не эта ручка: её зовёт наш же бот по общему токену. Здесь
     только ответ на вопрос, и ничего, кроме «да» или «нет», он не сообщает.
+
+    `open_to_all` — ответ без имени: открыто ли приложение вообще всем. По нему
+    бот решает, ставить ли кнопку в меню, не спрашивая про каждого входящего.
+    Пока идёт обкатка и список закрыт, кнопки в меню нет вовсе: она привела бы
+    любого в «приложение пока открыто не всем», а это хуже отсутствия кнопки.
     """
     return {
         "allowed": settings.miniapp.is_configured and settings.miniapp.is_allowed(tg_id),
         "configured": settings.miniapp.is_configured,
+        "open_to_all": settings.miniapp.is_configured and settings.miniapp.open_to_all,
     }
 
 

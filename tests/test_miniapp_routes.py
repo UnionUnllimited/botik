@@ -130,7 +130,12 @@ class TestWhoIsAllowedAsked:
 
         monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(TOKEN))
         monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [MINE])
-        assert await miniapp_allowed(tg_id=MINE) == {"allowed": True, "configured": True}
+        assert await miniapp_allowed(tg_id=MINE) == {
+            "allowed": True,
+            "configured": True,
+            # Список закрыт — значит открыто не всем, и кнопки в меню нет.
+            "open_to_all": False,
+        }
 
     @pytest.mark.asyncio
     async def test_stranger_is_refused(self, monkeypatch):
@@ -148,7 +153,36 @@ class TestWhoIsAllowedAsked:
         monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(TOKEN))
         monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [])
         answer = await miniapp_allowed(tg_id=MINE)
-        assert answer == {"allowed": False, "configured": False}
+        assert answer == {"allowed": False, "configured": False, "open_to_all": False}
+
+
+    @pytest.mark.asyncio
+    async def test_open_to_all_is_answered_without_a_name(self, monkeypatch):
+        """По этому ответу бот ставит кнопку в меню, не спрашивая про каждого.
+
+        Меню рисуется на каждый `/start`, и запрос про входящего в этом месте
+        был бы и задержкой входа, и зависимостью меню от того, отвечаем ли мы.
+        """
+        from api.routes.fleet_api import miniapp_allowed
+
+        monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(TOKEN))
+        monkeypatch.setattr(settings.miniapp, "open_to_all", True)
+        monkeypatch.setattr(settings.miniapp, "allowed_tg_ids", [])
+
+        answer = await miniapp_allowed(tg_id=0)
+        assert answer["open_to_all"] is True
+        # И пускает теперь кого угодно, включая безымянный вопрос.
+        assert answer["allowed"] is True
+
+    @pytest.mark.asyncio
+    async def test_a_closed_app_is_open_to_nobody(self, monkeypatch):
+        """Без токена не проверить подпись входа — открывать нельзя тем более."""
+        from api.routes.fleet_api import miniapp_allowed
+
+        monkeypatch.setattr(settings.miniapp, "bot_token", SecretStr(""))
+        monkeypatch.setattr(settings.miniapp, "open_to_all", True)
+
+        assert (await miniapp_allowed(tg_id=MINE))["open_to_all"] is False
 
 
 class TestHandlersAskTheUserForFieldsItHas:

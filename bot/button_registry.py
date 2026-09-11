@@ -83,6 +83,7 @@ BUTTON_REGISTRY: list[dict[str, Any]] = [
     # не вносятся: их подпись собирается из данных каталога, и правка
     # в админке всё равно ни на что не влияла бы.
     _b('btn_landing',              'shop', 'Узнать о роутере (витрина)',      '◎ Узнать о роутере',      ''),
+    _b('btn_miniapp',              'shop', 'Приложение (главное меню)',       '⊞ Приложение',            ''),
     _b('btn_catalog',              'shop', 'Каталог роутеров (главное меню)', '⊕ Купить роутер',         ''),
     _b('btn_my_router',            'shop', 'Мой роутер (главное меню)',       '▣ Мой роутер',            ''),
     _b('btn_my_orders',            'shop', 'Мои заказы (главное меню)',       '▤ Мои заказы',            ''),
@@ -232,6 +233,7 @@ MAIN_MENU_LAYOUT_SETTING = 'main_menu_layout'
 MAIN_MENU_LAYOUT_KEYS: frozenset[str] = frozenset({
     'btn_website_access',
     'btn_landing',
+    'btn_miniapp',
     'btn_catalog', 'btn_my_router', 'btn_my_orders',
     'btn_renew_sub', 'btn_traffic_renewal',
     'btn_referral', 'btn_support', 'btn_about_service',
@@ -248,6 +250,10 @@ DEFAULT_MAIN_MENU_LAYOUT: list[list[str]] = [
     # что такое роутер с подпиской, и ему нужен рассказ, а не каталог.
     # У кого роутер уже есть, тот идёт во вторую строку, к своему устройству.
     ['btn_landing'],
+    # Приложение — вторая дверь в ту же комнату: тот же каталог, тот же роутер,
+    # то же продление, но формой вместо шести вопросов подряд. Появляется,
+    # только когда приложение открыто всем; пока идёт обкатка, строки нет.
+    ['btn_miniapp'],
     ['btn_my_router'],
     ['btn_renew_sub'],
     ['btn_catalog'],

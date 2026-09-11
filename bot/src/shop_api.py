@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -681,3 +682,46 @@ async def miniapp_allowed(tg_id: int) -> bool:
     if error:
         return False
     return bool(data.get("allowed"))
+
+
+_OPEN_TO_ALL: tuple[float, bool] = (0.0, False)
+"""Ответ «открыто всем» и когда он получен. Меняется решением владельца,
+то есть раз в жизни, — спрашивать его на каждый вход незачем."""
+
+OPEN_TO_ALL_TTL_SEC = 60
+"""Минуты хватает: взведя переключатель, владелец увидит кнопку сразу,
+а меню при этом не ходит по сети на каждый `/start`."""
+
+
+async def miniapp_open_to_all() -> bool:
+    """Открыто ли приложение вообще всем.
+
+    По этому ответу бот решает, ставить ли кнопку приложения в меню и на
+    место кнопки у поля ввода. Пока идёт обкатка и список закрыт, кнопки
+    нет: она привела бы любого в «приложение пока открыто не всем», а это
+    хуже отсутствия кнопки. Позванные на тест открывают его командой.
+
+    Ответ держим минуту. Меню рисуется на каждый `/start`, и запрос к
+    основному приложению в этом месте — и задержка входа, и зависимость
+    меню от того, отвечает ли оно сейчас.
+
+    Молчит API — считаем, что не открыто: кнопка вела бы на адрес, который
+    всё равно не ответит."""
+    global _OPEN_TO_ALL  # noqa: PLW0603 — кэш на процесс, иначе запрос на каждый вход
+    asked_at, answer = _OPEN_TO_ALL
+    now = time.monotonic()
+    if now - asked_at < OPEN_TO_ALL_TTL_SEC:
+        return answer
+    data, error = await get("/api/v1/fleet/miniapp/allowed", {"tg_id": 0})
+    if error:
+        # Прежний ответ не продлеваем: пусть следующий круг спросит заново.
+        return False
+    answer = bool(data.get("open_to_all"))
+    _OPEN_TO_ALL = (now, answer)
+    return answer
+
+
+def forget_miniapp_answer() -> None:
+    """Сбросить кэш. Нужно тестам и ручной проверке после правки `.env`."""
+    global _OPEN_TO_ALL  # noqa: PLW0603
+    _OPEN_TO_ALL = (0.0, False)
