@@ -81,6 +81,8 @@ class Plan(IntPkMixin, TimestampMixin, Base):
 
     @property
     def price_per_month(self) -> Decimal:
-        if self.months <= 0:
+        # `or 0` по той же причине, что и в `apply_to` выше: у ещё не
+        # сохранённого объекта поле равно None, и сравнение с нулём падает.
+        if (self.months or 0) <= 0:
             return self.price
         return (self.price / self.months).quantize(Decimal("0.01"))

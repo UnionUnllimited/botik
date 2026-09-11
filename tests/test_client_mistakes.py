@@ -141,17 +141,28 @@ class TestDoubleTap:
         """Иначе неудачная попытка запирает клиента в «уже оформлен»."""
         assert 'state.update_data(product_id=data.get("product_id"))' in self._confirm()
 
+    @staticmethod
+    def _same_draft(product_id: int, **changes):
+        """Черновик, каким его шлёт повтор: те же ответы, что и в первый раз."""
+        from core.services.orders import OrderDraft
+
+        answers = {
+            "customer_name": "Иванов Иван",
+            "customer_phone": "+79001234567",
+            "customer_city": "Москва",
+        }
+        return OrderDraft(product_id=product_id, **(answers | changes))
+
     @pytest.mark.asyncio
     async def test_same_order_twice_returns_the_first(self):
         from api.routes.catalog_api import _recent_twin
-        from core.services.orders import OrderDraft
 
         engine, factory = await _session()
         try:
             async with factory() as session:
                 user, product, order = await _order_with_product(session)
                 twin = await _recent_twin(
-                    session, user=user, draft=OrderDraft(product_id=product.id)
+                    session, user=user, draft=self._same_draft(product.id)
                 )
                 assert twin is not None
                 assert twin.id == order.id
@@ -159,17 +170,42 @@ class TestDoubleTap:
             await engine.dispose()
 
     @pytest.mark.asyncio
+    async def test_the_same_router_to_another_address_is_a_second_order(self):
+        """Второй роутер в подарок родителям едет по другому адресу.
+
+        Адрес приложение помнит и подставляет, так что второй заказ клиент
+        оформляет быстрее двух минут. Сравнивая только модель, мы вернули бы
+        ему первый заказ — и обе коробки уехали бы в одно место. Узнали бы мы
+        об этом от того, кто ничего не получил.
+        """
+        from api.routes.catalog_api import _recent_twin
+
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                user, product, _ = await _order_with_product(session)
+                twin = await _recent_twin(
+                    session,
+                    user=user,
+                    draft=self._same_draft(
+                        product.id, customer_city="Казань", customer_phone="+79009876543"
+                    ),
+                )
+                assert twin is None
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
     async def test_old_order_is_not_a_twin(self):
         """Через час это уже второй роутер, а не повтор нажатия."""
         from api.routes.catalog_api import _recent_twin
-        from core.services.orders import OrderDraft
 
         engine, factory = await _session()
         try:
             async with factory() as session:
                 user, product, _ = await _order_with_product(session, minutes_ago=60)
                 twin = await _recent_twin(
-                    session, user=user, draft=OrderDraft(product_id=product.id)
+                    session, user=user, draft=self._same_draft(product.id)
                 )
                 assert twin is None
         finally:

@@ -1780,9 +1780,34 @@ async def _recent_twin(
     for order in candidates:
         products = {item.product_id for item in order.items if item.product_id}
         plans = {item.plan_id for item in order.items if item.plan_id}
-        if draft.product_id in products and (not draft.plan_id or draft.plan_id in plans):
-            return order
+        if draft.product_id not in products:
+            continue
+        if draft.plan_id and draft.plan_id not in plans:
+            continue
+        # Кому и куда — часть заказа, а не подробность. Повтор от обрыва
+        # присылает то же самое, а вот второй роутер в подарок родителям
+        # уезжает по другому адресу и на другой телефон: вернув на него
+        # первый заказ, мы отправили бы обе коробки в одно место, и узнали
+        # бы об этом от того, кто ничего не получил.
+        if _where_to(order) != _draft_target(draft):
+            continue
+        return order
     return None
+
+
+def _draft_target(draft: order_service.OrderDraft) -> tuple[str, str, str]:
+    """Кому и куда — по черновику."""
+    point = draft.pvz_code or draft.pvz_address if draft.delivery_to_pvz else draft.delivery_address
+    return (draft.customer_phone.strip(), draft.customer_city.strip(), (point or "").strip())
+
+
+def _where_to(order: Order) -> tuple[str, str, str]:
+    """То же самое — по уже созданному заказу."""
+    delivery = order.delivery
+    point = ""
+    if delivery is not None:
+        point = delivery.pvz_code or delivery.pvz_address or delivery.address or ""
+    return ((order.customer_phone or "").strip(), (order.customer_city or "").strip(), point.strip())
 
 
 async def _alive_pay_url(session: AsyncSession, order: Order) -> str:
