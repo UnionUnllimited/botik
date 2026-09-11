@@ -101,6 +101,10 @@ def _world(**kwargs):
     granted: list[tuple] = []
 
     async def grant_subscription(user_id, days, **_kwargs):
+        # Ведёт себя как настоящая: роутерному клиенту учётку не заводит
+        # и возвращает пусто. Реферальные пути смотрят именно на результат.
+        if helpers._shop:
+            return None
         granted.append((user_id, days))
         return {"ok": True}
 
@@ -147,12 +151,13 @@ async def _paid(world) -> None:
 
 @pytest.mark.asyncio
 async def test_join_bonus_skips_a_router_inviter():
+    """Выдача вернула пусто — значит бонуса не было."""
     world = _world(inviter=111, shop=True)
 
     assert await _join(world) is False
     assert world.granted == []
     # Ни отметки «выдан», ни сообщения: обещать дни, которых не будет,
-    # хуже, чем промолчать.
+    # хуже, чем промолчать. Неотмеченный бонус можно выдать потом руками.
     assert world.helpers.marked == []
     assert world.bot.sent == []
 
@@ -175,6 +180,25 @@ async def test_payment_bonus_skips_a_router_inviter():
     await _paid(world)
 
     assert world.granted == []
+    assert world.helpers.marked == []
+    assert world.bot.sent == []
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_for_any_reason_leaves_no_false_promise():
+    """Панель молчит, пригласивший заблокирован — причина неважна.
+
+    Раньше отметка «бонус выдан» ставилась и сообщение уходило независимо от
+    того, чем кончилась выдача: клиент читал «+3 дня» и не находил их.
+    """
+    world = _world(inviter=111, shop=False)
+
+    async def _refuse(*_args, **_kwargs):
+        return None
+
+    world.grant = _refuse
+
+    assert await _join(world) is False
     assert world.helpers.marked == []
     assert world.bot.sent == []
 
@@ -212,17 +236,28 @@ class TestTheGuardSitsInOnePlace:
     MANAGER = (BOT / "subscription_manager.py").read_text(encoding="utf-8")
     HELPERS = (BOT / "db_helpers.py").read_text(encoding="utf-8")
 
-    def test_issuing_refuses_a_router_client(self):
+    def _issuing(self) -> str:
         body = self.MANAGER[self.MANAGER.index("async def grant_subscription(") :]
-        body = body[: body.index("\nasync def ", 1)]
-        assert "is_shop_client" in body
+        return body[: body.index("\nasync def ", 1)]
+
+    def test_issuing_refuses_a_router_client(self):
+        assert "is_shop_client" in self._issuing()
 
     def test_it_refuses_before_creating_a_second_panel_account(self):
         """Порядок и есть смысл правки: отказ должен стоять до ветки
         «создать новую», иначе учётка уже заведена."""
-        body = self.MANAGER[self.MANAGER.index("async def grant_subscription(") :]
-        body = body[: body.index("\nasync def ", 1)]
+        body = self._issuing()
         assert body.index("is_shop_client") < body.index("_create_remnawave_subscription")
+
+    def test_a_client_of_theirs_who_bought_a_router_still_renews_his_phone(self):
+        """Человек может быть и их клиентом, и нашим покупателем.
+
+        Своя, телефонная учётка у него есть — её продление роутера не
+        касается, и запрещать его нельзя. Поэтому отказ стоит после ветки
+        `xui_client_uuid`, а не до неё: раньше он запирал и продление тоже.
+        """
+        body = self._issuing()
+        assert body.index("_renew_remnawave_subscription") < body.index("is_shop_client")
 
     def test_the_flag_is_read_from_the_mirror_column(self):
         body = self.HELPERS[self.HELPERS.index("async def is_shop_client(") :]

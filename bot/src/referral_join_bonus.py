@@ -55,18 +55,6 @@ async def try_grant_referral_join_bonus(
             )
             return False
 
-        # Роутерному пригласившему бонус выдать нечем: срок ему ведёт
-        # магазин, и здешняя выдача до роутера не дойдёт. Выходим до
-        # отметки «выдан» и до сообщения — обещать дни, которых не будет,
-        # хуже, чем промолчать.
-        if await db_helpers.is_shop_client(invited_by):
-            logger.info(
-                "[REFERRAL] %s: пригласивший %s — роутерный клиент, join-бонус не начисляем",
-                log_prefix,
-                invited_by,
-            )
-            return False
-
         already_given = await db_helpers.is_referral_payment_bonus_given(
             invited_by, invited_user_id, bonus_type="join",
         )
@@ -81,13 +69,24 @@ async def try_grant_referral_join_bonus(
             return False
 
         inviter_limit_ip = await resolve_limit_ip_for_user(invited_by)
-        await grant_subscription(
+        granted = await grant_subscription(
             invited_by,
             ref_bonus_days,
             is_trial=False,
             limit_ip=inviter_limit_ip,
             reset_traffic_on_renewal=False,
         )
+        if not granted:
+            # Выдача отказала: заблокированный пригласивший, молчащая панель
+            # или роутерный клиент, которому учётку здесь заводить нельзя.
+            # Не отмечаем «выдан» и не пишем ему: обещать дни, которых нет,
+            # хуже, чем промолчать, а неотмеченный бонус можно выдать потом.
+            logger.warning(
+                "[REFERRAL] %s: join-бонус %s не начислен — выдача вернула пусто",
+                log_prefix,
+                invited_by,
+            )
+            return False
         try:
             await db_helpers.mark_referral_payment_bonus_given(
                 invited_by, invited_user_id, bonus_type="join",

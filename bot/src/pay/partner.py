@@ -143,15 +143,6 @@ async def credit_partner_and_referral(
         if not inviter:
             return
 
-        # Тот же случай, что и с join-бонусом: роутерному пригласившему
-        # дни выдать отсюда некуда, и сообщать о них нечестно.
-        if await db_helpers.is_shop_client(invited_by):
-            logger.info(
-                "[REFERRAL] %s: пригласивший %s — роутерный клиент, бонус за оплату не начисляем",
-                log_prefix, invited_by,
-            )
-            return
-
         try:
             ref_bonus_days = int(app_conf.get("ref_bonus_on_payment_days", 7))
         except (TypeError, ValueError):
@@ -161,13 +152,23 @@ async def credit_partner_and_referral(
 
         inviter_limit_ip = await resolve_limit_ip_for_user(invited_by)
 
-        await grant_subscription(
+        granted = await grant_subscription(
             invited_by,
             ref_bonus_days,
             is_trial=False,
             limit_ip=inviter_limit_ip,
             reset_traffic_on_renewal=False,
         )
+        if not granted:
+            # Выдача отказала: заблокированный пригласивший, молчащая панель
+            # или роутерный клиент, которому учётку здесь заводить нельзя.
+            # Не отмечаем «выдан» и не пишем ему — обещать дни, которых нет,
+            # хуже, чем промолчать.
+            logger.warning(
+                "[REFERRAL] %s: бонус за оплату %s не начислен — выдача вернула пусто",
+                log_prefix, invited_by,
+            )
+            return
         try:
             await db_helpers.mark_referral_payment_bonus_given(
                 invited_by, payer_user_id,
