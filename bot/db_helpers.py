@@ -776,14 +776,6 @@ async def populate_default_tariffs():
             await db.commit()
             logger.info("Создан стандартный тариф по умолчанию.")
 
-async def init_referral_bonus_table():
-    async with get_db_connection_safe() as db:
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS referral_payment_bonus (
-                ref_user_id INTEGER, invited_user_id INTEGER, PRIMARY KEY (ref_user_id, invited_user_id)
-            )
-        ''')
-        await db.commit()
 
 async def load_all_settings() -> Dict[str, str]:
     async with get_db_connection_safe() as db:
@@ -840,32 +832,7 @@ async def get_users_by_subscription_uuids(uuids: List[str]) -> Dict[str, Dict]:
     return out
 
 
-async def get_active_subscription(telegram_id: int) -> Optional[Dict]:
-    user_data = await get_user(telegram_id)
-    if user_data and user_data["subscription_end_date"]:
-        try:
-            sub_end_date = datetime.fromisoformat(user_data["subscription_end_date"])
-            if sub_end_date > datetime.now(sub_end_date.tzinfo):
-                result = dict(user_data)
-                result['subscription_end_date'] = sub_end_date
-                return result
-        except (ValueError, KeyError, TypeError) as e:
-            logger.error(f"Некорректный формат активной подписки для {telegram_id}: {e}")
-    return None
 
-async def get_last_subscription(telegram_id: int) -> Optional[Dict]:
-    user_data = await get_user(telegram_id)
-    if user_data and user_data["xui_client_uuid"]:
-        try:
-            result = dict(user_data)
-            if user_data["subscription_end_date"]:
-                result['subscription_end_date'] = datetime.fromisoformat(user_data["subscription_end_date"])
-            else:
-                result['subscription_end_date'] = None
-            return result
-        except (ValueError, KeyError, TypeError) as e:
-            logger.error(f"Некорректный формат последней подписки для {telegram_id}: {e}")
-    return None
 
 async def add_user(telegram_id: int, username: str = None, real_username: str = None):
     """
@@ -1845,15 +1812,6 @@ async def get_active_tariffs() -> List[Dict]:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-async def get_tariff_by_id(tariff_id: int) -> Optional[Dict]:
-    """Получает тариф по ID."""
-    async with get_db_connection_safe() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM tariffs WHERE id = ?", (tariff_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
 
 async def get_active_traffic_topup_tariffs() -> List[Dict]:
     """Получает все активные тарифы докупки трафика, отсортированные по цене (от меньшей к большей)."""
