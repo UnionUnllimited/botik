@@ -233,6 +233,16 @@ class MiniappSettings(EnvSettings):
     обкатка, приложение не должно открыться у клиента по случайно найденной
     ссылке. Открыть всем — отдельное решение, а не следствие пустой строки."""
 
+    open_to_all: bool = False
+    """Открыть приложение всем, а не только списку.
+
+    Со списком роутеры не продать: покупатель в него не попадёт и увидит
+    «приложение пока открыто не всем». Но и снимать защиту молча нельзя —
+    пустая строка не должна однажды означать «всем». Поэтому здесь отдельный
+    выключатель: `MINIAPP_OPEN_TO_ALL=1` взводится руками, когда обкатка
+    кончилась, и список после этого больше ни на что не влияет.
+    """
+
     init_data_max_age_sec: int = 86400
     """Сколько живёт подпись входа. Telegram кладёт в неё `auth_date`, и без
     проверки срока перехваченная один раз строка открывала бы приложение
@@ -241,10 +251,12 @@ class MiniappSettings(EnvSettings):
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.bot_token.get_secret_value()) and bool(self.allowed_tg_ids)
+        return bool(self.bot_token.get_secret_value()) and (
+            self.open_to_all or bool(self.allowed_tg_ids)
+        )
 
     def is_allowed(self, tg_id: int) -> bool:
-        return tg_id in self.allowed_tg_ids
+        return self.open_to_all or tg_id in self.allowed_tg_ids
 
 
 class SecuritySettings(EnvSettings):
