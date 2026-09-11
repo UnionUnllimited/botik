@@ -66,7 +66,12 @@ async def deliver_once(bot: Bot) -> int:
             logger.info(f"[OUTBOX] клиент {message.get('tg_id')} закрылся от бота")
         except TelegramRetryAfter as exc:
             # Лимит Telegram: остальные из этой пачки тоже не пройдут.
-            await shop_api.outbox_ack(message_id, ok=False, error=f"retry after {exc.retry_after}")
+            #
+            # Отчёта об отказе не шлём намеренно. Он засчитал бы попытку, а
+            # попыток у сообщения пять: полоса лимитов на утренней рассылке
+            # съедала бы их одну за другой, и клиент не получал бы «оплата
+            # получена» уже никогда. Лимит временный — сообщение просто ждёт
+            # следующего круга, и счётчик остаётся нетронутым.
             logger.warning(f"[OUTBOX] лимит Telegram, ждём {exc.retry_after} с")
             await asyncio.sleep(exc.retry_after)
             break
