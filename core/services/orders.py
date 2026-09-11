@@ -214,6 +214,27 @@ async def calculate_totals(
     return totals
 
 
+async def _hold_the_shelf(session: AsyncSession, product_id: int | None) -> None:
+    """Занимает строку товара до конца сделки — чтобы последний роутер не ушёл дважды.
+
+    Предел считается по заказам, а два заказа, пришедшие в одну секунду,
+    считают его одновременно. Ни один не видит чужой незавершённой сделки:
+    оба читают «остался один», оба проходят проверку, и оба оформляются.
+    Клиент получает «заказ принят», а роутера на складе нет — и узнаёт об
+    этом оператор при отгрузке, когда деньги уже взяты.
+
+    Блокировка строки выстраивает такие заказы в очередь: второй ждёт первого
+    и пересчитывает предел по настоящему остатку. Строка товара тут просто
+    замок — саму её мы не меняем.
+
+    SQLite про `FOR UPDATE` не знает и молча его пропускает; там сделки и не
+    идут параллельно.
+    """
+    if not product_id:
+        return
+    await session.execute(select(Product.id).where(Product.id == product_id).with_for_update())
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -221,6 +242,7 @@ async def create_order(
     draft: OrderDraft,
 ) -> Order:
     """Создаёт заказ со снимком цен и составом. Промокод фиксируется здесь же."""
+    await _hold_the_shelf(session, draft.product_id)
     totals = await calculate_totals(session, draft=draft, user_id=user.id)
 
     order = Order(

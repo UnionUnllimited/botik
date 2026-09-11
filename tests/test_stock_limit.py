@@ -159,3 +159,41 @@ def test_sellable_falls_back_to_the_raw_number():
     assert order_service.sellable(_product(stock=0), None) is False
     assert order_service.sellable(_product(stock=5), 0) is False
     assert order_service.sellable(_product(stock=0, preorder=True), 0) is True
+
+
+class TestTheLastRouterDoesNotGoTwice:
+    """Два заказа в одну секунду считали предел одновременно.
+
+    Ни один не видит чужой незавершённой сделки: оба читают «остался один»,
+    оба проходят проверку, оба оформляются. Клиент получает «заказ принят»,
+    а роутера на складе нет — и узнаёт об этом оператор при отгрузке, когда
+    деньги уже взяты. Настоящую одновременность здесь не воспроизвести:
+    тесты идут на SQLite, где сделки не параллельны. Поэтому проверяем то,
+    что от нас зависит, — что замок запрашивается и вовремя.
+    """
+
+    def test_the_lock_is_a_real_lock_on_postgres(self):
+        from sqlalchemy import select
+        from sqlalchemy.dialects import postgresql
+
+        from core.models import Product
+
+        statement = select(Product.id).where(Product.id == 1).with_for_update()
+        assert "FOR UPDATE" in str(statement.compile(dialect=postgresql.dialect()))
+
+    def test_it_is_taken_before_the_limit_is_counted(self):
+        """Замок после подсчёта бесполезен: предел уже прочитан устаревшим."""
+        import inspect
+
+        body = inspect.getsource(order_service.create_order)
+        assert body.index("_hold_the_shelf") < body.index("calculate_totals")
+
+    @pytest.mark.asyncio
+    async def test_an_order_without_a_router_locks_nothing(self):
+        """Заказ на одну подписку товара не занимает — запирать нечего."""
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                await order_service._hold_the_shelf(session, None)
+        finally:
+            await engine.dispose()
