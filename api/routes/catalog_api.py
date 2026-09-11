@@ -190,6 +190,17 @@ def _int(raw: Any, default: int = 0) -> int:
         return default
 
 
+def _price(raw: Any, fallback: str) -> Decimal | None:
+    """Цена из формы. `None` — отрицательная, то есть опечатка.
+
+    Поле в форме текстовое, и минус в нём никто не ловил. Отрицательная
+    цена не отказ оформления: сумма заказа считается и упирается в ноль,
+    то есть роутер уезжает даром, а заказ выглядит оплаченным на ноль
+    рублей. Заметить это можно только по выручке."""
+    value = _decimal(raw, fallback)
+    return None if value < 0 else value
+
+
 def _specs(raw: Any) -> dict[str, str] | None:
     """Характеристики приходят готовым объектом или строкой JSON из формы."""
     if isinstance(raw, dict):
@@ -238,9 +249,18 @@ async def save_product(
     product.subtitle = str(payload.get("subtitle", "")).strip()
     product.description = str(payload.get("description", "")).strip()
     product.model_code = str(payload.get("model_code", "")).strip()
-    product.price = _decimal(payload.get("price"), str(product.price))
+    price = _price(payload.get("price"), str(product.price))
+    if price is None:
+        return {"ok": False, "error": "Цена не может быть отрицательной."}
+    product.price = price
     old_price = str(payload.get("old_price", "")).strip()
-    product.old_price = _decimal(old_price) if old_price else None
+    if old_price:
+        was = _price(old_price, "0")
+        if was is None:
+            return {"ok": False, "error": "Старая цена не может быть отрицательной."}
+        product.old_price = was
+    else:
+        product.old_price = None
     product.stock = _int(payload.get("stock"), product.stock)
     product.sort_order = _int(payload.get("sort_order"), product.sort_order)
     product.is_active = bool(payload.get("is_active"))
@@ -502,10 +522,22 @@ async def save_plan(
     plan.title = title or plan.title
     plan.description = str(payload.get("description", "")).strip()
     plan.months = max(_int(payload.get("months"), plan.months), 0)
-    plan.extra_days = max(_int(payload.get("extra_days"), plan.extra_days), 0)
-    plan.price = _decimal(payload.get("price"), str(plan.price))
+    # `or 0`: у только что заведённого тарифа поле ещё пустое — умолчание
+    # колонки проставляется при записи, а `max` считается до неё. Без
+    # этого создание тарифа без «дополнительных дней» падало пятисоткой.
+    plan.extra_days = max(_int(payload.get("extra_days"), plan.extra_days or 0), 0)
+    price = _price(payload.get("price"), str(plan.price))
+    if price is None:
+        return {"ok": False, "error": "Цена не может быть отрицательной."}
+    plan.price = price
     old_price = str(payload.get("old_price", "")).strip()
-    plan.old_price = _decimal(old_price) if old_price else None
+    if old_price:
+        was = _price(old_price, "0")
+        if was is None:
+            return {"ok": False, "error": "Старая цена не может быть отрицательной."}
+        plan.old_price = was
+    else:
+        plan.old_price = None
     plan.sort_order = _int(payload.get("sort_order"), plan.sort_order)
     plan.is_active = bool(payload.get("is_active"))
 
