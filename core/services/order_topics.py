@@ -163,6 +163,29 @@ async def chat_id(session: AsyncSession) -> int:
         return 0
 
 
+async def router_still_running(session: AsyncSession, order: Order) -> str:
+    """Приписка к карточке: заказ закрыт, а роутер у клиента работает.
+
+    «Возврат» и «Отменён» меняют только статус заказа — и правильно: роутер
+    едет назад не мгновенно, а отбирать доступ в день, когда вернули деньги,
+    рано. Но и молчать нельзя: подписка идёт до конца оплаченного срока, и
+    клиент с возвращёнными деньгами продолжает пользоваться сервисом, пока
+    кто-нибудь не вспомнит сбросить роутер на склад.
+
+    Сбрасываем не мы: это решение человека, и кнопка у него есть."""
+    if order.status not in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
+        return ""
+    device = await session.scalar(
+        select(Device).where(Device.order_id == order.id, Device.user_id.is_not(None))
+    )
+    if device is None:
+        return ""
+    return (
+        f"\n⚠️ Роутер {device.mac} ещё числится за клиентом и работает. "
+        "Сбросьте его на склад, когда вернут, — подписка уйдёт в ожидание активации."
+    )
+
+
 async def push(session: AsyncSession, order: Order, *, note: str = "") -> Notification | None:
     """Кладёт карточку заказа в очередь. Топик заведёт бот, если его ещё нет.
 

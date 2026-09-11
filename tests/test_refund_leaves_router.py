@@ -21,10 +21,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
-from api.routes import catalog_api
 from core.enums import DeviceStatus, OrderStatus
 from core.models import Device, Order, User
 from core.models.base import Base
+from core.services import order_topics
 
 
 @compiles(JSONB, "sqlite")
@@ -92,7 +92,7 @@ async def test_a_refund_says_the_router_is_still_working():
             await _router(session, order, owner_id=user.id)
             await session.commit()
 
-            note = await catalog_api._router_still_running(session, order)
+            note = await order_topics.router_still_running(session, order)
 
         assert "A0:B1:C2:D3:E4:F5" in note
         assert "на склад" in note
@@ -110,7 +110,7 @@ async def test_a_cancelled_order_gets_the_same_warning():
             await _router(session, order, owner_id=user.id)
             await session.commit()
 
-            assert "на склад" in await catalog_api._router_still_running(session, order)
+            assert "на склад" in await order_topics.router_still_running(session, order)
     finally:
         await engine.dispose()
 
@@ -125,7 +125,7 @@ async def test_a_router_already_returned_to_the_shelf_is_not_mentioned():
             await _router(session, order, owner_id=None)
             await session.commit()
 
-            assert await catalog_api._router_still_running(session, order) == ""
+            assert await order_topics.router_still_running(session, order) == ""
     finally:
         await engine.dispose()
 
@@ -138,7 +138,7 @@ async def test_an_order_without_a_router_says_nothing():
             order, _ = await _order(session, OrderStatus.REFUNDED)
             await session.commit()
 
-            assert await catalog_api._router_still_running(session, order) == ""
+            assert await order_topics.router_still_running(session, order) == ""
     finally:
         await engine.dispose()
 
@@ -153,19 +153,22 @@ async def test_a_live_order_is_not_this_warning_business():
             await _router(session, order, owner_id=user.id)
             await session.commit()
 
-            assert await catalog_api._router_still_running(session, order) == ""
+            assert await order_topics.router_still_running(session, order) == ""
     finally:
         await engine.dispose()
 
 
-def test_the_warning_reaches_the_topic_card():
-    """Оператор смотрит в карточку заказа, а не в журнал."""
+def test_both_ways_of_closing_an_order_say_it():
+    """Заказ закрывает человек из админки и круг, убирающий брошенные.
+
+    Роутер остаётся за клиентом в обоих случаях, и предупреждение должно
+    быть в обоих — иначе оно есть ровно там, куда и так смотрят.
+    """
     from pathlib import Path
 
-    source = (
-        Path(__file__).resolve().parents[1] / "api" / "routes" / "catalog_api.py"
-    ).read_text(encoding="utf-8")
-    start = source.index("async def manage_order_status(")
-    body = source[start : source.index("\n@router.", start + 1)]
-    assert "_router_still_running" in body
-    assert "order_topics.push(session, order, note=note)" in body
+    root = Path(__file__).resolve().parents[1]
+    by_hand = (root / "api" / "routes" / "catalog_api.py").read_text(encoding="utf-8")
+    by_worker = (root / "worker" / "tasks" / "orders.py").read_text(encoding="utf-8")
+
+    assert "order_topics.router_still_running" in by_hand
+    assert "order_topics.router_still_running" in by_worker

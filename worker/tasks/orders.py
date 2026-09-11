@@ -164,7 +164,11 @@ async def cancel_abandoned_orders() -> int:
             # Промокод возвращается клиенту вместе с роутером: он им не
             # воспользовался.
             await promo_service.release_usage(session, order_id=order.id)
-            await order_topics.push(session, order, note="↻ Отменён автоматически: не оплачен")
+            note = "↻ Отменён автоматически: не оплачен"
+            # Роутер к неоплаченному заказу привязывают редко — но если
+            # оператор успел, он остаётся за клиентом и после отмены.
+            note += await order_topics.router_still_running(session, order)
+            await order_topics.push(session, order, note=note)
             cancelled += 1
             log.info(
                 "order.abandoned_cancelled",

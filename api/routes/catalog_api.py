@@ -2265,7 +2265,7 @@ async def manage_order_status(
     # Карточка в топике должна догонять любое изменение: оператор нажал
     # кнопку с телефона и смотрит туда же, а не в веб-админку.
     note = f"↻ Статус: {texts.ORDER_STATUS_TITLES.get(order.status, str(order.status))}"
-    note += await _router_still_running(session, order)
+    note += await order_topics.router_still_running(session, order)
     await order_topics.push(session, order, note=note)
     instruction_url = await _setup_url(session)
     return {
@@ -2274,29 +2274,6 @@ async def manage_order_status(
         "tg_id": order.user.tg_id if order.user else None,
         "notice": _status_notice(order, reason, instruction_url=instruction_url),
     }
-
-
-async def _router_still_running(session: AsyncSession, order: Order) -> str:
-    """Приписка к карточке: заказ закрыт, а роутер у клиента работает.
-
-    «Возврат» и «Отменён» только меняют статус заказа — и правильно: роутер
-    едет назад не мгновенно, а отбирать доступ в день, когда вернули деньги,
-    рано. Но и молчать нельзя: подписка идёт до конца оплаченного срока, и
-    клиент с возвращёнными деньгами продолжает пользоваться сервисом, пока
-    кто-нибудь не вспомнит сбросить роутер на склад.
-
-    Сбрасываем не мы: это решение человека, и у него для этого есть кнопка."""
-    if order.status not in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
-        return ""
-    device = await session.scalar(
-        select(Device).where(Device.order_id == order.id, Device.user_id.is_not(None))
-    )
-    if device is None:
-        return ""
-    return (
-        f"\n⚠️ Роутер {device.mac} ещё числится за клиентом и работает. "
-        "Сбросьте его на склад, когда вернут, — подписка уйдёт в ожидание активации."
-    )
 
 
 @router.post("/manage/orders/{order_id}/shipping")

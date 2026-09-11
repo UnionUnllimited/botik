@@ -29,6 +29,7 @@ from core.enums import (
 )
 from core.models import (
     Delivery,
+    Device,
     Notification,
     Order,
     OrderItem,
@@ -57,6 +58,7 @@ def _bigint_as_integer(_type, _compiler, **_kwargs) -> str:
 TABLES = [
     User.__table__,
     Delivery.__table__,
+    Device.__table__,
     Product.__table__,
     Order.__table__,
     OrderItem.__table__,
