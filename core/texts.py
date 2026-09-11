@@ -239,6 +239,7 @@ def fleet_digest(
     shipped_silent: list[tuple[str, str, int]],
     expiring: list[tuple[str, str, int]],
     stuck: list[tuple[str, str, str]] | None = None,
+    unshipped: list[tuple[str, str, int]] | None = None,
 ) -> str:
     """Сводка оператору: что в парке требует внимания.
 
@@ -272,6 +273,17 @@ def fleet_digest(
             blocks.append(f"Заказ <b>{number}</b> · <code>{mac}</code>{who}")
         if len(stuck) > limit:
             blocks.append(f"…и ещё {len(stuck) - limit}")
+
+    # Первым блоком — деньги: остальное в сводке про технику, а тут клиент
+    # заплатил и ждёт. Такую строку не должно унести вниз списком молчащих
+    # роутеров, поэтому она встаёт сразу под заголовком.
+    if unshipped:
+        head = [f"\n<b>Оплачены, но не уехали</b> — {len(unshipped)}"]
+        for number, why, days in unshipped[:limit]:
+            head.append(f"Заказ <b>{number}</b> — {_plural_days(days)} назад · {why}")
+        if len(unshipped) > limit:
+            head.append(f"…и ещё {len(unshipped) - limit}")
+        blocks[1:1] = head
 
     if expiring:
         blocks.append(f"\n<b>Подписка кончается, продления нет</b> — {len(expiring)}")

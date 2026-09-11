@@ -47,6 +47,15 @@ STUCK_HOURS = 3
 не сразу. Три часа таких попыток подряд — это уже не «не успел».
 """
 
+UNSHIPPED_HOURS = 24
+"""Через сколько часов после оплаты заказ, который не уехал, попадает в сводку.
+
+Отправить обещаем за один-два рабочих дня. Сутки — это ещё не опоздание,
+а предупреждение о нём: сводка приходит утром, и заказ вчерашнего утра
+виден до того, как обещание нарушено. Между «оплачен» и «отгружен» до сих
+пор не смотрел никто: деньги взяты, заказ стоит, и первым об этом узнавал
+клиент."""
+
 EXPIRING_DAYS = 3
 """За сколько дней до конца подписки показывать её оператору. Клиенту
 напоминания уходят раньше и не один раз; это список для того, кто будет
@@ -61,10 +70,18 @@ class Digest:
     shipped_silent: list[tuple[Order, Device]] = field(default_factory=list)
     stuck: list[tuple[Order, Device]] = field(default_factory=list)
     expiring: list[tuple[Subscription, User]] = field(default_factory=list)
+    unshipped: list[tuple[Order, str]] = field(default_factory=list)
+    """Заказ и чей ход: у нас или у клиента."""
 
     @property
     def is_empty(self) -> bool:
-        return not (self.silent or self.shipped_silent or self.stuck or self.expiring)
+        return not (
+            self.silent
+            or self.shipped_silent
+            or self.stuck
+            or self.expiring
+            or self.unshipped
+        )
 
 
 def _last_seen(device: Device) -> dt.datetime | None:
@@ -150,11 +167,47 @@ async def collect(session: AsyncSession, *, now: dt.datetime | None = None) -> D
         if user is not None:
             digest.expiring.append((subscription, user))
 
+    # 5. Деньги взяты, а заказ никуда не поехал.
+    #
+    # Прошлые поводы начинаются с отгрузки, и окно между «оплачен» и
+    # «отгружен» не смотрел никто: заказ мог стоять неделями, потому что
+    # цену доставки не назначили или счёт на неё не оплатили. Узнавали об
+    # этом от клиента, который заплатил и ждёт.
+    unshipped_before = now - dt.timedelta(hours=UNSHIPPED_HOURS)
+    for order in await session.scalars(
+        select(Order)
+        .where(
+            Order.status.in_((OrderStatus.PAID, OrderStatus.PACKING)),
+            Order.paid_at.is_not(None),
+            Order.paid_at < unshipped_before,
+        )
+        .options(selectinload(Order.delivery))
+    ):
+        digest.unshipped.append((order, _whose_move(order)))
+
     log.info(
         "monitoring.collected",
         silent=len(digest.silent),
         shipped_silent=len(digest.shipped_silent),
         stuck=len(digest.stuck),
         expiring=len(digest.expiring),
+        unshipped=len(digest.unshipped),
     )
     return digest
+
+
+def _whose_move(order: Order) -> str:
+    """Почему заказ стоит. Оператору важно, ждут его или клиента.
+
+    Без этого строка «заказ стоит вторые сутки» одинаково читается и там,
+    где нужно назначить цену доставки, и там, где клиент просто не оплатил
+    счёт, — а это разные действия и разные люди."""
+    delivery = order.delivery
+    if delivery is None:
+        # Самовывоз или заказ без доставки — остаётся собрать и отдать.
+        return "ждёт отгрузки"
+    if delivery.quoted_at is None:
+        return "цена доставки не назначена"
+    if delivery.paid_at is None:
+        return "счёт на доставку не оплачен"
+    return "ждёт отгрузки"

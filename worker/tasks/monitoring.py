@@ -12,7 +12,7 @@ import datetime as dt
 import structlog
 
 from core import texts as ru
-from core.dates import to_display, utcnow
+from core.dates import ensure_utc, to_display, utcnow
 from core.db import session_scope
 from core.notifications import notify_admins
 from core.services import monitoring
@@ -78,12 +78,23 @@ async def daily_digest() -> int:
             for subscription, user in digest.expiring
         ]
 
+        unshipped = [
+            (order.public_number, why, max(0, (now - ensure_utc(order.paid_at)).days))
+            for order, why in digest.unshipped
+        ]
+
         await notify_admins(
             ru.fleet_digest(
-                silent=silent, shipped_silent=shipped, stuck=stuck, expiring=expiring
+                silent=silent,
+                shipped_silent=shipped,
+                stuck=stuck,
+                expiring=expiring,
+                unshipped=unshipped,
             ),
             session=session,
         )
-        total = len(silent) + len(shipped) + len(stuck) + len(expiring)
+        total = (
+            len(silent) + len(shipped) + len(stuck) + len(expiring) + len(unshipped)
+        )
         log.info("monitoring.digest_sent", total=total)
         return total
