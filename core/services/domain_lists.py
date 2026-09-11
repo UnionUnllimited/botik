@@ -370,7 +370,7 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
                 f"Список обвалился до {counts[ListKind.PROXY_DOMAIN]} строк "
                 f"против {previous.domains}: не ответило источников — {failed}. "
                 "Прежний список оставлен на роутерах."
-            )
+            )[:255]  # колонка на 255 знаков: Postgres откажет, а не обрежет
             record.finished_at = utcnow()
             log.error(
                 "domain_lists.collapse_refused",
