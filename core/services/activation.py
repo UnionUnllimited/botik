@@ -555,6 +555,21 @@ async def _resolve_device(session: AsyncSession, user: User, mac: str) -> Device
     if device.user_id is not None and device.user_id != user.id:
         raise ActivationError("Этот роутер уже активирован другим аккаунтом.")
 
+    # Владельца снимает «Отвязать клиента», а привязку к заказу — нет: она
+    # там остаётся намеренно, чтобы было видно, кому роутер продан. Но тогда
+    # проверка выше пропускает кого угодно, и роутер уводится по MAC с
+    # наклейки — а MAC в партии идёт подряд, и соседний подбирается перебором.
+    #
+    # Роутер без заказа не запираем: так уходят служебные и подменные, и так
+    # же приходит проданный, которому MAC при отгрузке привязать забыли —
+    # клиент вводит его с наклейки, и это рабочий путь.
+    if device.order_id is not None:
+        sold_to = await session.scalar(select(Order.user_id).where(Order.id == device.order_id))
+        if sold_to is not None and sold_to != user.id:
+            raise ActivationError(
+                "Этот роутер продан по другому заказу. Напишите в поддержку, разберёмся."
+            )
+
     return device
 
 

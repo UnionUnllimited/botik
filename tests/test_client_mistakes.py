@@ -272,6 +272,83 @@ class TestSomebodyElsesRouter:
         """Иначе MAC подбирается перебором: 12 знаков и известный префикс."""
         assert "_check_rate_limit" in self.SOURCE
 
+    @staticmethod
+    async def _device(session, *, order_id=None, user_id=None):
+        from core.enums import DeviceStatus
+        from core.models import Device
+
+        device = Device(
+            mac="A0:B1:C2:D3:E4:F5",
+            order_id=order_id,
+            user_id=user_id,
+            status=DeviceStatus.NEW,
+        )
+        session.add(device)
+        await session.flush()
+        return device
+
+    @staticmethod
+    async def _buyer(session, tg_id: int, number: str):
+        """Покупатель со своим заказом."""
+        user = User(tg_id=tg_id, username=f"u{tg_id}")
+        session.add(user)
+        await session.flush()
+        order = Order(
+            public_number=number, user_id=user.id, status=OrderStatus.SHIPPED,
+            subtotal=Decimal("8900.00"), discount_total=Decimal("0.00"),
+            delivery_price=Decimal("0.00"), total=Decimal("8900.00"),
+            customer_name="", customer_phone="", customer_city="",
+        )
+        session.add(order)
+        await session.flush()
+        return user, order
+
+    @pytest.mark.asyncio
+    async def test_a_router_sold_to_another_order_is_refused(self):
+        """«Отвязать клиента» снимает владельца, но не заказ.
+
+        Роутер остаётся с пометкой, кому он продан, а проверка по владельцу
+        такого уже не ловит: поле пустое. Без проверки по заказу его уводит
+        любой, кто знает MAC, — а MAC напечатан на коробке и в партии идёт
+        подряд.
+        """
+        from core.services import activation
+
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                buyer, order = await self._buyer(session, 1, "R-1")
+                stranger, _ = await self._buyer(session, 2, "R-2")
+                device = await self._device(session, order_id=order.id, user_id=None)
+                await session.commit()
+
+                with pytest.raises(activation.ActivationError) as exc:
+                    await activation._resolve_device(session, stranger, device.mac)
+                assert "другому заказу" in str(exc.value)
+
+                # Хозяину заказа роутер по-прежнему открывается.
+                assert await activation._resolve_device(session, buyer, device.mac) is not None
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_a_router_without_an_order_stays_open(self):
+        """Так уходят служебные и подменные — и так же приходит проданный,
+        которому MAC при отгрузке привязать забыли: клиент вводит его с
+        наклейки, и это рабочий путь."""
+        from core.services import activation
+
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                anyone, _ = await self._buyer(session, 3, "R-3")
+                device = await self._device(session)
+                await session.commit()
+
+                assert await activation._resolve_device(session, anyone, device.mac) is not None
+        finally:
+            await engine.dispose()
+
 
 class TestBrokenLinksAndScreens:
     """Клиент приходит по ссылке из браузера — она может быть какой угодно."""
