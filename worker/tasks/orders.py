@@ -1,4 +1,4 @@
-"""Заказы: напоминания о неоплаченной доставке.
+"""Заказы: напоминания о неоплаченной доставке и уборка брошенных.
 
 Цену доставки называет оператор после оформления, а клиент оплачивает её
 вторым счётом. Между «выставили» и «оплатил» заказ стоит собранный и никуда
@@ -6,6 +6,10 @@
 
 Решение заказчика от 21 августа 2026: напоминать и ждать. Заказ не отменяем
 и деньги за роутер не возвращаем — кому нужно, тот напишет в поддержку.
+Это про доставку: роутер там уже оплачен, и отменять нечего.
+
+Заказ, за который не заплатили вовсе, — случай обратный: он держит роутер
+на витрине и не может быть оплачен. Такой убираем, см. ниже.
 """
 
 from __future__ import annotations
@@ -17,10 +21,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from core import texts as ru
-from core.dates import utcnow
+from core.config import settings
+from core.dates import ensure_utc, utcnow
 from core.db import session_scope
-from core.models import Delivery, Order, User
+from core.enums import OrderStatus, PaymentStatus
+from core.models import Delivery, Order, Payment, User
 from core.notifications import send_message
+from core.services import order_topics
+from core.services import orders as order_service
+from core.services import promo as promo_service
 
 log = structlog.get_logger("worker.orders")
 
@@ -82,3 +91,92 @@ async def remind_unpaid_delivery() -> int:
 def _aware(moment: dt.datetime) -> dt.datetime:
     """Время из базы приходит с зоной, но у старых строк её может не быть."""
     return moment if moment.tzinfo else moment.replace(tzinfo=dt.UTC)
+
+
+ABANDONED_BATCH = 200
+"""За круг убираем столько. Круг частый, а очередь брошенных заказов
+длинная бывает ровно один раз — когда задачу включили впервые."""
+
+# Платёж, по которому заказ ещё могут оплатить или уже оплатили. Всё
+# остальное — погасшая ссылка, отказ провайдера, возврат.
+_LIVE_PAYMENT = (
+    PaymentStatus.PENDING,
+    PaymentStatus.WAITING_FOR_CAPTURE,
+    PaymentStatus.SUCCEEDED,
+)
+
+
+async def cancel_abandoned_orders() -> int:
+    """Заказ, за который так и не заплатили, возвращает роутер на полку.
+
+    Остаток считается по живым заказам — списывать его нельзя, иначе забытый
+    возврат тихо съедает склад. Но и брошенная корзина держала роутер вечно:
+    ссылка на оплату гасла, заказ оставался «ждёт оплаты», и витрина писала
+    «нет в наличии», пока роутеры лежали на складе.
+
+    Оплатить такой заказ клиент уже не может: новой ссылки к старому заказу
+    не выдаётся, а старая мертва. Держать за ним роутер не за что.
+
+    Клиенту не пишем. Сообщение «мы отменили ваш заказ» через несколько
+    часов после того, как он сам передумал, — новость ни о чём; а тому, кто
+    не передумал, оно приходит ровно тогда, когда он уже оформил заново.
+    Оператору карточка в топике уходит: ему это видеть нужно.
+    """
+    now = utcnow()
+    cutoff = now - dt.timedelta(hours=max(settings.order.abandoned_after_hours, 1))
+    cancelled = 0
+
+    async with session_scope() as session:
+        live = select(Payment.id).where(
+            Payment.order_id == Order.id,
+            Payment.status.in_(_LIVE_PAYMENT),
+        )
+        rows = list(
+            await session.scalars(
+                select(Order)
+                .where(
+                    Order.status.in_((OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT)),
+                    # Наложенный платёж ждёт не ссылки, а перевозчика: деньги
+                    # приходят при вручении, и «не оплачен» тут нормальное
+                    # состояние на всю дорогу до клиента.
+                    Order.is_cod.is_(False),
+                    Order.created_at < cutoff,
+                    ~live.exists(),
+                )
+                .options(
+                    selectinload(Order.user),
+                    selectinload(Order.delivery),
+                    # Карточка в топике перебирает строки заказа: без них
+                    # `push` полез бы в базу за ними по ходу и упал.
+                    selectinload(Order.items),
+                )
+                .order_by(Order.id)
+                .limit(ABANDONED_BATCH)
+            )
+        )
+
+        for order in rows:
+            order_service.set_status(
+                order,
+                OrderStatus.CANCELLED,
+                reason="Не оплачен: срок платёжной ссылки истёк",
+            )
+            # Промокод возвращается клиенту вместе с роутером: он им не
+            # воспользовался.
+            await promo_service.release_usage(session, order_id=order.id)
+            await order_topics.push(session, order, note="↻ Отменён автоматически: не оплачен")
+            cancelled += 1
+            log.info(
+                "order.abandoned_cancelled",
+                order_id=order.id,
+                number=order.public_number,
+                age_hours=round(
+                    (now - ensure_utc(order.created_at)).total_seconds() / 3600, 1
+                )
+                if order.created_at
+                else None,
+            )
+
+    if cancelled:
+        log.info("orders.abandoned_cancelled", count=cancelled)
+    return cancelled

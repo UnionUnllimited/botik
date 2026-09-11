@@ -337,6 +337,22 @@ class SubscriptionSettings(EnvSettings):
     """Обязательный префикс имени узла — по нему фильтрует клиент на роутере."""
 
 
+class OrderSettings(EnvSettings):
+    model_config = _CONFIG | SettingsConfigDict(env_prefix="ORDER_")
+
+    abandoned_after_hours: int = 6
+    """Через сколько часов неоплаченный заказ возвращает роутер на полку.
+
+    Остаток считается по живым заказам, и брошенная корзина держала роутер
+    вечно: ссылка на оплату гасла, заказ оставался «ждёт оплаты», а витрина
+    писала «нет в наличии», пока роутеры лежали на складе. Оплатить такой
+    заказ клиент уже не может — новой ссылки к старому заказу не выдаётся.
+
+    Шесть часов — запас поверх жизни платёжной ссылки: заказ отменяется не
+    раньше, чем оплатить его стало нечем, и оператор успевает увидеть.
+    """
+
+
 class PlategaSettings(EnvSettings):
     """Реквизиты и пути API PLATEGA (docs.platega.io).
 
@@ -605,6 +621,7 @@ class Settings(EnvSettings):
     miniapp: MiniappSettings = Field(default_factory=MiniappSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     subscription: SubscriptionSettings = Field(default_factory=SubscriptionSettings)
+    order: OrderSettings = Field(default_factory=OrderSettings)
     platega: PlategaSettings = Field(default_factory=PlategaSettings)
     frp: FrpSettings = Field(default_factory=FrpSettings)
     remnawave: RemnawaveSettings = Field(default_factory=RemnawaveSettings)

@@ -143,6 +143,14 @@ def create_scheduler() -> AsyncIOScheduler:
         id="resync_panel_expiry",
         name="Сверка срока подписки с панелью",
     )
+    # Раз в час: роутер, который держит брошенная корзина, не продаётся всё
+    # это время, а спешить с отменой нельзя — сперва должна погаснуть ссылка.
+    scheduler.add_job(
+        instrumented("cancel_abandoned_orders", orders.cancel_abandoned_orders),
+        IntervalTrigger(hours=1),
+        id="cancel_abandoned_orders",
+        name="Отмена неоплаченных заказов",
+    )
     scheduler.add_job(
         instrumented("expire_unactivated", subscriptions.expire_unactivated),
         CronTrigger(hour=4, minute=10),
