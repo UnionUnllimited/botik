@@ -62,7 +62,7 @@ class TestEmptyValues:
 
     @pytest.mark.parametrize(
         "variable",
-        ["BOT_OWNER_ID", "BOT_SUPPORT_GROUP_ID", "BOT_ALERTS_CHAT_ID", "BOT_INTERNAL_PORT"],
+        ["BOT_OWNER_ID", "BOT_ALERTS_CHAT_ID"],
     )
     def test_empty_int_falls_back_to_default(self, monkeypatch, variable):
         monkeypatch.setenv(variable, "")
@@ -70,10 +70,10 @@ class TestEmptyValues:
         assert isinstance(getattr(settings, variable.removeprefix("BOT_").lower()), int)
 
     def test_empty_optional_ids_are_zero(self, monkeypatch):
-        monkeypatch.setenv("BOT_SUPPORT_GROUP_ID", "")
+        monkeypatch.setenv("BOT_OWNER_ID", "")
         monkeypatch.setenv("BOT_ALERTS_CHAT_ID", "")
         settings = BotSettings()
-        assert settings.support_group_id == 0
+        assert settings.owner_id == 0
         assert settings.alerts_chat_id == 0
 
     def test_empty_secret_is_empty_not_error(self, monkeypatch):
@@ -87,7 +87,6 @@ class TestEmptyValues:
     def test_whole_config_builds_with_empty_optionals(self, monkeypatch):
         for variable in (
             "BOT_ADMIN_IDS",
-            "BOT_SUPPORT_GROUP_ID",
             "BOT_ALERTS_CHAT_ID",
             "PLATEGA_ALLOWED_IPS",
             "PLATEGA_MERCHANT_ID",

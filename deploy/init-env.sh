@@ -33,10 +33,9 @@ fill() {
 fill POSTGRES_PASSWORD "$(rand_urlsafe 18)"
 fill SECURITY_SECRET_KEY "$(rand_urlsafe 36)"
 fill SECURITY_ENCRYPTION_KEY "$(rand_b64 32)"
-fill BOT_WEBHOOK_SECRET "$(rand_urlsafe 24)"
 
 echo "Создан .env, сгенерированы: POSTGRES_PASSWORD, SECURITY_SECRET_KEY,"
-echo "SECURITY_ENCRYPTION_KEY, BOT_WEBHOOK_SECRET."
+echo "SECURITY_ENCRYPTION_KEY."
 echo
 echo "Заполните вручную: BOT_TOKEN, APP_BOT_USERNAME, BOT_OWNER_ID,"
 echo "домены и реквизиты платёжного провайдера."

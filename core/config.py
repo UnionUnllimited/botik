@@ -168,21 +168,17 @@ class BotSettings(EnvSettings):
     model_config = _CONFIG | SettingsConfigDict(env_prefix="BOT_")
 
     token: SecretStr = SecretStr("")
-    mode: Literal["polling", "webhook"] = "polling"
     webhook_base_url: str = ""
     """Публичный https-URL, на который Telegram шлёт апдейты (без пути)."""
     webhook_path: str = "/tg/webhook"
-    webhook_secret: SecretStr = SecretStr("")
-    """Значение X-Telegram-Bot-Api-Secret-Token."""
-    internal_host: str = "0.0.0.0"  # noqa: S104 — слушаем внутри docker-сети
-    internal_port: int = 8081
-    drop_pending_updates: bool = False
+
+    # Здесь стояли способ доставки апдейтов, секрет вебхука, адрес и порт
+    # внутреннего слушателя и «сбросить накопившиеся апдейты». Их не читал
+    # никто: своего бота у нас больше нет, а у чужого свои настройки.
 
     owner_id: int = 0
     """TG-id владельца: полные права, получает критичные алерты."""
     admin_ids: IdList = Field(default_factory=list)
-    support_group_id: int = 0
-    """Супергруппа с топиками (forum) — по топику на тикет."""
     alerts_chat_id: int = 0
     """Канал/чат для служебных алертов (заказы, платежи, фрод)."""
 
@@ -267,24 +263,19 @@ class SecuritySettings(EnvSettings):
     encryption_key: SecretStr = SecretStr("")
     """base64(32 байта) — AES-256-GCM для секретов устройств и TOTP-секретов админов."""
 
-    device_clock_skew_sec: int = 300
     device_nonce_ttl_sec: int = 600
-    device_rate_limit_per_min: int = 60
     activation_attempts_per_hour: int = 10
-    sub_token_grace_hours: int = 24
-    """Сколько живёт старый токен подписки после ротации."""
-    sub_distinct_ip_alert: int = 5
-    """Порог разных IP на одном токене за час → алерт о возможной перепродаже."""
 
-    admin_login_max_attempts: int = 5
-    admin_lockout_minutes: int = 15
-    admin_session_ttl_hours: int = 12
-
-    client_session_ttl_days: int = 30
-    """Сессия клиента на сайте: заходить каждый день его никто не заставляет."""
-    client_login_attempts_per_hour: int = 20
-    """Лимит попыток входа на пару «IP + адрес». Учётку не блокируем: зная чужую
-    почту, конкурент запирал бы человека снаружи."""
+    # Здесь стояли ещё восемь настроек: допуск часов устройства, предел
+    # запросов от роутера, срок старого токена подписки, порог разных IP,
+    # предел попыток входа в админку с блокировкой, сроки сессий админа и
+    # клиента. Их не читал никто.
+    #
+    # Остались они от времён, когда у нас были свой бот, своя админка и
+    # кабинет клиента на сайте. Кабинет удалён вместе с сайтом, админка
+    # теперь чужая и со своим входом. Настройка, которая ничего не делает,
+    # хуже отсутствующей: «SECURITY_ADMIN_LOGIN_MAX_ATTEMPTS=5» читается как
+    # защита от подбора пароля, которой нет.
 
     @field_validator("encryption_key")
     @classmethod
@@ -316,7 +307,9 @@ class SubscriptionSettings(EnvSettings):
     reminder_days_after: IdList = Field(default_factory=lambda: [1])
     """Напоминание после отключения — одно, на следующий день. Дальше клиент
     либо продлил, либо ушёл, и третье сообщение только раздражает."""
-    devices_per_user: int = 1
+    # `devices_per_user` убран: предела не было — его никто не проверял, а
+    # проверять и незачем. Второй роутер продаётся со своей подпиской, и
+    # ограничивать их число значило бы запрещать вторую покупку.
     activation_deadline_days: int = 180
     """Оплаченная, но не активированная подписка сгорает через N дней (напоминаем заранее)."""
     activation_reminder_days: IdList = Field(default_factory=lambda: [30, 7, 1])
