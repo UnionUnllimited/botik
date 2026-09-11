@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceServiceStatus, DeviceStatus
+from core.metrics import device_heartbeats_total
 from core.models import Device, DeviceEvent, Heartbeat, User
 from core.security import normalize_mac
 from core.services.frp import FrpProxy, proxy_names_for
@@ -263,6 +264,10 @@ def apply_stats(device: Device, stats: RouterStats, *, now: dt.datetime | None =
 
 def record_metrics(session: AsyncSession, device: Device, stats: RouterStats) -> Heartbeat:
     """Точка в историю метрик — из неё строятся графики в админке."""
+    # Счётчик наружу: по нему видно, что показания вообще приходят. Ноль на
+    # графике при живом парке значит, что встал круг опроса, — и заметить это
+    # иначе можно только по молчащим роутерам сутки спустя.
+    device_heartbeats_total.inc()
     entry = Heartbeat(
         device_id=device.id,
         uptime_sec=stats.uptime_sec,

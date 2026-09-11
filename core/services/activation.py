@@ -29,6 +29,7 @@ from core import notifications, texts
 from core.config import settings
 from core.dates import to_display, utcnow
 from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
+from core.metrics import device_activations_total
 from core.models import Device, Order, Subscription, User
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
@@ -781,6 +782,7 @@ async def activate(
             # клиент получает ссылку, по которой доступ уже кончился.
             await panel.update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
+        device_activations_total.labels(result="panel").inc()
         log.warning("activation.panel_failed", mac=mac, error=str(exc))
         raise ActivationError(
             "Не получилось подготовить подписку на сервере. Мы уже видим проблему — "
@@ -792,6 +794,7 @@ async def activate(
     try:
         output = await deliver_subscription(device, account.subscription_url)
     except router_shell.ShellError as exc:
+        device_activations_total.labels(result="router").inc()
         log.warning("activation.delivery_failed", mac=mac, error=str(exc))
         routers.add_event(
             session,
@@ -826,5 +829,9 @@ async def activate(
     # кто-нибудь вспомнит нажать «Доставлен», больше не нужно.
     await mark_order_activated(session, device)
 
+    # Счётчик попыток по исходу: по нему видно, что активации идут и чем
+    # кончаются. Отказ роутера и отказ панели — разные беды и чинятся разным,
+    # а в журнале они тонут среди прочих строк.
+    device_activations_total.labels(result="ok").inc()
     log.info("activation.done", mac=mac, user_id=user.id, username=username)
     return device

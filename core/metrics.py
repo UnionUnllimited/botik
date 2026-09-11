@@ -18,8 +18,12 @@ from core.notifications import OUTBOX_MAX_ATTEMPTS
 METRICS_CONTENT_TYPE = CONTENT_TYPE_LATEST
 
 # --- события ---------------------------------------------------------------
-bot_updates_total = Counter("bot_updates_total", "Обработано апдейтов Telegram", ["type"])
-bot_errors_total = Counter("bot_errors_total", "Ошибки обработки апдейтов", ["kind"])
+#
+# Счётчиков бота здесь больше нет: своего бота у нас не осталось, а чужой
+# до `core` не дотягивается и заполнить их не может. Вечный ноль на графике
+# читается как «ничего не происходит», а не как «мы не считаем», и это хуже
+# отсутствующего графика. Так же убраны обращения роутеров за подпиской —
+# они ходят прямо в панель — и сообщения рассылок: рассылок нет.
 api_requests_total = Counter("api_requests_total", "Запросы к API", ["method", "path", "status"])
 api_request_seconds = Histogram(
     "api_request_seconds",
@@ -29,9 +33,7 @@ api_request_seconds = Histogram(
 )
 device_heartbeats_total = Counter("device_heartbeats_total", "Принято heartbeat от устройств")
 device_activations_total = Counter("device_activations_total", "Попытки активации устройств", ["result"])
-subscription_fetch_total = Counter("subscription_fetch_total", "Обращения роутеров за подпиской", ["outcome"])
 payments_total = Counter("payments_total", "Платежи", ["provider", "status"])
-broadcast_messages_total = Counter("broadcast_messages_total", "Сообщения рассылок", ["status"])
 worker_job_seconds = Histogram("worker_job_seconds", "Время выполнения фоновых задач", ["job"])
 worker_job_errors_total = Counter("worker_job_errors_total", "Ошибки фоновых задач", ["job"])
 
