@@ -1489,11 +1489,18 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         # не идёт, и даты здесь нет. Прежние две ветки отвечали такому
         # клиенту «подписка истекла» или звали на пробный период — первому
         # он не верил, а второе не работало.
-        text_to_send += (
-            "\n\nПодписка оплачена и ждёт роутера. "
-            "Отсчёт начнётся, когда роутер первый раз выйдет на связь, — "
-            "дни доставки не сгорают."
-        )
+        #
+        # А вот если дата есть и она в прошлом — срок кончился, роутер давно
+        # на связи, и звать ждать его первого выхода значит звать ждать того,
+        # что случилось месяцы назад. Такому клиенту нужно продление.
+        from src.shop_texts import WAITING_FOR_ROUTER, shop_client_is_waiting
+
+        if shop_client_is_waiting((user_db_data or {}).get('subscription_end_date')):
+            text_to_send += "\n\n" + WAITING_FOR_ROUTER
+        else:
+            text_to_send += "\n\n" + (
+                app_conf.get('text_subscription_expired_main') or DEFAULT_SUBSCRIPTION_EXPIRED
+            )
     elif is_trial_used and not has_active_sub:
          # Показываем стандартный текст для пользователей без активной подписки
          text_to_send += "\n\n" + (app_conf.get('text_subscription_expired_main') or DEFAULT_SUBSCRIPTION_EXPIRED)
