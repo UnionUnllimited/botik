@@ -95,10 +95,9 @@ async def render_renew(query: CallbackQuery) -> None:
     """
     data, error = await shop_api.renew_state(query.from_user.id)
     if error:
-        logger.warning(f"[CATALOG] {error}")
         await edit_screen(
             query.message,
-            text("text_catalog_unavailable") + f"\n\n<i>{_esc(error)}</i>",
+            text("text_catalog_unavailable") + f"\n\n<i>{_esc(for_client(error))}</i>",
             reply_markup=InlineKeyboardBuilder()
             .row(btn("btn_back_to_main", callback_data="back_to_main"))
             .as_markup(),
@@ -210,6 +209,26 @@ def units_left(product: dict) -> int:
         return max(int(left), 0)
     except (TypeError, ValueError):
         return 0
+
+
+def for_client(error: str) -> str:
+    """Текст ошибки, который не стыдно показать покупателю.
+
+    Ошибки из нашего API приходят одним полем и деловые, и служебные.
+    Первые написаны для клиента — «Роутера нет в наличии», «Заказ не
+    найден», — и показывать их нужно как есть. Вторые написаны тому, кто
+    правит `.env`, и покупатель видел в магазине имена переменных
+    окружения вместо каталога.
+
+    Подробность при этом не теряется: её пишет в журнал тот, кто зовёт."""
+    if isinstance(error, shop_api.Outage):
+        # Пишем здесь, а не у каждого зовущего: мест показа шесть, и то, что
+        # скрыто от клиента, обязано лечь в журнал целиком. Забыть строчку
+        # у седьмого места было бы слишком легко.
+        logger.warning(f"[CATALOG] {error}")
+        return "Сейчас не получилось — попробуйте через пару минут или напишите в поддержку."
+    logger.debug(f"[CATALOG] отказ по делу: {error}")
+    return error
 
 
 def stock_line(product: dict) -> str:
@@ -964,10 +983,9 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         return True
 
     async def show_error(query: CallbackQuery, error: str):
-        logger.warning(f"[CATALOG] {error}")
         await edit_screen(
             query.message,
-            f"{text('text_catalog_unavailable')}\n\n<i>{_esc(error)}</i>",
+            f"{text('text_catalog_unavailable')}\n\n<i>{_esc(for_client(error))}</i>",
             reply_markup=InlineKeyboardBuilder()
             .row(btn("btn_back_to_main", callback_data="back_to_main"))
             .as_markup(),
@@ -1227,7 +1245,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         quote, error = await shop_api.quote(draft_payload(user, data))
         if error:
             payload = {
-                "text": f"❌ {_esc(error)}",
+                "text": f"❌ {_esc(for_client(error))}",
                 "reply_markup": cancel_keyboard(),
                 "link_preview_options": NO_PREVIEW,
             }
@@ -1253,7 +1271,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         """
         value, error = await shop_api.validate_field(field, message.text or "")
         if error:
-            await message.answer(f"❌ {_esc(error)}", reply_markup=cancel_keyboard(back))
+            await message.answer(f"❌ {_esc(for_client(error))}", reply_markup=cancel_keyboard(back))
             return ""
         return value
 
@@ -1393,7 +1411,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
             await state.update_data(product_id=data.get("product_id"))
             return await edit_screen(
                 query.message,
-                f"❌ {_esc(error)}",
+                f"❌ {_esc(for_client(error))}",
                 reply_markup=cancel_keyboard(),
                 link_preview_options=NO_PREVIEW,
             )
@@ -1558,7 +1576,7 @@ def register_router_catalog_handlers(dp: Dispatcher, check_user_blocked_func, se
         if error:
             return await edit_screen(
                 query.message,
-                f"❌ {_esc(error)}",
+                f"❌ {_esc(for_client(error))}",
                 reply_markup=created_keyboard(""),
                 link_preview_options=NO_PREVIEW,
             )

@@ -26,7 +26,21 @@ READ_TIMEOUT_SEC = 8
 WRITE_TIMEOUT_SEC = 25
 """Оформление заказа идёт до провайдера оплаты и занимает дольше чтения."""
 
-NO_CONFIG = (
+class Outage(str):
+    """Отказ связи или настройки: текст написан оператору, не клиенту.
+
+    Ошибки отсюда уходят одним полем `error` и деловые, и служебные. Первые
+    написаны для клиента («Роутера нет в наличии»), вторые — для того, кто
+    правит `.env`. Показывали одинаково, и покупатель видел в магазине
+    «Токен не подошёл: FLEET_API_TOKEN здесь и API_FLEET_TOKEN там должны
+    совпадать» — имена переменных окружения вместо каталога.
+
+    Наследник строки, а не отдельное поле: `error` проверяют, печатают в
+    журнал и подставляют в строки в двух десятках мест, и ни одно из них
+    менять не нужно. Различает их только тот, кто показывает текст."""
+
+
+NO_CONFIG = Outage(
     "Каталог не подключён: в окружении службы нет FLEET_API_URL и FLEET_API_TOKEN. "
     "Токен берётся из API_FLEET_TOKEN основного приложения."
 )
@@ -80,11 +94,14 @@ def _explain(response: httpx.Response, path: str) -> str:
     if response.status_code == 404:
         for prefix, message in MISSING.items():
             if path.startswith(prefix):
+                # Это клиенту: записи нет, и сказать об этом можно прямо.
                 return message
-        return "Ручка каталога выключена: в основном приложении пуст API_FLEET_TOKEN."
+        return Outage("Ручка каталога выключена: в основном приложении пуст API_FLEET_TOKEN.")
     if response.status_code == 401:
-        return "Токен не подошёл: FLEET_API_TOKEN здесь и API_FLEET_TOKEN там должны совпадать."
-    return f"Основное приложение ответило {response.status_code}."
+        return Outage(
+            "Токен не подошёл: FLEET_API_TOKEN здесь и API_FLEET_TOKEN там должны совпадать."
+        )
+    return Outage(f"Основное приложение ответило {response.status_code}.")
 
 
 async def _request(method: str, path: str, **kwargs: Any) -> tuple[dict, str]:
@@ -100,14 +117,14 @@ async def _request(method: str, path: str, **kwargs: Any) -> tuple[dict, str]:
                 method, f"{base}{path}", headers={"Authorization": f"Bearer {token}"}, **kwargs
             )
     except httpx.HTTPError as exc:
-        return {}, f"Основное приложение не ответило: {exc}"
+        return {}, Outage(f"Основное приложение не ответило: {exc}")
 
     if response.status_code != 200:
         return {}, _explain(response, path)
     try:
         return response.json(), ""
     except ValueError:
-        return {}, "Основное приложение вернуло не JSON."
+        return {}, Outage("Основное приложение вернуло не JSON.")
 
 
 async def get(path: str, params: dict | None = None) -> tuple[dict, str]:
