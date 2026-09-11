@@ -26,6 +26,7 @@ from worker.tasks import (
     maintenance,
     monitoring,
     orders,
+    outbox_watch,
     payments,
     routers,
     subscriptions,
@@ -142,6 +143,15 @@ def create_scheduler() -> AsyncIOScheduler:
         CronTrigger(hour=3, minute=30),
         id="resync_panel_expiry",
         name="Сверка срока подписки с панелью",
+    )
+    # Очередь сообщений клиентам: встанет она — встанет вся переписка, и
+    # снаружи это ничем не видно. Четверть часа при пороге в двадцать минут
+    # значит, что простой замечается на первом же круге после порога.
+    scheduler.add_job(
+        instrumented("watch_outbox", outbox_watch.watch_outbox),
+        IntervalTrigger(minutes=15),
+        id="watch_outbox",
+        name="Сторож очереди сообщений",
     )
     # Раз в час: роутер, который держит брошенная корзина, не продаётся всё
     # это время, а спешить с отменой нельзя — сперва должна погаснуть ссылка.

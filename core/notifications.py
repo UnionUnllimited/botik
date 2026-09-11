@@ -26,6 +26,13 @@ from core.models import Notification
 
 log = structlog.get_logger("notifications")
 
+OUTBOX_MAX_ATTEMPTS = 5
+"""После пяти неудач перестаём предлагать сообщение: доставить его уже нечем,
+а очередь не должна расти вечно из-за одного заблокировавшего бота клиента.
+
+Живёт здесь, а не у ручки: по этому же числу сторож очереди отличает
+сообщение, которое ещё ждёт отправки, от того, что уже не уйдёт никогда."""
+
 
 def _buttons_of(markup: InlineKeyboardMarkup | None) -> list[dict[str, str]]:
     if markup is None:
@@ -77,13 +84,14 @@ async def notify_admins(
     *,
     session: AsyncSession | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
+    kind: str = "admin",
 ) -> None:
     """Служебное сообщение в админ-канал; если он не задан — владельцу."""
     chat_id = settings.bot.alerts_chat_id or settings.bot.owner_id
     if not chat_id:
         log.warning("notify.no_admin_chat", text=text[:120])
         return
-    await send_message(chat_id, text, reply_markup=reply_markup, session=session, kind="admin")
+    await send_message(chat_id, text, reply_markup=reply_markup, session=session, kind=kind)
 
 
 async def close_bot() -> None:

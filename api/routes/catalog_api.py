@@ -61,6 +61,7 @@ from core.models import (
     Subscription,
     User,
 )
+from core.notifications import OUTBOX_MAX_ATTEMPTS
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
 from core.services import (
@@ -1289,9 +1290,7 @@ async def payments_snapshot(
 # Отправляет их бот: клиент разговаривает с ним, и токен есть только у него.
 # Мы кладём готовый текст, бот забирает пачку, отправляет и отчитывается.
 
-OUTBOX_MAX_ATTEMPTS = 5
-"""После пяти неудач перестаём предлагать сообщение: доставить его уже нечем,
-а очередь не должна расти вечно из-за одного заблокировавшего бота клиента."""
+# Предел попыток общий со сторожем очереди — см. `core.notifications`.
 
 
 @router.get("/outbox")

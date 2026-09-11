@@ -38,6 +38,13 @@ devices_online = Gauge("devices_online", "Устройств на связи")
 devices_total = Gauge("devices_total", "Устройств всего", ["status"])
 subscriptions_gauge = Gauge("subscriptions", "Подписки по статусам", ["status"])
 subscriptions_expiring = Gauge("subscriptions_expiring_7d", "Подписки, истекающие за 7 дней")
+outbox_pending = Gauge("outbox_pending", "Сообщений клиентам ждёт отправки")
+outbox_oldest_seconds = Gauge(
+    "outbox_oldest_seconds", "Возраст самого старого неотправленного сообщения"
+)
+"""Очередь забирает их бот. Перестанет — встанет вся переписка с клиентами:
+напоминания о сроке, статусы заказов, счета на доставку. Изнутри об этом не
+сказать, сообщение уйдёт в ту же вставшую очередь, поэтому наружу — числом."""
 orders_today = Gauge("orders_today", "Заказы за сутки", ["status"])
 revenue_today = Gauge("revenue_today", "Выручка по успешным платежам за сутки")
 
