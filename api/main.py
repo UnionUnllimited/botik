@@ -35,6 +35,7 @@ from api.routes import (
     terminal,
     webhooks,
 )
+from core import preflight
 from core.config import settings
 from core.db import check_database, dispose_engine
 from core.logging import configure_logging
@@ -61,6 +62,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Не падаем: контейнер поднимется, healthcheck покажет проблему,
         # docker перезапустит зависимость. Но в лог пишем явно.
         log.error("api.startup.database_unavailable")
+    # То же и с настройками, без которых магазин молча не продаёт: сказать
+    # о них можно только здесь — дальше всё выглядит работающим.
+    preflight.report("api")
     try:
         yield
     finally:
