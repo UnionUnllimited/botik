@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from core import texts
 from core.dates import to_display
 from core.enums import DeliveryMethod, DeliverySpeed, OrderItemType, OrderStatus
-from core.models import Delivery, Order, OrderItem, Plan, Product, User
+from core.models import Delivery, Order, OrderItem, Plan, Product, PromoCode, User
 from core.services import delivery as delivery_service
 from core.services import promo as promo_service
 
@@ -235,6 +235,25 @@ async def _hold_the_shelf(session: AsyncSession, product_id: int | None) -> None
     await session.execute(select(Product.id).where(Product.id == product_id).with_for_update())
 
 
+async def _hold_the_promo(session: AsyncSession, code: str) -> None:
+    """Занимает строку промокода до конца сделки.
+
+    Предел «столько-то раз» проверяется чтением, а растёт записью. Два
+    заказа, пришедшие в одну секунду, читают одно и то же число и оба
+    проходят последнее применение: код на один раз срабатывает дважды, и
+    вторую скидку никто не назначал.
+
+    Запираем только при оформлении: то же самое чтение идёт при каждом
+    показе цены, и держать там замок значило бы выстраивать в очередь всех,
+    кто просто вводит код в поле."""
+    normalized = promo_service.normalize_code(code or "")
+    if not normalized:
+        return
+    await session.execute(
+        select(PromoCode.id).where(PromoCode.code == normalized).with_for_update()
+    )
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -243,6 +262,7 @@ async def create_order(
 ) -> Order:
     """Создаёт заказ со снимком цен и составом. Промокод фиксируется здесь же."""
     await _hold_the_shelf(session, draft.product_id)
+    await _hold_the_promo(session, draft.promo_code)
     totals = await calculate_totals(session, draft=draft, user_id=user.id)
 
     order = Order(

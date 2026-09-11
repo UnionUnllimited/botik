@@ -197,3 +197,44 @@ class TestTheLastRouterDoesNotGoTwice:
                 await order_service._hold_the_shelf(session, None)
         finally:
             await engine.dispose()
+
+
+class TestTheLastPromoUseDoesNotGoTwice:
+    """Та же гонка, что и с последним роутером, только про скидку.
+
+    Предел «столько-то раз» проверяется чтением, а растёт записью: два заказа
+    в одну секунду читают одно и то же число и оба проходят последнее
+    применение. Код на один раз срабатывает дважды, и вторую скидку никто не
+    назначал.
+    """
+
+    def test_the_lock_is_a_real_lock_on_postgres(self):
+        from sqlalchemy import select
+        from sqlalchemy.dialects import postgresql
+
+        from core.models import PromoCode
+
+        statement = select(PromoCode.id).where(PromoCode.code == "SALE").with_for_update()
+        assert "FOR UPDATE" in str(statement.compile(dialect=postgresql.dialect()))
+
+    def test_it_is_taken_before_the_discount_is_counted(self):
+        import inspect
+
+        body = inspect.getsource(order_service.create_order)
+        assert body.index("_hold_the_promo") < body.index("calculate_totals")
+
+    @pytest.mark.asyncio
+    async def test_an_order_without_a_promo_locks_nothing(self):
+        engine, factory = await _session()
+        try:
+            async with factory() as session:
+                await order_service._hold_the_promo(session, "")
+                await order_service._hold_the_promo(session, "   ")
+        finally:
+            await engine.dispose()
+
+    def test_showing_the_price_does_not_hold_anything(self):
+        """Код вводят в поле и смотрят цену — очередь там ни к чему."""
+        import inspect
+
+        assert "_hold_the_promo" not in inspect.getsource(order_service.calculate_totals)
