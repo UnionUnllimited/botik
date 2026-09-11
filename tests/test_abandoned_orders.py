@@ -322,3 +322,29 @@ async def test_the_promo_code_comes_back_with_the_router(monkeypatch):
             assert list(await session.scalars(select(PromoUsage))) == []
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_payment_that_did_not_match_keeps_the_order(monkeypatch):
+    """`FAILED` здесь означает «деньги пришли, а сумма не сошлась».
+
+    Этот статус ставится ровно в одном месте: когда провайдер сообщил сумму
+    меньше выставленной. Платёж не зачислен, оператор уже позван, деньги
+    лежат у провайдера. Закрыть такой заказ молча значило бы убрать его из
+    виду как раз тогда, когда с ним нужно разбираться.
+    """
+    engine, factory = await _world()
+    try:
+        async with factory() as session:
+            user, product = await _shop(session)
+            order = await _order(session, user, product, hours_ago=48)
+            await _payment(session, order, PaymentStatus.FAILED)
+            await session.commit()
+
+        _run(monkeypatch, factory)
+        assert await task.cancel_abandoned_orders() == 0
+
+        async with factory() as session:
+            assert (await session.get(Order, order.id)).status is OrderStatus.AWAITING_PAYMENT
+    finally:
+        await engine.dispose()

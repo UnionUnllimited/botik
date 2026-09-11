@@ -97,12 +97,20 @@ ABANDONED_BATCH = 200
 """За круг убираем столько. Круг частый, а очередь брошенных заказов
 длинная бывает ровно один раз — когда задачу включили впервые."""
 
-# Платёж, по которому заказ ещё могут оплатить или уже оплатили. Всё
-# остальное — погасшая ссылка, отказ провайдера, возврат.
-_LIVE_PAYMENT = (
+# Платежи, при которых заказ отменять нельзя.
+#
+# Первые три — заказ ещё могут оплатить или уже оплатили.
+#
+# `FAILED` здесь не «карта не прошла»: этот статус ставится ровно в одном
+# месте — когда деньги от провайдера пришли, а сумма оказалась меньше
+# выставленной. Платёж не зачислен, оператор уже позван, и деньги лежат
+# у провайдера. Закрыть такой заказ молча значило бы убрать его из виду
+# как раз тогда, когда с ним нужно разбираться.
+_KEEPS_THE_ORDER = (
     PaymentStatus.PENDING,
     PaymentStatus.WAITING_FOR_CAPTURE,
     PaymentStatus.SUCCEEDED,
+    PaymentStatus.FAILED,
 )
 
 
@@ -129,7 +137,7 @@ async def cancel_abandoned_orders() -> int:
     async with session_scope() as session:
         live = select(Payment.id).where(
             Payment.order_id == Order.id,
-            Payment.status.in_(_LIVE_PAYMENT),
+            Payment.status.in_(_KEEPS_THE_ORDER),
         )
         rows = list(
             await session.scalars(
