@@ -380,6 +380,21 @@ async def grant_subscription(
             logger.warning(f"Попытка выдать подписку заблокированному пользователю {user_id}")
             return None
 
+        # Роутерному клиенту срок приносит магазин — зеркалом, раз в круг.
+        # Учётки в панели у него здесь нет, поэтому выдача ушла бы ниже по
+        # ветке «создать новую» и завела вторую, телефонную: бонусные дни
+        # легли бы на неё, а роутер продолжил бы ходить по своей.
+        #
+        # Проверка стоит здесь, а не у зовущих: их два десятка — пробные дни,
+        # админская правка, реферальный бонус, повтор платежа, — и каждый
+        # следующий забыли бы прикрыть.
+        if await db_helpers.is_shop_client(user_id):
+            logger.warning(
+                f"Выдача подписки {user_id} отклонена: это роутерный клиент, "
+                f"его срок ведёт магазин (просили {days_to_add} дн.)"
+            )
+            return None
+
         user_data = await db_helpers.get_last_subscription(user_id)
         current_expiry_from_db = _normalize_expiry(
             user_data.get('subscription_end_date') if user_data else None

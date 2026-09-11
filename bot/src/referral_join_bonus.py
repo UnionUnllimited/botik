@@ -55,6 +55,18 @@ async def try_grant_referral_join_bonus(
             )
             return False
 
+        # Роутерному пригласившему бонус выдать нечем: срок ему ведёт
+        # магазин, и здешняя выдача до роутера не дойдёт. Выходим до
+        # отметки «выдан» и до сообщения — обещать дни, которых не будет,
+        # хуже, чем промолчать.
+        if await db_helpers.is_shop_client(invited_by):
+            logger.info(
+                "[REFERRAL] %s: пригласивший %s — роутерный клиент, join-бонус не начисляем",
+                log_prefix,
+                invited_by,
+            )
+            return False
+
         already_given = await db_helpers.is_referral_payment_bonus_given(
             invited_by, invited_user_id, bonus_type="join",
         )

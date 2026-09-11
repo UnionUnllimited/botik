@@ -1992,6 +1992,30 @@ async def get_invited_by_method(telegram_id: int) -> str:
             row = await cursor.fetchone()
             return row[0] if row and row[0] is not None else None
 
+async def is_shop_client(telegram_id: int) -> bool:
+    """Срок этому клиенту приносит магазин роутеров — зеркалом, раз в круг.
+
+    Выдать ему подписку отсюда нельзя. Учётки в панели у него здесь нет:
+    роутер ходит по своей, заведённой магазином. Любая выдача пошла бы по
+    ветке «создать новую» и завела вторую, телефонную, — на неё легли бы
+    бонусные дни, а роутер продолжил бы ходить по прежней. Клиент прочитал
+    бы «+7 дней» и не нашёл их нигде.
+
+    При ошибке отвечаем «не роутерный»: на установке без магазина колонки
+    может не быть, и запирать из-за этого выдачу обычным клиентам нельзя.
+    """
+    try:
+        async with get_db_connection_safe() as db:
+            async with db.execute(
+                "SELECT COALESCE(shop_subscription, 0) FROM users WHERE telegram_id = ?",
+                (telegram_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return bool(row and row[0])
+    except Exception as e:
+        logger.warning(f"Не удалось проверить, роутерный ли клиент {telegram_id}: {e}")
+        return False
+
 async def get_referrals_count_today(ref_id: int) -> int:
     """Возвращает количество рефералов, приглашенных сегодня"""
     try:

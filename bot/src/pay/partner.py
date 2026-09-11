@@ -143,6 +143,15 @@ async def credit_partner_and_referral(
         if not inviter:
             return
 
+        # Тот же случай, что и с join-бонусом: роутерному пригласившему
+        # дни выдать отсюда некуда, и сообщать о них нечестно.
+        if await db_helpers.is_shop_client(invited_by):
+            logger.info(
+                "[REFERRAL] %s: пригласивший %s — роутерный клиент, бонус за оплату не начисляем",
+                log_prefix, invited_by,
+            )
+            return
+
         try:
             ref_bonus_days = int(app_conf.get("ref_bonus_on_payment_days", 7))
         except (TypeError, ValueError):
