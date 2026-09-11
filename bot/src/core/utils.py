@@ -6,9 +6,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+import logging
+
 import pytz
 
 from app_config import app_conf
+
+logger = logging.getLogger(__name__)
 
 _MOSCOW = pytz.timezone('Europe/Moscow')
 
@@ -20,6 +24,32 @@ _MONTHS_RU = {
 
 
 # ── Даты ─────────────────────────────────────────────────────────────────────
+
+def safe_format(template: str, fallback: str = '', **values) -> str:
+    """Подстановка в операторский текст, которая не роняет экран.
+
+    Тексты правятся на странице «Тексты» в админке, и опечатка в фигурных
+    скобках — `{имя}` вместо `{user_name}`, лишняя `{` — это `KeyError` в
+    момент показа. У главного меню это значит, что `/start` перестал
+    работать у всех клиентов сразу, и починить его можно только через
+    базу: сам экран с текстами до этого не доживёт.
+
+    Порядок такой: пробуем правленый текст, потом умолчание из кода, потом
+    отдаём умолчание как есть. Пустой строки не возвращаем никогда — пустой
+    экран читается так же плохо, как ошибка."""
+    for candidate in (template, fallback):
+        if not candidate:
+            continue
+        try:
+            return candidate.format(**values)
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.warning(
+                "[TEXTS] шаблон не подставился (%s); правьте его на странице «Тексты»: %.60s",
+                exc,
+                candidate,
+            )
+    return fallback or template or ''
+
 
 def format_msk_date(dt: Optional[datetime], fmt: str = '%d.%m.%Y %H:%M %Z') -> str:
     """
