@@ -21,12 +21,22 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import texts as ru
 from core.config import settings
 from core.dates import utcnow
 from core.models import DomainBuild, DomainSource, ListKind, ManualList, ManualListRevision
+from core.notifications import notify_admins
 from core.services import settings_service
 
 log = structlog.get_logger(__name__)
+
+SHRINK_GUARD = 0.7
+"""Ниже какой доли прошлого списка сборку считаем обвалом.
+
+Списки растут и слегка колеблются: источник почистили, дубли ушли. Треть
+за раз — это уже не колебание, а недокачанные куски. Порог мягкий
+намеренно: ложный отказ стоит одного круга ожидания, а публикация
+обрубка — половины сайтов у всех клиентов сразу."""
 
 FETCH_TIMEOUT_SEC = 20
 """Столько же, сколько давал `curl -m 20` в скрипте."""
@@ -337,9 +347,46 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
     built: dict[str, list[str]] = {}
     for kind in ListKind.ALL:
         values = merge(parts[kind], manual.get(kind, ""), kind)
-        write_list(kind, values)
         counts[kind] = len(values)
         built[kind] = values
+
+    # Обвалившийся список не публикуем. Часть источников может ответить
+    # отказом — чужой GitHub отдаёт 429 целыми пачками, — и собранное из
+    # оставшихся уезжает на все роутеры сразу: список короче в разы, и
+    # половина сайтов у всех клиентов идёт мимо туннеля. Снаружи это
+    # выглядит как «перестало работать», и причину ищут в роутере.
+    #
+    # Сторожим только связку «источники отпали И список обвалился»: если
+    # все ответили, сокращение настоящее — сократили сам список, и держать
+    # старый нельзя. Иначе проверка заперла бы сборку навсегда.
+    if failed and previous and previous.domains:
+        share = counts[ListKind.PROXY_DOMAIN] / previous.domains
+        if share < SHRINK_GUARD:
+            record.skipped = True
+            record.domains = previous.domains
+            record.ips = previous.ips
+            record.failed_sources = failed
+            record.error = (
+                f"Список обвалился до {counts[ListKind.PROXY_DOMAIN]} строк "
+                f"против {previous.domains}: не ответило источников — {failed}. "
+                "Прежний список оставлен на роутерах."
+            )
+            record.finished_at = utcnow()
+            log.error(
+                "domain_lists.collapse_refused",
+                domains=counts[ListKind.PROXY_DOMAIN],
+                was=previous.domains,
+                failed=failed,
+            )
+            await notify_admins(ru.ADMIN_LISTS_COLLAPSED.format(
+                now=counts[ListKind.PROXY_DOMAIN],
+                was=previous.domains,
+                failed=failed,
+            ), session=session)
+            return record
+
+    for kind in ListKind.ALL:
+        write_list(kind, built[kind])
 
     conf = await config(session)
     # Копия на диск — до хранилища: она дешевле и нужнее, если рядом стоит
