@@ -52,11 +52,21 @@
               <span class="tw-text-muted2 text-[12px]"><s>{{ item.old_price|money }}</s></span>
             {% endif %}
           </td>
+          {# Остаток — предел продаж, а не число на полке: он считается по
+             живым заказам. Показывали второе, и товар, разобранный заказами,
+             стоял «3 шт.», пока витрина писала «нет в наличии». #}
           <td class="px-3 py-2">
-            {% if item.stock > 0 %}
-              {{ item.stock }} шт.
+            {% set left = item.stock_left if item.stock_left is not none else item.stock %}
+            {% if left > 0 %}
+              {{ left }} шт.
+              {% if item.stock_left is not none and item.stock > left %}
+                <span class="tw-text-muted2 text-[12px]">из {{ item.stock }}</span>
+              {% endif %}
             {% elif item.allow_preorder %}
               <span class="tw-text-muted2">под заказ</span>
+            {% elif item.stock > 0 %}
+              <span style="color:#b91c1c">разобран</span>
+              <span class="tw-text-muted2 text-[12px]">({{ item.stock }} на складе)</span>
             {% else %}
               <span style="color:#b91c1c">нет</span>
             {% endif %}
