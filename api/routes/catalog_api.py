@@ -2761,19 +2761,53 @@ async def manage_delivery_quote(
     delivery_service.set_quote(order.delivery, price)
     days = str(payload.get("days", "")).strip()[:40]
 
+    # Пересчёт гасит прежний счёт. Ссылка на него уже у клиента в переписке,
+    # и открыв её, он заплатит старую сумму: доставка отмечалась оплаченной,
+    # посылка уезжала, а разницы недоставало. Погасить ссылку у провайдера
+    # нечем, поэтому вторая половина защиты стоит в разборе колбэка — он
+    # сверяет сумму с нынешней ценой.
+    #
+    # Счёт на ту же сумму не гасим, а переиспользуем: оператор мог менять
+    # перевозчика или срок, не трогая цену, и выдавать клиенту вторую
+    # живую ссылку на те же деньги незачем.
+    stale = await session.scalars(
+        select(Payment).where(
+            Payment.order_id == order.id,
+            Payment.purpose == PaymentPurpose.DELIVERY,
+            Payment.status == PaymentStatus.PENDING,
+            Payment.amount != price,
+        )
+    )
+    for outdated in stale:
+        outdated.status = PaymentStatus.CANCELED
+        outdated.error_message = "Цена доставки пересчитана"
+        log.info(
+            "catalog.delivery_invoice_cancelled",
+            order_id=order.id,
+            payment_id=outdated.id,
+            was=str(outdated.amount),
+            now=str(price),
+        )
+
     pay_url = ""
     if price > 0 and order.user is not None:
+        alive = await _alive_payment(
+            session, purpose=PaymentPurpose.DELIVERY, amount=price, order_id=order.id
+        )
+        if alive is not None:
+            pay_url = alive.confirmation_url or ""
         try:
-            payment = await payment_service.start_payment(
-                session,
-                user=order.user,
-                provider_name=PaymentProviderName.PLATEGA,
-                amount=price,
-                purpose=PaymentPurpose.DELIVERY,
-                description=f"Доставка по заказу {order.public_number}",
-                order=order,
-            )
-            pay_url = payment.confirmation_url or ""
+            if alive is None:
+                payment = await payment_service.start_payment(
+                    session,
+                    user=order.user,
+                    provider_name=PaymentProviderName.PLATEGA,
+                    amount=price,
+                    purpose=PaymentPurpose.DELIVERY,
+                    description=f"Доставка по заказу {order.public_number}",
+                    order=order,
+                )
+                pay_url = payment.confirmation_url or ""
         except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
             log.warning("catalog.delivery_payment_failed", order_id=order.id, error=str(exc))
             return {"ok": False, "error": f"Счёт выставить не вышло: {exc}"}

@@ -340,6 +340,49 @@ async def _report_payment_of_closed_order(
     )
 
 
+async def _apply_delivery_payment(
+    session: AsyncSession, payment: Payment, order: Order
+) -> None:
+    """Отмечает доставку оплаченной, если пришло не меньше нынешней цены.
+
+    Пересчитав цену, оператор выставляет новый счёт, а старая ссылка остаётся
+    у клиента в переписке — погасить её у провайдера нечем. Открыв её, клиент
+    платит прежнюю сумму, и доставка молча отмечалась оплаченной: посылка
+    уезжала, а разницы недоставало, и узнать об этом было неоткуда.
+
+    Переплату принимаем: доставку могли подешевить, и держать из-за этого
+    посылку нельзя. Разницу разбирает человек, ему же и пишем."""
+    price = order.delivery.price or Decimal("0.00")
+    if payment.amount >= price:
+        order.delivery.paid_at = payment.paid_at
+        await _push_topic(session, order, note="✓ Доставка оплачена")
+        if payment.amount > price:
+            log.warning(
+                "payment.delivery_overpaid",
+                payment_id=payment.id,
+                order_id=order.id,
+                paid=str(payment.amount),
+                price=str(price),
+            )
+        return
+
+    log.warning(
+        "payment.delivery_underpaid",
+        payment_id=payment.id,
+        order_id=order.id,
+        paid=str(payment.amount),
+        price=str(price),
+    )
+    await notify_admins(
+        texts.ADMIN_DELIVERY_UNDERPAID.format(
+            number=order.public_number,
+            paid=texts.money(payment.amount),
+            price=texts.money(price),
+        ),
+        session=session,
+    )
+
+
 async def _apply_success(session: AsyncSession, payment: Payment) -> None:
     """Бизнес-эффект успешной оплаты: заказ, подписка, реферальный бонус."""
     order: Order | None = None
@@ -364,8 +407,7 @@ async def _apply_success(session: AsyncSession, payment: Payment) -> None:
         # путь его пускать нельзя: там по составу заказа находится тариф,
         # и клиент получил бы вторую подписку за оплату перевозки.
         if order is not None and order.delivery is not None:
-            order.delivery.paid_at = payment.paid_at
-            await _push_topic(session, order, note="✓ Доставка оплачена")
+            await _apply_delivery_payment(session, payment, order)
         log.info("payment.delivery_paid", payment_id=payment.id, order_id=payment.order_id)
         return
     if order is not None and order.status in CLOSED_ORDER_STATUSES:
