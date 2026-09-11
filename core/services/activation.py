@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import notifications, texts
 from core.config import settings
-from core.dates import utcnow
+from core.dates import to_display, utcnow
 from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
 from core.models import Device, Order, Subscription, User
 from core.redis_client import RateLimiter
@@ -460,7 +460,11 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
         device_id=device.id,
         mac=device.mac,
         level="info",
-        message=f"Срок продлён на {days} дн. до {expire_at:%d.%m.%Y}",
+        # Дату переводим в московскую: журнал читает оператор, а клиент
+        # видит в приложении её же. В UTC после девяти вечера они
+        # расходились на сутки — и «до 11.10» против «до 12.10» читается
+        # как ошибка начисления.
+        message=f"Срок продлён на {days} дн. до {to_display(expire_at):%d.%m.%Y}",
         payload={"username": username, "until": expire_at.isoformat()},
     )
     log.info("activation.manual_extended", mac=device.mac, username=username, days=days)
@@ -726,7 +730,10 @@ async def sync_panel_expiry(
         device_id=device.id,
         mac=device.mac,
         level="info",
-        message=f"Срок в панели продлён до {subscription.expires_at:%d.%m.%Y}",
+        message=(
+            "Срок в панели продлён до "
+            f"{to_display(subscription.expires_at):%d.%m.%Y}"
+        ),
         payload={"username": username},
     )
     return True

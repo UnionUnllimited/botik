@@ -12,7 +12,7 @@ import datetime as dt
 import structlog
 
 from core import texts as ru
-from core.dates import ensure_utc, to_display, utcnow
+from core.dates import days_left, ensure_utc, to_display, utcnow
 from core.db import session_scope
 from core.notifications import notify_admins
 from core.services import monitoring
@@ -72,8 +72,11 @@ async def daily_digest() -> int:
         expiring = [
             (
                 user.display_name,
-                subscription.expires_at.strftime("%d.%m"),
-                max(0, (subscription.expires_at - now).days),
+                # В московской, как и всё остальное в сводке: в UTC после
+                # девяти вечера дата отличается на сутки от той, что клиент
+                # видит в приложении, и оператор звонит не в тот день.
+                to_display(subscription.expires_at).strftime("%d.%m"),
+                days_left(subscription.expires_at, now=now),
             )
             for subscription, user in digest.expiring
         ]
