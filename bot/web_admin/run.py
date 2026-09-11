@@ -1810,10 +1810,14 @@ def money_filter(value, currency='RUB'):
     except (InvalidOperation, TypeError, ValueError):
         return str(value if value is not None else '')
 
+    # Пробел между тысячами неразрывный, как в `core.texts.money` и в
+    # приложении. Обычный делал ту же сумму разной строкой, и перенос
+    # строки мог разорвать число посреди: «8» в конце одной строки,
+    # «900 ₽» в начале другой читаются как две суммы.
     if amount == amount.to_integral_value():
-        body = f'{amount:,.0f}'.replace(',', ' ')
+        body = f'{amount:,.0f}'.replace(',', ' ')
     else:
-        body = f'{amount:,.2f}'.replace(',', ' ').replace('.', ',')
+        body = f'{amount:,.2f}'.replace(',', ' ').replace('.', ',')
 
     code = (currency or 'RUB').upper()
     # Чужую валюту показываем кодом: рисовать ей рублёвый знак — врать.

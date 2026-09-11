@@ -217,12 +217,19 @@ DELIVERY_AWAITING_PAYMENT = "Ждёт оплату доставки"
 ждёт денег за перевозку."""
 
 
+NBSP = " "
+"""Неразрывный пробел между тысячами. Каталог бота и приложение ставят
+именно его — `toLocaleString('ru-RU')` и явная замена, — и обычный пробел
+здесь делал одну и ту же цену разной строкой в трёх местах. На вид он тот
+же, а перенос строки посреди числа им не разорвать."""
+
+
 def money(value: Decimal | int | str) -> str:
     """1990.00 -> «1 990 ₽», 149.50 -> «149,50 ₽»."""
     amount = Decimal(str(value))
     if amount == amount.to_integral_value():
-        return f"{amount:,.0f} ₽".replace(",", " ")
-    return f"{amount:,.2f} ₽".replace(",", " ").replace(".", ",")
+        return f"{amount:,.0f} ₽".replace(",", NBSP)
+    return f"{amount:,.2f} ₽".replace(",", NBSP).replace(".", ",")
 
 
 def payment_success(*, number: str, total: str, shipping_days: str, has_device: bool) -> str:

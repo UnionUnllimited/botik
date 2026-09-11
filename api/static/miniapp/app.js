@@ -133,7 +133,15 @@
   function money(value, currency) {
     var n = Number(value);
     if (isNaN(n)) { return String(value == null ? '' : value); }
-    var text = n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    // Копейки — либо обе, либо ни одной. С `minimumFractionDigits: 0` цена
+    // в 8900,50 показывалась как «8 900,5 ₽»: лишняя цифра не дописана, и
+    // читается это как обрезанное число, а не как половина рубля. В боте та
+    // же цена всегда была «8 900,50 ₽».
+    var cents = Math.abs(n % 1) > 0.0000001 ? 2 : 0;
+    var text = n.toLocaleString('ru-RU', {
+      minimumFractionDigits: cents,
+      maximumFractionDigits: cents
+    });
     return text + ' ' + (!currency || currency === 'RUB' ? '₽' : currency);
   }
 
