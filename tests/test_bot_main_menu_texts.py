@@ -47,7 +47,7 @@ class TestMenuTextsSurviveAnEmptySetting:
     @pytest.mark.parametrize("key", MENU_TEXT_KEYS)
     def test_read_site_has_a_fallback(self, key):
         """Запасное значение — либо `or DEFAULT`, либо вторым доводом
-        `safe_format`. Второй способ шире: он переживает не только стёртую
+        `format_text_template`. Второй способ шире: он переживает не только стёртую
         настройку, но и опечатку в фигурных скобках."""
         reads = [
             (number, line)
@@ -56,9 +56,9 @@ class TestMenuTextsSurviveAnEmptySetting:
         ]
         assert reads, f"{key} больше не читается в main.py — проверить тест"
         for number, line in reads:
-            # `safe_format` переносит умолчание на следующую строку.
+            # `format_text_template` переносит умолчание на следующую строку.
             nearby = "\n".join(MAIN.splitlines()[max(0, number - 3) : number + 2])
-            assert " or DEFAULT" in line or "safe_format" in nearby, (
+            assert " or DEFAULT" in line or "format_text_template" in nearby, (
                 f"{key} читается без запасного значения: {line.strip()!r}. "
                 "Пустая настройка снова уронит главное меню."
             )

@@ -60,6 +60,7 @@ from src.tasks import start_expired_traffic_reset_task, start_stale_payments_tas
 from src.pay.wata import create_wata_payment_link
 from src.texts import (
     REST_TEXT_DEFAULTS,
+    format_text_template,
     TXT_USER_DELETED,
     TXT_BLOCKED,
     TXT_SUPPORT_FALLBACK,
@@ -87,7 +88,6 @@ from src.core.utils import (
     format_traffic_inline,
     format_traffic_section,
     get_default_limit_gb,
-    safe_format,
 )
 from loguru import logger
 import aiosqlite
@@ -998,7 +998,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
             tpl = (app_conf.get('text_payment_success') or '').replace('{sub_link}', '')
             await bot.send_message(
                 telegram_user_id,
-                safe_format(
+                format_text_template(
                     tpl,
                     DEFAULT_PAYMENT_SUCCESS,
                     days=days_paid,
@@ -1139,7 +1139,7 @@ async def process_successful_payment(telegram_user_id: int, payment_id: str, pay
         tpl = (app_conf.get('text_payment_success') or '').replace('{sub_link}', '')
         await bot.send_message(
             telegram_user_id,
-            safe_format(
+            format_text_template(
                 tpl,
                 DEFAULT_PAYMENT_SUCCESS,
                 days=days_to_add,
@@ -1396,7 +1396,7 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
     # Подставляем безопасно: текст правится на странице «Тексты», и опечатка
     # в фигурных скобках роняла бы `/start` у всех клиентов сразу — починить
     # его можно было бы только через базу, до самой страницы не дойдя.
-    text_to_send = safe_format(
+    text_to_send = format_text_template(
         app_conf.get('text_welcome_message'),
         DEFAULT_WELCOME,
         user_name=safe_user_name,
@@ -1435,7 +1435,7 @@ async def show_main_menu(message_or_query: Message | CallbackQuery, edit_message
         # Значение по умолчанию тут, а не только в базе: настройку можно
         # стереть на странице текстов, и главное меню не должно от этого
         # падать у всех, кто оплатил.
-        sub_info = safe_format(
+        sub_info = format_text_template(
             app_conf.get('text_subscription_info'),
             DEFAULT_SUBSCRIPTION_INFO,
             status="активна",
@@ -2773,7 +2773,7 @@ async def cq_about_service(query: CallbackQuery):
     kbd = keyboards.get_about_service_keyboard()
         
     await query.message.edit_text(
-        safe_format(
+        format_text_template(
             app_conf.get('text_about_service'),
             DEFAULT_ABOUT_SERVICE,
             project_name=app_conf.get('project_name') or '',
@@ -3278,7 +3278,7 @@ async def process_promo_code_activation(message: Message, state: FSMContext):
     if subscription_data:
         # Отдельной фиксации не требуется — redeem уже учёл использование и лимиты
         await message.answer(
-            safe_format(
+            format_text_template(
                 app_conf.get('text_promo_code_success'),
                 DEFAULT_PROMO_SUCCESS,
                 code=code,

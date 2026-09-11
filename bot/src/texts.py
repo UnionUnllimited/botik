@@ -4,6 +4,10 @@
 Функции — для сообщений с подстановкой переменных.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # ── Статичные тексты ──────────────────────────────────────────────────────────
 
 TXT_USER_DELETED = (
@@ -222,15 +226,37 @@ DEFAULT_TEXT_PARTNER_WITHDRAW = (
 )
 
 
-def _format_text_template(template: str, fallback: str, **kwargs) -> str:
+def format_text_template(template: str, fallback: str = '', **kwargs) -> str:
+    """Подстановка в операторский текст, которая не роняет экран.
+
+    Тексты правятся на странице «Тексты», и опечатка в фигурных скобках —
+    «{имя}» вместо «{user_name}», лишняя «{» — это не кривая строка, а
+    `KeyError` в момент показа. У главного меню это значит, что `/start`
+    перестал работать у всех сразу, и починить его можно только через
+    базу: до самой страницы с текстами уже не дойти.
+
+    Порядок: правленый текст, потом умолчание из кода, потом умолчание как
+    есть. Последнее — на случай, когда сломано и оно: раньше здесь стояло
+    ещё одно форматирование, и оно падало тем же самым.
+
+    Пустой строки не возвращаем: пустой экран читается так же плохо, как
+    ошибка, а Telegram на пустом сообщении и вовсе отказывает."""
     for tpl in (template, fallback):
         if not tpl:
             continue
         try:
             return tpl.format(**kwargs)
-        except (KeyError, ValueError):
-            continue
-    return fallback.format(**kwargs)
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.warning(
+                "[TEXTS] шаблон не подставился (%s); правьте его на странице «Тексты»: %.60s",
+                exc,
+                tpl,
+            )
+    return fallback or template or ''
+
+
+# Прежнее имя: им пользуются функции ниже в этом же файле.
+_format_text_template = format_text_template
 
 
 def txt_partner_program(

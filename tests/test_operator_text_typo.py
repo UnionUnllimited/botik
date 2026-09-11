@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import ast
 import importlib.util
-import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -33,27 +31,13 @@ def _all(haystack: str, needle: str) -> list[int]:
 
 @pytest.fixture(scope="module")
 def utils():
-    # `pytz` живёт в окружении бота, у нас его нет: модуль берёт им московскую
-    # зону, а нам нужна одна чистая подстановка.
-    zones = types.ModuleType("pytz")
-    zones.timezone = lambda _name: __import__("datetime").UTC
-    stubs = {"app_config": types.ModuleType("app_config"), "pytz": zones}
-    stubs["app_config"].app_conf = types.SimpleNamespace(get=lambda *_a, **_k: "")
-    saved = {key: sys.modules.get(key) for key in stubs}
-    sys.modules.update(stubs)
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "_bot_utils_probe", BOT / "src" / "core" / "utils.py"
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    finally:
-        for key, was in saved.items():
-            if was is None:
-                sys.modules.pop(key, None)
-            else:
-                sys.modules[key] = was
+    """Модуль их текстов — там же и подстановка. Ничего не тянет за собой."""
+    spec = importlib.util.spec_from_file_location(
+        "_bot_texts_probe", BOT / "src" / "texts.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 WELCOME = "Здравствуйте, {user_name}! Это {project_name}."
@@ -61,7 +45,7 @@ WELCOME = "Здравствуйте, {user_name}! Это {project_name}."
 
 class TestWhenTheTextIsFine:
     def test_it_is_used_as_written(self, utils):
-        shown = utils.safe_format(WELCOME, "запасной", user_name="Иван", project_name="Магазин")
+        shown = utils.format_text_template(WELCOME, "запасной", user_name="Иван", project_name="Магазин")
         assert shown == "Здравствуйте, Иван! Это Магазин."
 
 
@@ -76,17 +60,17 @@ class TestWhenTheOperatorMistyped:
         ],
     )
     def test_the_default_saves_the_screen(self, utils, broken):
-        shown = utils.safe_format(broken, WELCOME, user_name="Иван", project_name="Магазин")
+        shown = utils.format_text_template(broken, WELCOME, user_name="Иван", project_name="Магазин")
         assert shown == "Здравствуйте, Иван! Это Магазин."
 
     def test_an_empty_setting_falls_back_too(self, utils):
         """Настройку можно стереть — тогда берём умолчание из кода."""
-        shown = utils.safe_format("", WELCOME, user_name="Иван", project_name="Магазин")
+        shown = utils.format_text_template("", WELCOME, user_name="Иван", project_name="Магазин")
         assert shown == "Здравствуйте, Иван! Это Магазин."
 
     def test_nothing_returns_empty(self, utils):
         """Пустой экран читается так же плохо, как ошибка."""
-        assert utils.safe_format("{нет}", "{тоже нет}", user_name="Иван")
+        assert utils.format_text_template("{нет}", "{тоже нет}", user_name="Иван")
 
 
 class TestWhereItIsUsed:
@@ -108,7 +92,7 @@ class TestWhereItIsUsed:
             for at in _all(self.SOURCE, f"'{setting}'")
         ]
         assert places, setting
-        assert any("safe_format" in place for place in places), setting
+        assert any("format_text_template" in place for place in places), setting
 
     def test_nothing_formats_an_operator_text_unguarded(self):
         """Проверка на весь файл: седьмое такое место забыли бы наверняка."""
