@@ -35,8 +35,8 @@
   // Рамка вокруг приложения красится под наш фон: иначе шапка мессенджера
   // остаётся светлой и приложение выглядит вставленным в чужое окно.
   try {
-    tg.setHeaderColor('#0b1220');
-    tg.setBackgroundColor('#0b1220');
+    tg.setHeaderColor('#0E1116');
+    tg.setBackgroundColor('#0E1116');
   } catch (e) { /* старые клиенты этого не умеют — не беда */ }
 
   function haptic(kind) {
@@ -541,7 +541,7 @@
       if (mainHandler) { mb.offClick(mainHandler); mainHandler = null; }
       if (!label) { mb.hide(); return true; }
       mainHandler = onClick;
-      mb.setParams({ text: label, color: '#3b93ff', text_color: '#04121f' });
+      mb.setParams({ text: label, color: '#2E6BD6', text_color: '#FFFFFF' });
       mb.onClick(onClick);
       mb.show();
       return true;
