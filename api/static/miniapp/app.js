@@ -733,15 +733,33 @@
           show(
             '<div class="hero">' + '<div class="brand"><img src="/app/logo" alt="">Titan Routers</div>' + '<h1>' + esc(p.hero_title || 'Роутер с доступом') + '</h1>'
             + (p.hero_subtitle ? '<p>' + esc(p.hero_subtitle) + '</p>' : '') + '</div>'
-            + '<div class="list leading">'
-            + (p.features || []).slice(0, 3).map(function (f) {
-                return '<div class="item" style="align-items:flex-start">'
-                  + '<span class="ic-box">' + icon('check') + '</span>'
-                  + '<span class="grow"><b>' + esc(f.title) + '</b>'
-                  + '<span class="muted small" style="display:block;margin-top:3px">'
-                  + esc(f.text) + '</span></span></div>';
-              }).join('')
-            + '</div>'
+            // Сначала — ради чего это покупают, потом — что оно умеет.
+            // Доводы сервер присылает в том же ответе, и до сих пор они
+            // здесь пропадали: человек, зашедший впервые, видел список
+            // свойств товара, не узнав, зачем товар нужен.
+            + ((p.value || []).length
+                ? '<div class="list leading">'
+                  + (p.value || []).map(function (v) {
+                      return '<div class="item" style="align-items:flex-start">'
+                        + '<span class="ic-box">' + icon('check') + '</span>'
+                        + '<span class="grow"><b>' + esc(v.title) + '</b>'
+                        + '<span class="muted small" style="display:block;margin-top:3px">'
+                        + esc(v.text) + '</span></span></div>';
+                    }).join('')
+                  + '</div>'
+                : '')
+            + ((p.features || []).length
+                ? '<div class="sec">Что это даёт дома</div>'
+                  + '<div class="list leading">'
+                  + (p.features || []).slice(0, 3).map(function (f) {
+                      return '<div class="item" style="align-items:flex-start">'
+                        + '<span class="ic-box">' + icon('check') + '</span>'
+                        + '<span class="grow"><b>' + esc(f.title) + '</b>'
+                        + '<span class="muted small" style="display:block;margin-top:3px">'
+                        + esc(f.text) + '</span></span></div>';
+                    }).join('')
+                  + '</div>'
+                : '')
             + '<button class="btn" id="to-catalog" style="margin-top:14px">'
             + icon('box') + 'Посмотреть роутеры</button>'
           );

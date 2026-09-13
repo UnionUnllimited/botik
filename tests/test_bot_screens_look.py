@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import ast
+import re
 from pathlib import Path
 
 BOT = Path(__file__).resolve().parents[1] / "bot"
@@ -277,10 +279,34 @@ class TestDeliveryWording:
 
     def test_old_defaults_are_listed_for_reseed(self):
         """На сервере тексты уже в базе: без перепосева правка кода до них
-        не доедет, а без нового номера отметки круг не пройдёт заново."""
+        не доедет, а без нового номера отметки круг не пройдёт заново.
+
+        Номер здесь не закрепляем: он обязан меняться при каждом следующем
+        перепосеве, и записанный буквально превращал бы штатную правку
+        текстов в падающий тест.
+        """
         assert '"text_order_ask_speed": "🚚 Шаг 4 из 5. Как везём?"' in self.TEXTS
         assert "Сумма без комиссии платёжной системы" in self.TEXTS
-        assert "ui_redesign_2026_08_v4_applied" in self.TEXTS
+        assert re.search(r'REDESIGN_MARK = "ui_redesign_\w+_applied"', self.TEXTS)
+
+    def test_every_reseeded_text_actually_changed(self):
+        """Прежнее значение, совпавшее с нынешним, — забытая строка в списке:
+        перепосев по ней пройдёт впустую, а выглядит он сделанным."""
+        module = ast.parse(self.TEXTS)
+        found: dict[str, object] = {}
+        for node in ast.walk(module):
+            name = None
+            if isinstance(node, ast.AnnAssign):
+                name = getattr(node.target, "id", None)
+            elif isinstance(node, ast.Assign):
+                name = getattr(node.targets[0], "id", None)
+            if name in ("CATALOG_TEXTS", "LEGACY_TEXTS"):
+                found[name] = ast.literal_eval(node.value)
+
+        current = {key: value for key, value, _ in found["CATALOG_TEXTS"]}
+        for key, was in found["LEGACY_TEXTS"].items():
+            if key in current:
+                assert was != current[key], f"{key} в списке перепосева, но не менялся"
 
     def test_shop_speaks_for_the_shop(self):
         """«Покажу» и «выдам» — это один человек в переписке. За заказом стоит
