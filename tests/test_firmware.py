@@ -744,3 +744,68 @@ class TestUploadOverHttp:
                 files={"image": (f"a{SUFFIX}", b"x", "application/octet-stream")},
             )
         assert answer.status_code == 403
+
+
+class TestTheManifestNeverGivesHalfAnImage:
+    """Договор с прошивкой: на неполных данных она не шьётся и ждёт суток.
+
+    Правило написано с её стороны (см. docs/router_lists_and_updates.md),
+    но держать его обязаны обе. Образ без адреса, с пустым `sha256` или
+    с нулевым размером — это пропущенный день обновления у всего парка,
+    и узнаем мы об этом не скоро: роутер о себе не сообщает ничего.
+
+    Пройти такому образу в манифест неоткуда — приём пустого файла отвергает,
+    а `sha256` и размер считает сервер, — но проверка стоит именно здесь,
+    потому что цена ошибки на той стороне другая.
+    """
+
+    def _release(self, **fields):
+        image = FirmwareImage(
+            model_key=MODEL,
+            file_name=f"titan-r140-cudy{SUFFIX}",
+            url_path=f"/firmware/images/v140/titan-r140-cudy{SUFFIX}",
+            remote_url="",
+            sha256="a" * 64,
+            size_bytes=512,
+        )
+        for name, value in fields.items():
+            setattr(image, name, value)
+        release = FirmwareRelease(version=140, notes="", rollout=50, rollout_max=50)
+        release.images = [image]
+        return release
+
+    def test_a_whole_image_passes(self):
+        body = firmware.manifest_of(self._release())
+        entry = body["images"][MODEL]
+        assert entry["url"].startswith("https://")
+        assert len(entry["sha256"]) == 64
+        assert entry["size"] > 0
+
+    def test_the_address_is_absolute(self):
+        """Прошивка берёт `url` как есть и ни с чем его не склеивает."""
+        body = firmware.manifest_of(self._release())
+        assert body["images"][MODEL]["url"].startswith(("http://", "https://"))
+
+    def test_the_hash_is_sixty_four_hex_digits(self):
+        entry = firmware.manifest_of(self._release())["images"][MODEL]
+        assert all(sign in "0123456789abcdef" for sign in entry["sha256"])
+
+    def test_the_size_is_a_number_not_a_string(self):
+        """`size` прошивка сравнивает с числом байт на диске."""
+        assert isinstance(firmware.manifest_of(self._release())["images"][MODEL]["size"], int)
+
+    def test_an_empty_release_says_so_with_zero(self):
+        """Пустой `images` прошивка прочтёт и ничего не сделает. `404` она
+        вправе понять как «адрес сменился»."""
+        body = firmware.manifest_of(None)
+        assert body["version"] == 0
+        assert body["images"] == {}
+
+    def test_a_stopped_rollout_still_names_the_version(self):
+        """Ноль в `rollout` останавливает раздачу новым, но версию не прячет:
+        уже обновившиеся не должны увидеть понижение."""
+        release = self._release()
+        release.rollout = 0
+        body = firmware.manifest_of(release)
+        assert body["version"] == 140
+        assert body["rollout"] == 0
