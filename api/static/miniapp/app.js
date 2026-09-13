@@ -762,7 +762,16 @@
                 : '')
             + '<button class="btn" id="to-catalog" style="margin-top:14px">'
             + icon('box') + 'Посмотреть роутеры</button>'
+            // Отзывов у нас пока нет, потрогать роутер человек не может,
+            // а главное отличие от коробки с маркетплейса — как раз то, что
+            // происходит после покупки. Единственный способ это показать —
+            // показать.
+            + '<button class="btn quiet" id="to-demo" style="margin-top:8px">'
+            + icon('router') + 'Что видит владелец роутера</button>'
           );
+          document.getElementById('to-demo').addEventListener('click', function () {
+            haptic(); go({ name: 'router', demo: true });
+          });
           bindCatalog();
         });
       }
@@ -1064,6 +1073,11 @@
             + 'несколько секунд, в которые интернет дома замирает.</div>'
           : '');
 
+    // Пример на витрине: та же разметка, но без обработчиков. Нажимать тут
+    // нечего — роутера у человека ещё нет, а ручка, которая молча не делает
+    // ничего, читается как сломанная.
+    if (!deviceId) { return; }
+
     function apply(request, busyText) {
       slot.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
       var note = document.createElement('div');
@@ -1109,18 +1123,67 @@
     }
   }
 
+  // Показания для примера. Живут здесь, а не на сервере: это витрина, а не
+  // данные, и лишний поход к нам ради неё — лишняя секунда ожидания у того,
+  // кто ещё ничего не купил.
+  //
+  // Числа считаются от текущего момента. Пример, собранный однажды, через
+  // полгода показывал бы подписку до прошлого марта и «опрошен 4 минуты
+  // назад» рядом — и выдал бы себя заготовкой.
+  function demoRouter() {
+    var now = Date.now();
+    return {
+      has_client: true,
+      support: false,
+      panel_url: 'http://192.168.1.1',
+      instruction_url: '',
+      routers: [],
+      router: {
+        id: 0,
+        model: 'Роутер Pro',
+        mac: 'A4:2B:B0:7C:19:E3',
+        online: true,
+        until: new Date(now + 23 * 86400000).toISOString(),
+        polled_at: new Date(now - 4 * 60000).toISOString(),
+        clients: 9,
+        uptime_sec: 11 * 86400 + 7 * 3600,
+        cpu_pct: 6,
+        rx_bytes: 412 * 1024 * 1024 * 1024,
+        tx_bytes: 38 * 1024 * 1024 * 1024
+      }
+    };
+  }
+
+  var DEMO_NODES = {
+    ok: true,
+    enabled: true,
+    current: 'n2',
+    nodes: [
+      { id: 'auto', name: 'Автоматически', auto: true },
+      { id: 'n1', name: 'Нидерланды', flag: '🇳🇱' },
+      { id: 'n2', name: 'Германия', flag: '🇩🇪' },
+      { id: 'n3', name: 'Финляндия', flag: '🇫🇮' }
+    ]
+  };
+
   views.router = function (view) {
+    var demo = !!(view && view.demo);
     var path = view && view.id ? '/router?device_id=' + view.id : '/router';
-    return api(path).then(function (d) {
+    return (demo ? Promise.resolve(demoRouter()) : api(path)).then(function (d) {
       if (!d.has_client || !d.router) {
         // Тупик без выхода — упущенная продажа: у человека нет роутера,
         // и ровно здесь ему уместно предложить выбрать.
         show('<h1>Мой роутер</h1>'
           + empty('router', 'Роутера пока нет',
                   'Как только устройство выйдет на связь, здесь появятся его показания.')
-          + '<button class="btn ghost" id="to-catalog">' + icon('box') + 'Выбрать роутер</button>');
+          + '<button class="btn ghost" id="to-catalog">' + icon('box') + 'Выбрать роутер</button>'
+          + '<button class="btn quiet" id="to-demo" style="margin-top:8px">'
+          + icon('router') + 'Посмотреть, как это выглядит</button>');
         document.getElementById('to-catalog').addEventListener('click', function () {
           haptic('medium'); openTab('catalog');
+        });
+        document.getElementById('to-demo').addEventListener('click', function () {
+          haptic(); go({ name: 'router', demo: true });
         });
         return;
       }
@@ -1148,7 +1211,15 @@
       }
 
       show(
-        '<h1>Мой роутер</h1>'
+        '<h1>' + (demo ? 'Так это выглядит' : 'Мой роутер') + '</h1>'
+        // Честно, сразу и до всего остального: экран показывает чужие
+        // показания, и человек должен знать это раньше, чем начнёт их читать.
+        + (demo
+            ? '<div class="offer" style="margin-bottom:14px">'
+              + '<h3>Это пример</h3>'
+              + '<p style="margin:0">Такой экран видит владелец роутера. '
+              + 'Показания здесь вымышленные, кнопки не нажимаются.</p></div>'
+            : '')
         + picker
         + '<div class="card">'
         +   '<div class="row"><span class="ic-box">' + icon('router') + '</span><div class="grow">'
@@ -1228,6 +1299,27 @@
             .replace(/\/$/, '')) + '</span> существует лишь в вашей домашней сети. '
         + 'Из мобильного интернета они не откроются.</div>'
       );
+
+      // Дальше — обработчики настоящего экрана, и в примере их быть не должно:
+      // за каждым стоит запрос к роутеру, которого у человека нет. Вместо них
+      // одна кнопка, ради которой пример и показывается.
+      if (demo) {
+        var accessSlot = document.getElementById('access');
+        if (accessSlot) { renderAccess(accessSlot, DEMO_NODES, 0); }
+        screen.querySelectorAll('button').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            haptic();
+            tg.showAlert('Это пример экрана. У владельца роутера кнопки работают.');
+          });
+        });
+        var buy = document.createElement('button');
+        buy.className = 'btn';
+        buy.style.marginTop = '20px';
+        buy.innerHTML = icon('box') + 'Выбрать роутер';
+        buy.addEventListener('click', function () { haptic('medium'); openTab('catalog'); });
+        screen.appendChild(buy);
+        return;
+      }
 
       screen.querySelectorAll('[data-dev]').forEach(function (btn) {
         btn.addEventListener('click', function () {

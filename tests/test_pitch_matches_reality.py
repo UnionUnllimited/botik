@@ -134,6 +134,84 @@ class TestTheBotTellsItToo:
         assert 'REDESIGN_MARK = "ui_redesign_2026_08_v5_applied"' in SHOP_TEXTS
 
 
+class TestTheExampleScreen:
+    """Экран владельца, показанный тому, кто ещё не купил.
+
+    Отзывов у магазина пока нет, потрогать роутер человек не может, а главное
+    отличие от коробки с маркетплейса — как раз то, что происходит после
+    покупки. Рассказать об этом словами мы уже пробовали; показать — честнее.
+
+    Две вещи, которые тут легко испортить и обе дорого. Пример, не назвавший
+    себя примером, — это выдуманные показания, выданные за настоящие. Пример,
+    ходящий на сервер, — это запрос про роутер, которого нет, и ошибка на
+    экране у того, кого мы только уговариваем.
+    """
+
+    def _view(self) -> str:
+        head = APP.index("views.router = function (view)")
+        return APP[head : APP.index("screen.querySelectorAll('[data-dev]')", head)]
+
+    def test_it_says_it_is_an_example(self):
+        assert "Это пример" in self._view()
+
+    def test_the_heading_does_not_pretend_it_is_theirs(self):
+        """«Мой роутер» над чужими показаниями — это обман в одно слово."""
+        assert "'Так это выглядит'" in self._view()
+
+    def test_it_never_asks_the_server(self):
+        """Роутера нет, спрашивать про него нечего, а ошибка на витрине
+        стоит дороже, чем весь этот экран."""
+        assert "Promise.resolve(demoRouter())" in self._view()
+
+    def test_the_real_handlers_are_skipped(self):
+        """За каждым стоит запрос к роутеру: перезагрузка, прошивка, узлы.
+
+        Срез кончается ровно на первом настоящем обработчике, поэтому
+        достаточно проверить, что до него из ветки примера есть выход.
+        """
+        view = self._view()
+        assert "if (demo) {" in view
+        assert "return;" in view[view.index("if (demo) {") :]
+
+    def test_the_buttons_answer_instead_of_doing_nothing(self):
+        """Молчащая кнопка читается как сломанная — и как сломанный товар."""
+        assert "Это пример экрана" in self._view()
+
+    def test_the_service_block_is_shown_without_handlers(self):
+        """Смена страны — половина рассказа: без неё пример показывает
+        только показания, а управление опять остаётся на словах."""
+        view = self._view()
+        assert "renderAccess(accessSlot, DEMO_NODES, 0)" in view
+        head = APP.index("function renderAccess")
+        assert "if (!deviceId) { return; }" in APP[head : APP.index("views.router", head)]
+
+    def test_it_ends_with_the_only_button_that_works(self):
+        """Ради неё пример и показывается."""
+        view = self._view()
+        assert "openTab('catalog')" in view
+
+    def test_the_numbers_are_counted_from_now(self):
+        """Пример, собранный однажды, через полгода показывал бы подписку
+        до прошлого марта рядом с «опрошен 4 минуты назад»."""
+        head = APP.index("function demoRouter()")
+        body = APP[head : APP.index("var DEMO_NODES", head)]
+        assert "Date.now()" in body
+        assert body.count("now") >= 4
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "Что видит владелец роутера",  # первый экран новичка
+            "Посмотреть, как это выглядит",  # «Мой роутер» без роутера
+        ],
+    )
+    def test_there_is_a_way_in(self, entry):
+        assert entry in APP
+
+    def test_both_ways_lead_to_the_example(self):
+        assert APP.count("go({ name: 'router', demo: true })") == 2
+
+
 def test_nothing_promises_a_trial_of_the_hardware():
     """Пробного периода у роутера нет: железо покупают. Обещание «попробуйте
     бесплатно» на витрине означало бы разговор в поддержке о том, чего мы
