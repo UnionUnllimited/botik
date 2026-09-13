@@ -1759,20 +1759,50 @@
                     : '')
           +   '</div>'
           +   '<div style="margin-top:12px">' + field('address', 'Адрес', '') + '</div>'
+          // Карта перевозчика. Своего списка пунктов у нас нет и не будет:
+          // они открываются и закрываются каждую неделю, и устаревший список
+          // отправил бы клиента к закрытой двери. В чате эта кнопка есть
+          // с самого начала, а здесь человек упирался в пустое поле «Пункт
+          // выдачи» и шёл искать карту сам — или не шёл.
+          +   '<button class="btn ghost" id="pickup-map" style="margin-top:10px">'
+          +     icon('pin') + 'Посмотреть пункты на карте</button>'
           + '</div>'
           + '<button class="btn" id="next">' + icon('chev-r') + 'К проверке</button>'
           + '<div class="muted tiny center" style="margin-top:10px">Цену доставки назовёт '
           + 'оператор после оформления: она зависит от города и габаритов.</div>'
         );
 
+        // Карта — только у того перевозчика, которого выбрали, и только
+        // когда везём в пункт выдачи. У «Почты России» карты нет вовсе:
+        // её отделения ищут не по карте перевозчика.
+        function pickupUrl() {
+          var picked = carriers.filter(function (c) { return c.method === form.method; })[0];
+          return (picked && picked.pickup_url) || '';
+        }
+
         function applyMode() {
           document.getElementById('carriers').style.display = form.toPvz ? '' : 'none';
+          var map = document.getElementById('pickup-map');
+          if (map) { map.style.display = form.toPvz && pickupUrl() ? '' : 'none'; }
           var addr = screen.querySelector('[data-f="address"]');
           addr.placeholder = form.toPvz ? 'Адрес пункта выдачи' : 'Улица, дом, квартира';
           addr.parentNode.querySelector('span').textContent = form.toPvz
             ? 'Пункт выдачи' : 'Адрес доставки';
         }
         applyMode();
+
+        // Карта открывается снаружи: она чужая и в окне приложения
+        // не помещается. Вернувшись, человек вписывает адрес в поле —
+        // как и в чате.
+        var mapBtn = document.getElementById('pickup-map');
+        if (mapBtn) {
+          mapBtn.addEventListener('click', function () {
+            var url = pickupUrl();
+            if (!url) { return; }
+            haptic();
+            tg.openLink(url);
+          });
+        }
 
         screen.querySelectorAll('[data-f]').forEach(function (input) {
           input.addEventListener('input', function () { form[input.dataset.f] = input.value; });
@@ -1782,7 +1812,10 @@
           r.addEventListener('change', function () { form.speed = r.value; haptic(); });
         });
         screen.querySelectorAll('input[name="carrier"]').forEach(function (r) {
-          r.addEventListener('change', function () { form.method = r.value; haptic(); });
+          // Карта меняется вместе с перевозчиком: у каждого она своя.
+          r.addEventListener('change', function () {
+            form.method = r.value; haptic(); applyMode();
+          });
         });
         screen.querySelectorAll('input[name="where"]').forEach(function (r) {
           r.addEventListener('change', function () {
