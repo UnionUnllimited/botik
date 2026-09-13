@@ -1660,7 +1660,9 @@
           : '<h1>Каталог</h1>')
         + (value ? '<div class="list leading">' + value + '</div>' : '')
         + chooser
+        + '<div id="models">'
         + (items || empty('box', 'Пока пусто', 'Товары появятся здесь.'))
+        + '</div>'
         // Стоимость подписки идёт сразу за ценой роутера: «а сколько платить
         // дальше» — первый вопрос, который возникает у человека после цены,
         // и оставлять его без ответа до конца страницы значит держать
@@ -1675,14 +1677,38 @@
               + '<div class="muted tiny center">Стоимость доставки зависит от города '
               + 'и габаритов: её посчитает оператор после оформления.</div>'
             : '')
-        + (steps ? '<div class="sec">Как это работает</div><div class="card">' + steps + '</div>' : '')
+        // «Что это даёт» — раньше, чем «как это купить». Порядок был обратный,
+        // и страница говорила о порядке оформления человеку, который ещё
+        // не решил, нужен ли ему товар: до сомнений про доставку и оплату
+        // сначала надо захотеть.
         + (features ? '<div class="sec">Почему это удобно</div><div class="card">' + features + '</div>' : '')
+        // Сразу за обещанием — то же самое, но показанное. Абзац про
+        // управление из Telegram человек либо пролистнёт, либо проверит,
+        // и вторая возможность у него должна быть здесь, а не только
+        // на первом экране, куда он уже не вернётся.
+        + '<button class="btn ghost" id="to-demo" style="margin-top:4px">'
+        + icon('router') + 'Что видит владелец роутера</button>'
+        + (steps ? '<div class="sec">Как это работает</div><div class="card">' + steps + '</div>' : '')
         + (faq ? '<div class="sec">Вопросы</div><div class="card">' + faq + '</div>' : '')
+        // Дочитавшему до низа некуда было нажать: кнопка «Купить» осталась
+        // в карточке далеко вверху, и человек, которого мы только что
+        // убедили, должен был листать обратно и искать её глазами.
+        + (items
+            ? '<button class="btn" data-jump="models" style="margin-top:22px">'
+              + icon('box') + 'Выбрать роутер</button>'
+            : '')
         + (d.support_contact
-            ? '<div class="muted tiny center" style="margin-top:16px">Остались вопросы — '
+            ? '<div class="muted tiny center" style="margin-top:14px">Остались вопросы — '
               + esc(d.support_contact) + '</div>'
             : '')
       );
+
+      var demoBtn = document.getElementById('to-demo');
+      if (demoBtn) {
+        demoBtn.addEventListener('click', function () {
+          haptic(); go({ name: 'router', demo: true });
+        });
+      }
 
       screen.querySelectorAll('[data-buy]').forEach(function (btn) {
         btn.addEventListener('click', function () {
