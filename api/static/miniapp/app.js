@@ -118,9 +118,22 @@
   //
   // Если после срезки не осталось ничего — название состоит из одних значков,
   // и лучше показать его как есть, чем пустоту.
+  // Значок убирается отовсюду, а не только из начала. Название срока оператор
+  // пишет как «🗓 180 дней», и в составе заказа оно становится «Подписка:
+  // 🗓 180 дней» — эмодзи оказывается в середине, и обрезка начала его
+  // не достаёт. Так чужая цветная картинка и осталась посреди строки
+  // на экране, где весь остальной набор значков свой и одноцветный.
+  //
+  // Флагов это не касается: они рисуются отдельным полем узла и сюда
+  // не попадают.
+  var GLYPHS = /[\p{Extended_Pictographic}️⃣]/gu;
+
   function plainTitle(value) {
     var text = String(value == null ? '' : value);
-    return text.replace(/^[^\p{L}\p{N}]+/u, '').trim() || text;
+    var clean = text.replace(GLYPHS, '').replace(/\s{2,}/g, ' ').trim();
+    // Пустым результат бывает, когда название целиком состояло из значка:
+    // тогда лучше показать как есть, чем пустую строку.
+    return clean.replace(/^[^\p{L}\p{N}]+/u, '').trim() || clean || text;
   }
 
   function date(iso) {
@@ -1437,10 +1450,30 @@
     return api('/orders/' + view.id).then(function (d) {
       var o = d.order || {};
       var tone = ORDER_TONE[o.status] || 'off';
+      // Названия срока приходят такими, какими их завёл оператор, — с эмодзи
+      // впереди: в переписке это уместно, здесь набор значков свой. Чужая
+      // цветная картинка посреди строки выдаёт, что текст пришёл из другого
+      // места.
       var items = (o.items || []).map(function (it) {
-        return '<div class="row"><span class="grow ellip">' + esc(it.title) + '</span>'
+        return '<div class="row"><span class="grow ellip">' + esc(plainTitle(it.title)) + '</span>'
           + '<span>' + money(it.total, o.currency) + '</span></div>';
       }).join('');
+
+      // Доставка — отдельный счёт, и в «Итого» она не входит никогда:
+      // её цену называет оператор уже после оформления. Строка «Доставка 0 ₽»
+      // в итогах стояла ровно там, где человек ждёт настоящую сумму,
+      // и читалась как «везём бесплатно» — при том что в чате ему в эту же
+      // минуту выставили 250 ₽.
+      var shipState = o.delivery_state || 'none';
+      var shipPrice = Number(o.delivery_price);
+      var shipNote = '';
+      if (shipState === 'not_quoted') {
+        shipNote = '<span class="pill off">оператор считает</span>';
+      } else if (shipState === 'awaiting_payment') {
+        shipNote = '<span class="pill warn">ждёт оплаты</span>';
+      } else if (shipState === 'paid') {
+        shipNote = '<span class="pill ok"><i class="dot"></i>оплачена</span>';
+      }
 
       function line(label, value, bold) {
         return '<div class="row"><span class="muted small">' + esc(label) + '</span>'
@@ -1460,17 +1493,23 @@
         + '<div class="card">'
         +   line('Товары', money(o.subtotal, o.currency))
         +   (Number(o.discount) ? line('Скидка', '−' + money(o.discount, o.currency)) : '')
-        +   line('Доставка', o.awaiting_quote
-                ? '<span class="muted small">оператор посчитает</span>'
-                : money(o.delivery, o.currency))
         +   '<div class="hr"></div>'
         +   line('Итого', money(o.total, o.currency), true)
+        +   '<div class="muted tiny" style="margin-top:8px">Доставка оплачивается '
+        +   'отдельно и в эту сумму не входит.</div>'
         + '</div>'
 
         + (o.delivery_summary
             ? '<div class="card"><div class="row" style="align-items:flex-start">'
               + '<span class="ic-box">' + icon('truck') + '</span>'
               + '<div class="grow"><div>' + esc(o.delivery_summary) + '</div>'
+              + (shipState !== 'none' && shipState !== 'not_quoted'
+                  ? '<div class="row" style="margin-top:8px">'
+                    + '<span class="big" style="font-size:17px">'
+                    + (shipPrice > 0 ? money(o.delivery_price, o.currency) : 'бесплатно')
+                    + '</span>' + shipNote + '</div>'
+                  : (shipNote
+                      ? '<div style="margin-top:8px">' + shipNote + '</div>' : ''))
               + (o.tracking_number
                   ? '<button id="track" class="linkline"><span class="muted small">Трек-номер</span>'
                     + '<span class="mono small">' + esc(o.tracking_number) + '</span>'
@@ -1480,6 +1519,13 @@
 
         + '<div class="stack">'
         + (o.payable ? '<button class="btn" id="pay">' + icon('card') + 'Оплатить</button>' : '')
+        // Платить за перевозку человек шёл в переписку и искал там сообщение
+        // оператора — при том что цену видел прямо здесь.
+        + (shipState === 'awaiting_payment' && shipPrice > 0
+            ? '<button class="btn' + (o.payable ? ' ghost' : '') + '" id="pay-ship">'
+              + icon('truck') + 'Оплатить доставку — ' + money(o.delivery_price, o.currency)
+              + '</button>'
+            : '')
         + (o.instruction_url
             ? '<button class="btn ghost" id="setup">' + icon('info') + 'Как подключить</button>' : '')
         + '</div>'
@@ -1518,6 +1564,33 @@
             });
         });
       }
+      // Та же кнопка, что у оплаты заказа, и тот же разговор с провайдером:
+      // ссылка живёт пятнадцать минут, поэтому выдаётся по нажатию, а не
+      // заранее. Живой неоплаченный счёт на ту же сумму сервер переиспользует —
+      // иначе два нажатия означали бы два счёта и настоящую возможность
+      // заплатить дважды.
+      var payShip = document.getElementById('pay-ship');
+      if (payShip) {
+        var shipLabel = payShip.innerHTML;
+        payShip.addEventListener('click', function () {
+          haptic('medium');
+          payShip.disabled = true;
+          payShip.innerHTML = icon('refresh', 'ic spin') + 'Готовим…';
+          api('/orders/' + view.id + '/delivery-payment', { method: 'POST', body: '{}' })
+            .then(function (res) {
+              if (!res.ok || !res.pay_url) { throw new Error(res.error || 'Счёт не создался'); }
+              tg.openLink(res.pay_url);
+            })
+            .catch(function (err) {
+              tg.showAlert(err.message || String(err));
+            })
+            .then(function () {
+              payShip.disabled = false;
+              payShip.innerHTML = shipLabel;
+            });
+        });
+      }
+
       var setup = document.getElementById('setup');
       if (setup) {
         setup.addEventListener('click', function () { tg.openLink(o.instruction_url); });

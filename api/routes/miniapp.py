@@ -371,6 +371,24 @@ async def order_pay(
     )
 
 
+@router.post("/api/orders/{order_id}/delivery-payment")
+async def order_delivery_pay(
+    order_id: int,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_transaction),
+) -> dict:
+    """Свежая ссылка на оплату доставки.
+
+    Доставка — отдельный счёт: её цену называет оператор после оформления,
+    и в стоимость заказа она не входит. В чате кнопка была с самого начала,
+    а в приложении клиент видел цену перевозки и не мог её оплатить —
+    оставалось выйти в переписку и искать там сообщение оператора.
+    """
+    return await catalog_api.delivery_payment_link(
+        order_id=order_id, payload={"tg_id": user.tg_id}, session=session
+    )
+
+
 @router.get("/api/delivery")
 async def delivery(
     _: TelegramUser = Depends(current_user),
