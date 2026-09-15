@@ -334,6 +334,30 @@ async def cancel_order(order_id: int, tg_id: int) -> tuple[dict, str]:
 # --- Очередь сообщений -------------------------------------------------------
 
 
+async def partner_callbacks(limit: int = 20) -> tuple[dict, str]:
+    """Чужие уведомления об оплате, ожидающие нас.
+
+    Провайдер шлёт их по одному адресу на мерчанта — магазину. Наши платежи
+    он там не узнаёт и складывает в очередь, а мы приходим за ней сами.
+    Направление такое намеренно: мы на хосте, магазин в контейнере, и
+    достучаться до нас изнутри контейнера он не может.
+    """
+    return await get("/api/v1/catalog/partner-callbacks", {"limit": limit})
+
+
+async def partner_callback_ack(callback_id: int, *, ok: bool, error: str = ""):
+    """Отчёт о судьбе колбэка: без него он будет предложен снова.
+
+    Повтор безопасен — обработчик сверяет статус платежа и метит его
+    обрабатываемым, — а потерянная оплата нет. Поэтому при любом сомнении
+    лучше не подтверждать.
+    """
+    return await post(
+        f"/api/v1/catalog/partner-callbacks/{callback_id}/ack",
+        {"ok": ok, "error": error},
+    )
+
+
 async def outbox(limit: int = 20) -> tuple[dict, str]:
     """Что основное приложение просит отправить клиентам."""
     return await get("/api/v1/catalog/outbox", {"limit": limit})

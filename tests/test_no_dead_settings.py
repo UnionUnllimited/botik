@@ -39,6 +39,9 @@ REMOVED = {
     # Роутер к нам не ходит: показания снимаем мы сами по SSH.
     "SECURITY_DEVICE_CLOCK_SKEW_SEC": "device_clock_skew_sec",
     "SECURITY_DEVICE_RATE_LIMIT_PER_MIN": "device_rate_limit_per_min",
+    # Колбэк подписки бот забирает из очереди сам: до него из контейнера
+    # не достучаться, а публичного адреса у него нет.
+    "PLATEGA_PARTNER_CALLBACK_URL": "partner_callback_url",
     # Своего бота у нас больше нет.
     "BOT_MODE": "mode",
     "BOT_WEBHOOK_SECRET": "webhook_secret",

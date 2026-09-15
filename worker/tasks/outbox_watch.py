@@ -24,8 +24,8 @@ from sqlalchemy import func, select
 from core.dates import ensure_utc, utcnow
 from core.db import session_scope
 from core.metrics import outbox_oldest_seconds, outbox_pending
-from core.models import Notification
-from core.notifications import OUTBOX_MAX_ATTEMPTS, notify_admins
+from core.models import Notification, PartnerCallback
+from core.notifications import OUTBOX_MAX_ATTEMPTS, PARTNER_MAX_ATTEMPTS, notify_admins
 
 log = structlog.get_logger("worker.outbox")
 
@@ -107,3 +107,64 @@ def _phrase(minutes: int) -> str:
         return f"{minutes} мин"
     hours, rest = divmod(minutes, 60)
     return f"{hours} ч {rest:02d} мин"
+
+
+# ── Сторож очереди чужих колбэков ────────────────────────────────────────────
+
+PARTNER_STUCK_AFTER_MIN = 15
+"""Порог строже, чем у сообщений: там не дошла новость, здесь — оплата.
+
+Клиент, заплативший за подписку, ждёт её включения минуты, а не часы. Бот
+забирает очередь раз в десять секунд, так что четверть часа — это заведомо
+остановка, а не задержка."""
+
+PARTNER_ALERT_KIND = "partner_callbacks_stuck"
+
+
+async def watch_partner_callbacks() -> int:
+    """Меряет очередь чужих колбэков. Возвращает возраст старейшего в секундах.
+
+    Уведомления об оплате подписки приходят к нам, а зачисляет их бот: адрес
+    у провайдера один на мерчанта. Пока бот забирает очередь — всё хорошо.
+    Перестанет — люди будут платить за подписку и не получать её, а снаружи
+    это не видно ничем: заказы оформляются, деньги приходят.
+
+    Тревога идёт в ту же очередь сообщений, что и остальные, — то есть
+    к тому же боту. Это не замкнутый круг: встань он целиком, об этом
+    скажет `watch_outbox`, который смотрит именно на неё. Здесь же ловится
+    случай поуже и вероятнее — бот жив и шлёт сообщения, а за колбэками
+    не ходит: старая версия, упавшая задача, снятый цикл.
+    """
+    now = utcnow()
+    async with session_scope() as session:
+        waiting = select(PartnerCallback).where(
+            PartnerCallback.delivered_at.is_(None),
+            PartnerCallback.attempts < PARTNER_MAX_ATTEMPTS,
+        ).subquery()
+        pending = int(await session.scalar(select(func.count()).select_from(waiting)) or 0)
+        oldest = await session.scalar(select(func.min(waiting.c.created_at)))
+
+        age = int((now - ensure_utc(oldest)).total_seconds()) if oldest else 0
+        if age < PARTNER_STUCK_AFTER_MIN * 60:
+            log.debug("partner_callbacks.alive", pending=pending, oldest_sec=age)
+            return age
+
+        minutes = age // 60
+        log.error("partner_callbacks.stuck", pending=pending, oldest_sec=age, minutes=minutes)
+
+        already = await session.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.sent_at.is_(None), Notification.kind == PARTNER_ALERT_KIND)
+        )
+        if already:
+            return age
+
+        await notify_admins(
+            f"🚨 Оплаты подписки не доходят до бота {_phrase(minutes)}.\n"
+            f"В очереди: {pending}. Люди заплатили и ждут включения.\n"
+            "Проверьте, ходит ли бот за очередью колбэков.",
+            session=session,
+            kind=PARTNER_ALERT_KIND,
+        )
+    return age

@@ -73,16 +73,22 @@ class TestPollingIsFastEnough:
         assert 0 < BATCH <= 100
 
 
-class TestForeignCallbackStillForwarded:
-    """Если колбэк однажды вернут нам, чужое должно уходить дальше."""
+class TestForeignCallbackIsNotSwallowed:
+    """Чужой колбэк не должен исчезать в голом 200.
 
-    def test_missing_partner_url_is_logged(self):
-        source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
-        assert "webhook.partner_url_missing" in source
+    Раньше он уходил боту HTTP-запросом, теперь ложится в очередь, откуда
+    бот забирает его сам: запрос из контейнера до бота на хосте не доходит
+    и не может дойти. Здесь проверяется только одно — что колбэк куда-то
+    девается, а не теряется. Подробности очереди в `test_partner_callback`.
+    """
 
-    def test_unknown_payment_is_not_swallowed(self):
+    def test_it_is_written_down(self):
         source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
-        assert "_forward_to_partner" in source
+        assert "PartnerCallback(" in source
+
+    def test_the_operator_can_find_it_by_transaction(self):
+        source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
+        assert "transaction_id=" in source
 
 
 class TestPollingCoversEveryPurpose:

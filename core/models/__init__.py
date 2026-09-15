@@ -24,7 +24,7 @@ from core.models.payment import Payment
 from core.models.promo import ActivationCode, ActivationCodeBatch, PromoCode, PromoUsage
 from core.models.subscription import Subscription, SubscriptionEvent
 from core.models.support import Ticket, TicketMessage
-from core.models.system import AuditLog, Notification, Setting
+from core.models.system import AuditLog, Notification, PartnerCallback, Setting
 from core.models.user import AdminUser, Referral, User
 
 __all__ = [
@@ -54,6 +54,7 @@ __all__ = [
     "Notification",
     "Order",
     "OrderItem",
+    "PartnerCallback",
     "Payment",
     "Plan",
     "Product",

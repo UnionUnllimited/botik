@@ -112,3 +112,53 @@ class Notification(BigIntPkMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (Index("ix_notifications_pending", "sent_at", "id"),)
+
+
+class PartnerCallback(BigIntPkMixin, Base):
+    """Уведомление провайдера об оплате, которое относится не к нашему заказу.
+
+    Платёжный провайдер шлёт колбэки по одному адресу на мерчанта — нашему.
+    Но платежей два вида: железо продаём мы, подписку продаёт бот. Чужое
+    надо передать ему, и раньше мы делали это HTTP-запросом на его адрес.
+
+    Из контейнера это не работает и работать не может. Бот живёт службой
+    на хосте и слушает `127.0.0.1:8081`, а для процесса внутри контейнера
+    `127.0.0.1` — это он сам. Публичного адреса у бота нет. Открыть его
+    наружу значило бы выставить платёжные вебхуки в интернет, где защита
+    только заголовками мерчанта, — плохой размен ради экономии кода.
+
+    Поэтому направление развёрнуто: мы складываем колбэк сюда, а бот
+    забирает его сам — тем же способом, каким уже забирает очередь
+    сообщений. Это направление работает всегда: бот на хосте ходит к нам,
+    а не мы к нему. Переживает и пересоздание контейнера, и смену прокси,
+    и переезд адреса.
+
+    Цена — задержка в несколько секунд вместо мгновенной доставки. Для
+    включения подписки это незаметно, а потерянный колбэк заметен очень.
+    """
+
+    __tablename__ = "partner_callbacks"
+
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    transaction_id: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    """Номер транзакции у провайдера. Не для работы — для человека: по нему
+    оператор находит платёж, если с очередью что-то пошло не так."""
+
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    """Тело колбэка как пришло, дословно. Пересобирать его из разобранных
+    полей нельзя: бот разбирает его сам, и любое наше «улучшение» по дороге
+    станет расхождением, которое проявится на одном платеже из ста."""
+
+    headers: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    """Только те заголовки, что подтверждают подлинность. Бот проверяет их
+    так же, как мы, — он не обязан верить нам на слово."""
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    delivered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (Index("ix_partner_callbacks_pending", "delivered_at", "id"),)

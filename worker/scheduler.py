@@ -153,6 +153,15 @@ def create_scheduler() -> AsyncIOScheduler:
         id="watch_outbox",
         name="Сторож очереди сообщений",
     )
+    # Чаще, чем сообщения: там встала переписка, здесь — включение оплаченной
+    # подписки. Пять минут при пороге в пятнадцать дают три круга на то, чтобы
+    # заметить, и ни одного лишнего запроса — очередь в норме пуста.
+    scheduler.add_job(
+        instrumented("watch_partner_callbacks", outbox_watch.watch_partner_callbacks),
+        IntervalTrigger(minutes=5),
+        id="watch_partner_callbacks",
+        name="Сторож очереди чужих колбэков",
+    )
     # Раз в час: роутер, который держит брошенная корзина, не продаётся всё
     # это время, а спешить с отменой нельзя — сперва должна погаснуть ссылка.
     scheduler.add_job(

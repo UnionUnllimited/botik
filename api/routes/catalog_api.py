@@ -54,6 +54,7 @@ from core.models import (
     Device,
     Notification,
     Order,
+    PartnerCallback,
     Payment,
     Plan,
     Product,
@@ -61,7 +62,7 @@ from core.models import (
     Subscription,
     User,
 )
-from core.notifications import OUTBOX_MAX_ATTEMPTS
+from core.notifications import OUTBOX_MAX_ATTEMPTS, PARTNER_MAX_ATTEMPTS
 from core.redis_client import RateLimiter
 from core.security import normalize_mac
 from core.services import (
@@ -1421,6 +1422,71 @@ async def outbox_ack(
             .values(bot_blocked=True, bot_blocked_at=utcnow())
         )
         log.info("catalog.outbox_blocked", tg_id=message.tg_id)
+    return {"ok": True}
+
+
+# --- Чужие колбэки -----------------------------------------------------------
+#
+# Провайдер шлёт уведомления об оплате по одному адресу на мерчанта — нашему.
+# Железо продаём мы, подписку продаёт бот, и его платежи надо передавать ему.
+#
+# Передавали HTTP-запросом на его адрес, и из контейнера это не работает:
+# бот живёт службой на хосте и слушает `127.0.0.1:8081`, а для процесса внутри
+# контейнера `127.0.0.1` — это он сам. Здесь направление развёрнуто: бот
+# приходит за очередью сам, как приходит за очередью сообщений.
+
+@router.get("/partner-callbacks")
+async def partner_callbacks(limit: int = 20, session: AsyncSession = Depends(get_session)) -> dict:
+    """Чужие уведомления об оплате, ожидающие бота."""
+    pending = list(
+        await session.scalars(
+            select(PartnerCallback)
+            .where(
+                PartnerCallback.delivered_at.is_(None),
+                PartnerCallback.attempts < PARTNER_MAX_ATTEMPTS,
+            )
+            .order_by(PartnerCallback.id)
+            .limit(max(min(limit, 100), 1))
+        )
+    )
+    return {
+        "callbacks": [
+            {
+                "id": item.id,
+                "provider": item.provider,
+                "transaction_id": item.transaction_id,
+                # Тело — строкой и дословно. Разбирать его здесь незачем:
+                # разбирает бот, и всякое наше приведение по дороге стало бы
+                # расхождением, заметным на одном платеже из ста.
+                "body": item.body,
+                "headers": item.headers or {},
+            }
+            for item in pending
+        ]
+    }
+
+
+@router.post("/partner-callbacks/{callback_id}/ack")
+async def partner_callback_ack(
+    callback_id: int, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Отчёт бота: принял он колбэк или нет.
+
+    Без отчёта колбэк предлагается снова — и это правильно: повторная
+    обработка того же платежа у бота безопасна (он сверяет статус и метит
+    платёж обрабатываемым), а потерянная оплата — нет.
+    """
+    item = await session.get(PartnerCallback, callback_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    if payload.get("ok"):
+        item.delivered_at = utcnow()
+        item.last_error = None
+        return {"ok": True}
+
+    item.attempts += 1
+    item.last_error = str(payload.get("error", ""))[:500]
     return {"ok": True}
 
 

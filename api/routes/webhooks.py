@@ -10,17 +10,15 @@ import hmac
 import ipaddress
 from typing import Any
 
-import httpx
 import orjson
 import structlog
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import client_ip, get_session
-from core import texts
 from core.config import settings
 from core.enums import PaymentProviderName, PaymentStatus
-from core.notifications import notify_admins
+from core.models import PartnerCallback
 from core.payments import get_provider
 from core.services import payments as payment_service
 from core.services.notifier import notify_payment_result
@@ -130,58 +128,34 @@ def _is_partners(headers: dict[str, str]) -> bool:
 async def _hand_over(
     session: AsyncSession, body: bytes, headers: dict[str, str], data: dict[str, Any]
 ) -> Response:
-    """Отдаёт колбэк боту и зовёт оператора, если не вышло.
+    """Кладёт чужой колбэк в очередь, откуда его заберёт бот.
 
     Провайдеру отвечаем «принято» в любом случае: повтор нам не поможет —
     чужой платёж мы и во второй раз не узнаем, а вечные повторы он
-    в какой-то момент бросит совсем.
+    в какой-то момент бросит совсем. Значит ответственность за доставку
+    с этой секунды наша, и терять колбэк нельзя.
+
+    Раньше мы слали его HTTP-запросом на адрес бота. Из контейнера это
+    не работает и работать не может: бот живёт службой на хосте и слушает
+    `127.0.0.1:8081`, а для процесса внутри контейнера `127.0.0.1` —
+    это он сам. Очередь разворачивает направление: бот на хосте ходит
+    к нам, а это работает всегда.
+
+    Тело кладём дословно. Бот разбирает его сам и сам же проверяет
+    заголовки подлинности — верить нам на слово он не обязан.
     """
-    trouble = await _forward_to_partner(body, headers)
-    if trouble:
-        await notify_admins(
-            texts.ADMIN_PARTNER_CALLBACK_LOST.format(
-                transaction=data.get("id") or "—",
-                amount=texts.money(data["amount"]) if data.get("amount") is not None else "—",
-                status=data.get("status") or "—",
-                reason=trouble,
-            ),
-            session=session,
+    session.add(
+        PartnerCallback(
+            provider=str(PaymentProviderName.PLATEGA),
+            transaction_id=str(data.get("id") or "")[:128],
+            body=body.decode("utf-8", errors="replace"),
+            headers={
+                key: value
+                for key, value in headers.items()
+                if key.lower() in ("content-type", "x-merchantid", "x-secret")
+            },
         )
-        await session.commit()
+    )
+    await session.commit()
+    log.info("webhook.queued_for_partner", transaction=data.get("id"))
     return Response(status_code=200)
-
-
-async def _forward_to_partner(body: bytes, headers: dict[str, str]) -> str:
-    """Отдаёт чужой колбэк боту. Возвращает причину неудачи или пустую строку.
-
-    Ошибку наверх не поднимает: провайдеру мы уже обязаны ответить 200, иначе
-    он будет слать повторы вечно. Но и проглатывать её нельзя — у бота для
-    этого провайдера опроса статуса нет («только webhook»), поэтому не дошло
-    уведомление значит клиент заплатил и не получил ничего. Причину отдаём
-    зовущему: он позовёт оператора.
-
-    Заголовки подлинности передаём: бот проверяет их так же, как мы.
-    Остальные (Host, Content-Length) выбрасываем — их подставит клиент.
-    """
-    url = settings.platega.partner_callback_url.strip()
-    if not url:
-        log.warning("webhook.partner_url_missing")
-        return "адрес бота не задан"
-
-    passthrough = {
-        key: value
-        for key, value in headers.items()
-        if key.lower() in ("content-type", "x-merchantid", "x-secret")
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(url, content=body, headers=passthrough)
-    except httpx.HTTPError as exc:
-        log.warning("webhook.forward_failed", url=url, error=str(exc))
-        return f"бот не ответил ({exc.__class__.__name__})"
-    if response.status_code >= 400:
-        # Ответ бота — единственное подтверждение, что он уведомление принял.
-        log.warning("webhook.forward_rejected", url=url, status=response.status_code)
-        return f"бот ответил {response.status_code}"
-    log.info("webhook.forwarded", url=url, status=response.status_code)
-    return ""

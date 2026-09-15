@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,8 @@ from core.payments.platega import (
     _parse_expires_in,
 )
 from core.services.payments import build_payload, parse_payload
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -145,89 +148,47 @@ class TestConfiguration:
         assert PlategaProvider().is_configured is False
 
 
-class TestPartnerCallbackForwarding:
-    """Чужой колбэк передаётся боту, а не проглатывается.
+class TestPartnerCallbackQueue:
+    """Чужое уведомление об оплате кладётся в очередь, а не шлётся боту.
 
     Провайдер шлёт уведомления по одному адресу на мерчанта, а платежей два
-    вида: железо продаём мы, подписку — бот. Раньше чужое уведомление
-    получало голый 200: клиент платил за подписку, а она не включалась.
+    вида: железо продаём мы, подписку — бот. Раньше чужое получало голый 200,
+    и клиент платил за подписку, а она не включалась.
+
+    Потом мы стали слать его боту HTTP-запросом — и это не работало тоже.
+    Бот живёт службой на хосте и слушает `127.0.0.1:8081`, а мы в контейнере,
+    где `127.0.0.1` — это мы сами. Теперь направление развёрнуто: колбэк
+    ложится в очередь, а бот приходит за ней сам.
     """
 
-    @pytest.mark.asyncio
-    async def test_forwards_body_and_auth_headers(self, monkeypatch):
-        from api.routes import webhooks
-        from core.config import settings
+    def test_there_is_no_outbound_request_left(self):
+        """Запрос к боту из контейнера не работает и вернуться не должен."""
+        source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
+        assert "httpx" not in source
+        assert "_forward_to_partner" not in source
 
-        monkeypatch.setattr(
-            settings.platega, "partner_callback_url", "http://127.0.0.1:8081/platega/callback"
-        )
-        sent: dict = {}
+    def test_the_body_is_kept_word_for_word(self):
+        """Бот разбирает его сам, и всякое наше приведение по дороге станет
+        расхождением, заметным на одном платеже из ста."""
+        source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
+        head = source.index("async def _hand_over")
+        body = source[head : source.index("return Response(status_code=200)", head)]
+        assert "body.decode" in body
+        assert "orjson.dumps" not in body
 
-        class _Client:
-            def __init__(self, **_kwargs):
-                pass
+    def test_only_the_headers_that_prove_authenticity_are_kept(self):
+        source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
+        head = source.index("async def _hand_over")
+        body = source[head : source.index("return Response(status_code=200)", head)]
+        assert '"content-type", "x-merchantid", "x-secret"' in body
 
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *_exc):
-                return False
-
-            async def post(self, url, content=None, headers=None):
-                sent.update(url=url, content=content, headers=headers)
-                return type("R", (), {"status_code": 200})()
-
-        monkeypatch.setattr(webhooks.httpx, "AsyncClient", _Client)
-        await webhooks._forward_to_partner(
-            b'{"id":"x"}',
-            {"Content-Type": "application/json", "X-MerchantId": "m", "X-Secret": "s", "Host": "h"},
-        )
-
-        assert sent["url"].endswith("/platega/callback")
-        assert sent["content"] == b'{"id":"x"}'
-        assert sent["headers"]["X-MerchantId"] == "m"
-        assert sent["headers"]["X-Secret"] == "s"
-        # Host подставит клиент: чужой уронил бы запрос на несовпадении.
-        assert "Host" not in sent["headers"]
-
-    @pytest.mark.asyncio
-    async def test_empty_url_means_do_not_forward(self, monkeypatch):
-        from api.routes import webhooks
-        from core.config import settings
-
-        monkeypatch.setattr(settings.platega, "partner_callback_url", "")
-
-        def _boom(**_kwargs):
-            raise AssertionError("не должно было ходить никуда")
-
-        monkeypatch.setattr(webhooks.httpx, "AsyncClient", _boom)
-        await webhooks._forward_to_partner(b"{}", {})
-
-    @pytest.mark.asyncio
-    async def test_unreachable_partner_does_not_raise(self, monkeypatch):
-        """Провайдеру мы уже ответили 200 и обязаны отвечать: повторы вечны."""
-        import httpx as real_httpx
-
-        from api.routes import webhooks
-        from core.config import settings
-
-        monkeypatch.setattr(settings.platega, "partner_callback_url", "http://127.0.0.1:8081/x")
-
-        class _Client:
-            def __init__(self, **_kwargs):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *_exc):
-                return False
-
-            async def post(self, *_args, **_kwargs):
-                raise real_httpx.ConnectError("бот перезапускается")
-
-        monkeypatch.setattr(webhooks.httpx, "AsyncClient", _Client)
-        await webhooks._forward_to_partner(b"{}", {})
+    def test_the_queue_is_committed_before_answering(self):
+        """Провайдеру отвечаем «принято» — повтора не будет. Значит колбэк
+        обязан лежать в базе раньше, чем он это услышит."""
+        source = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
+        head = source.index("async def _hand_over")
+        body = source[head : source.index("return Response(status_code=200)", head)]
+        assert body.index("session.add") < body.index("await session.commit()")
 
 
 class TestAmountMismatchCallsPeople:

@@ -1,21 +1,32 @@
-"""Чужой колбэк, который не дошёл до бота, обязан позвать оператора.
+"""Чужой колбэк доходит до бота через очередь, а не по запросу к нему.
 
 Уведомления об оплате провайдер шлёт на один адрес на мерчанта — наш. Железо
-продаём мы, подписку продаёт бот, поэтому его платежи мы передаём ему сами.
-Запасного пути у него для этого провайдера нет: в коде бота прямым текстом
-«Platega теперь использует только webhook, polling не нужен». Значит не
-дошедшее уведомление — это клиент, который заплатил и не получил ничего.
+продаём мы, подписку продаёт бот, и его платежи надо передавать ему. Запасного
+пути у него для этого провайдера нет: в его коде прямым текстом «Platega
+теперь использует только webhook, polling не нужен». Значит не дошедшее
+уведомление — это клиент, который заплатил и не получил ничего.
 
-Ответ провайдеру при этом всё равно 200: иначе он будет слать повторы, а
-принять их нам нечем — чужой платёж мы всё так же не узнаем. Единственный
-верный ход — ответить и позвать человека.
+Сначала мы слали колбэк боту HTTP-запросом на `127.0.0.1:8081`. Это
+не работало и работать не могло: бот живёт службой на хосте, а мы
+в контейнере, где `127.0.0.1` — это мы сами. Публичного адреса у бота нет,
+а открывать его вебхуки в интернет нельзя — защита там только заголовками
+мерчанта.
 
-Раньше о такой пропаже оставалась строка `webhook.forward_failed` в журнале.
-Журнал никто не читает, а подписка не включалась молча.
+Поэтому направление развёрнуто. Мы складываем колбэк в очередь, бот приходит
+за ней сам — тем же способом, каким уже забирает очередь сообщений. Это
+направление работает всегда и переживает пересоздание контейнера, смену
+прокси и переезд адреса.
+
+Ответ провайдеру при этом всё равно 200: повтор нам не поможет — чужой платёж
+мы и во второй раз не узнаем, — а вечные повторы он в какой-то момент бросит
+совсем. Значит с этой секунды доставка наша забота, и колбэк обязан лежать
+в базе раньше, чем провайдер услышит «принято».
 """
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -26,8 +37,16 @@ from pydantic import SecretStr
 
 from api.deps import get_session
 from api.routes import webhooks
-from core import texts
 from core.config import settings
+from core.notifications import PARTNER_MAX_ATTEMPTS
+
+ROOT = Path(__file__).resolve().parents[1]
+WEBHOOKS = (ROOT / "api" / "routes" / "webhooks.py").read_text(encoding="utf-8")
+CATALOG = (ROOT / "api" / "routes" / "catalog_api.py").read_text(encoding="utf-8")
+BOT_LOOP = (ROOT / "bot" / "src" / "shop_callbacks.py").read_text(encoding="utf-8")
+BOT_API = (ROOT / "bot" / "src" / "shop_api.py").read_text(encoding="utf-8")
+BOT_MAIN = (ROOT / "bot" / "main.py").read_text(encoding="utf-8-sig")
+WATCH = (ROOT / "worker" / "tasks" / "outbox_watch.py").read_text(encoding="utf-8")
 
 CALLBACK = {
     "id": "tx-77",
@@ -37,115 +56,24 @@ CALLBACK = {
     "payload": "bot-sub-42",
 }
 
-
 BOT_HEADERS = {"X-MerchantId": "bot-merchant", "X-Secret": "bot-secret"}
 """Реквизиты бота у провайдера, если мерчант у него свой."""
 
 
-class _Answer:
-    """Ответ бота на пересылку."""
-
-    def __init__(self, status_code: int) -> None:
-        self.status_code = status_code
-
-
-class _Client:
-    """Подставной httpx: отдаёт заготовленный ответ или роняет заготовленную ошибку."""
-
-    def __init__(self, answer: _Answer | Exception) -> None:
-        self.answer = answer
-        self.sent: list[tuple[str, bytes, dict[str, str]]] = []
-
-    def __call__(self, *_args, **_kwargs):
-        return self
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_exc) -> bool:
-        return False
-
-    async def post(self, url, content=None, headers=None):
-        self.sent.append((url, content, headers or {}))
-        if isinstance(self.answer, Exception):
-            raise self.answer
-        return self.answer
-
-
-@pytest.fixture
-def bot_at(monkeypatch):
-    """Ставит адрес бота и подменяет ходока к нему."""
-
-    def _setup(answer: _Answer | Exception, url: str = "http://127.0.0.1:8081/platega/callback"):
-        monkeypatch.setattr(settings.platega, "partner_callback_url", url)
-        client = _Client(answer)
-        monkeypatch.setattr(webhooks.httpx, "AsyncClient", client)
-        return client
-
-    return _setup
-
-
-class TestForwarding:
-    @pytest.mark.asyncio
-    async def test_a_delivered_callback_is_silent(self, bot_at):
-        bot_at(_Answer(200))
-        assert await webhooks._forward_to_partner(b"{}", {}) == ""
-
-    @pytest.mark.asyncio
-    async def test_an_unset_address_is_a_reason(self, bot_at, monkeypatch):
-        monkeypatch.setattr(settings.platega, "partner_callback_url", "  ")
-        assert await webhooks._forward_to_partner(b"{}", {}) != ""
-
-    @pytest.mark.asyncio
-    async def test_a_silent_bot_is_a_reason(self, bot_at):
-        """Бот в контейнер не виден, перезапускается, лежит — снаружи одинаково."""
-        bot_at(httpx.ConnectError("connection refused"))
-        assert "ConnectError" in await webhooks._forward_to_partner(b"{}", {})
-
-    @pytest.mark.asyncio
-    async def test_a_refusing_bot_is_a_reason(self, bot_at):
-        """Ответ бота — единственное подтверждение, что он уведомление принял."""
-        bot_at(_Answer(500))
-        assert "500" in await webhooks._forward_to_partner(b"{}", {})
-
-    @pytest.mark.asyncio
-    async def test_the_body_goes_over_untouched(self, bot_at):
-        """Подпись бот проверяет сам по тому же телу — менять его нельзя."""
-        client = bot_at(_Answer(200))
-        body = orjson.dumps(CALLBACK)
-        await webhooks._forward_to_partner(body, {"Content-Type": "application/json"})
-        assert client.sent[0][1] == body
-
-    @pytest.mark.asyncio
-    async def test_only_the_headers_that_prove_authenticity_travel(self, bot_at):
-        client = bot_at(_Answer(200))
-        await webhooks._forward_to_partner(
-            b"{}",
-            {
-                "Content-Type": "application/json",
-                "X-MerchantId": "m-1",
-                "X-Secret": "s-1",
-                "Host": "titanvps.pro",
-                "Content-Length": "2",
-            },
-        )
-        assert set(client.sent[0][2]) == {"Content-Type", "X-MerchantId", "X-Secret"}
-
-
 @pytest.fixture
 def alien_callback(monkeypatch):
-    """Колбэк, которого нет у нас в базе, и запись позванных операторов."""
-    called: list[str] = []
+    """Колбэк, которого нет у нас в базе, и запись положенного в очередь."""
+    queued: list = []
 
     async def _not_ours(*_args, **_kwargs):
         return None, False
 
-    async def _remember(text, **_kwargs):
-        called.append(text)
-
     class _Session:
         def __init__(self) -> None:
             self.commits = 0
+
+        def add(self, item) -> None:
+            queued.append(item)
 
         async def commit(self) -> None:
             self.commits += 1
@@ -153,7 +81,6 @@ def alien_callback(monkeypatch):
     session = _Session()
 
     monkeypatch.setattr(webhooks.payment_service, "handle_webhook", _not_ours)
-    monkeypatch.setattr(webhooks, "notify_admins", _remember)
     monkeypatch.setattr(
         webhooks,
         "get_provider",
@@ -165,7 +92,7 @@ def alien_callback(monkeypatch):
 
     app.dependency_overrides[get_session] = lambda: session
     try:
-        yield SimpleNamespace(alerts=called, session=session)
+        yield SimpleNamespace(queued=queued, session=session)
     finally:
         app.dependency_overrides.pop(get_session, None)
 
@@ -179,46 +106,49 @@ def _post(payload: dict, headers: dict[str, str] | None = None) -> httpx.Respons
         )
 
 
-class TestWhenItDoesNotReachTheBot:
-    def test_the_operator_is_called(self, alien_callback, bot_at):
-        bot_at(httpx.ConnectError("connection refused"))
-        _post(CALLBACK)
-        assert alien_callback.alerts, "оплата пропала, и никто об этом не узнал"
+class TestTheCallbackGoesIntoTheQueue:
+    def test_the_provider_gets_its_200(self, alien_callback):
+        """Повторы нам не помогут: чужой платёж мы и во второй раз не узнаем."""
+        assert _post(CALLBACK).status_code == 200
 
-    def test_the_alert_names_the_transaction(self, alien_callback, bot_at):
-        """По ней оператор найдёт платёж у провайдера и включит подписку руками."""
-        bot_at(httpx.ConnectError("connection refused"))
+    def test_it_is_written_down(self, alien_callback):
         _post(CALLBACK)
-        assert "tx-77" in alien_callback.alerts[0]
+        assert alien_callback.queued, "колбэк не попал в очередь"
 
-    def test_the_alert_is_saved(self, alien_callback, bot_at):
-        """Сообщение оператору — строка в очереди: без коммита оно исчезнет."""
-        bot_at(httpx.ConnectError("connection refused"))
+    def test_the_transaction_is_kept_for_the_operator(self, alien_callback):
+        """По ней человек находит платёж у провайдера, если что-то пошло не так."""
+        _post(CALLBACK)
+        assert alien_callback.queued[0].transaction_id == "tx-77"
+
+    def test_the_body_survives_word_for_word(self, alien_callback):
+        """Бот разбирает его сам: всякое наше приведение по дороге станет
+        расхождением, заметным на одном платеже из ста."""
+        _post(CALLBACK)
+        assert orjson.loads(alien_callback.queued[0].body) == CALLBACK
+
+    def test_only_the_headers_that_prove_authenticity_are_kept(self, alien_callback):
+        _post(CALLBACK, headers={**BOT_HEADERS, "X-Forwarded-For": "1.2.3.4"})
+        kept = {key.lower() for key in alien_callback.queued[0].headers}
+        assert "x-merchantid" in kept and "x-secret" in kept
+        assert "x-forwarded-for" not in kept
+
+    def test_it_is_saved_before_the_provider_is_answered(self, alien_callback):
+        """Провайдер услышал «принято» — повтора не будет. Значит колбэк
+        обязан к этому моменту уже лежать в базе."""
         _post(CALLBACK)
         assert alien_callback.session.commits == 1
 
-    def test_the_provider_still_gets_its_200(self, alien_callback, bot_at):
-        """Повторы нам не помогут: чужой платёж мы и во второй раз не узнаем."""
-        bot_at(httpx.ConnectError("connection refused"))
-        assert _post(CALLBACK).status_code == 200
-
-    def test_a_delivered_callback_bothers_nobody(self, alien_callback, bot_at):
-        bot_at(_Answer(200))
-        assert _post(CALLBACK).status_code == 200
-        assert alien_callback.alerts == []
-        assert alien_callback.session.commits == 0
+    def test_nothing_is_sent_anywhere(self):
+        """Запрос к боту из контейнера не работает и вернуться не должен."""
+        assert "httpx" not in WEBHOOKS
+        assert "_forward_to_partner" not in WEBHOOKS
 
 
 class TestWhenTheBotTradesUnderItsOwnMerchant:
     """Реквизиты в колбэке — бота, а не наши.
 
-    Наша сверка такой колбэк не признаёт, и до пересылки дело не доходило:
-    401, провайдер несколько раз повторяет и бросает. Опроса статуса у бота
-    для этого провайдера нет — клиент заплатил и не получил ничего.
-
-    Признать колбэк чужим — это не ослабить проверку, а наоборот: нашим
-    платежом он после этого стать не может, единственное, что с ним
-    происходит, — пересылка боту, который проверит те же заголовки сам.
+    Наша сверка такой колбэк не признаёт, и до очереди дело не доходило:
+    401, провайдер несколько раз повторяет и бросает.
     """
 
     @pytest.fixture
@@ -228,7 +158,6 @@ class TestWhenTheBotTradesUnderItsOwnMerchant:
 
     @pytest.fixture
     def strangers(self, alien_callback, monkeypatch):
-        """Наша сверка говорит «не наш» — как на реквизитах бота."""
         monkeypatch.setattr(
             webhooks,
             "get_provider",
@@ -236,62 +165,118 @@ class TestWhenTheBotTradesUnderItsOwnMerchant:
         )
         return alien_callback
 
-    def test_it_is_handed_over_not_refused(self, strangers, partner, bot_at):
-        client = bot_at(_Answer(200))
+    def test_it_is_queued_not_refused(self, strangers, partner):
         assert _post(CALLBACK, headers=BOT_HEADERS).status_code == 200
-        assert client.sent, "колбэк не дошёл до бота"
+        assert strangers.queued, "колбэк под мерчантом бота потерян"
 
-    def test_we_do_not_look_for_it_among_our_payments(
-        self, strangers, partner, bot_at, monkeypatch
-    ):
-        """Платёж под чужим мерчантом нашим не бывает: искать его незачем."""
-        bot_at(_Answer(200))
-        looked = []
-
-        async def _remember(*_args, **_kwargs):
-            looked.append(1)
-            return None, False
-
-        monkeypatch.setattr(webhooks.payment_service, "handle_webhook", _remember)
-        _post(CALLBACK, headers=BOT_HEADERS)
-        assert looked == []
-
-    def test_a_lost_one_still_calls_the_operator(self, strangers, partner, bot_at):
-        bot_at(httpx.ConnectError("connection refused"))
-        _post(CALLBACK, headers=BOT_HEADERS)
-        assert strangers.alerts, "оплата пропала, и никто об этом не узнал"
-
-    def test_someone_elses_credentials_are_still_refused(self, strangers, partner, bot_at):
-        """Пересылка открыта ровно под одну пару реквизитов, а не под любые."""
-        bot_at(_Answer(200))
+    def test_someone_elses_credentials_are_still_refused(self, strangers, partner):
         wrong = {"X-MerchantId": "bot-merchant", "X-Secret": "guessed-secret"}
         assert _post(CALLBACK, headers=wrong).status_code == 401
 
-    def test_unset_partner_changes_nothing(self, strangers, bot_at, monkeypatch):
+    def test_unset_partner_changes_nothing(self, strangers, monkeypatch):
         """Мерчант общий — вторая пара не заполнена и ничего не открывает."""
         monkeypatch.setattr(settings.platega, "partner_merchant_id", "")
         monkeypatch.setattr(settings.platega, "partner_secret", SecretStr(""))
-        bot_at(_Answer(200))
         assert _post(CALLBACK, headers=BOT_HEADERS).status_code == 401
 
-    def test_an_empty_header_does_not_match_an_empty_setting(self, strangers, bot_at, monkeypatch):
-        """Иначе пустая настройка пускала бы кого угодно без заголовков."""
+    def test_an_empty_header_does_not_match_an_empty_setting(self, strangers, monkeypatch):
         monkeypatch.setattr(settings.platega, "partner_merchant_id", "")
         monkeypatch.setattr(settings.platega, "partner_secret", SecretStr(""))
-        bot_at(_Answer(200))
         assert _post(CALLBACK, headers={"X-MerchantId": "", "X-Secret": ""}).status_code == 401
 
 
-class TestTheAlertItself:
-    def test_it_renders_without_the_amount(self):
-        """В колбэке сумма необязательна — текст не должен из-за этого упасть."""
-        assert texts.ADMIN_PARTNER_CALLBACK_LOST.format(
-            transaction="tx-1", amount="—", status="CONFIRMED", reason="бот не ответил"
-        )
+class TestTheBotCanTakeTheQueue:
+    """Ручки, через которые бот забирает колбэки и отчитывается."""
 
-    def test_it_says_what_to_do(self):
-        """Оператору нужно действие, а не констатация."""
-        assert "вручную" in texts.ADMIN_PARTNER_CALLBACK_LOST
+    def test_the_queue_is_offered(self):
+        assert '@router.get("/partner-callbacks")' in CATALOG
 
-    def test_it_names_the_setting_to_check(self):
-        assert "PLATEGA_PARTNER_CALLBACK_URL" in texts.ADMIN_PARTNER_CALLBACK_LOST
+    def test_delivered_ones_are_not_offered_again(self):
+        head = CATALOG.index('@router.get("/partner-callbacks")')
+        body = CATALOG[head : CATALOG.index("@router.post", head)]
+        assert "delivered_at.is_(None)" in body
+        assert "attempts < PARTNER_MAX_ATTEMPTS" in body
+
+    def test_there_is_a_report(self):
+        assert '@router.post("/partner-callbacks/{callback_id}/ack")' in CATALOG
+
+    def test_without_a_report_it_comes_back(self):
+        """Повтор у бота безопасен — он сверяет статус платежа, — а потерянная
+        оплата нет. Поэтому неподтверждённый колбэк обязан вернуться."""
+        head = CATALOG.index('@router.post("/partner-callbacks/{callback_id}/ack")')
+        body = CATALOG[head : head + 1200]
+        assert "item.delivered_at = utcnow()" in body
+        assert "item.attempts += 1" in body
+
+    def test_it_gives_up_later_than_messages(self):
+        """Не дошло сообщение — клиент не узнал новости. Не дошёл колбэк —
+        клиент заплатил и не получил оплаченного."""
+        from core.notifications import OUTBOX_MAX_ATTEMPTS
+
+        assert PARTNER_MAX_ATTEMPTS > OUTBOX_MAX_ATTEMPTS
+
+
+class TestTheBotSideComesAndGets:
+    def test_it_asks_our_queue(self):
+        assert "/api/v1/catalog/partner-callbacks" in BOT_API
+
+    def test_it_reports_back(self):
+        assert "partner_callback_ack" in BOT_API and "partner_callback_ack" in BOT_LOOP
+
+    def test_it_hands_the_callback_to_its_own_handler(self):
+        """Разбирать его на стороне бота значило бы завести вторую копию
+        логики зачисления — она разъедется с первой и разъедется молча."""
+        assert "127.0.0.1:8081/platega/callback" in BOT_LOOP
+
+    def test_a_refusal_is_reported_not_swallowed(self):
+        head = BOT_LOOP.index("except Exception")
+        assert "partner_callback_ack(callback_id, ok=False" in BOT_LOOP[head : head + 400]
+
+    def test_an_unknown_provider_does_not_loop_forever(self):
+        """Молчание вернуло бы его в следующую пачку, и так до конца попыток —
+        а причина всё это время осталась бы в нашем коде, а не в связи."""
+        assert "неизвестный провайдер" in BOT_LOOP
+
+    def test_the_loop_is_started(self):
+        assert "start_partner_callbacks()" in BOT_MAIN
+
+    def test_it_survives_anything(self):
+        """Круг не должен умирать от одного отказа: очередь подождёт."""
+        head = BOT_LOOP.index("async def callbacks_loop")
+        body = BOT_LOOP[head:]
+        assert "except asyncio.CancelledError" in body
+        assert "await asyncio.sleep(POLL_INTERVAL_SEC)" in body
+
+
+class TestNobodyForgetsTheQueue:
+    """Очередь, за которой никто не приходит, — это неполученная оплата."""
+
+    def test_there_is_a_watchdog(self):
+        assert "async def watch_partner_callbacks" in WATCH
+
+    def test_it_is_scheduled(self):
+        scheduler = (ROOT / "worker" / "scheduler.py").read_text(encoding="utf-8")
+        assert "watch_partner_callbacks" in scheduler
+
+    def test_it_watches_sooner_than_the_message_queue(self):
+        """Там встала переписка, здесь — включение оплаченной подписки."""
+        stuck = int(re.search(r"PARTNER_STUCK_AFTER_MIN = (\d+)", WATCH).group(1))
+        messages = int(re.search(r"STUCK_AFTER_MIN = (\d+)", WATCH).group(1))
+        assert stuck < messages
+
+    def test_it_does_not_repeat_itself(self):
+        """Сторож ходит по кругу, а очередь стоит: без метки он подкладывал бы
+        новую тревогу каждый круг."""
+        head = WATCH.index("async def watch_partner_callbacks")
+        assert "PARTNER_ALERT_KIND" in WATCH[head:]
+
+    def test_the_alert_says_what_it_costs(self):
+        head = WATCH.index("async def watch_partner_callbacks")
+        assert "заплатили" in WATCH[head:]
+
+
+def test_the_dead_setting_is_gone():
+    """Адрес бота больше не читается никем: запроса к нему нет."""
+    config = (ROOT / "core" / "config.py").read_text(encoding="utf-8")
+    assert "partner_callback_url" not in config
+    assert "PLATEGA_PARTNER_CALLBACK_URL" not in (ROOT / ".env.example").read_text(encoding="utf-8")

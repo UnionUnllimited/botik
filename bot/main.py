@@ -51,6 +51,7 @@ from tg_sender import get_bot_token
 from src.telegram_bot_factory import make_aiogram_bot, normalize_telegram_proxy_url
 from src.subscription_handlers import register_subscription_handlers, show_trial_progress, show_trial_progress_edit
 from src.router_catalog import register_router_catalog_handlers, remember_client
+from src.shop_callbacks import start_partner_callbacks
 from src.shop_outbox import start_outbox
 from src.shop_sync import start_tariff_sync
 from src.maintenance.register import register_maintenance
@@ -8137,6 +8138,10 @@ async def main():
         # подтверждения оплаты и алерты оператору. Отправляем мы — токен
         # есть только у нас, и клиент разговаривает именно с этим ботом.
         start_outbox(bot)
+        # Чужие уведомления об оплате: провайдер шлёт их по одному адресу
+        # на мерчанта — магазину, — а наши платежи он там не узнаёт. Достучаться
+        # до нас из контейнера он не может, поэтому приходим мы сами.
+        start_partner_callbacks()
         # Тарифы — один список на систему: правятся здесь, считает по ним каталог.
         start_tariff_sync()
         start_stale_payments_task(active_payment_checkers)
