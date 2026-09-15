@@ -89,9 +89,14 @@ cat <<NEXT
 1. Откройте порты на новой машине (сама она этого не делает намеренно:
    включение ufw вслепую отрезает ssh):
 
+   ufw status | head -1
+   ufw allow 22/tcp comment 'ssh'
    ufw allow 8443/tcp comment 'frps: роутеры'
-   ufw allow from <IP машины с API> to any port 7500 proto tcp
+   ufw allow from 82.197.73.251 to any port 7500 proto tcp comment 'dashboard'
    ufw status numbered
+
+   Если ufw был inactive — включать отдельно и только убедившись,
+   что в списке есть 22/tcp ALLOW: иначе машина закроется от вас самих.
 
 2. Перенесите IP на $NEW_HOST. Роутеры придут сами за минуту-две:
    имя frp.pandora361.online ведёт на этот адрес, и другого они не знают.

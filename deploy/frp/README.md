@@ -59,8 +59,36 @@ cd /opt/router-shop && grep -E '^FRP_(SERVER_PORT|TOKEN|TLS_ENABLED|DASHBOARD_US
 
 ## 2. Поднять frps на новой машине
 
+### Если frps уже где-то работает — переносите его скриптом
+
+`move-frps.sh` рядом с этим файлом. Он снимает бинарь, конфиг и unit
+со старой машины и ставит их на новую **той же версии**: обновлять frp
+заодно нельзя — это вторая правка одновременно с первой, и при поломке
+не понять, какая виновата.
+
+Запускать **на старой машине**. Доставить туда из репозитория, а не
+вставлять в терминал руками: длинная вставка бьётся, и файл записывается
+не целиком.
+
+```bash
+cd /opt/router-shop && git pull && scp deploy/frp/move-frps.sh root@<IP старой машины>:/tmp/
+```
+
+```bash
+ssh root@<IP старой машины> 'bash /tmp/move-frps.sh <IP новой машины>'
+```
+
+Скрипт ничего не выключает и не удаляет: старый frps продолжает работать,
+парк остаётся на нём, и до переноса адреса откат — это просто ничего
+не делать.
+
+### Если ставите с нуля
+
 Версия — та же, что у нашего visitor'а: `0.65.0`. Конфиг в формате TOML
-(frp 0.52 и новее).
+(frp 0.52 и новее). Учтите, что старые установки живут systemd-службой
+с конфигом `/etc/frp/frps.ini` — в INI те же поля называются иначе:
+`bind_port`, `token`, `tls_only`, `dashboard_port`, `dashboard_user`,
+`dashboard_pwd`.
 
 `/opt/frps/frps.toml`:
 
@@ -111,11 +139,24 @@ cd /opt/frps && docker compose up -d && docker compose logs --tail=20 frps
 это список всего парка с именами прокси, и наружу ему нельзя. Открывайте
 его только адресу машины с нашим API:
 
+Порядок важен: если `ufw` выключен, включение с уже добавленными правилами
+и без разрешённого ssh закрывает машину от вас самих.
+
 ```bash
-ufw allow 8443/tcp comment 'frps: роутеры'; ufw allow from <IP машины с API> to any port 7500 proto tcp comment 'frps dashboard'; ufw status numbered
+ufw status | head -1; ufw allow 22/tcp comment 'ssh'; ufw allow 8443/tcp comment 'frps: роутеры'; ufw allow from 82.197.73.251 to any port 7500 proto tcp comment 'frps dashboard'; ufw status numbered
 ```
 
-Проверка снаружи: `8443` отвечает, `7500` — нет.
+`82.197.73.251` — машина с нашим API. Наружу запросы уходят из контейнера,
+но приходят с адреса хоста, поэтому правило именно на него.
+
+Была `inactive` — включать отдельной командой и только увидев `22/tcp ALLOW`
+в списке.
+
+Проверка: с машины API оба порта отвечают, с любой третьей — только `8443`.
+
+```bash
+nc -z -w5 94.228.166.98 8443 && echo '8443 отвечает'; nc -z -w5 94.228.166.98 7500 && echo '7500 отвечает'
+```
 
 ## 4. Убавить TTL записи, заранее
 
@@ -169,8 +210,10 @@ cd /opt/router-shop && docker compose restart frpc worker
 Только после этого:
 
 ```bash
-cd /opt/frps && docker compose down
+systemctl disable --now frps
 ```
+
+В докере — `cd /opt/frps && docker compose down`.
 
 Машину не удаляйте ещё неделю: вернуть A-запись обратно — это минута,
 а поднять всё заново — вечер.
