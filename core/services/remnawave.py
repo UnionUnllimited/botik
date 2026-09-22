@@ -26,6 +26,7 @@ import httpx
 import structlog
 
 from core.config import settings
+from core.errors import describe
 
 log = structlog.get_logger("services.remnawave")
 
@@ -503,7 +504,7 @@ class RemnawaveClient:
             hosts = await self.hosts()
         except RemnawaveError as exc:
             status.error = str(exc)
-            log.warning("remnawave.probe_failed", error=str(exc))
+            log.warning("remnawave.probe_failed", error=describe(exc))
             return status
 
         status.ok = True

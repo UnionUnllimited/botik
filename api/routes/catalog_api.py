@@ -49,6 +49,7 @@ from core.enums import (
     SubscriptionStatus,
     VatCode,
 )
+from core.errors import describe
 from core.models import (
     Delivery,
     Device,
@@ -867,7 +868,7 @@ async def my_router_update(
     try:
         result = await router_shell.run_quick(device, "ota_now")
     except router_shell.ShellError as exc:
-        log.warning("catalog.router_update_failed", device_id=device.id, error=str(exc))
+        log.warning("catalog.router_update_failed", device_id=device.id, error=describe(exc))
         return {"ok": False, "error": "unreachable"}
 
     # Событие в журнал устройства: оператор должен видеть, что перепрошивку
@@ -940,7 +941,7 @@ async def my_router_reboot(
     try:
         result = await router_shell.run_quick(device, "reboot")
     except router_shell.ShellError as exc:
-        log.warning("catalog.router_reboot_failed", device_id=device.id, error=str(exc))
+        log.warning("catalog.router_reboot_failed", device_id=device.id, error=describe(exc))
         return {"ok": False, "error": "unreachable"}
 
     routers_service.add_event(
@@ -1049,7 +1050,7 @@ async def my_router_nodes(
     try:
         state = await router_nodes.read(device)
     except (router_nodes.NodeError, router_shell.ShellError) as exc:
-        log.info("catalog.router_nodes_unavailable", device_id=device.id, error=str(exc))
+        log.info("catalog.router_nodes_unavailable", device_id=device.id, error=describe(exc))
         return {"ok": False, "error": "unsupported", "nodes": [], "current": "", "enabled": True}
 
     return _nodes_payload(state)
@@ -1082,7 +1083,7 @@ async def my_router_select_node(
     except router_nodes.NodeError as exc:
         return {"ok": False, "error": "refused", "message": str(exc)}
     except router_shell.ShellError as exc:
-        log.warning("catalog.router_node_failed", device_id=device.id, error=str(exc))
+        log.warning("catalog.router_node_failed", device_id=device.id, error=describe(exc))
         return {"ok": False, "error": "unreachable"}
 
     # Событие в журнал устройства: оператор, разбирая обращение «стало хуже»,
@@ -1123,7 +1124,7 @@ async def my_router_service(payload: dict, session: AsyncSession = Depends(get_s
     except router_nodes.NodeError as exc:
         return {"ok": False, "error": "refused", "message": str(exc)}
     except router_shell.ShellError as exc:
-        log.warning("catalog.router_service_failed", device_id=device.id, error=str(exc))
+        log.warning("catalog.router_service_failed", device_id=device.id, error=describe(exc))
         return {"ok": False, "error": "unreachable"}
 
     routers_service.add_event(
@@ -1205,7 +1206,7 @@ async def _router_accounts_by_client() -> dict[int, remnawave.RemnaUser]:
     try:
         accounts = await panel.users()
     except Exception as exc:  # noqa: BLE001 — панель чужая, причина в лог, срок важнее
-        log.warning("catalog.panel_accounts_unavailable", error=str(exc))
+        log.warning("catalog.panel_accounts_unavailable", error=describe(exc))
         return {}
 
     best: dict[int, remnawave.RemnaUser] = {}
@@ -2711,7 +2712,7 @@ async def manage_payment_cancel(
                 ),
             }
     except Exception as exc:  # noqa: BLE001 — причину показываем оператору
-        log.warning("catalog.payment_cancel_check_failed", payment_id=payment.id, error=str(exc))
+        log.warning("catalog.payment_cancel_check_failed", payment_id=payment.id, error=describe(exc))
         return {"ok": False, "error": f"Провайдер не ответил, платёж не тронут: {exc}"}
 
     payment.status = PaymentStatus.CANCELED
@@ -2962,7 +2963,7 @@ async def manage_delivery_quote(
                 )
                 pay_url = payment.confirmation_url or ""
         except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
-            log.warning("catalog.delivery_payment_failed", order_id=order.id, error=str(exc))
+            log.warning("catalog.delivery_payment_failed", order_id=order.id, error=describe(exc))
             return {"ok": False, "error": f"Счёт выставить не вышло: {exc}"}
     elif price == 0:
         # Дарёную доставку платить не за что — отмечаем оплаченной сразу,
@@ -3055,7 +3056,7 @@ async def order_payment_link(
             order=order,
         )
     except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
-        log.warning("catalog.order_link_failed", order_id=order.id, error=str(exc))
+        log.warning("catalog.order_link_failed", order_id=order.id, error=describe(exc))
         return {"ok": False, "error": f"Оплата сейчас недоступна: {exc}"}
 
     return {"ok": True, "pay_url": payment.confirmation_url or "", "price": str(order.total)}
@@ -3108,7 +3109,7 @@ async def delivery_payment_link(
             order=order,
         )
     except Exception as exc:  # noqa: BLE001 — причина уже написана для человека
-        log.warning("catalog.delivery_link_failed", order_id=order.id, error=str(exc))
+        log.warning("catalog.delivery_link_failed", order_id=order.id, error=describe(exc))
         return {"ok": False, "error": f"Оплата сейчас недоступна: {exc}"}
 
     return {"ok": True, "pay_url": payment.confirmation_url or "", "price": str(delivery.price)}

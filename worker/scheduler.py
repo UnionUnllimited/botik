@@ -19,6 +19,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from core.config import settings
+from core.errors import describe
 from core.metrics import worker_job_errors_total, worker_job_seconds
 from worker.tasks import (
     domain_lists,
@@ -44,7 +45,7 @@ def instrumented(name: str, func: JobFunc) -> JobFunc:
                 return await func()
             except Exception as exc:
                 worker_job_errors_total.labels(job=name).inc()
-                log.exception("worker.job_failed", job=name, error=str(exc))
+                log.exception("worker.job_failed", job=name, error=describe(exc))
                 return None
 
     wrapper.__name__ = f"job_{name}"

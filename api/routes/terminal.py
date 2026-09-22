@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_session
 from core.config import settings
+from core.errors import describe
 from core.models import Device
 from core.services import router_shell, terminal_ticket
 from core.services import routers as routers_service
@@ -226,7 +227,7 @@ async def terminal_ws(
     except TimeoutError:
         await socket.send_bytes("\r\n\x1b[33mТерминал закрыт по бездействию.\x1b[0m\r\n".encode())
     except (WebSocketDisconnect, asyncssh.Error, OSError) as exc:
-        log.info("terminal.session_broken", device_id=device.id, error=str(exc))
+        log.info("terminal.session_broken", device_id=device.id, error=describe(exc))
     finally:
         connection.close()
         log.info("terminal.session_finished", device_id=device.id, mac=device.mac)

@@ -29,6 +29,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.errors import describe
 from core.services import settings_service
 
 log = structlog.get_logger("services.object_storage")
@@ -183,7 +184,7 @@ async def size_of(storage: Storage, key: str) -> int | None:
     try:
         return await asyncio.to_thread(_head)
     except Exception as exc:  # noqa: BLE001 — причин у чужого хранилища много
-        log.info("storage.head_failed", key=key, error=str(exc))
+        log.info("storage.head_failed", key=key, error=describe(exc))
         return None
 
 
@@ -203,7 +204,7 @@ async def _run(job, *, key: str, bucket: str) -> str:
     try:
         await asyncio.to_thread(job)
     except Exception as exc:  # noqa: BLE001 — отказ чужого хранилища не наша ошибка
-        log.warning("storage.failed", key=key, bucket=bucket, error=str(exc))
+        log.warning("storage.failed", key=key, bucket=bucket, error=describe(exc))
         return f"{exc.__class__.__name__}: {exc}"[:200]
     log.info("storage.put", key=key, bucket=bucket)
     return ""

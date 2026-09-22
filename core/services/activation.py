@@ -29,6 +29,7 @@ from core import notifications, texts
 from core.config import settings
 from core.dates import to_display, utcnow
 from core.enums import DeviceStatus, OrderStatus, SubscriptionStatus
+from core.errors import describe
 from core.metrics import device_activations_total
 from core.models import Device, Order, Subscription, User
 from core.redis_client import RateLimiter
@@ -182,7 +183,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
             # переиспользуем и просто переставляем срок.
             await panel.update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
-        log.warning("activation.manual_panel_failed", mac=device.mac, error=str(exc))
+        log.warning("activation.manual_panel_failed", mac=device.mac, error=describe(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
 
     # Клиентская активация ловит это ниже, а ручная — не ловила, и отказ SSH
@@ -193,7 +194,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
         await _ensure_tunnel(session, device)
         output = await deliver_subscription(device, account.subscription_url)
     except (router_shell.ShellError, ActivationError) as exc:
-        log.warning("activation.manual_delivery_failed", mac=device.mac, error=str(exc))
+        log.warning("activation.manual_delivery_failed", mac=device.mac, error=describe(exc))
         routers.add_event(
             session,
             device_id=device.id,
@@ -216,7 +217,7 @@ async def activate_manually(session: AsyncSession, *, device: Device, days: int)
         # «Основное приложение ответило 500» и не знает ни что случилось,
         # ни в каком состоянии остался роутер. Причина уходит в лог с полной
         # трассировкой, оператору — та же строка человеческим языком.
-        log.exception("activation.manual_failed", mac=device.mac, error=str(exc))
+        log.exception("activation.manual_failed", mac=device.mac, error=describe(exc))
         routers.add_event(
             session,
             device_id=device.id,
@@ -400,7 +401,7 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
         # к чему — это наш обход, а не человек, нажимающий кнопку.
         await activate(session, user=user, raw_mac=device.mac, rate_limited=False)
     except ActivationError as exc:
-        log.info("activation.auto_postponed", mac=device.mac, error=str(exc))
+        log.info("activation.auto_postponed", mac=device.mac, error=describe(exc))
         return False
 
     routers.add_event(
@@ -438,7 +439,7 @@ async def extend_manually(session: AsyncSession, *, device: Device, days: int) -
         expire_at = max(current or now, now) + dt.timedelta(days=days)
         await remnawave.client().update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
-        log.warning("activation.manual_extend_failed", mac=device.mac, error=str(exc))
+        log.warning("activation.manual_extend_failed", mac=device.mac, error=describe(exc))
         raise ActivationError(f"Панель не приняла запрос: {exc}") from exc
     username = account.username
 
@@ -522,7 +523,7 @@ async def panel_account_of(device: Device) -> remnawave.RemnaUser | None:
     try:
         accounts = await _router_accounts(device)
     except remnawave.RemnawaveError as exc:
-        log.warning("activation.panel_lookup_failed", mac=device.mac, error=str(exc))
+        log.warning("activation.panel_lookup_failed", mac=device.mac, error=describe(exc))
         return None
     return accounts[0] if accounts else None
 
@@ -722,7 +723,7 @@ async def sync_panel_expiry(
                 return True
         await remnawave.client().update_expiry(account, expire_at=subscription.expires_at)
     except remnawave.RemnawaveError as exc:
-        log.warning("activation.expiry_sync_failed", mac=device.mac, error=str(exc))
+        log.warning("activation.expiry_sync_failed", mac=device.mac, error=describe(exc))
         return False
     username = account.username
 
@@ -783,7 +784,7 @@ async def activate(
             await panel.update_expiry(account, expire_at=expire_at)
     except remnawave.RemnawaveError as exc:
         device_activations_total.labels(result="panel").inc()
-        log.warning("activation.panel_failed", mac=mac, error=str(exc))
+        log.warning("activation.panel_failed", mac=mac, error=describe(exc))
         raise ActivationError(
             "Не получилось подготовить подписку на сервере. Мы уже видим проблему — "
             "попробуйте через несколько минут."
@@ -795,7 +796,7 @@ async def activate(
         output = await deliver_subscription(device, account.subscription_url)
     except router_shell.ShellError as exc:
         device_activations_total.labels(result="router").inc()
-        log.warning("activation.delivery_failed", mac=mac, error=str(exc))
+        log.warning("activation.delivery_failed", mac=mac, error=describe(exc))
         routers.add_event(
             session,
             device_id=device.id,

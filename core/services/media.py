@@ -13,6 +13,7 @@ from pathlib import Path
 import structlog
 
 from core.config import settings
+from core.errors import describe
 
 log = structlog.get_logger("services.media")
 
@@ -58,7 +59,7 @@ def save_image(data: bytes, content_type: str, *, prefix: str) -> str:
         name = f"{prefix}-{secrets.token_hex(4)}{extension}"
         (root / name).write_bytes(data)
     except OSError as exc:
-        log.warning("media.save_failed", error=str(exc), root=str(root))
+        log.warning("media.save_failed", error=describe(exc), root=str(root))
         raise MediaError("Не удалось сохранить файл на диск") from exc
 
     log.info("media.saved", name=name, bytes=len(data))
@@ -75,4 +76,4 @@ def delete_image(url: str | None) -> None:
     try:
         (media_root() / name).unlink(missing_ok=True)
     except OSError as exc:
-        log.warning("media.delete_failed", name=name, error=str(exc))
+        log.warning("media.delete_failed", name=name, error=describe(exc))

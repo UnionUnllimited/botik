@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core import texts as ru
 from core.config import settings
 from core.dates import utcnow
+from core.errors import describe
 from core.models import DomainBuild, DomainSource, ListKind, ManualList, ManualListRevision
 from core.notifications import notify_admins
 from core.services import object_storage, settings_service
@@ -423,7 +424,7 @@ def publish_local(directory: str, values_by_kind: dict[str, list[str]]) -> bool:
             tmp.write_text(_as_file(values), encoding="utf-8")
             tmp.replace(path)
     except OSError as exc:
-        log.warning("domain_lists.local_publish_failed", directory=directory, error=str(exc))
+        log.warning("domain_lists.local_publish_failed", directory=directory, error=describe(exc))
         return False
     log.info("domain_lists.local_published", directory=directory)
     return True

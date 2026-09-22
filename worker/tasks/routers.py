@@ -24,6 +24,7 @@ from sqlalchemy import delete, select
 
 from core.config import settings
 from core.db import session_scope
+from core.errors import describe
 from core.models import Device, DeviceEvent, Heartbeat
 from core.services import activation
 from core.services import routers as router_service
@@ -56,7 +57,7 @@ async def sync_routers() -> int:
     try:
         online = await dashboard().online_routers()
     except Exception as exc:  # noqa: BLE001 — frps недоступен, попробуем в следующий раз
-        log.warning("routers.frps_unavailable", error=str(exc))
+        log.warning("routers.frps_unavailable", error=describe(exc))
         return 0
 
     candidates: list[int] = []
@@ -112,7 +113,7 @@ async def sync_routers() -> int:
             try:
                 await activation.auto_activate_if_shipped(session, device)
             except Exception as exc:  # noqa: BLE001 — один роутер не должен ронять обход
-                log.warning("routers.auto_activation_failed", mac=device.mac, error=str(exc))
+                log.warning("routers.auto_activation_failed", mac=device.mac, error=describe(exc))
 
     log.info("routers.presence_synced", online=len(online), activations_tried=len(candidates))
     return len(online)

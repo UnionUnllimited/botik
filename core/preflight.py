@@ -21,6 +21,7 @@ import structlog
 
 from core.config import settings
 from core.enums import PaymentProviderName
+from core.errors import describe
 from core.payments import get_provider
 
 log = structlog.get_logger("preflight")
@@ -43,7 +44,7 @@ def sale_blockers() -> list[str]:
     try:
         paid = get_provider(PaymentProviderName.PLATEGA).is_configured
     except Exception as exc:  # noqa: BLE001 — провайдера может не быть вовсе
-        log.warning("preflight.provider_unreadable", error=str(exc))
+        log.warning("preflight.provider_unreadable", error=describe(exc))
         paid = False
     if not paid:
         missing.append("приём денег не настроен: PLATEGA_MERCHANT_ID и PLATEGA_SECRET")

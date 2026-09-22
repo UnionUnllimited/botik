@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from core.db import session_scope
 from core.enums import PaymentStatus
+from core.errors import describe
 from core.models import Payment
 from core.services import payments as payment_service
 from core.services.notifier import notify_payment_result
@@ -55,7 +56,7 @@ async def sync_pending_payments() -> int:
             try:
                 changed = await payment_service.sync_pending_payment(session, payment)
             except Exception as exc:  # noqa: BLE001 — один платёж не должен ронять задачу
-                log.warning("payments.sync_failed", payment_id=payment.id, error=str(exc))
+                log.warning("payments.sync_failed", payment_id=payment.id, error=describe(exc))
                 continue
             if changed and payment.status is PaymentStatus.SUCCEEDED:
                 applied += 1

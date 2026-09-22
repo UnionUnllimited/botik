@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from core.config import settings
 from core.db import session_scope
+from core.errors import describe
 from core.models import Device
 
 log = structlog.get_logger("worker.frpc")
@@ -36,6 +37,13 @@ def render_config(devices: list[Device]) -> str:
         f"serverPort = {frp.server_port}",
         f'auth.token = "{frp.token.get_secret_value()}"',
         f"transport.tls.enable = {str(frp.tls_enabled).lower()}",
+        # Не выходить при неудачном входе. По умолчанию frpc завершается,
+        # и контейнер поднимает его заново — повтор получается через полную
+        # перезагрузку процесса, с потерей всех поднятых визитёров и с риском
+        # упереться в задержку перезапуска докера. Сам он переподключается
+        # каждые двадцать секунд и возвращает туннели, как только сервер
+        # ответит.
+        "loginFailExit = false",
         "",
         'webServer.addr = "0.0.0.0"',
         "webServer.port = 7400",
@@ -83,7 +91,12 @@ def render_config(devices: list[Device]) -> str:
 
 
 async def sync_frpc_config() -> int:
-    """Пересобирает конфиг, если состав роутеров изменился."""
+    """Пересобирает конфиг, если он отличается от лежащего на диске.
+
+    Сравнивается весь файл, а не список устройств: адрес сервера и токен
+    тоже приходят из настроек, и смена `FRP_SERVER_HOST` обязана доехать
+    до визитёра так же, как появление нового роутера.
+    """
     if not settings.frp.is_configured:
         log.info("frpc.not_configured", missing=settings.frp.missing_keys)
         return 0
@@ -131,7 +144,7 @@ async def sync_frpc_config() -> int:
             response = await client.get(ADMIN_URL)
         reloaded = response.status_code < 400
     except Exception as exc:  # noqa: BLE001 — контейнера может не быть, конфиг всё равно записан
-        log.warning("frpc.reload_failed", error=str(exc))
+        log.warning("frpc.reload_failed", error=describe(exc))
         reloaded = False
 
     log.info("frpc.config_updated", visitors=len(devices), reloaded=reloaded)

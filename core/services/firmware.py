@@ -37,6 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.errors import describe
 from core.models import FirmwareImage, FirmwareRelease
 from core.redis_client import get_redis
 from core.services import object_storage
@@ -214,7 +215,7 @@ async def save_upload(
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        log.warning("firmware.mkdir_failed", error=str(exc), path=str(directory))
+        log.warning("firmware.mkdir_failed", error=describe(exc), path=str(directory))
         raise FirmwareError("Не удалось создать каталог для образов.") from exc
 
     target = directory / name
@@ -239,7 +240,7 @@ async def save_upload(
         raise
     except OSError as exc:
         tmp.unlink(missing_ok=True)
-        log.warning("firmware.save_failed", error=str(exc), path=str(target))
+        log.warning("firmware.save_failed", error=describe(exc), path=str(target))
         raise FirmwareError("Не удалось сохранить файл на диск.") from exc
 
     saved = SavedImage(
@@ -284,7 +285,7 @@ def delete_file(url_path: str | None) -> None:
     try:
         (images_root() / parts[0] / parts[1]).unlink(missing_ok=True)
     except OSError as exc:
-        log.warning("firmware.delete_failed", path=url_path, error=str(exc))
+        log.warning("firmware.delete_failed", path=url_path, error=describe(exc))
 
 
 def delete_release_dir(version: int) -> None:

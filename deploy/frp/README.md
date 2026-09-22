@@ -258,7 +258,8 @@ certbot certonly --standalone -d <имя> --agree-tos -n
 насквозь, от нашего API до роутера:
 
 ```bash
-cd /opt/router-shop && PORT=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-router_shop}" -d "${POSTGRES_DB:-router_shop}" -tAc "select frp_visitor_port from devices where frp_online order by frp_visitor_port limit 1" | tr -d ' '); docker compose exec -T api sh -c "curl -s -m 8 -o /dev/null -w 'ответ роутера: %{http_code}
+cd /opt/router-shop && PORT=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-router_shop}" -d "${POSTGRES_DB:-router_shop}" -tAc "select frp_visitor_port from devices where frp_online order by frp_visitor_port limit 1" | tr -d ' 
+'); docker compose exec -T api sh -c "curl -s -m 8 -o /dev/null -w 'ответ роутера: %{http_code}
 ' http://frpc:$PORT/cgi-bin/stats"
 ```
 
@@ -271,6 +272,93 @@ cd /opt/router-shop && PORT=$(docker compose exec -T postgres psql -U "${POSTGRE
 **На старой машине остался свой frpc-визитёр.** Он продолжил логиниться
 на новый сервер и сыпать ошибками. К переезду отношения не имеет, но
 выключить его стоит.
+
+## Обход: путь до frps идёт через старую машину
+
+**Так стоит сейчас, с 22 сентября 2026.**
+
+```
+роутеры ──────────────► frp.pandora361.online → 94.228.166.98  (frps)
+                                                      ▲
+witty-dragon ──► 103.27.157.204 ──── мост (socat) ────┘
+```
+
+Роутеры ходят к серверу напрямую, по имени. Мы — в обход, через машину,
+которая видит обе стороны.
+
+### Почему
+
+Через неделю после переезда путь от witty-dragon до `94.228.166.98` пропал
+целиком: не проходил ни TCP, ни ICMP, в обе стороны, при рабочем интернете
+с обеих сторон. Роутеры при этом на сервер заходили как ни в чём не бывало —
+значит режут не сервер, а конкретное направление. Похоже на фильтрацию
+по адресу у одного из хостеров.
+
+Старая машина при этом видела и нас, и новый сервер. Её и поставили мостом.
+
+### Из чего собрано
+
+На `103.27.157.204` две службы `socat`, по одной на порт:
+
+```
+/etc/systemd/system/frps-relay-8443.service   8443 → 94.228.166.98:8443
+/etc/systemd/system/frps-relay-7500.service   7500 → 94.228.166.98:7500
+```
+
+```
+ExecStart=/usr/bin/socat TCP4-LISTEN:8443,fork,reuseaddr,range=82.197.73.251/32 TCP:94.228.166.98:8443
+```
+
+`TCP4-LISTEN`, а не `TCP-LISTEN`: без явной четвёртой версии socat не понимает
+`range=` с маской в битах и отказывается стартовать. `range` обязателен —
+без него мост становится открытым проходом к чужому порту.
+
+Сам frps на старой машине выключен (`systemctl disable --now frps`), иначе
+порты были бы заняты.
+
+На witty-dragon в `.env`:
+
+```
+FRP_SERVER_HOST=103.27.157.204
+FRP_DASHBOARD_URL=http://103.27.157.204:7500
+```
+
+Имя `frp.pandora361.online` здесь не годится: оно ведёт на новый сервер,
+до которого у нас пути нет.
+
+На `94.228.166.98` файрвол обязан пускать **мост**, а не нас:
+
+```
+ufw allow from 103.27.157.204 to any port 7500 proto tcp
+```
+
+На этом мы и споткнулись: правило было выписано на адрес witty-dragon,
+а запросы после переезда пошли с моста. `8443` открыт всем, поэтому туннели
+поднялись сразу, а дашборд молчал — и пока он молчал, не работали ни статус
+«на связи», ни автоактивация, ни обнаружение новых роутеров.
+
+### Чем это плохо
+
+Мост — лишнее звено, и падает оно молча. Выглядит падение как всё то же:
+панель роутера не открывается, показания не снимаются, новые устройства
+не появляются. У клиентов при этом всё работает — доступ идёт с роутера
+прямо на узлы, туннель в нём не участвует. Слепнем мы, а не они.
+
+Проверка, что обход жив, — одной командой с witty-dragon:
+
+```bash
+cd /opt/router-shop && PORT=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-router_shop}" -d "${POSTGRES_DB:-router_shop}" -tAc "select frp_visitor_port from devices where frp_online order by frp_visitor_port limit 1" | tr -d ' '); docker compose exec -T api sh -c "curl -s -m 10 -o /dev/null -w 'ответ роутера: %{http_code}
+' http://frpc:$PORT/cgi-bin/stats"
+```
+
+`200` — обход работает целиком, от нашего API до роутера.
+
+### Как его убрать
+
+Правильное решение — вернуть прямой путь: сменить адрес frps на тот,
+до которого мы доходим, либо разобраться с хостером. Тогда в `.env`
+возвращаются имя и адрес дашборда, мосты выключаются, а старая машина
+наконец освобождается.
 
 ## Что ломается, если сделать не в том порядке
 

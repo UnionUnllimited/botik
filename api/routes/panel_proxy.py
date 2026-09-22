@@ -20,6 +20,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from core.config import settings
+from core.errors import describe
 from core.services import panel_ticket
 
 router = APIRouter(include_in_schema=False)
@@ -97,7 +98,7 @@ async def _proxy(request: Request, path: str) -> Response:
                 headers=headers,
             )
     except httpx.HTTPError as exc:
-        log.warning("panel.proxy_failed", mac=router_mac, error=str(exc))
+        log.warning("panel.proxy_failed", mac=router_mac, error=describe(exc))
         return HTMLResponse(f"Роутер не ответил: {exc}. Проверьте, что туннель поднят.", status_code=502)
 
     response_headers = {

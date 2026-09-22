@@ -33,6 +33,7 @@ from core.enums import (
     ReferralStatus,
     SubscriptionEventType,
 )
+from core.errors import describe
 from core.metrics import payments_total
 from core.models import Order, Payment, Plan, Referral, Subscription, User
 from core.notifications import notify_admins
@@ -306,7 +307,7 @@ async def _push_topic(session: AsyncSession, order: Order, *, note: str) -> None
     try:
         await order_topics.push(session, order, note=note)
     except Exception as exc:  # noqa: BLE001 — оплата не должна падать из-за чата
-        log.warning("payment.topic_push_failed", order_id=order.id, error=str(exc))
+        log.warning("payment.topic_push_failed", order_id=order.id, error=describe(exc))
 
 
 CLOSED_ORDER_STATUSES = (OrderStatus.CANCELLED, OrderStatus.REFUNDED)
@@ -643,7 +644,7 @@ async def expire_stale_payments(session: AsyncSession, *, now: dt.datetime | Non
                 log.info("payment.paid_at_the_last_moment", payment_id=payment.id)
                 continue
         except Exception as exc:  # noqa: BLE001 — гасить вслепую дороже
-            log.warning("payment.expiry_check_failed", payment_id=payment.id, error=str(exc))
+            log.warning("payment.expiry_check_failed", payment_id=payment.id, error=describe(exc))
             continue
         payment.status = PaymentStatus.CANCELED
         payment.error_message = "Истёк срок действия платёжной ссылки"

@@ -32,6 +32,7 @@ from core import texts
 from core.config import settings
 from core.dates import utcnow
 from core.enums import DeviceStatus
+from core.errors import describe
 from core.models import (
     Device,
     DeviceEvent,
@@ -615,7 +616,7 @@ async def poll_router(device_id: int, session: AsyncSession = Depends(get_transa
     try:
         payload = await RouterApi(device.frp_visitor_port or 0).stats()
     except Exception as exc:  # noqa: BLE001 — причину показываем оператору как есть
-        log.warning("fleet.poll_failed", device_id=device_id, error=str(exc))
+        log.warning("fleet.poll_failed", device_id=device_id, error=describe(exc))
         return {"ok": False, "error": "Роутер не ответил: " + str(exc)[:160]}
 
     stats = routers_service.parse_stats(payload)
@@ -811,7 +812,7 @@ async def _over_the_tunnel(
             try:
                 return device, "", await work(device)
             except Exception as exc:  # noqa: BLE001 — причину показываем как есть
-                log.warning("fleet.bulk_device_failed", device_id=device.id, error=str(exc))
+                log.warning("fleet.bulk_device_failed", device_id=device.id, error=describe(exc))
                 return device, str(exc)[:120] or "не ответил", None
 
     return list(await asyncio.gather(*(one(device) for device in devices)))
@@ -949,7 +950,7 @@ async def bulk_routers(payload: dict, session: AsyncSession = Depends(get_transa
                 failed.append(f"{device.mac}: {exc}")
                 continue
             except Exception as exc:  # noqa: BLE001 — причину показываем как есть
-                log.warning("fleet.bulk_failed", device_id=device.id, action=action, error=str(exc))
+                log.warning("fleet.bulk_failed", device_id=device.id, action=action, error=describe(exc))
                 failed.append(f"{device.mac}: {str(exc)[:120]}")
                 continue
             done += 1
@@ -1069,7 +1070,7 @@ async def _panel_traffic(macs_by_client: dict[str, list[str]]) -> dict[str, dict
     try:
         accounts = await asyncio.wait_for(remnawave.client().users(), timeout=5)
     except (TimeoutError, remnawave.RemnawaveError) as exc:
-        log.warning("fleet.panel_traffic_failed", error=str(exc))
+        log.warning("fleet.panel_traffic_failed", error=describe(exc))
         return {}
 
     # Ключи в нижнем регистре, и сверяем с ними тоже приведённое имя: имена
@@ -1887,7 +1888,7 @@ async def lists_build(session: AsyncSession = Depends(get_transaction)) -> dict:
     try:
         record = await domain_lists.build(session, force=True)
     except Exception as exc:  # noqa: BLE001 — оператор должен увидеть причину, а не 500
-        log.error("fleet.lists_build_failed", error=str(exc))
+        log.error("fleet.lists_build_failed", error=describe(exc))
         return {"ok": False, "error": f"Сборка не удалась: {exc}"[:255]}
     return {
         "ok": True,

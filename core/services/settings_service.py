@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings as env
+from core.errors import describe
 from core.models import Setting
 from core.redis_client import get_redis
 
@@ -100,7 +101,7 @@ async def get_setting(session: AsyncSession, key: str) -> Any:
         if cached is not None:
             return json.loads(cached)
     except Exception as exc:  # noqa: BLE001 — кэш не критичен, читаем из БД
-        log.warning("settings.cache_read_failed", key=key, error=str(exc))
+        log.warning("settings.cache_read_failed", key=key, error=describe(exc))
 
     row = await session.scalar(select(Setting).where(Setting.key == key))
     value = row.value.get("value") if row is not None else DEFAULTS.get(key)
@@ -108,7 +109,7 @@ async def get_setting(session: AsyncSession, key: str) -> Any:
     try:
         await redis.set(_cache_key(key), json.dumps(value), ex=CACHE_TTL_SEC)
     except Exception as exc:  # noqa: BLE001
-        log.warning("settings.cache_write_failed", key=key, error=str(exc))
+        log.warning("settings.cache_write_failed", key=key, error=describe(exc))
     return value
 
 
@@ -136,7 +137,7 @@ async def set_setting(
     try:
         await get_redis().delete(_cache_key(key))
     except Exception as exc:  # noqa: BLE001
-        log.warning("settings.cache_invalidate_failed", key=key, error=str(exc))
+        log.warning("settings.cache_invalidate_failed", key=key, error=describe(exc))
     log.info("settings.updated", key=key, admin_id=admin_id)
 
 

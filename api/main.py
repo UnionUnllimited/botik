@@ -38,6 +38,7 @@ from api.routes import (
 from core import preflight
 from core.config import settings
 from core.db import check_database, dispose_engine
+from core.errors import describe
 from core.logging import configure_logging
 from core.metrics import api_request_seconds, api_requests_total
 from core.notifications import close_bot
@@ -133,7 +134,7 @@ def create_app() -> FastAPI:
         app.mount(media.URL_PREFIX, StaticFiles(directory=str(media_root)), name="media")
     except OSError as exc:
         # Без картинок сайт работает, без запуска — нет.
-        log.error("api.media_mount_failed", error=str(exc), path=str(media_root))
+        log.error("api.media_mount_failed", error=describe(exc), path=str(media_root))
 
     # Образы прошивки. Свой каталог и свой префикс: в `/media` лежат картинки
     # товаров, а тут файлы по 27–54 МБ, за которыми приходит парк железа.
@@ -146,14 +147,14 @@ def create_app() -> FastAPI:
             firmware.IMAGES_PREFIX, StaticFiles(directory=str(images_root)), name="firmware"
         )
     except OSError as exc:
-        log.error("api.firmware_mount_failed", error=str(exc), path=str(images_root))
+        log.error("api.firmware_mount_failed", error=describe(exc), path=str(images_root))
 
     # Стили витрины. Отдельным каталогом, а не вместе с картинками товаров:
     # media — том с загруженными файлами, static едет в образе.
     try:
         app.mount("/static", StaticFiles(directory=str(landing.STATIC_DIR)), name="static")
     except (OSError, RuntimeError) as exc:
-        log.error("api.static_mount_failed", error=str(exc), path=str(landing.STATIC_DIR))
+        log.error("api.static_mount_failed", error=describe(exc), path=str(landing.STATIC_DIR))
 
     app.include_router(health.router)
     app.include_router(webhooks.router)
@@ -186,7 +187,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
-        log.exception("api.unhandled", error=str(exc), path=request.url.path)
+        log.exception("api.unhandled", error=describe(exc), path=request.url.path)
         if landing.is_page_request(request.url.path) and request.method in ("GET", "HEAD"):
             return landing.error_page(request, 500)
         return JSONResponse(status_code=500, content={"error": "internal_error"})
