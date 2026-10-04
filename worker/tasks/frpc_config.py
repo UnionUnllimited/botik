@@ -37,6 +37,15 @@ def render_config(devices: list[Device]) -> str:
         f"serverPort = {frp.server_port}",
         f'auth.token = "{frp.token.get_secret_value()}"',
         f"transport.tls.enable = {str(frp.tls_enabled).lower()}",
+        *(
+            # Прямого пути до frps может не быть вовсе: сервер обязан стоять
+            # в России, а мы живём за границей. Это штатная возможность frpc,
+            # а не обход: туннель внутри остаётся тем же, меняется только
+            # дорога до сервера.
+            [f'transport.proxyURL = "{frp.proxy_url}"']
+            if frp.proxy_url
+            else []
+        ),
         # Не выходить при неудачном входе. По умолчанию frpc завершается,
         # и контейнер поднимает его заново — повтор получается через полную
         # перезагрузку процесса, с потерей всех поднятых визитёров и с риском

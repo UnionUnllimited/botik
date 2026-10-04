@@ -97,6 +97,11 @@ class FrpsDashboard:
                 timeout=httpx.Timeout(self._config.dashboard_timeout_sec),
                 headers={"Authorization": f"Basic {token}"},
                 verify=True,
+                # Тем же путём, что и туннели. Ходить к одному серверу двумя
+                # дорогами значит однажды получить работающие туннели при
+                # молчащем статусе: 4 октября 2026 так и вышло — визитёр
+                # шёл через обход, а дашборд напрямую и упирался в стену.
+                proxy=self._config.proxy_url or None,
             )
         return self._client
 
