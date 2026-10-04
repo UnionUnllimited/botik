@@ -271,6 +271,23 @@ class RemnaUser:
     online_at: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def uid_payload(self) -> str | int:
+        """Идентификатор в том виде, в каком панель ждёт его обратно.
+
+        Храним мы его строкой — так удобнее и в журнале, и в сравнениях, —
+        но вернуть строкой можно только `uuid`. Числовой `id` панель
+        проверяет по типу и отвечает «Validation failed: expected number,
+        received string», причём на продлении: учётка заведена, деньги
+        приняты, а срок не двигается.
+
+        Нецифровой `id` оставляем как есть: выдумывать за панель число
+        хуже, чем отдать то, что она же и прислала.
+        """
+        if self.uid_key == "uuid":
+            return self.uid
+        return int(self.uid) if self.uid.isdigit() else self.uid
+
     @classmethod
     def parse(cls, item: dict[str, Any]) -> RemnaUser:
         traffic = item.get("userTraffic") or {}
@@ -476,7 +493,7 @@ class RemnawaveClient:
         только тот ответ, из которого учётка и пришла.
         """
         payload = {
-            account.uid_key: account.uid,
+            account.uid_key: account.uid_payload,
             "expireAt": expire_at.astimezone(dt.UTC).isoformat().replace("+00:00", "Z"),
         }
         answer = unwrap(await self.request("PATCH", self._config.users_path, json=payload))

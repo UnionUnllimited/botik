@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
 from api.routes import fleet_api
+from core.dates import utcnow
 from core.models import Device, User
 from core.models.base import Base
 
@@ -41,7 +42,11 @@ def panel(monkeypatch):
     """Панель отвечает учёткой с ссылкой; прикрытие подменяет хост."""
     monkeypatch.setattr(type(fleet_api.settings.remnawave), "is_configured", property(lambda self: True))
     monkeypatch.setattr(fleet_api.settings.remnawave, "sub_public_host", "sub.example.com")
-    until = dt.datetime(2026, 10, 3, 14, 6, tzinfo=dt.UTC)
+    # Срок считается от сегодняшнего дня, а не записан датой. Записанная
+    # дата делает тест бомбой с часовым механизмом: он зелёный до неё
+    # и падает однажды утром сам по себе, без единой правки в коде. Так
+    # и вышло 4 октября 2026 — здесь стояло третье.
+    until = utcnow() + dt.timedelta(days=30)
 
     async def account_of(device):
         return SimpleNamespace(
