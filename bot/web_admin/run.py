@@ -460,12 +460,11 @@ async def _admin_auth_guard():
                 _admin_only_substrings = ('/settings/', '/remnawave', '/panels', '/bulk-actions')
                 if any(s in path for s in _admin_only_substrings) or path.endswith('/settings') or path.endswith('/remnawave'):
                     return '', 403
-            # Открыто всякому, кто вошёл: статика, PWA и страница помощи.
-            # Без них у модератора не грузится сама админка — не раздел,
-            # закрытый от него, а вообще всё: стили, иконки, service worker.
+            # Открыто всякому, кто вошёл: статика и PWA. Без них у модератора
+            # не грузится сама админка — не раздел, закрытый от него, а вообще
+            # всё: стили, иконки, service worker.
             _open_for_everyone = (
                 '/admin-static/', '/sw.js', '/offline.html', '/manifest.webmanifest',
-                '/instructions',
             )
             if any(part in path for part in _open_for_everyone):
                 return None
@@ -476,15 +475,14 @@ async def _admin_auth_guard():
                 ('/api/ip_lookup', 'users'),
                 ('/users', 'users'), ('/payments', 'payments'), ('/referral', 'bonuses'), ('/referrals', 'bonuses'), ('/partners', 'bonuses'), ('/promo', 'bonuses'),
                 ('/tariffs', 'tariffs'), ('/traffic-topup', 'tariffs'), ('/traffic_topup', 'tariffs'),
-                ('/migrate', 'tools'), ('/tasks', 'tools'),
+                ('/tasks', 'tools'),
                 ('/news', 'tools'), ('/inbound-templates', 'tools'), ('/services', 'tools'),
                 ('/bulk-actions', 'tools'),
-                # Раздача прошивки: пункт меню стоит в «Инструментах», и проверка
-                # должна совпадать с ним. Без этой строки путь попадал бы
-                # в 'dashboard' — то есть открывался бы любому модератору,
-                # а выкат прошивки идёт на весь парк.
-                ('/firmware', 'tools'),
-                ('/updates', 'updates'),
+                # Раздача прошивки — в группе «Роутеры» и только у админа:
+                # выкат идёт на весь парк разом. Раньше пункт стоял
+                # в «Инструментах», и выдать его можно было любому модератору
+                # с этим разделом.
+                ('/firmware', 'devices'),
                 # Разделы, перенесённые из нашей админки. Раздела под них
                 # в правах модератора нет вовсе — и не должно быть: за этими
                 # страницами root-пароль клиентского роутера, консоль, склад,
@@ -499,7 +497,6 @@ async def _admin_auth_guard():
                 # Рассылка всей базе и рестарт служб — тоже не «дашборд».
                 ('/send_news', 'tools'),
                 ('/restart_', 'tools'),
-                ('/download', 'tools'),
                 ('/manual_backup', 'tools'),
                 # Показания в шапке страницы: их читает каждая страница,
                 # и без них дашборд у модератора пустеет.
@@ -629,7 +626,6 @@ def _moderator_first_allowed_url(sections: list) -> str:
         ('bonuses', 'admin.referral_stats'),
         ('tariffs', 'admin.tariffs_list'),
         ('tools', 'admin.tasks_list'),
-        ('updates', 'admin.updates'),
     ]
     for sid, endpoint in _section_to_url:
         if sid in sections:
@@ -1603,16 +1599,6 @@ def tariff_delete_moved_placeholder(tariff_id):
 @login_required
 def tariff_toggle_moved_placeholder(tariff_id):
     return redirect(url_for('admin.tariff_toggle', tariff_id=tariff_id))
-
-@admin_bp.route('/updates__placeholder__moved')
-@login_required
-def updates_moved_placeholder():
-        return redirect(url_for('admin.updates'))
-
-@admin_bp.route('/download_local_zip__placeholder__moved')
-@login_required
-def download_local_zip_moved_placeholder():
-    return redirect(url_for('admin.download_local_zip'))
 
 @admin_bp.route('/restart_all__placeholder__moved', methods=['POST'])
 @login_required

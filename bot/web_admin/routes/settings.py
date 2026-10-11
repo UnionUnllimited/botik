@@ -25,6 +25,13 @@ from functools import wraps
 
 logger = logging.getLogger(__name__)
 
+# Разделы, которые админ может выдать модератору. Те же, что на форме
+# в settings_general.html, — и только они: роутеры, склад, каталог
+# и заказы остаются за админом.
+MODERATOR_GRANTABLE = frozenset(
+    {'dashboard', 'users', 'payments', 'analytics', 'bonuses', 'tariffs', 'tools'}
+)
+
 # Импортируем login_required из run.py
 # Декоратор будет доступен через замыкание при вызове attach_settings_routes
 
@@ -126,7 +133,14 @@ def attach_settings_routes(admin_bp_instance, query_db_func, execute_db_func):
             if session.get('admin_role') == 'admin':
                 import json as _json
                 mod_pwd = form.get('moderator_web_password', '').strip()
-                mod_sections = [k.replace('moderator_section_', '') for k in form.keys() if k.startswith('moderator_section_')]
+                # Только разделы с формы. Роутеры, склад, каталог и заказы
+                # модератору не выдаются вовсе, и одной формы для этого мало:
+                # лишний ключ в запросе открыл бы ему консоль и root-пароли.
+                mod_sections = [
+                    k.replace('moderator_section_', '') for k in form.keys()
+                    if k.startswith('moderator_section_')
+                    and k.replace('moderator_section_', '') in MODERATOR_GRANTABLE
+                ]
                 # Пароль: обновляем только если введён (пустое поле = не менять)
                 if 'moderator_web_password' in form:
                     await async_execute_db(

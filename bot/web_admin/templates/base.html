@@ -496,7 +496,7 @@
                           font-weight="900" font-size="44">X</text>
                 </svg>
                 <div class="text-left flex-1 min-w-0 tw-sidebar-label">
-                    <div class="text-[13px] font-semibold leading-tight truncate tw-text-base2">{{ project_name|default('3XUIStore') }}</div>
+                    <div class="text-[13px] font-semibold leading-tight truncate tw-text-base2">{{ project_name|default('Titan Routers') }}</div>
                     <div class="text-[11px] tw-text-subtle2 leading-tight truncate">
                         {% if current_user.is_authenticated %}{% if current_user.is_admin %}Администратор{% else %}Модератор{% endif %}{% else %}Гость{% endif %}
                     </div>
@@ -528,26 +528,37 @@
 
         <!-- Меню (Tailwind) -->
         <nav class="tw-scroll flex-1 overflow-y-auto px-3 pb-3" id="sidebarNav">
+            {# Меню собрано по работе оператора магазина роутеров: заказ → склад →
+               роутер у клиента → подписка. Права на каждый пункт те же, что
+               в стороже путей run.py (`_path_to_section`): пункт, которого
+               модератор не откроет, ему и не показывается. Иконки — только из
+               локального спрайта bot/web_admin/static/icons/lucide-sprite.svg,
+               иначе пункт останется без картинки. #}
+
+            {# Обзор #}
+            {% if moderator_can_see('dashboard') or moderator_can_see('analytics') %}
             <div class="tw-nav-section tw-sidebar-label">Обзор</div>
+            {% endif %}
             {% if moderator_can_see('dashboard') %}
             <a href="{{ url_for('admin.dashboard') }}" class="tw-nav-link {% if request.path == url_for('admin.dashboard') %}active{% endif %}">
                 <i data-lucide="layout-dashboard" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Главная</span>
             </a>
             {% endif %}
-            {% if moderator_can_see('users') %}
-            <a href="{{ url_for('admin.users_list') }}" class="tw-nav-link {% if request.path == url_for('admin.users_list') %}active{% endif %}">
-                <i data-lucide="users" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Клиенты</span>
+            {% if moderator_can_see('analytics') %}
+            <a href="{{ url_for('admin.analytics') }}" class="tw-nav-link {% if request.path == url_for('admin.analytics') %}active{% endif %}">
+                <i data-lucide="bar-chart-3" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Аналитика</span>
             </a>
             {% endif %}
-            {% if moderator_can_see('users') %}
-            {# Иконки берутся из локального спрайта, а не из полного набора lucide:
-               имени там может не оказаться, и пункт останется без картинки.
-               Проверять по bot/web_admin/static/icons/lucide-sprite.svg. #}
-            <a href="{{ url_for('admin.routers_fleet') }}" class="tw-nav-link {% if request.path == url_for('admin.routers_fleet') %}active{% endif %}">
-                <i data-lucide="wifi" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Роутеры</span>
-            </a>
+
+            {# Магазин #}
+            {% if moderator_can_see('shop') or moderator_can_see('devices') or moderator_can_see('payments') %}
+            <div class="tw-nav-section tw-sidebar-label">Магазин</div>
             {% endif %}
-            {% if moderator_can_see('users') %}
+            {% if moderator_can_see('shop') %}
+            {% set _orders_url = url_for('admin.orders_shop') %}
+            <a href="{{ _orders_url }}" class="tw-nav-link {% if request.path.startswith(_orders_url) %}active{% endif %}">
+                <i data-lucide="clipboard-list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Заказы</span>
+            </a>
             {# Каталог разложен по подпунктам: модели, промокоды и настройки —
                разные заботы, и одной страницей они не читались. Доставки здесь
                больше нет: цену называет оператор в самом заказе, по адресу. #}
@@ -573,13 +584,7 @@
                 </div>
             </div>
             {% endif %}
-            {% if moderator_can_see('users') %}
-            {% set _orders_url = url_for('admin.orders_shop') %}
-            <a href="{{ _orders_url }}" class="tw-nav-link {% if request.path.startswith(_orders_url) %}active{% endif %}">
-                <i data-lucide="clipboard-list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Заказы</span>
-            </a>
-            {% endif %}
-            {% if moderator_can_see('users') %}
+            {% if moderator_can_see('devices') %}
             {% set _stock_url = url_for('admin.devices_stock') %}
             <a href="{{ _stock_url }}" class="tw-nav-link {% if request.path.startswith(_stock_url) %}active{% endif %}">
                 <i data-lucide="boxes" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Склад</span>
@@ -593,17 +598,54 @@
                 <i data-lucide="credit-card" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Платежи</span>
             </a>
             {% endif %}
-            {% if moderator_can_see('analytics') %}
-            <a href="{{ url_for('admin.analytics') }}" class="tw-nav-link {% if request.path == url_for('admin.analytics') %}active{% endif %}">
-                <i data-lucide="bar-chart-3" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Аналитика</span>
+
+            {# Роутеры: парк, прошивка и списки — одна забота. Раньше два
+               последних пункта жили в «Инструментах», в другом конце меню. #}
+            {% if moderator_can_see('devices') %}
+            <div class="tw-nav-section tw-sidebar-label">Роутеры</div>
+            {% set _fleet_url = url_for('admin.routers_fleet') %}
+            <a href="{{ _fleet_url }}" class="tw-nav-link {% if request.path.startswith(_fleet_url) %}active{% endif %}">
+                <i data-lucide="wifi" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Парк роутеров</span>
+            </a>
+            <a href="{{ url_for('admin.firmware_page') }}"
+               class="tw-nav-link {% if request.path.startswith(url_for('admin.firmware_page')) %}active{% endif %}">
+                <i data-lucide="cpu" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Прошивка</span>
+            </a>
+            <a href="{{ url_for('admin.domain_lists_page') }}"
+               class="tw-nav-link {% if request.path.startswith(url_for('admin.domain_lists_page')) %}active{% endif %}">
+                <i data-lucide="list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Списки доменов</span>
             </a>
             {% endif %}
 
-            {# Сотрудничество #}
+            {# Клиенты #}
+            {% if moderator_can_see('users') or moderator_can_see('tools') or moderator_can_see('bonuses') %}
+            <div class="tw-nav-section tw-sidebar-label">Клиенты</div>
+            {% endif %}
+            {% if moderator_can_see('users') %}
+            {% set _users_url = url_for('admin.users_list') %}
+            <a href="{{ _users_url }}" class="tw-nav-link {% if request.path == _users_url or request.path.startswith(_users_url + '/') %}active{% endif %}">
+                <i data-lucide="users" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Клиенты</span>
+            </a>
+            {% endif %}
+            {% if moderator_can_see('tools') %}
+            {% set _news_url = url_for('admin.news_templates_list') %}
+            {% set _tasks_url = url_for('admin.tasks_list') %}
+            {% set on_news = request.path.startswith(_news_url) %}
+            {% set on_tasks = request.path.startswith(_tasks_url) %}
+            <div class="tw-nav-group {% if on_news or on_tasks %}open{% endif %}" data-tw-group>
+                <div class="tw-nav-link {% if on_news or on_tasks %}active{% endif %}" data-tw-toggle>
+                    <i data-lucide="megaphone" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Рассылка</span>
+                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 tw-nav-group-icon tw-sidebar-label"></i>
+                </div>
+                <div class="tw-nav-sub {% if on_news or on_tasks %}open{% endif %}">
+                    <a href="{{ _news_url }}" class="{% if on_news %}active{% endif %}"><i data-lucide="message-square-text" class="w-3.5 h-3.5"></i> Шаблоны</a>
+                    <a href="{{ _tasks_url }}" class="{% if on_tasks %}active{% endif %}"><i data-lucide="list-todo" class="w-3.5 h-3.5"></i> Отправки</a>
+                </div>
+            </div>
+            {% endif %}
             {% if moderator_can_see('bonuses') %}
             {% set _promotion_url = url_for('admin.promotion_list') %}
             {% set is_ref = request.path == url_for('admin.referral_stats') or request.path.startswith(url_for('admin.partners_list')) or request.path.startswith(_promotion_url) %}
-            <div class="tw-nav-section tw-sidebar-label">Сотрудничество</div>
             <div class="tw-nav-group {% if is_ref %}open{% endif %}" data-tw-group>
                 <div class="tw-nav-link {% if is_ref %}active{% endif %}" data-tw-toggle>
                     <i data-lucide="gift" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Сотрудничество</span>
@@ -617,27 +659,37 @@
             </div>
             {% endif %}
 
-            {# Тарифы #}
+            {# Подписка: сроки — это их тарифы, они зеркалятся к нам. «Лимит
+               устройств» вырезан вместе со страницей: за роутером сидит вся
+               домашняя сеть, считать её поштучно нечему. Докупка гигабайтов
+               оставлена по решению заказчика от 13 августа 2026. #}
+            {% if moderator_can_see('tariffs') or current_user.is_admin %}
+            <div class="tw-nav-section tw-sidebar-label">Подписка</div>
+            {% endif %}
             {% if moderator_can_see('tariffs') %}
             {% set _tariffs_url = url_for('admin.tariffs_list') %}
             {% set _topup_url = url_for('admin.traffic_topup_tariffs_list') %}
-            {% set on_topup = request.path.startswith(_topup_url) %}
-            {% set on_renew = request.path.startswith(_tariffs_url) %}
-            {# «Лимит устройств» вырезан вместе со страницей: за роутером сидит
-               вся домашняя сеть, считать её поштучно нечему. Докупка гигабайтов
-               оставлена по решению заказчика, поэтому её страница на месте. #}
-            <a href="{{ _tariffs_url }}" class="tw-nav-link {% if on_renew %}active{% endif %}">
+            <a href="{{ _tariffs_url }}" class="tw-nav-link {% if request.path.startswith(_tariffs_url) %}active{% endif %}">
                 <i data-lucide="tag" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Сроки подписки</span>
             </a>
-            <a href="{{ _topup_url }}" class="tw-nav-link {% if on_topup %}active{% endif %}">
+            <a href="{{ _topup_url }}" class="tw-nav-link {% if request.path.startswith(_topup_url) %}active{% endif %}">
                 <i data-lucide="gauge" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Докупка гигабайтов</span>
             </a>
             {% endif %}
+            {% if current_user.is_admin %}
+            {% set is_rw = request.path.endswith('/remnawave') or request.path.endswith('/remnawave/settings') or request.path.endswith('/remnawave/profiles') or request.path.endswith('/remnawave/host-balancer') or '/remnawave/profiles/' in request.path %}
+            <a href="{{ url_for('admin.remnawave_dashboard') }}"
+               class="tw-nav-link nav-accent-violet {% if is_rw %}active{% endif %}">
+                <i data-lucide="remnawave" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Remnawave</span>
+            </a>
+            {% endif %}
 
-            {# Настройки #}
+            {# Система #}
+            {% if current_user.is_admin or moderator_can_see('tools') %}
+            <div class="tw-nav-section tw-sidebar-label">Система</div>
+            {% endif %}
             {% if current_user.is_admin %}
             {% set is_settings = request.path == url_for('admin.settings_general') or request.path == url_for('admin.settings_texts') or request.path == url_for('admin.settings_buttons') or request.path == url_for('admin.settings_website_cabinet') or request.path == url_for('admin.settings_subscription') or request.path == url_for('admin.settings_backup') or request.path == url_for('admin.settings_push') %}
-            <div class="tw-nav-section tw-sidebar-label">Конфигурация</div>
             <div class="tw-nav-group {% if is_settings %}open{% endif %}" data-tw-group>
                 <div class="tw-nav-link {% if is_settings %}active{% endif %}" data-tw-toggle>
                     <i data-lucide="settings" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Настройки</span>
@@ -654,104 +706,22 @@
                 </div>
             </div>
             {% endif %}
-
-            {# Remnawave #}
-            {% if current_user.is_admin %}
-            {% set is_rw = request.path.endswith('/remnawave') or request.path.endswith('/remnawave/settings') or request.path.endswith('/remnawave/profiles') or request.path.endswith('/remnawave/host-balancer') or '/remnawave/profiles/' in request.path %}
-            <a href="{{ url_for('admin.remnawave_dashboard') }}"
-               class="tw-nav-link nav-accent-violet {% if is_rw %}active{% endif %}">
-                <i data-lucide="remnawave" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Remnawave</span>
-            </a>
-            {% endif %}
-
-            {# Инструменты #}
             {% if moderator_can_see('tools') %}
-            {% set is_tools = request.path == url_for('admin.migrate_to_remnawave_page') or request.path == url_for('admin.tasks_list') or request.path == url_for('admin.news_templates_list') or request.path == url_for('admin.services_page') or request.path == url_for('admin.bulk_actions_page') or (moderator_can_see('updates') and request.path == url_for('admin.updates')) %}
-            <div class="tw-nav-section tw-sidebar-label">Инструменты</div>
-            <a href="{{ url_for('admin.domain_lists_page') }}"
-               class="tw-nav-link {% if request.path.startswith(url_for('admin.domain_lists_page')) %}active{% endif %}">
-                <i data-lucide="list" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Списки доменов</span>
+            <a href="{{ url_for('admin.services_page') }}"
+               class="tw-nav-link {% if request.path == url_for('admin.services_page') %}active{% endif %}">
+                <i data-lucide="cog" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Перезапуск служб</span>
             </a>
-            <a href="{{ url_for('admin.firmware_page') }}"
-               class="tw-nav-link {% if request.path.startswith(url_for('admin.firmware_page')) %}active{% endif %}">
-                <i data-lucide="cpu" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Обновление роутеров</span>
-            </a>
-            <div class="tw-nav-group {% if is_tools %}open{% endif %}" data-tw-group>
-                <div class="tw-nav-link {% if is_tools %}active{% endif %}" data-tw-toggle>
-                    <i data-lucide="wrench" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Инструменты</span>
-                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 tw-nav-group-icon tw-sidebar-label"></i>
-                </div>
-                <div class="tw-nav-sub {% if is_tools %}open{% endif %}">
-                    <a href="{{ url_for('admin.migrate_to_remnawave_page') }}" class="{% if request.path == url_for('admin.migrate_to_remnawave_page') %}active{% endif %}"><i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i> Миграция</a>
-                    <a href="{{ url_for('admin.tasks_list') }}" class="{% if request.path == url_for('admin.tasks_list') %}active{% endif %}"><i data-lucide="list-todo" class="w-3.5 h-3.5"></i> Задачи</a>
-                    <a href="{{ url_for('admin.news_templates_list') }}" class="{% if request.path == url_for('admin.news_templates_list') %}active{% endif %}"><i data-lucide="megaphone" class="w-3.5 h-3.5"></i> Рассылка</a>
-                    {% if current_user.is_authenticated and current_user.is_admin %}
-                    <a href="{{ url_for('admin.bulk_actions_page') }}"
-                       class="nav-accent-danger {% if request.path == url_for('admin.bulk_actions_page') %}active{% endif %}">
-                      <i data-lucide="layers" class="w-3.5 h-3.5"></i> Массовые действия
-                    </a>
-                    {% endif %}
-                    <a href="{{ url_for('admin.services_page') }}"
-                       class="nav-accent-sky {% if request.path == url_for('admin.services_page') %}active{% endif %}">
-                      <i data-lucide="cog" class="w-3.5 h-3.5"></i> Сервисы
-                    </a>
-                    {% if moderator_can_see('updates') %}
-                    <a href="{{ url_for('admin.updates') }}"
-                       class="nav-accent-warn {% if request.path == url_for('admin.updates') %}active{% endif %}">
-                      <i data-lucide="cloud-upload" class="w-3.5 h-3.5"></i> Обновления
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
             {% endif %}
-
-            {# Раздел «Справка» виден только администратору (от модераторов скрыт) #}
             {% if current_user.is_authenticated and current_user.is_admin %}
-            <div class="tw-nav-section tw-sidebar-label">Справка</div>
-            <a class="tw-nav-link" href="https://docs.3xstore.ru/index.html" target="_blank" rel="noopener noreferrer">
-                <i data-lucide="book-open" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Инструкции</span>
-                <i data-lucide="external-link" class="w-3 h-3 tw-text-subtle2 ml-auto tw-sidebar-label"></i>
-            </a>
-            <a class="tw-nav-link" href="https://docs.rw/" target="_blank" rel="noopener noreferrer" title="Remnawave Documentation">
-                <i data-lucide="book-marked" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Remnawave</span>
-                <i data-lucide="external-link" class="w-3 h-3 tw-text-subtle2 ml-auto tw-sidebar-label"></i>
-            </a>
-            <a class="tw-nav-link" href="https://xtls.github.io/ru/" target="_blank" rel="noopener noreferrer" title="Xray-core документация">
-                <i data-lucide="book" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Xray-core</span>
-                <i data-lucide="external-link" class="w-3 h-3 tw-text-subtle2 ml-auto tw-sidebar-label"></i>
+            <a href="{{ url_for('admin.bulk_actions_page') }}"
+               class="tw-nav-link nav-accent-danger {% if request.path == url_for('admin.bulk_actions_page') %}active{% endif %}">
+                <i data-lucide="layers" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Массовые действия</span>
             </a>
             {% endif %}
         </nav>
 
         <!-- Низ: тема + выход + версия -->
         <div class="border-t tw-border-base p-3 flex-shrink-0 flex flex-col gap-2">
-            {% if current_user.is_authenticated and current_user.is_admin %}
-            <a href="https://t.me/donate3xuistore_bot"
-               target="_blank" rel="noopener noreferrer"
-               class="admin-donate-widget tw-sidebar-label"
-               title="Донат для разработчика — открыть в Telegram">
-              <svg class="admin-donate-widget-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <polygon fill="#E69329" points="11.7,21.6 16.8,31.5 26.3,27.6 30.7,14.9 15.9,15.7"/>
-                <circle fill="#546E7A" cx="15" cy="36" r="7.8"/>
-                <g fill="#90A4AE">
-                  <path d="M15,27c-5,0-9,4-9,9c0,5,4,9,9,9s9-4,9-9C24,31,20,27,15,27z M15,43c-3.9,0-7-3.1-7-7c0-3.9,3.1-7,7-7 s7,3.1,7,7C22,39.9,18.9,43,15,43z"/>
-                  <rect x="14" y="33" width="2" height="8"/>
-                </g>
-                <g fill="#FFB74D">
-                  <path d="M12.9,36L12.9,36c1,1.9,3.2,2.7,5.1,1.7l16.5-8.5c1-0.5,1.7-1.2,2.2-1.9c1.7-3.2,5.6-10.7,8.2-17.2 l-18.2,8.7L21.9,26l-6.8,3.6C12.5,30.9,11.7,33.8,12.9,36z"/>
-                  <path d="M30.2,3L13.7,9.3c-0.7,0.2-1.5,1-2.2,1.7l-5.6,7.5c-1,1.5-1.2,3.4-0.5,5.1c0.4,1,1.7,3.4,3.1,6.1 c1.6-1.7,3.9-2.7,6.5-2.7c0.4,0,0.9,0,1.3,0.1l-2.1-4.2l4.6-4.1h8c0,0,15.5-2.2,18.2-8.7L30.2,3z"/>
-                </g>
-                <path fill="#FFCDD2" d="M18.2,36c-1.3,0.6-2.8,0-3.3-1.3c-0.6-1.3,0-2.8,1.3-3.3C17.4,30.8,19.4,35.4,18.2,36z"/>
-              </svg>
-              <span class="admin-donate-widget-text">
-                <span class="admin-donate-widget-title">Донат для разработчика</span>
-                <span class="admin-donate-widget-sub">@donate3xuistore_bot</span>
-              </span>
-              <svg class="admin-donate-widget-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M7 17L17 7"/><path d="M7 7h10v10"/>
-              </svg>
-            </a>
-            {% endif %}
             <!-- Theme switcher -->
             <div class="tw-seg w-full tw-sidebar-label" id="adminThemeSwitcher" role="group" aria-label="Тема">
                 <button type="button" data-theme-set="light" title="Светлая" class="flex-1 justify-center">
@@ -779,14 +749,31 @@
 
     {# === Нижняя мобильная панель быстрого доступа === #}
     {% if not hide_sidebar %}
+    {# Под большой палец — то, ради чего оператор открывает админку с телефона:
+       заказы и роутеры. «Платежи» раньше вели на родную страницу продукта,
+       где только подписка для телефона, а оплаты роутеров не видно вовсе. #}
     {% set _bn_dash = url_for('admin.dashboard') %}
+    {% set _bn_orders = url_for('admin.orders_shop') %}
+    {% set _bn_fleet = url_for('admin.routers_fleet') %}
     {% set _bn_users = url_for('admin.users_list') %}
-    {% set _bn_pay = url_for('admin.payments') %}
+    {% set _bn_pay = url_for('admin.payments_shop') %}
     <nav id="adminMobileBottomNav" class="lg:hidden fixed bottom-0 inset-x-0 z-30 flex tw-surface" style="border-top: 1px solid rgb(var(--admin-border)); border-left:0; border-right:0; border-bottom:0;">
       {% if moderator_can_see('dashboard') %}
       <a href="{{ _bn_dash }}" class="tw-bottom-nav-btn{% if request.path == _bn_dash %} active{% endif %}">
         <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
         <span>Главная</span>
+      </a>
+      {% endif %}
+      {% if moderator_can_see('shop') %}
+      <a href="{{ _bn_orders }}" class="tw-bottom-nav-btn{% if request.path.startswith(_bn_orders) %} active{% endif %}">
+        <i data-lucide="clipboard-list" class="w-5 h-5"></i>
+        <span>Заказы</span>
+      </a>
+      {% endif %}
+      {% if moderator_can_see('devices') %}
+      <a href="{{ _bn_fleet }}" class="tw-bottom-nav-btn{% if request.path.startswith(_bn_fleet) %} active{% endif %}">
+        <i data-lucide="wifi" class="w-5 h-5"></i>
+        <span>Роутеры</span>
       </a>
       {% endif %}
       {% if moderator_can_see('users') %}
@@ -795,8 +782,9 @@
         <span>Клиенты</span>
       </a>
       {% endif %}
-      {% if moderator_can_see('payments') %}
-      <a href="{{ _bn_pay }}" class="tw-bottom-nav-btn{% if request.path == _bn_pay or request.path.startswith(_bn_pay + '/') %} active{% endif %}">
+      {# Модератору заказы и роутеры не выдаются — ему на их место платежи. #}
+      {% if not moderator_can_see('shop') and moderator_can_see('payments') %}
+      <a href="{{ _bn_pay }}" class="tw-bottom-nav-btn{% if request.path == _bn_pay %} active{% endif %}">
         <i data-lucide="credit-card" class="w-5 h-5"></i>
         <span>Платежи</span>
       </a>

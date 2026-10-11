@@ -252,7 +252,6 @@ class TestModeratorGuardCoversEverySection:
         "/sw.js",
         "/offline.html",
         "/manifest.webmanifest",
-        "/instructions",
         # Только админ, и это решает отдельная проверка выше по коду.
         "/settings",
         "/remnawave",
@@ -321,7 +320,7 @@ class TestModeratorGuardCoversEverySection:
             encoding="utf-8", errors="replace"
         )
         mapping = dict(self._MAPPING.findall(self._guard()))
-        for path in ("/routers", "/stock", "/catalog", "/orders", "/lists"):
+        for path in ("/routers", "/stock", "/catalog", "/orders", "/lists", "/firmware"):
             section = mapping.get(path)
             assert section is not None, f"{path} не знает проверка прав"
             assert f'value="{section}"' not in settings_page, (

@@ -1,10 +1,7 @@
 import asyncio
 import os
-import tempfile
-import zipfile
 from datetime import datetime, timezone
 
-import aiofiles
 import psutil
 from quart import (
     abort,
@@ -14,11 +11,9 @@ from quart import (
     redirect,
     render_template,
     request,
-    send_file,
     send_from_directory,
     url_for,
 )
-from werkzeug.utils import secure_filename
 
 from web_admin.async_db import async_query_db
 
@@ -349,136 +344,12 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
                     r['sub_status'] = 'none'
         return jsonify({'success': True, 'count': len(rows), 'invited': rows})
 
-    @admin_bp_instance.route('/updates', methods=['GET', 'POST'])
-    async def updates():
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-
-        if request.method == 'POST':
-            is_ajax = (request.headers.get('X-Requested-With') == 'XMLHttpRequest')
-            files = await request.files
-            file = files.get('update_zip')
-
-            def _resp(ok: bool, msg: str, **extra):
-                if is_ajax:
-                    payload = {'success': ok, 'message': msg}
-                    payload.update(extra)
-                    return jsonify(payload), (200 if ok else 400)
-                cat = 'success' if ok else 'danger'
-                # flash вызовет corotine — синхронно вернуть нельзя; подкормим из обёртки.
-                return ('flash', cat, msg)
-
-            if file is None or file.filename == '':
-                ret = _resp(False, 'Файл не выбран.')
-                if is_ajax:
-                    return ret
-                _, cat, msg = ret
-                await flash(msg, cat); return redirect(url_for('admin.updates'))
-            if not file.filename.lower().endswith('.zip'):
-                ret = _resp(False, 'Поддерживаются только .zip архивы.')
-                if is_ajax:
-                    return ret
-                _, cat, msg = ret
-                await flash(msg, cat); return redirect(url_for('admin.updates'))
-
-            filename = secure_filename(file.filename)
-            tmp_dir = tempfile.gettempdir()
-            update_path = os.path.join(tmp_dir, filename)
-
-            file_count = 0
-            archive_size = 0
-            try:
-                file_content = file.read()
-                archive_size = len(file_content)
-                async with aiofiles.open(update_path, 'wb') as f:
-                    await f.write(file_content)
-                if not os.path.exists(update_path):
-                    raise RuntimeError('Файл не был сохранён во временную папку.')
-
-                # Валидация zip
-                with zipfile.ZipFile(update_path, 'r') as zip_ref:
-                    bad = zip_ref.testzip()
-                    if bad is not None:
-                        raise RuntimeError(f'Архив повреждён, не читается файл: {bad}')
-                    # Защита от path-traversal: ни одна запись не должна выходить за project_root
-                    safe_root = os.path.realpath(project_root)
-                    for name in zip_ref.namelist():
-                        target = os.path.realpath(os.path.join(project_root, name))
-                        if not (target == safe_root or target.startswith(safe_root + os.sep)):
-                            raise RuntimeError(f'Заблокировано: запись «{name}» выходит за корень проекта.')
-                    file_count = len(zip_ref.namelist())
-                    zip_ref.extractall(project_root)
-
-                ok_msg = f'Обновление применено: распаковано {file_count} файлов ({archive_size // 1024} KB).'
-                if is_ajax:
-                    return jsonify({'success': True, 'message': ok_msg,
-                                    'file_count': file_count, 'archive_size': archive_size}), 200
-                await flash(ok_msg, 'success')
-            except Exception as e:
-                err = f'Ошибка при применении обновления: {e}'
-                if is_ajax:
-                    return jsonify({'success': False, 'message': err}), 400
-                await flash(err, 'danger')
-            finally:
-                if os.path.exists(update_path):
-                    try:
-                        os.remove(update_path)
-                    except Exception:
-                        pass
-            return redirect(url_for('admin.updates'))
-
-        # GET — собираем мета-инфу
-        version_mtime = None
-        try:
-            vp = os.path.join(project_root, 'version.txt')
-            if os.path.exists(vp):
-                version_mtime = datetime.fromtimestamp(os.path.getmtime(vp)).strftime('%Y-%m-%d %H:%M')
-        except Exception:
-            version_mtime = None
-
-        whats_new = None
-        whats_new_mtime = None
-        try:
-            whats_new_path = os.path.join(project_root, 'whats_new.txt')
-            if os.path.exists(whats_new_path):
-                async with aiofiles.open(whats_new_path, 'r', encoding='utf-8') as f:
-                    whats_new = (await f.read()).strip()
-                whats_new_mtime = datetime.fromtimestamp(os.path.getmtime(whats_new_path)).strftime('%Y-%m-%d %H:%M')
-        except Exception:
-            whats_new = None
-
-        return await render_template(
-            'updates.html',
-            whats_new=whats_new,
-            whats_new_mtime=whats_new_mtime,
-            version_mtime=version_mtime,
-        )
-
-    @admin_bp_instance.route('/instructions')
-    async def instructions():
-        return redirect('https://docs.3xstore.ru/useful.html#secret-path', code=302)
-
     @admin_bp_instance.route('/admin-static/<path:filename>')
     async def admin_static(filename):
         try:
             static_dir = current_app.static_folder
             return await send_from_directory(static_dir, filename)
         except FileNotFoundError:
-            return abort(404)
-
-    @admin_bp_instance.route('/download/3xuistorelocal.zip')
-    async def download_local_zip():
-        try:
-            file_path = os.path.join(current_app.static_folder, '3xuistorelocal.zip')
-            if not os.path.isfile(file_path):
-                current_app.logger.error(f"ZIP not found at: {file_path}")
-                try:
-                    current_app.logger.error(f"Static dir contents: {os.listdir(current_app.static_folder)}")
-                except Exception:
-                    pass
-                return abort(404)
-            return await send_file(file_path, as_attachment=True, download_name='3xuistorelocal.zip', mimetype='application/zip')
-        except Exception as e:
-            current_app.logger.error(f"Ошибка выдачи файла 3xuistorelocal.zip: {e}")
             return abort(404)
 
     @admin_bp_instance.route('/restart_all', methods=['POST'])
@@ -505,7 +376,7 @@ def attach_misc_routes(admin_bp_instance, query_db_func, execute_db_func):
             await flash('Все сервисы перезапускаются: router-bot, router-webadmin...', 'success')
         except Exception as e:
             await flash(f'Ошибка перезапуска сервисов: {e}', 'danger')
-        return redirect(url_for('admin.updates'))
+        return redirect(url_for('admin.services_page'))
 
     # --- Сервисы (Инструменты) ---
     # icon — Lucide icon name (без data-lucide=); accent — hex/rgb для подложки иконки.

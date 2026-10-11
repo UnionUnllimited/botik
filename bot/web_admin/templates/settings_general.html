@@ -48,8 +48,14 @@
   {% endif %}
 
   {% if setting.key == 'admin_secret_path' %}
-    <div class="text-[12px] mb-2">
-      <a href="https://docs.3xstore.ru/useful.html#secret-path" target="_blank" rel="noopener noreferrer" class="text-[rgb(var(--admin-accent))] hover:underline">Как изменить секретный путь?</a>
+    {# Админку публикует Caddy, и новый путь он сам не узнает: сменив его
+       только здесь, вы закроете админку от себя же. #}
+    <div class="hint mb-2">
+      Сначала добавьте в Caddy на witty-dragon второй блок
+      <code class="text-[11px]">handle /новый-путь*</code> на порт 8181 рядом со старым,
+      потом сохраните здесь и перезапустите <code class="text-[11px]">router-webadmin</code>,
+      и только после этого уберите из Caddy старый. В другом порядке админка
+      пропадёт и по старому адресу, и по новому.
     </div>
   {% endif %}
 
@@ -570,7 +576,7 @@
         <div>
           <span class="block text-[13px] font-semibold mb-2">Разделы</span>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-            {% for sid, label in [('dashboard', 'Главная'), ('users', 'Клиенты'), ('payments', 'Платежи'), ('analytics', 'Аналитика'), ('bonuses', 'Приглашения'), ('tariffs', 'Тарифы'), ('tools', 'Инструменты'), ('updates', 'Обновления')] %}
+            {% for sid, label in [('dashboard', 'Главная'), ('users', 'Клиенты'), ('payments', 'Платежи'), ('analytics', 'Аналитика'), ('bonuses', 'Сотрудничество'), ('tariffs', 'Сроки подписки и докупка'), ('tools', 'Рассылка и сервисы')] %}
             <div class="sp-toggle-row">
               <label class="tw-switch">
                 <input type="checkbox" id="moderator_section_{{ sid }}" name="moderator_section_{{ sid }}" value="1" {% if sid in moderator_sections %}checked{% endif %}>
