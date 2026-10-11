@@ -1,0 +1,134 @@
+{# Общие кусочки страниц роутеров: парк, карточка, журнал.
+
+   Одним файлом, а не копией в каждой странице: «истекает» в списке
+   и в карточке иначе однажды начнут значить разное. Подключение:
+   {% import "_partials/router_ui.html" as ui %}, стили — {{ ui.styles() }}
+   один раз на страницу.
+
+   Классы с приставкой rt- описаны здесь же: стили админки собраны
+   заранее, и класса, которого там нет, браузер просто не увидит. #}
+
+{% macro styles() %}
+<style>
+  .um-pill{white-space:nowrap}
+  .rt-meter{display:inline-block;position:relative;width:56px;height:6px;border-radius:999px;background:var(--admin-bg-muted);overflow:hidden;vertical-align:middle}
+  .rt-meter>span{position:absolute;inset:0 auto 0 0;border-radius:inherit}
+  .rt-tile{display:block;transition:border-color .15s,transform .1s}
+  a.rt-tile:hover{border-color:rgb(var(--admin-border-strong))}
+  a.rt-tile:active{transform:scale(.99)}
+  .rt-tile.is-on{border-color:var(--color-brand-500);box-shadow:0 0 0 1px var(--color-brand-500) inset}
+  .rt-tile-label{font-size:12px;color:var(--admin-text-muted)}
+  .rt-tile-value{font-size:22px;font-weight:600;line-height:1.2;margin-top:2px;color:var(--admin-text-base)}
+  .rt-tile-sub{font-size:11.5px;color:var(--admin-text-muted);margin-top:4px}
+  .rt-row{border-top:1px solid rgb(var(--admin-border))}
+  .rt-shrink{width:1%;white-space:nowrap}
+  .rt-row:hover{background:var(--admin-bg-soft)}
+  .rt-actionbar{position:sticky;bottom:12px;z-index:20;box-shadow:0 12px 32px rgb(0 0 0 / .28)}
+  @media (max-width:1023px){.rt-actionbar{bottom:calc(var(--admin-mobile-nav-h,72px) + 12px)}}
+  .rt-more{display:contents}
+  .rt-more-toggle{display:none}
+  @media (max-width:639px){.rt-more:not(.is-open){display:none}.rt-more-toggle{display:inline-flex}}
+  .rt-section-title{font-size:15px;font-weight:600;color:var(--admin-text-base)}
+  .rt-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+  .rt-kv>dt{color:var(--admin-text-muted)}
+  .rt-kv>dd{margin:0;min-width:0}
+  .rt-console{background:rgb(0 0 0 / .28);border-radius:10px;padding:12px;max-height:360px;overflow:auto;font-size:12px}
+  details.rt-fold>summary{cursor:pointer;list-style:none}
+  details.rt-fold>summary::-webkit-details-marker{display:none}
+  details.rt-fold>summary .rt-fold-icon{transition:transform .15s}
+  details.rt-fold[open]>summary .rt-fold-icon{transform:rotate(180deg)}
+</style>
+{% endmacro %}
+
+{% macro uptime(sec) -%}
+  {%- if not sec -%}—
+  {%- elif sec < 3600 -%}{{ sec // 60 }} мин
+  {%- elif sec < 86400 -%}{{ sec // 3600 }} ч
+  {%- else -%}{{ sec // 86400 }} сут {{ (sec % 86400) // 3600 }} ч
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro bytes(value) -%}
+  {%- if not value -%}—
+  {%- elif value < 1048576 -%}{{ value // 1024 }} КБ
+  {%- elif value < 1073741824 -%}{{ value // 1048576 }} МБ
+  {%- else -%}{{ '%.1f' | format(value / 1073741824) }} ГБ
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro plural_days(n) -%}
+  {%- set n10 = n % 10 -%}{%- set n100 = n % 100 -%}
+  {%- if n10 == 1 and n100 != 11 -%}день
+  {%- elif n10 in (2, 3, 4) and n100 not in (12, 13, 14) -%}дня
+  {%- else -%}дней
+  {%- endif -%}
+{%- endmacro %}
+
+{# Связь одной плашкой. У молчащего — с какого времени: «молчит» час
+   и «молчит» неделю — разные разговоры с клиентом. #}
+{% macro link_pill(online, last_seen=None) -%}
+  {%- if online -%}
+    <span class="um-pill is-success"><span class="tw-dot" style="background:currentColor"></span>на связи</span>
+  {%- else -%}
+    <span class="um-pill is-muted"><span class="tw-dot" style="background:currentColor"></span>молчит</span>
+    {%- if last_seen %}<div class="text-[11px] tw-text-muted2 mt-1 whitespace-nowrap">с {{ last_seen|msk_compact }}</div>{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{# Подписка роутера одной плашкой, цветом — что с ней делать: зелёная —
+   ничего, жёлтая — пора напомнить, красная — уже поздно, синяя — оплачена
+   и ждёт роутера, серая — её нет. Порог «скоро» тот же, что у отбора
+   «истекает» в ручке парка (EXPIRING_SOON_DAYS). `days_left` проверяется
+   на число, а не на None: со старой ручкой его нет вовсе, и сравнение
+   с пустым значением уронило бы страницу. #}
+{% macro sub_pill(status, label, days_left, soon=7) -%}
+  {%- if not status -%}
+    <span class="um-pill is-muted">нет</span>
+  {%- elif status == 'pending' -%}
+    <span class="um-pill is-info">{{ label or 'ждёт роутера' }}</span>
+  {%- elif status in ('expired', 'cancelled') -%}
+    <span class="um-pill is-danger">{{ label or status }}</span>
+  {%- elif days_left is number and days_left < 0 -%}
+    <span class="um-pill is-danger">истекла</span>
+  {%- elif status == 'grace' -%}
+    <span class="um-pill is-warning">{{ label or 'льготный период' }}</span>
+  {%- elif days_left is number and days_left == 0 -%}
+    <span class="um-pill is-warning">кончается сегодня</span>
+  {%- elif days_left is number and days_left <= soon -%}
+    <span class="um-pill is-warning">ещё {{ days_left }} {{ plural_days(days_left) }}</span>
+  {%- elif days_left is number -%}
+    <span class="um-pill is-success">{{ label or 'активна' }} · {{ days_left }} {{ plural_days(days_left) }}</span>
+  {%- else -%}
+    <span class="um-pill is-success">{{ label or status }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# Полоска загрузки. Цвет — с 70 % жёлтый, с 90 % красный: на роутере
+   с забитой памятью первым умирает туннель, и роутер «молчит». #}
+{% macro meter(pct, label) -%}
+  <div class="flex items-center gap-2 whitespace-nowrap">
+    <span class="text-[11px] tw-text-muted2" style="width:30px">{{ label }}</span>
+    {%- if pct is number %}
+      {%- set color = '#ef4444' if pct >= 90 else ('#f59e0b' if pct >= 70 else '#10b981') %}
+      <span class="rt-meter"><span style="width:{{ [pct, 100]|min }}%;background:{{ color }}"></span></span>
+      <span class="text-[11px] tw-text-muted2 tabular-nums">{{ pct }}%</span>
+    {%- else %}
+      <span class="text-[11px] tw-text-muted2">—</span>
+    {%- endif %}
+  </div>
+{%- endmacro %}
+
+{# Уровень записи журнала по-русски и цветом. В базе они английскими
+   словами, и оператору незачем их видеть. #}
+{% macro level_pill(level) -%}
+  {%- if level == 'error' -%}<span class="um-pill is-danger">ошибка</span>
+  {%- elif level == 'warning' -%}<span class="um-pill is-warning">внимание</span>
+  {%- elif level == 'success' -%}<span class="um-pill is-success">готово</span>
+  {%- elif level == 'info' -%}<span class="um-pill is-muted">событие</span>
+  {%- else -%}<span class="um-pill is-muted">{{ level }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro level_title(level) -%}
+  {{- {'error': 'ошибки', 'warning': 'предупреждения', 'success': 'успешные', 'info': 'события'}.get(level, level) -}}
+{%- endmacro %}

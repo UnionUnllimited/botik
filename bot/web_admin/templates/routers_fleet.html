@@ -1,27 +1,15 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Роутеры — {{ super() }}{% endblock %}
 
 {% block content %}
-{% macro fleet_uptime(sec) -%}
-  {%- if not sec -%}—
-  {%- elif sec < 3600 -%}{{ (sec // 60) }} мин
-  {%- elif sec < 86400 -%}{{ (sec // 3600) }} ч
-  {%- else -%}{{ (sec // 86400) }} сут {{ ((sec % 86400) // 3600) }} ч
-  {%- endif -%}
-{%- endmacro %}
-{% macro fleet_bytes(value) -%}
-  {%- if not value -%}—
-  {%- elif value < 1048576 -%}{{ (value // 1024) }} КБ
-  {%- elif value < 1073741824 -%}{{ (value // 1048576) }} МБ
-  {%- else -%}{{ '%.1f' | format(value / 1073741824) }} ГБ
-  {%- endif -%}
-{%- endmacro %}
+{{ ui.styles() }}
 
 {% macro sort_th(key, title, first='asc') -%}
   {%- set active = (sort == key) -%}
   {%- set next = (('asc' if sort_dir == 'desc' else 'desc') if active else first) -%}
   {%- set nav = dict(filters, sort=key, dir=next) -%}
-  <th class="px-3 py-2 font-medium">
+  <th class="px-3 py-2.5 font-medium">
     <a href="{{ url_for('admin.routers_fleet', **nav) }}"
        class="inline-flex items-center gap-1 whitespace-nowrap {% if active %}tw-text-base2{% endif %}">
       {{ title }}<span class="text-[11px]">{% if active %}{{ '↑' if sort_dir == 'asc' else '↓' }}{% else %}⇅{% endif %}</span>
@@ -29,18 +17,30 @@
   </th>
 {%- endmacro %}
 
+{# Плитка-счётчик и одновременно отбор: «молчат 4» — это вопрос «какие?»,
+   и ответ должен быть в одно нажатие, а не через выпадающий список. #}
+{% macro tile(label, value, href, on=False, color=None, sub=None) -%}
+  <a href="{{ href }}" class="tw-card p-4 rt-tile {% if on %}is-on{% endif %}">
+    <div class="rt-tile-label">{{ label }}</div>
+    <div class="rt-tile-value"{% if color %} style="color:{{ color }}"{% endif %}>{{ value }}</div>
+    {% if sub %}<div class="rt-tile-sub">{{ sub }}</div>{% endif %}
+  </a>
+{%- endmacro %}
+
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
     <div>
-      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Роутеры</h1>
-      <p class="text-[13px] tw-text-muted2 mt-1">
-        Парк устройств. Нажмите на строку, чтобы открыть карточку: там показания,
-        клиент, ручная активация, консоль и журнал. Отметки в строках — для действий
-        над многими сразу, они под таблицей.
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Парк роутеров</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1 flex items-center gap-2 flex-wrap">
+        <span>Роутеры у клиентов и на складе.</span>
+        {# Тумблер раздела виден сразу: если роутеры перестали включаться
+           сами, первым делом смотрят сюда. #}
+        <span class="um-pill {{ 'is-success' if auto_enabled else 'is-muted' }}">
+          автоактивация {{ 'включена' if auto_enabled else 'выключена' }}
+        </span>
       </p>
     </div>
-
   </div>
 
   {% if fleet_error %}
@@ -52,78 +52,59 @@
     </div>
   {% else %}
 
+    {% set base_nav = dict(per_page=filters.per_page) if filters.per_page else {} %}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">Всего роутеров</div>
-        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.fleet_total or 0 }}</div>
-      </div>
-      <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">На связи</div>
-        <div class="text-[22px] font-semibold" style="color:#16a34a">{{ fleet.online or 0 }}</div>
-      </div>
-      <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">Молчат</div>
-        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.silent or 0 }}</div>
-      </div>
-      <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">Без клиента</div>
-        <div class="text-[22px] font-semibold tw-text-base2">{{ fleet.no_client or 0 }}</div>
-      </div>
+      {{ tile('Всего роутеров', fleet.fleet_total or 0, url_for('admin.routers_fleet', **base_nav),
+              on=not (filters.link or filters.client)) }}
+      {{ tile('На связи', fleet.online or 0, url_for('admin.routers_fleet', link='online', **base_nav),
+              on=filters.link == 'online', color='#10b981') }}
+      {{ tile('Молчат', fleet.silent or 0, url_for('admin.routers_fleet', link='offline', **base_nav),
+              on=filters.link == 'offline', color='#f59e0b' if fleet.silent else None) }}
+      {{ tile('Без клиента', fleet.no_client or 0, url_for('admin.routers_fleet', client='without', **base_nav),
+              on=filters.client == 'without') }}
     </div>
 
-    <form method="post" action="{{ url_for('admin.routers_fleet_settings') }}"
-          class="tw-card p-5 space-y-4">
-      <div class="text-[13px] font-semibold tw-text-base2">Поддержка</div>
-      <label class="block">
-        <span class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Контакт поддержки</span>
-        <input type="text" name="support_contact" value="{{ support_contact or '' }}"
-               placeholder="@titan_support" class="tw-input">
-      </label>
-      <div class="text-[11px] tw-text-subtle2">
-        Берётся из настроек бота — поле «Ссылка на поддержку» — и обновляется само
-        в течение минуты. Здесь можно задать вручную, если там пусто. Кнопка «Написать
-        в поддержку» в приложении, строка «Остались вопросы» в каталоге и ссылка
-        в подвале сайта — все три от этого значения.
-      </div>
+    {# Два вопроса, которые задают каждый день, — кнопками, а не поиском
+       по выпадающим спискам. «Не включился» — это подписка клиента лежит
+       на другом его роутере: заплатил, а этот роутер срока не получил. #}
+    <div class="flex items-center gap-2 flex-wrap text-[12px]">
+      <span class="tw-text-muted2">Быстро:</span>
+      <a href="{{ url_for('admin.routers_fleet', sub='expiring', **base_nav) }}"
+         class="um-pill {{ 'is-warning' if filters.sub == 'expiring' else 'is-muted' }}">
+        <i data-lucide="hourglass" class="w-3 h-3"></i>подписка истекает
+      </a>
+      <a href="{{ url_for('admin.routers_fleet', sub='elsewhere', **base_nav) }}"
+         class="um-pill {{ 'is-danger' if filters.sub == 'elsewhere' else 'is-muted' }}">
+        <i data-lucide="alert-triangle" class="w-3 h-3"></i>оплачен, но не включился
+      </a>
+      <a href="{{ url_for('admin.routers_fleet', link='offline', client='with', **base_nav) }}"
+         class="um-pill {{ 'is-warning' if filters.link == 'offline' and filters.client == 'with' else 'is-muted' }}">
+        <i data-lucide="bell-off" class="w-3 h-3"></i>у клиента и молчит
+      </a>
+    </div>
 
-      <div class="text-[13px] font-semibold tw-text-base2">Активация</div>
-      <label class="flex items-center gap-2.5 cursor-pointer select-none">
-        <input type="checkbox" name="auto_enabled" {% if auto_enabled %}checked{% endif %}
-               class="w-4 h-4 cursor-pointer">
-        <span class="text-[13px] tw-text-base2">
-          Активировать сам, когда отгруженный заказ выходит на связь
-        </span>
-      </label>
-      <div class="text-[11px] tw-text-subtle2">
-        Срабатывает только для роутеров, привязанных к отгруженному заказу, — значит,
-        роутер уже у клиента. Тот, что лежит на столе и прошивается, тоже выходит
-        на связь, но его не трогает: дни горели бы у мастера. Остальные активируются
-        кнопкой в карточке роутера.
-      </div>
-      <div class="text-[11px] tw-text-subtle2">
-        Срок берётся из того, что клиент оплатил при покупке, — он у каждого
-        свой, и задать его одним числом нельзя. Отсчёт начинается с момента,
-        когда роутер получил ссылку: дни доставки не горят.
-      </div>
-      <div>
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-          <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить</span>
-        </button>
-      </div>
-    </form>
-
-    {# Фильтры и страницы: пока роутеров пять, они лишние, но на первой партии
-       список без них нечитаем. Считает их основное приложение — парк у него. #}
+    {# Фильтры: сортировку несём скрытыми полями — «Найти» отправляет только
+       свои поля, и порядок сбрасывался бы на каждый поиск. На телефоне списки
+       свёрнуты под кнопку: семь полей подряд занимали весь первый экран,
+       и до самих роутеров приходилось листать. Поиск виден всегда. #}
+    {% set picked_filters = [filters.link, filters.client, filters.sub, filters.state, filters.model]
+                            | select | list | length %}
     <form method="get" class="tw-card p-3 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-2 items-end">
-      {# Сортировку несём скрытыми полями: «Найти» отправляет только свои
-         поля, и порядок сбрасывался бы на каждый поиск. #}
       <input type="hidden" name="sort" value="{{ sort }}">
       <input type="hidden" name="dir" value="{{ sort_dir }}">
-      <div class="ss-field sm:col-span-3 lg:col-span-2">
+      <div class="ss-field sm:col-span-2 lg:col-span-2">
         <label for="q">Поиск</label>
-        <input type="search" id="q" name="q" value="{{ filters.q }}" class="tw-input"
-               placeholder="MAC или модель">
+        <div class="flex gap-2">
+          <input type="search" id="q" name="q" value="{{ filters.q }}" class="tw-input flex-1"
+                 placeholder="MAC целиком или куском, модель">
+          <button type="button" class="tw-btn tw-btn-sm rt-more-toggle whitespace-nowrap" data-fleet-more
+                  aria-expanded="{{ 'true' if picked_filters else 'false' }}">
+            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+            <span>Фильтры{% if picked_filters %} · {{ picked_filters }}{% endif %}</span>
+          </button>
+        </div>
       </div>
+      <div class="rt-more {% if picked_filters %}is-open{% endif %}" data-fleet-more-box>
       <div class="ss-field">
         <label for="link">Связь</label>
         <select id="link" name="link" class="tw-input">
@@ -141,8 +122,7 @@
         </select>
       </div>
       {# «Нет» и «на другом роутере» разведены намеренно: в первом случае клиент
-         не платил, во втором заплатил, а роутер срока не получил — это и есть
-         молча не активировавшийся второй роутер. #}
+         не платил, во втором заплатил, а роутер срока не получил. #}
       <div class="ss-field">
         <label for="sub">Подписка</label>
         <select id="sub" name="sub" class="tw-input">
@@ -179,40 +159,39 @@
             <option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}</option>
             {% endfor %}
           </select>
-          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">Найти</button>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">
+            <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
+          </button>
         </div>
       </div>
+      </div>
     </form>
+    <script>
+      (function () {
+        const toggle = document.querySelector('[data-fleet-more]');
+        const box = document.querySelector('[data-fleet-more-box]');
+        if (!toggle || !box) return;
+        toggle.addEventListener('click', () => {
+          const open = box.classList.toggle('is-open');
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+      })();
+    </script>
 
     {% set any_filter = filters.q or filters.link or filters.client or filters.sub
                         or filters.state or filters.model %}
     {% if any_filter %}
     <div class="text-[12px] tw-text-muted2">
-      Найдено: <b>{{ total }}</b>.
-      <a href="{{ url_for('admin.routers_fleet') }}" class="underline">сбросить фильтры</a>
+      Найдено: <b class="tw-text-base2">{{ total }}</b> ·
+      <a href="{{ url_for('admin.routers_fleet') }}" class="underline">сбросить отбор</a>
     </div>
     {% endif %}
 
     {% if routers %}
     {# Отметки и действия — одна форма на всю таблицу: чекбоксы в строках,
-       панель под ней. Действие уходит на сторону основного приложения, у него
-       и туннели, и панель. #}
+       панель действий под ней. Действие уходит в основное приложение,
+       у него и туннели, и панель. #}
     <form method="post" action="{{ url_for('admin.routers_fleet_bulk') }}" id="fleet-bulk">
-
-    {# Полоса выбора над таблицей — как в «Клиентах»: отметить страницу целиком
-       и видеть, сколько набралось, не доскроллив до кнопок. #}
-    <div class="tw-card p-3 flex items-center gap-3 flex-wrap mb-3">
-      <label class="flex items-center gap-2.5 cursor-pointer select-none">
-        <input type="checkbox" class="w-4 h-4 cursor-pointer" data-fleet-all>
-        <span class="text-[13px] tw-text-base2">Выбрать на странице</span>
-      </label>
-      <div class="ml-auto flex items-center gap-3">
-        <span class="text-[13px] tw-text-muted2" data-fleet-count>0 выбрано</span>
-        <button type="button" class="tw-btn tw-btn-sm" data-fleet-reset>
-          <i data-lucide="circle-x" class="w-3.5 h-3.5"></i><span>Сброс</span>
-        </button>
-      </div>
-    </div>
 
     <div class="tw-card overflow-x-auto">
       <table class="w-full text-[13px]">
@@ -221,106 +200,94 @@
             {# Заголовки сортируют. Первое нажатие даёт тот порядок, ради
                которого в колонку и смотрят: у чисел — сначала большие,
                у имён — по алфавиту. Повторное переворачивает. #}
-            <th class="px-3 py-2 font-medium w-8"></th>
+            <th class="px-3 py-2.5 w-8">
+              <input type="checkbox" class="w-4 h-4 cursor-pointer" data-fleet-all
+                     title="Отметить всю страницу" aria-label="Отметить всю страницу">
+            </th>
             {{ sort_th('mac', 'Роутер') }}
             {{ sort_th('client', 'Клиент') }}
             {{ sort_th('link', 'Связь', 'desc') }}
             {{ sort_th('sub', 'Подписка') }}
-            {{ sort_th('clients', 'Клиентов', 'desc') }}
-            {{ sort_th('cpu', 'CPU / ОЗУ', 'desc') }}
-            {{ sort_th('uptime', 'Аптайм', 'desc') }}
-            {{ sort_th('rx', 'Трафик ↓ / ↑', 'desc') }}
+            {{ sort_th('cpu', 'Нагрузка', 'desc') }}
+            {{ sort_th('clients', 'Устройств', 'desc') }}
+            {# Аптайм и трафик в одной колонке: по отдельности таблица
+               не влезала в экран ноутбука, а читают их вместе — «работает
+               четвёртые сутки и прокачал пять гигабайт». #}
+            {{ sort_th('uptime', 'Аптайм · трафик', 'desc') }}
             {{ sort_th('wan', 'WAN IP') }}
-            {{ sort_th('tunnel', 'Туннель') }}
           </tr>
         </thead>
         <tbody>
           {% for item in routers %}
-          {# Вся строка ведёт в карточку: попасть в MAC на телефоне мышью
-             не проще, чем в саму ссылку, а открывают её каждый раз. #}
-          <tr class="border-t cursor-pointer" style="border-color:var(--tw-line, #26262b)"
+          {# Вся строка ведёт в карточку: попасть пальцем в MAC не проще,
+             чем в саму строку, а открывают её каждый раз. #}
+          <tr class="rt-row cursor-pointer"
               data-fleet-href="{{ url_for('admin.router_card', device_id=item.id) }}">
-            <td class="px-3 py-2">
+            <td class="px-3 py-2.5 align-top">
               <input type="checkbox" name="ids" value="{{ item.id }}"
-                     class="w-4 h-4 cursor-pointer" data-fleet-row>
+                     class="w-4 h-4 cursor-pointer" data-fleet-row aria-label="Отметить {{ item.mac }}">
             </td>
-            <td class="px-3 py-2 whitespace-nowrap">
-              <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
-              {# Номер сборки, а не только `25.12.3`: версия базы ни с чем
+            <td class="px-3 py-2.5 whitespace-nowrap align-top">
+              <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono tw-text-base2">{{ item.mac }}</a>
+              {# Номер сборки, а не только «25.12.3»: версия базы ни с чем
                  не сравнивается, а по сборке видно, дошло ли до роутера
                  то, что раздаётся сейчас. #}
               <div class="tw-text-muted2 text-[12px]">
-                {{ item.model or item.status_label }}{% if item.fw_version %} · {{ item.fw_version }}{% endif %}
+                {{ item.model or '—' }}{% if item.fw_version %} · {{ item.fw_version }}{% endif %}
                 {%- if item.fw_build %}
-                  · <span class="{% if item.fw_behind %}text-amber-600{% endif %}"
-                          title="Сборка прошивки{% if item.fw_behind %}: отстаёт от того, что раздаётся{% endif %}">r{{ item.fw_build }}</span>
+                  · <span class="{% if item.fw_behind %}text-amber-500{% endif %}"
+                          title="Сборка прошивки{% if item.fw_behind %}: отстаёт от той, что раздаётся{% endif %}">r{{ item.fw_build }}{% if item.fw_behind %} ↓{% endif %}</span>
                 {%- endif %}
               </div>
             </td>
             {# Телеграм, а не имя: по нему клиенту пишут, а тёзок среди имён
                сколько угодно. Имя из доставки — второй строкой. #}
-            <td class="px-3 py-2 whitespace-nowrap">
+            <td class="px-3 py-2.5 whitespace-nowrap align-top">
               {% if item.client_tg_id %}
-                <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">{{ item.client }}</a>
+                <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}" class="tw-text-base2">{{ item.client }}</a>
+              {% elif item.client %}
+                {{ item.client }}
               {% else %}
-                {{ item.client or '—' }}
+                <span class="tw-text-muted2">{{ item.status_label or 'без клиента' }}</span>
               {% endif %}
               {% if item.client_name and item.client_name != item.client %}
               <div class="tw-text-muted2 text-[12px]">{{ item.client_name }}</div>
               {% endif %}
             </td>
-            <td class="px-3 py-2 whitespace-nowrap">
-              {% if item.online %}
-                <span style="color:#16a34a">● на связи</span>
-              {% else %}
-                <span class="tw-text-muted2">○ молчит</span>
+            <td class="px-3 py-2.5 align-top">{{ ui.link_pill(item.online, item.last_seen) }}</td>
+            {# Одна подписка — один роутер: в строке только своя. Подписка
+               клиента на другом его роутере здесь не поминается — найти такие
+               можно кнопкой «оплачен, но не включился». #}
+            <td class="px-3 py-2.5 whitespace-nowrap align-top">
+              {{ ui.sub_pill(item.subscription_status, item.subscription_label, item.subscription_days_left) }}
+              {% if item.subscription_until and item.subscription_status != 'pending' %}
+              <div class="text-[11px] tw-text-muted2 mt-1">до {{ item.subscription_until|msk_date }}</div>
               {% endif %}
             </td>
-            <td class="px-3 py-2 whitespace-nowrap">
-              {# Одна подписка — один роутер: в строке только своя, и больше
-                 ничего. Подписка клиента, лежащая на другом его роутере, здесь
-                 не поминается вовсе — этот роутер она не касается, а строка
-                 про неё читалась как «что-то тут всё-таки есть». Найти такие
-                 роутеры по-прежнему можно отбором «на другом роутере». #}
-              {% if item.subscription_status %}
-                {{ item.subscription_label or item.subscription_status }}
-              {% else %}
-                <span class="tw-text-muted2">нет</span>
-              {% endif %}
+            <td class="px-3 py-2.5 align-top">
+              {{ ui.meter(item.cpu_pct, 'CPU') }}
+              {{ ui.meter(item.ram_pct, 'ОЗУ') }}
             </td>
-            <td class="px-3 py-2">{{ item.clients }}</td>
-            <td class="px-3 py-2 whitespace-nowrap">
-              {{ item.cpu_pct if item.cpu_pct is not none else '—' }}% /
-              {{ item.ram_pct if item.ram_pct is not none else '—' }}%
+            <td class="px-3 py-2.5 align-top tabular-nums">{{ item.clients }}</td>
+            <td class="px-3 py-2.5 whitespace-nowrap align-top">
+              <div class="tw-text-base2">{{ ui.uptime(item.uptime_sec) }}</div>
+              <div class="text-[11px] tw-text-muted2 mt-1" title="Принято / отдано">
+                ↓ {{ ui.bytes(item.rx_bytes) }} · ↑ {{ ui.bytes(item.tx_bytes) }}
+              </div>
             </td>
-            <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">{{ fleet_uptime(item.uptime_sec) }}</td>
-            <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
-              {{ fleet_bytes(item.rx_bytes) }} / {{ fleet_bytes(item.tx_bytes) }}
-            </td>
-            <td class="px-3 py-2 font-mono tw-text-muted2 whitespace-nowrap">{{ item.wan_ip or '—' }}</td>
-            <td class="px-3 py-2 font-mono tw-text-muted2 whitespace-nowrap">
-              {{ item.visitor_port or '—' }}
-              {% if not item.online and item.last_seen %}
-                <div class="text-[11px]">молчит с {{ item.last_seen|msk_compact }}</div>
-              {% endif %}
-            </td>
+            <td class="px-3 py-2.5 font-mono tw-text-muted2 whitespace-nowrap align-top">{{ item.wan_ip or '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
 
-    {# Массовые действия — панелью под таблицей, а не окном по кнопке:
-       оператор отмечает строки и тут же видит, что с ними можно сделать.
-       Полей у действий разные, поэтому показывается только нужное. #}
-    <div class="tw-card p-5 space-y-4 mt-3">
-      <div class="flex items-center gap-2">
-        <i data-lucide="layers" class="w-4 h-4" style="color:#22c55e"></i>
-        <div class="text-[15px] font-semibold tw-text-base2">Действия над отмеченными</div>
-        <span class="text-[12px] tw-text-muted2 ml-auto" data-fleet-dialog-count>0 выбрано</span>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+    {# Панель действий липнет к низу экрана и появляется, когда что-то
+       отмечено: раньше до неё надо было пролистать весь список, а отмечают
+       как раз на длинном. Поля у действий разные — видно только нужное. #}
+    <div class="tw-card p-4 mt-3 space-y-3 rt-actionbar" data-fleet-bar hidden>
+      <div class="flex items-end gap-3 flex-wrap">
+        <div class="text-[13px] font-semibold tw-text-base2 whitespace-nowrap pb-2" data-fleet-count>0 выбрано</div>
         <div class="ss-field">
           <label for="bulk_action">Что сделать</label>
           <select id="bulk_action" name="action" class="tw-input" data-fleet-action>
@@ -333,7 +300,6 @@
             <option value="unbind">Отвязать клиента</option>
           </select>
         </div>
-
         <div class="ss-field" data-fleet-field="quick" hidden>
           <label for="bulk_quick">Скрипт</label>
           <select id="bulk_quick" name="quick" class="tw-input">
@@ -342,7 +308,6 @@
             {% endfor %}
           </select>
         </div>
-
         <div class="ss-field" data-fleet-field="status" hidden>
           <label for="bulk_status">Состояние</label>
           <select id="bulk_status" name="status" class="tw-input">
@@ -351,43 +316,46 @@
             {% endfor %}
           </select>
         </div>
-
         <div class="ss-field" data-fleet-field="activate" hidden>
-          <label for="bulk_days">На сколько дней</label>
+          <label for="bulk_days">Дней</label>
           <input type="number" id="bulk_days" name="days" value="30" min="1" max="3650"
-                 class="tw-input w-32">
+                 class="tw-input" style="width:96px">
+        </div>
+        <div class="flex items-center gap-2 ml-auto">
+          <button type="button" class="tw-btn tw-btn-sm" data-fleet-reset>
+            <i data-lucide="x" class="w-3.5 h-3.5"></i><span>Снять отметки</span>
+          </button>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" data-fleet-run disabled>
+            <i data-lucide="play" class="w-3.5 h-3.5"></i><span>Выполнить</span>
+          </button>
         </div>
       </div>
 
       <div class="ss-field" data-fleet-field="command" hidden>
         <label for="bulk_command">Команда на роутере</label>
-        <textarea id="bulk_command" name="command" rows="4" spellcheck="false"
+        <textarea id="bulk_command" name="command" rows="3" spellcheck="false"
                   class="tw-input font-mono text-[12px]"
                   placeholder="uci show network.wan &amp;&amp; /etc/init.d/frpc restart"></textarea>
       </div>
 
-      <div class="text-[11px] tw-text-subtle2" data-fleet-hint></div>
+      <div class="text-[11.5px] tw-text-muted2" data-fleet-hint></div>
       <div class="text-[12px] text-amber-500" data-fleet-warning hidden></div>
-
-      <div>
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" data-fleet-run disabled>
-          <i data-lucide="play" class="w-3.5 h-3.5"></i><span>Выполнить</span>
-        </button>
-      </div>
     </div>
     </form>
 
     {% if outputs %}
-    {# Вывод команды — ради него её и запускали. Показываем под таблицей,
-       а не в уведомлении: в одну строку он не влезает. #}
+    {# Вывод команды — ради него её и запускали. Под таблицей, а не
+       в уведомлении: в одну строку он не влезает. #}
     <div class="tw-card p-4 space-y-3">
-      <div class="text-[13px] font-semibold tw-text-base2">Вывод последней команды</div>
+      <div class="rt-section-title">Вывод последней команды</div>
       {% for item in outputs %}
       <div>
-        <div class="text-[12px] font-mono {% if not item.ok %}text-amber-500{% endif %}">
-          {{ item.mac }}{% if not item.ok %} · команда вернула ошибку{% endif %}
+        <div class="text-[12px] font-mono flex items-center gap-2">
+          {{ item.mac }}
+          {% if item.ok %}<span class="um-pill is-success">готово</span>
+          {% else %}<span class="um-pill is-danger">ошибка</span>{% endif %}
         </div>
-        <pre class="text-[11.5px] font-mono whitespace-pre-wrap tw-text-muted2 mt-1">{{ item.output or '(пусто)' }}</pre>
+        <pre class="rt-console font-mono whitespace-pre-wrap tw-text-muted2 mt-1.5">{{ item.output or '(пусто)' }}</pre>
       </div>
       {% endfor %}
     </div>
@@ -399,8 +367,8 @@
         if (!form) return;
         const rows = () => Array.from(form.querySelectorAll('[data-fleet-row]'));
         const picked = () => rows().filter((box) => box.checked).length;
+        const bar = form.querySelector('[data-fleet-bar]');
         const counter = form.querySelector('[data-fleet-count]');
-        const panelCount = form.querySelector('[data-fleet-dialog-count]');
         const all = form.querySelector('[data-fleet-all]');
         const reset = form.querySelector('[data-fleet-reset]');
         const run = form.querySelector('[data-fleet-run]');
@@ -433,9 +401,8 @@
 
         function refresh() {
           const count = picked();
-          const label = count ? count + ' выбрано' : '0 выбрано';
-          if (counter) counter.textContent = label;
-          if (panelCount) panelCount.textContent = label;
+          if (counter) counter.textContent = count + ' выбрано';
+          if (bar) bar.hidden = count === 0;
           if (run) run.disabled = count === 0;
           // Заголовочная отметка показывает состояние страницы, а не своё:
           // снял одну строку — «всё» больше не «всё».
@@ -481,8 +448,8 @@
         if (action) action.addEventListener('change', refreshFields);
 
         // Клик по строке открывает карточку. Отметки и ссылки внутри строки
-        // при этом должны работать по-своему — иначе отметить роутер нельзя
-        // вовсе: щелчок по чекбоксу уводил бы со страницы.
+        // при этом работают по-своему — иначе отметить роутер нельзя вовсе:
+        // щелчок по чекбоксу уводил бы со страницы.
         form.querySelectorAll('[data-fleet-href]').forEach((row) => {
           row.addEventListener('click', (event) => {
             if (event.target.closest('a, input, button, select, label')) return;
@@ -495,14 +462,24 @@
       })();
     </script>
     {% else %}
-    <div class="tw-card p-4 text-[13px] tw-text-muted2">Роутеров пока нет.</div>
+    <div class="tw-card p-8 text-center">
+      <i data-lucide="bell-off" class="w-6 h-6 tw-text-muted2" style="margin:0 auto"></i>
+      <div class="text-[14px] tw-text-base2 mt-2">
+        {{ 'По этому отбору роутеров нет.' if any_filter else 'Роутеров пока нет.' }}
+      </div>
+      {% if any_filter %}
+      <a href="{{ url_for('admin.routers_fleet') }}" class="text-[12px] underline tw-text-muted2">показать весь парк</a>
+      {% else %}
+      <div class="text-[12px] tw-text-muted2 mt-1">Они появятся здесь, когда первый выйдет на связь или будет заведён на складе.</div>
+      {% endif %}
+    </div>
     {% endif %}
 
     {% if pages > 1 %}
-    {# Номера страниц — как в «Клиентах»: те же `pg-link`, первая и последняя
-       всегда видны, вокруг текущей окно в одну страницу, разрывы многоточием.
-       Ссылки несут все фильтры разом: забытый здесь фильтр молча сбрасывается
-       на второй странице, и оператор видит не свой отбор. #}
+    {# Номера страниц — как в «Клиентах»: первая и последняя всегда видны,
+       вокруг текущей окно в одну страницу, разрывы многоточием. Ссылки несут
+       все фильтры разом: забытый фильтр молча сбрасывается на второй
+       странице, и оператор видит не свой отбор. #}
     {% set nav = dict(filters) %}
     <nav class="flex justify-center pt-1">
       <div class="flex items-center gap-1 flex-wrap">
@@ -529,6 +506,51 @@
     </nav>
     <div class="text-center text-[12px] tw-text-muted2">Всего роутеров в отборе: {{ total }}</div>
     {% endif %}
+
+    {# Настройки раздела — внизу и свёрнуты: их меняют раз в месяц,
+       а список открывают каждый час. Раньше форма стояла между счётчиками
+       и таблицей, и до роутеров приходилось её пролистывать. #}
+    <details class="tw-card rt-fold" {% if not support_contact %}open{% endif %}>
+      <summary class="p-4 flex items-center gap-2">
+        <i data-lucide="settings" class="w-4 h-4 tw-text-muted2"></i>
+        <span class="rt-section-title">Настройки раздела</span>
+        <span class="text-[12px] tw-text-muted2 ml-auto">поддержка и автоактивация</span>
+        <i data-lucide="chevron-down" class="w-4 h-4 tw-text-muted2 rt-fold-icon"></i>
+      </summary>
+      <form method="post" action="{{ url_for('admin.routers_fleet_settings') }}"
+            class="px-4 pb-4 space-y-4">
+        <label class="block">
+          <span class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Контакт поддержки</span>
+          <input type="text" name="support_contact" value="{{ support_contact or '' }}"
+                 placeholder="@titan_support" class="tw-input">
+        </label>
+        <div class="text-[11px] tw-text-subtle2">
+          Берётся из настроек бота — поле «Ссылка на поддержку» — и обновляется само
+          в течение минуты. Здесь можно задать вручную, если там пусто. От него
+          зависят кнопка «Написать в поддержку» в приложении, строка «Остались
+          вопросы» в каталоге и ссылка в подвале сайта.
+        </div>
+
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" name="auto_enabled" {% if auto_enabled %}checked{% endif %}
+                 class="w-4 h-4 cursor-pointer">
+          <span class="text-[13px] tw-text-base2">
+            Активировать сам, когда отгруженный заказ выходит на связь
+          </span>
+        </label>
+        <div class="text-[11px] tw-text-subtle2">
+          Только для роутеров, привязанных к отгруженному заказу, — значит, роутер
+          уже у клиента. Тот, что лежит на столе и прошивается, тоже выходит на связь,
+          но его не трогает: дни горели бы у мастера. Срок — тот, что клиент оплатил
+          при покупке, отсчёт с момента, когда роутер получил ссылку.
+        </div>
+        <div>
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+          </button>
+        </div>
+      </form>
+    </details>
 
   {% endif %}
 </div>

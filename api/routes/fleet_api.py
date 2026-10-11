@@ -42,6 +42,7 @@ from core.models import (
     ListKind,
     ManualList,
     ManualListRevision,
+    Order,
     User,
 )
 from core.security import normalize_mac
@@ -214,6 +215,19 @@ def _mac_condition(text: str):
 
 def _iso(value: dt.datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _days_left(expires_at: dt.datetime | None, *, now: dt.datetime) -> int | None:
+    """Сколько полных суток осталось до конца подписки.
+
+    Ноль — кончается сегодня, отрицательное — уже кончилась, None — срока
+    нет вовсе. Считаем здесь, а не в шаблоне: даты Jinja не вычитает,
+    а «до 2026-11-07» оператору приходится пересчитывать в уме — ровно
+    это число и нужно, чтобы решить, звонить ли клиенту.
+    """
+    if expires_at is None:
+        return None
+    return (expires_at - now).days
 
 
 ROUTERS_PAGE_SIZE = 50
@@ -439,6 +453,9 @@ async def list_routers(
                 else "",
                 "status_label": _label(str(device.status), DEVICE_LABELS),
                 "subscription_until": _iso(subscription.expires_at) if subscription else None,
+                "subscription_days_left": _days_left(subscription.expires_at, now=now)
+                if subscription
+                else None,
                 # Своей подписки нет, а у клиента есть — на другом его роутере.
                 # В строке это не пишется (одна подписка — один роутер, и чужая
                 # здесь читалась как «оплачен»), но отбору нужно: так находится
@@ -532,6 +549,9 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
         else None
     )
     events = await routers_service.recent_events(session, device_id=device_id, limit=30)
+    # Заказ, по которому роутер уехал к клиенту. Из карточки роутера в него
+    # ходят чаще всего: трек-номер, адрес, что именно оплачено.
+    order = await session.get(Order, device.order_id) if device.order_id else None
 
     # Срок ручной активации знает только панель. Предел по времени тот же, что был
     # в нашей карточке: страница не должна ждать чужой сервис.
@@ -554,10 +574,22 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
         "client": {
             "id": device.user_id,
             "telegram": device.user.telegram_name if device.user else "",
+            # По ним админка открывает карточку клиента и ссылку «написать»:
+            # свои пользователи у неё по telegram_id, наш номер ей ничего не говорит.
+            "tg_id": (device.user.tg_id or 0) if device.user else 0,
+            "username": (device.user.username or "") if device.user else "",
             "name": device.user.display_name if device.user else "",
             "email": (device.user.email or "") if device.user else "",
             "phone": (device.user.phone or "") if device.user else "",
         },
+        "order": {
+            "id": order.id,
+            "number": order.public_number,
+            "status": str(order.status),
+            "status_label": texts.ORDER_STATUS_TITLES.get(order.status, str(order.status)),
+        }
+        if order
+        else {},
         # Подписка этого роутера, а не любая подписка его владельца: одна
         # подписка — один роутер. Чужая, показанная здесь как «активна»,
         # читалась как «этот роутер оплачен».
@@ -565,6 +597,7 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
             "status": str(subscription.status) if subscription else "",
             "label": _label(str(subscription.status), SUBSCRIPTION_LABELS) if subscription else "",
             "until": _iso(subscription.expires_at) if subscription else None,
+            "days_left": _days_left(subscription.expires_at, now=now) if subscription else None,
             "here": subscription is not None,
             # Отдельной строкой, а не оттенком статуса: это факт про клиента,
             # а не про этот роутер. Он и объясняет, почему подписки тут нет.

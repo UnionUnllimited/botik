@@ -227,6 +227,9 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             clients=clients,
             router=data.get("router", {}),
             client=data.get("client", {}),
+            # Заказ, по которому роутер уехал. Пустой словарь, а не None:
+            # старая ручка его не присылает, и шаблон должен это пережить.
+            order=data.get("order") or {},
             subscription=data.get("subscription", {}),
             panel=data.get("panel", {}),
             events=data.get("events", []),

@@ -1,18 +1,27 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Роутер {{ router.mac or device_id }} — {{ super() }}{% endblock %}
 
 {% block content %}
+{{ ui.styles() }}
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
-    <div>
-      <p class="text-[13px] tw-text-muted2 mb-1"><a href="{{ url_for('admin.routers_fleet') }}">← Роутеры</a></p>
-      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 font-mono">{{ router.mac or '—' }}</h1>
+    <div class="min-w-0">
+      <p class="text-[13px] tw-text-muted2 mb-1"><a href="{{ url_for('admin.routers_fleet') }}">← Парк роутеров</a></p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2 font-mono">{{ router.mac or '—' }}</h1>
+        {% if not fleet_error %}
+          {{ ui.link_pill(router.online) }}
+          {% if router.status_label %}<span class="um-pill is-muted">{{ router.status_label }}</span>{% endif %}
+        {% endif %}
+      </div>
       <p class="text-[13px] tw-text-muted2 mt-1">
         {{ router.model or 'модель неизвестна' }}
-        {% if router.fw_version %} · прошивка {{ router.fw_version }}{% endif %}
+        {%- if router.fw_version %} · прошивка {{ router.fw_version }}{% endif %}
         {%- if router.fw_build %} · сборка r{{ router.fw_build }}{% endif %}
-        {% if router.visitor_port %} · туннель на порту {{ router.visitor_port }}{% endif %}
+        {%- if router.wan_ip %} · WAN <span class="font-mono">{{ router.wan_ip }}</span>{% endif %}
+        {%- if router.visitor_port %} · туннель :{{ router.visitor_port }}{% endif %}
       </p>
     </div>
     {% if not fleet_error %}
@@ -21,8 +30,8 @@
          Кнопка получает разовую ссылку и открывает панель в соседней вкладке. #}
       <form method="post" target="_blank"
             action="{{ url_for('admin.router_panel', device_id=device_id) }}">
-        <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
-          <i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>Открыть панель</span>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>Панель роутера</span>
         </button>
       </form>
       {# Живой терминал: нужен там, где разовой команды мало — `top`, `logread -f`,
@@ -30,7 +39,7 @@
       <form method="post" target="_blank"
             action="{{ url_for('admin.router_terminal', device_id=device_id) }}">
         <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
-          <i data-lucide="square-terminal" class="w-3.5 h-3.5"></i><span>Открыть терминал</span>
+          <i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>Терминал</span>
         </button>
       </form>
       {# Пароль root показывается по кнопке и не попадает в разметку страницы:
@@ -38,12 +47,12 @@
          приложение — соль только у него. #}
       <button type="button" class="tw-btn tw-btn-secondary tw-btn-sm" id="rcPassBtn"
               data-url="{{ url_for('admin.router_ssh_password', device_id=device_id) }}">
-        <i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>Показать пароль</span>
+        <i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>Пароль root</span>
       </button>
       <code id="rcPassValue" class="tw-kbd text-[12px] hidden select-all"></code>
       <form method="post" action="{{ url_for('admin.router_poll', device_id=device_id) }}">
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Опросить сейчас</span>
+        <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm" title="Снять показания через туннель">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Опросить</span>
         </button>
       </form>
     </div>
@@ -59,65 +68,108 @@
     </div>
   {% else %}
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    {# Показания одним рядом. Подписка — первой после связи: из-за неё
+       клиент и пишет, и ответ «сколько осталось» должен быть виден сразу,
+       а не в абзаце внизу карточки. #}
+    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
       <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">Связь</div>
-        <div class="text-[18px] font-semibold" style="color:{{ '#16a34a' if router.online else 'inherit' }}">
-          {{ 'на связи' if router.online else 'молчит' }}
+        <div class="rt-tile-label">Связь</div>
+        <div class="mt-1.5">{{ ui.link_pill(router.online) }}</div>
+        <div class="rt-tile-sub">отклик {{ router.last_seen|msk_compact if router.last_seen else '—' }}</div>
+      </div>
+      <div class="tw-card p-4">
+        <div class="rt-tile-label">Подписка</div>
+        <div class="mt-1.5">{{ ui.sub_pill(subscription.status, subscription.label, subscription.days_left) }}</div>
+        <div class="rt-tile-sub">
+          {% if subscription.until and subscription.status != 'pending' %}до {{ subscription.until|msk_date }}
+          {% elif subscription.elsewhere %}<span class="text-amber-500">у клиента есть — на другом роутере</span>
+          {% else %}—{% endif %}
         </div>
-        <div class="text-[12px] tw-text-muted2 mt-1">отклик {{ router.last_seen|msk_datetime if router.last_seen else '—' }}</div>
       </div>
       <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">Устройств в сети</div>
-        <div class="text-[22px] font-semibold tw-text-base2">{{ router.clients }}</div>
+        <div class="rt-tile-label">Устройств в сети</div>
+        <div class="rt-tile-value tabular-nums">{{ router.clients }}</div>
       </div>
       <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">Процессор / память</div>
-        <div class="text-[18px] font-semibold tw-text-base2">
-          {{ router.cpu_pct if router.cpu_pct is not none else '—' }}% /
-          {{ router.ram_pct if router.ram_pct is not none else '—' }}%
+        <div class="rt-tile-label">Нагрузка</div>
+        <div class="mt-2 space-y-1.5">
+          {{ ui.meter(router.cpu_pct, 'CPU') }}
+          {{ ui.meter(router.ram_pct, 'ОЗУ') }}
         </div>
       </div>
       <div class="tw-card p-4">
-        <div class="text-[12px] tw-text-muted2">WAN IP</div>
-        <div class="text-[16px] font-semibold font-mono tw-text-base2">{{ router.wan_ip or '—' }}</div>
+        <div class="rt-tile-label">Аптайм</div>
+        <div class="rt-tile-value">{{ ui.uptime(router.uptime_sec) }}</div>
+      </div>
+      <div class="tw-card p-4">
+        <div class="rt-tile-label">Трафик ↓ / ↑</div>
+        <div class="text-[15px] font-semibold tw-text-base2 mt-1.5 whitespace-nowrap">
+          {{ ui.bytes(router.rx_bytes) }} / {{ ui.bytes(router.tx_bytes) }}
+        </div>
       </div>
     </div>
 
-    <div class="grid md:grid-cols-2 gap-3">
+    <div class="grid lg:grid-cols-3 gap-3 items-start">
 
-      {# ── Клиент и подписка ───────────────────────────────────────────── #}
-      <div class="tw-card p-4 space-y-3">
-        <h2 class="text-[15px] font-semibold tw-text-base2">Клиент</h2>
+      {# ── Клиент и заказ ──────────────────────────────────────────────── #}
+      <div class="tw-card p-4 space-y-4">
+        <div class="flex items-center gap-2">
+          <i data-lucide="user" class="w-4 h-4 tw-text-muted2"></i>
+          <h2 class="rt-section-title">Клиент</h2>
+        </div>
+
         {% if client.id %}
-          {# Телеграм первым: разговор с клиентом идёт там. Имя из доставки,
-             почта и телефон — дополнением. #}
-          <div class="text-[13px]">
-            {{ client.telegram or client.name }}
+          {# Телеграм первым: разговор с клиентом идёт там. Ссылка «написать»
+             открывает чат сразу — раньше логин приходилось копировать. #}
+          <div>
+            <div class="text-[14px] font-semibold tw-text-base2">
+              {% if client.tg_id %}
+                <a href="{{ url_for('admin.user_details', telegram_id=client.tg_id) }}">{{ client.telegram or client.name }}</a>
+              {% else %}
+                {{ client.telegram or client.name }}
+              {% endif %}
+            </div>
             {% if client.name and client.name != client.telegram %}
-            <div class="tw-text-muted2">{{ client.name }}</div>
-            {% endif %}
-            {% if client.email %}<div class="tw-text-muted2">{{ client.email }}</div>{% endif %}
-            {% if client.phone %}<div class="tw-text-muted2">{{ client.phone }}</div>{% endif %}
-          </div>
-          <div class="text-[13px]">
-            Подписка:
-            {# Одна подписка — один роутер: здесь только своя. #}
-            {% if subscription.status %}
-              {{ subscription.label or subscription.status }}
-              {% if subscription.until %}<span class="tw-text-muted2">до {{ subscription.until[:10] }}</span>{% endif %}
-            {% else %}
-              <span class="tw-text-muted2">нет</span>
+            <div class="text-[13px] tw-text-muted2">{{ client.name }}</div>
             {% endif %}
           </div>
+          <dl class="rt-kv">
+            {% if client.phone %}<dt>Телефон</dt><dd><a href="tel:{{ client.phone }}" class="font-mono">{{ client.phone }}</a></dd>{% endif %}
+            {% if client.email %}<dt>Почта</dt><dd class="truncate">{{ client.email }}</dd>{% endif %}
+            {% if order.id %}
+            <dt>Заказ</dt>
+            <dd>
+              <a href="{{ url_for('admin.order_shop_card', order_id=order.id) }}" class="font-mono tw-text-base2">{{ order.number }}</a>
+              {% if order.status_label %}<span class="um-pill is-muted ml-1">{{ order.status_label }}</span>{% endif %}
+            </dd>
+            {% endif %}
+          </dl>
           <div class="flex gap-2 flex-wrap">
+            {% if client.username %}
+            <a href="https://t.me/{{ client.username }}" target="_blank" rel="noopener noreferrer"
+               class="tw-btn tw-btn-secondary tw-btn-sm">
+              <i data-lucide="send" class="w-3.5 h-3.5"></i><span>Написать</span>
+            </a>
+            {% elif client.tg_id %}
+            <a href="tg://user?id={{ client.tg_id }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+              <i data-lucide="send" class="w-3.5 h-3.5"></i><span>Написать</span>
+            </a>
+            {% endif %}
             <form method="post" action="{{ url_for('admin.router_unbind', device_id=device_id) }}"
                   onsubmit="return confirm('Отвязать клиента от этого роутера? Подписка, лежащая на нём, вернётся в ожидание активации.')">
-              <button type="submit" class="tw-btn tw-btn-sm">Отвязать клиента</button>
+              <button type="submit" class="tw-btn tw-btn-sm">
+                <i data-lucide="user-x" class="w-3.5 h-3.5"></i><span>Отвязать</span>
+              </button>
             </form>
           </div>
         {% else %}
           <p class="text-[13px] tw-text-muted2">Клиент не привязан.</p>
+          {% if order.id %}
+          <div class="text-[13px]">
+            Заказ: <a href="{{ url_for('admin.order_shop_card', order_id=order.id) }}" class="font-mono tw-text-base2">{{ order.number }}</a>
+            {% if order.status_label %}<span class="um-pill is-muted ml-1">{{ order.status_label }}</span>{% endif %}
+          </div>
+          {% endif %}
           <form method="post" action="{{ url_for('admin.router_bind', device_id=device_id) }}" class="space-y-2">
             {% if clients %}
               {# Выбор из базы, а не ввод строки: опечатка в почте раньше
@@ -139,15 +191,16 @@
                 Список клиентов сейчас недоступен — введите вручную.
               </div>
             {% endif %}
-            <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Привязать</button>
+            <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+              <i data-lucide="link" class="w-3.5 h-3.5"></i><span>Привязать</span>
+            </button>
           </form>
         {% endif %}
 
         {# Сброс — про роутер, а не про клиента, и нужен как раз тогда, когда
            клиента уже нет: подписка могла остаться висеть на нём и мешать
-           активации настоящего роутера того же клиента. Раньше кнопка
-           пряталась вместе с клиентом, и починить это из карточки было нечем. #}
-        <div class="pt-3 border-t" style="border-color: var(--admin-border);">
+           активации настоящего роутера того же клиента. #}
+        <div class="pt-3 border-t" style="border-color: rgb(var(--admin-border));">
           <form method="post" action="{{ url_for('admin.router_reset', device_id=device_id) }}"
                 onsubmit="return confirm('Вернуть роутер на склад? Снимутся клиент, заказ и активация. Оплаченная подписка не сгорит — вернётся в ожидание активации.')">
             <button type="submit" class="tw-btn tw-btn-sm nav-accent-danger">
@@ -155,112 +208,139 @@
             </button>
           </form>
           <div class="text-[11px] tw-text-subtle2 mt-1.5">
-            Снимает клиента, заказ, активацию и подписку с этого роутера.
-            Оплаченная подписка не сгорает — вернётся в ожидание активации
-            и включится на следующем роутере.
+            Снимает клиента, заказ, активацию и подписку с этого роутера. Оплаченная
+            подписка не сгорает — вернётся в ожидание и включится на следующем роутере.
           </div>
         </div>
       </div>
 
-      {# ── Ручная активация ────────────────────────────────────────────── #}
-      <div class="tw-card p-4 space-y-3">
-        <h2 class="text-[15px] font-semibold tw-text-base2">Ручная активация</h2>
-        <p class="text-[12px] tw-text-muted2">
-          Заводит в панели учётку <span class="font-mono">{{ panel.username }}</span> и отдаёт её ссылку
-          роутеру. Подписок клиента не касается: это доступ вручную — служебный роутер,
-          подменный или проданный вне сайта.
-        </p>
-        <div class="text-[13px]">
-          Учётка:
-          {% if panel.until %}
-            {% if panel.active %}<span style="color:#16a34a">активна</span>{% else %}<span style="color:#b91c1c">истекла</span>{% endif %}
-            <span class="tw-text-muted2">до {{ panel.until[:10] }}</span>
-          {% else %}
-            <span class="tw-text-muted2">не заведена</span>
-          {% endif %}
+      {# ── Консоль ─────────────────────────────────────────────────────── #}
+      {# Консоль выше ручной активации: ей пользуются каждый день, а ручной
+         активацией — для стенда и подменных, раз в месяц. #}
+      <div class="tw-card p-4 space-y-3 lg:col-span-2">
+        <div class="flex items-center gap-2">
+          <i data-lucide="terminal" class="w-4 h-4 tw-text-muted2"></i>
+          <h2 class="rt-section-title">Консоль</h2>
+          <span class="text-[11.5px] tw-text-muted2 ml-auto">разовая команда по SSH через туннель</span>
         </div>
+        {# Готовые вопросы кнопками: это те же полдюжины команд каждый раз,
+           и набирать их руками — лишний повод опечататься в том, что уходит
+           на устройство клиента. #}
+        {% if quick_commands %}
+        <div class="flex flex-wrap gap-2">
+          {% for item in quick_commands %}
+          <form method="post"
+                action="{{ url_for('admin.router_quick', device_id=device_id, name=item.name) }}">
+            <button type="submit" class="tw-btn tw-btn-sm">{{ item.title }}</button>
+          </form>
+          {% endfor %}
+        </div>
+        {% endif %}
 
-        <form method="post" action="{{ url_for('admin.router_activate', device_id=device_id) }}"
-              class="space-y-2" onsubmit="return confirm('Выдать доступ и отправить ссылку на роутер?')">
-          <label class="text-[12px] tw-text-muted2" for="days-activate">Срок доступа, дней</label>
-          <input id="days-activate" name="days" type="number" min="1" max="3650" value="30" class="tw-input w-full">
-          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-            {{ 'Активировать заново' if panel.until else 'Активировать' }}
+        <form method="post" action="{{ url_for('admin.router_console', device_id=device_id) }}" class="flex gap-2">
+          <input name="command" required class="tw-input flex-1 font-mono"
+                 value="{{ console_command or '' }}" placeholder="logread | tail -n 50"
+                 aria-label="Команда на роутере">
+          <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i><span>Выполнить</span>
           </button>
         </form>
-
-        {% if panel.until %}
-        <form method="post" action="{{ url_for('admin.router_extend', device_id=device_id) }}" class="space-y-2">
-          <label class="text-[12px] tw-text-muted2" for="days-extend">Продлить на, дней</label>
-          <input id="days-extend" name="days" type="number" min="1" max="3650" value="30" class="tw-input w-full">
-          <button type="submit" class="tw-btn tw-btn-sm">Продлить</button>
-        </form>
-        <p class="text-[12px] tw-text-muted2">Продление считается от текущего срока, а не от сегодня.</p>
+        {% if console_output %}
+        <pre class="rt-console font-mono">{{ console_output }}</pre>
         {% endif %}
+        <div class="text-[11px] tw-text-subtle2">
+          Перепрошивка и форматирование запрещены: получить кирпич у клиента на другом
+          конце страны легко, а вернуть его — нет.
+        </div>
       </div>
-    </div>
-
-    {# ── Консоль ───────────────────────────────────────────────────────── #}
-    <div class="tw-card p-4 space-y-3">
-      <h2 class="text-[15px] font-semibold tw-text-base2">Консоль</h2>
-      <p class="text-[12px] tw-text-muted2">
-        Разовая команда по SSH через туннель. Перепрошивка и форматирование
-        запрещены: получить кирпич у клиента на другом конце страны легко,
-        а вернуть его — нет.
-      </p>
-      {# Готовые вопросы кнопками: это те же полдюжины команд каждый раз,
-         и набирать их руками — лишний повод опечататься в том, что уходит
-         на устройство клиента. Состояние туннеля здесь же: «на связи»
-         показывает frps, а работает связь через frpc на самом роутере. #}
-      {% if quick_commands %}
-      <div class="flex flex-wrap gap-2">
-        {% for item in quick_commands %}
-        <form method="post"
-              action="{{ url_for('admin.router_quick', device_id=device_id, name=item.name) }}">
-          <button type="submit" class="tw-btn tw-btn-sm">{{ item.title }}</button>
-        </form>
-        {% endfor %}
-      </div>
-      {% endif %}
-
-      <form method="post" action="{{ url_for('admin.router_console', device_id=device_id) }}" class="space-y-2">
-        <input name="command" required class="tw-input w-full font-mono"
-               value="{{ console_command or '' }}" placeholder="logread | tail -n 50">
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Выполнить</button>
-      </form>
-      {% if console_output %}
-      <pre class="text-[12px] font-mono overflow-x-auto p-3 rounded"
-           style="background:rgba(0,0,0,.25); max-height:340px">{{ console_output }}</pre>
-      {% endif %}
     </div>
 
     {# ── Журнал ────────────────────────────────────────────────────────── #}
     <div class="tw-card p-4">
-      <div class="flex items-center justify-between gap-3 mb-3">
-        <h2 class="text-[15px] font-semibold tw-text-base2">Последнее в журнале</h2>
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <div class="flex items-center gap-2">
+          <i data-lucide="scroll-text" class="w-4 h-4 tw-text-muted2"></i>
+          <h2 class="rt-section-title">Последнее в журнале</h2>
+        </div>
         {# Полный журнал — своей страницей: здесь он рос до сотен строк
            и топил под собой всё остальное в карточке. #}
-        <a href="{{ url_for('admin.router_events', device_id=device_id) }}"
-           class="tw-btn tw-btn-sm">
-          <i data-lucide="scroll-text" class="w-3.5 h-3.5"></i><span>Весь журнал</span>
+        <a href="{{ url_for('admin.router_events', device_id=device_id) }}" class="tw-btn tw-btn-sm">
+          <span>Весь журнал</span><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
         </a>
       </div>
       {% if events %}
-      <table class="w-full text-[13px]">
-        <tbody>
-          {% for event in events %}
-          <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
-            <td class="px-2 py-2 tw-text-muted2 whitespace-nowrap">{{ event.at|msk_compact }}</td>
-            <td class="px-2 py-2 whitespace-nowrap">{{ event.level }}</td>
-            <td class="px-2 py-2">{{ event.message }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="w-full text-[13px]">
+          <tbody>
+            {% for event in events %}
+            <tr class="rt-row">
+              <td class="px-2 py-2 tw-text-muted2 rt-shrink align-top">{{ event.at|msk_compact }}</td>
+              <td class="px-2 py-2 rt-shrink align-top">{{ ui.level_pill(event.level) }}</td>
+              <td class="px-2 py-2">{{ event.message }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
       <p class="text-[13px] tw-text-muted2">Событий нет.</p>
       {% endif %}
     </div>
+
+    {# ── Ручная активация ──────────────────────────────────────────────── #}
+    {# Свёрнута: купленный срок включается сам, когда роутер выходит на связь.
+       Открыта сразу, только если учётка уже заведена вручную — тогда здесь
+       её срок, и его надо видеть. #}
+    <details class="tw-card rt-fold" {% if panel.until %}open{% endif %}>
+      <summary class="p-4 flex items-center gap-2">
+        <i data-lucide="key" class="w-4 h-4 tw-text-muted2"></i>
+        <span class="rt-section-title">Ручная активация</span>
+        <span class="ml-2">
+          {% if panel.until %}
+            <span class="um-pill {{ 'is-success' if panel.active else 'is-danger' }}">
+              {{ 'активна' if panel.active else 'истекла' }} · до {{ panel.until|msk_date }}
+            </span>
+          {% else %}
+            <span class="um-pill is-muted">не заведена</span>
+          {% endif %}
+        </span>
+        <span class="text-[12px] tw-text-muted2 ml-auto">для стенда, подменных и проданных вне сайта</span>
+        <i data-lucide="chevron-down" class="w-4 h-4 tw-text-muted2 rt-fold-icon"></i>
+      </summary>
+      <div class="px-4 pb-4 space-y-3">
+        <p class="text-[12px] tw-text-muted2">
+          Заводит в панели учётку <span class="font-mono select-all">{{ panel.username }}</span> и отдаёт её
+          ссылку роутеру. Подписок клиента не касается.
+        </p>
+        <div class="flex gap-4 flex-wrap items-end">
+          <form method="post" action="{{ url_for('admin.router_activate', device_id=device_id) }}"
+                class="flex items-end gap-2" onsubmit="return confirm('Выдать доступ и отправить ссылку на роутер?')">
+            <div class="ss-field">
+              <label for="days-activate">Срок, дней</label>
+              <input id="days-activate" name="days" type="number" min="1" max="3650" value="30"
+                     class="tw-input" style="width:96px">
+            </div>
+            <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+              {{ 'Активировать заново' if panel.until else 'Активировать' }}
+            </button>
+          </form>
+          {% if panel.until %}
+          <form method="post" action="{{ url_for('admin.router_extend', device_id=device_id) }}"
+                class="flex items-end gap-2">
+            <div class="ss-field">
+              <label for="days-extend">Продлить на, дней</label>
+              <input id="days-extend" name="days" type="number" min="1" max="3650" value="30"
+                     class="tw-input" style="width:96px">
+            </div>
+            <button type="submit" class="tw-btn tw-btn-sm">Продлить</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if panel.until %}
+        <p class="text-[11px] tw-text-subtle2">Продление считается от текущего срока, а не от сегодня.</p>
+        {% endif %}
+      </div>
+    </details>
 
   {% endif %}
 </div>

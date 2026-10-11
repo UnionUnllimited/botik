@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Журнал {{ device.mac or '' }} — {{ super() }}{% endblock %}
 
 {% block content %}
+{{ ui.styles() }}
 {# Журнал вынесен из карточки: он пишется на каждую команду, привязку и показ
    пароля, и за месяц у роутера набегают сотни строк. В карточке остались
    последние десять — этого хватает, чтобы понять, что было только что. #}
@@ -32,7 +34,7 @@
         <select id="level" name="level" class="tw-input" onchange="this.form.submit()">
           <option value="">любой</option>
           {% for item in levels %}
-          <option value="{{ item }}" {% if level == item %}selected{% endif %}>{{ item }}</option>
+          <option value="{{ item }}" {% if level == item %}selected{% endif %}>{{ ui.level_title(item) }}</option>
           {% endfor %}
         </select>
       </div>
@@ -53,22 +55,19 @@
     <table class="w-full text-[13px]">
       <thead>
         <tr class="tw-text-muted2 text-left">
-          <th class="px-3 py-2 font-medium whitespace-nowrap">Когда</th>
-          <th class="px-3 py-2 font-medium whitespace-nowrap">Уровень</th>
+          <th class="px-3 py-2 font-medium rt-shrink">Когда</th>
+          <th class="px-3 py-2 font-medium rt-shrink">Уровень</th>
           <th class="px-3 py-2 font-medium">Событие</th>
         </tr>
       </thead>
       <tbody>
         {% for event in events %}
-        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
+        <tr class="rt-row">
           <td class="px-3 py-2 tw-text-muted2 whitespace-nowrap">
             {{ event.at|msk_compact if event.at else '—' }}
           </td>
           <td class="px-3 py-2 whitespace-nowrap">
-            {% if event.level == 'error' %}<span style="color:#dc2626">{{ event.level }}</span>
-            {% elif event.level == 'warning' %}<span class="text-amber-500">{{ event.level }}</span>
-            {% elif event.level == 'success' %}<span style="color:#16a34a">{{ event.level }}</span>
-            {% else %}<span class="tw-text-muted2">{{ event.level }}</span>{% endif %}
+            {{ ui.level_pill(event.level) }}
           </td>
           <td class="px-3 py-2">{{ event.message }}</td>
         </tr>
