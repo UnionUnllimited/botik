@@ -501,6 +501,15 @@ async def _admin_auth_guard():
                 # Показания в шапке страницы: их читает каждая страница,
                 # и без них дашборд у модератора пустеет.
                 ('/api/system_stats', 'dashboard'),
+                # «На сегодня» — кусок главной. Ссылки в нём ведут в заказы
+                # и роутеры, которые модератору не открыть, — их он не увидит.
+                ('/today', 'dashboard'),
+                # Общий поиск: находит заказы и роутеры, но ссылки на них
+                # модератору не рисуются — только на клиентов.
+                ('/search', 'users'),
+                # Состояние системы — адреса серверов и подсказки по их починке:
+                # работа админа.
+                ('/system-health', 'devices'),
             ]
             req_section = None
             # path может быть /{admin_secret_path}/users — проверяем вхождение сегмента
@@ -1542,6 +1551,9 @@ from web_admin.routes.bulk_ops import attach_bulk_ops_routes
 attach_bulk_ops_routes(admin_bp)
 from web_admin.routes.firmware import attach_firmware_routes
 attach_firmware_routes(admin_bp)
+
+from web_admin.routes.ops import attach_ops_routes
+attach_ops_routes(admin_bp)
         
 @admin_bp.route('/users__placeholder__moved/<int:telegram_id>/delete', methods=['POST'])
 @login_required

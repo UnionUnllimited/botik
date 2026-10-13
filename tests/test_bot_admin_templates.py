@@ -543,6 +543,54 @@ PAGES = {
             {"mac": "A0:B1:C2:D3:E4:F6", "ok": False, "output": ""},
         ],
     },
+    "_partials/today.html": {
+        "today": {"total": 3},
+        "counters": {
+            "fleet_total": 9, "fleet_online": 6, "orders_paid_24h": 2,
+            "revenue_24h": "17800.00", "subscriptions_active": 5,
+        },
+        "groups": [
+            {
+                "key": "unshipped", "title": "Оплачены, ждут отгрузки", "hint": "…", "tone": "warning",
+                "items": [
+                    {"title": "R-1", "sub": "ждёт отгрузки · оплачен 30 ч назад",
+                     "link": {"kind": "order", "id": 1}, "late": True},
+                    {"title": "R-2", "sub": "цена доставки не назначена",
+                     "link": {"kind": "order", "id": 2}, "late": False},
+                ],
+            },
+            {
+                "key": "expiring", "title": "Подписка кончается", "hint": "…", "tone": "info",
+                "items": [{"title": "@kelvin", "sub": "кончается 15.10",
+                           "link": {"kind": "client", "id": 500}, "late": False}],
+            },
+        ],
+        "today_error": "",
+        "link_of": lambda kind, ident: f"/{kind}/{ident}",
+    },
+    "system_health.html": {
+        "checks": [
+            {"key": "frps", "title": "frps", "status": "fail",
+             "detail": "не отвечает", "hint": "проверьте путь"},
+            {"key": "database", "title": "База", "status": "ok", "detail": "отвечает", "hint": ""},
+            {"key": "storage", "title": "S3", "status": "off", "detail": "не настроено", "hint": ""},
+        ],
+        "local": [
+            {"key": "disk", "title": "Диск", "status": "warn", "detail": "занято 88 %", "hint": "почистите"},
+        ],
+        "overall": "fail",
+        "health_error": "",
+    },
+    "search.html": {
+        "query": "5F:A8",
+        "results": [
+            {"kind": "router", "id": 1, "title": "D4:0D:AB:03:5F:A8", "sub": "cudy · @union"},
+            {"kind": "order", "id": 2, "title": "R-260811-0002", "sub": "Оплачен"},
+            {"kind": "client", "id": 614685408, "title": "@union", "sub": ""},
+        ],
+        "search_error": "",
+        "link_of": lambda kind, ident: f"/{kind}/{ident}",
+    },
 }
 
 
@@ -590,6 +638,9 @@ OURS = {
     "router_card.html",
     "router_events.html",
     "routers_fleet.html",
+    "_partials/today.html",
+    "system_health.html",
+    "search.html",
 }
 """Страницы, написанные нами. Их рисуем строго: обращение к непереданной
 переменной должно падать в тесте, а не рисоваться пустотой у оператора.

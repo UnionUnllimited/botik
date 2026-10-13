@@ -1,0 +1,89 @@
+{# «На сегодня» на главной: подгружается отдельно, чтобы главная открывалась,
+   даже когда основное приложение молчит. Дела считает тот же код, что и
+   утреннюю сводку, — страница и сообщение в 07:10 не расходятся.
+   Ссылки — только тем, кто карточку откроет: модератору заказы и роутеры
+   не выдаются, и ссылка, ведущая в отказ, хуже никакой. #}
+{% if today_error %}
+<div class="tw-card p-4 text-[13px] flex items-start gap-2" style="border-color:rgba(239,68,68,.35)">
+  <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#ef4444"></i>
+  <div>Дела на сегодня не загрузились: {{ today_error }}</div>
+</div>
+{% else %}
+{% set can_shop = moderator_can_see('shop') %}
+{% set can_fleet = moderator_can_see('devices') %}
+<div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+  {% set tiles = [
+    ('wifi', 'Роутеры на связи', (counters.fleet_online or 0) ~ ' из ' ~ (counters.fleet_total or 0), 'routers_fleet' if can_fleet else ''),
+    ('clipboard-check', 'Оплачено за сутки', counters.orders_paid_24h or 0, 'orders_shop' if can_shop else ''),
+    ('wallet', 'Выручка за сутки', ((counters.revenue_24h or '0') | float | round | int) ~ ' ₽', 'payments_shop' if moderator_can_see('payments') else ''),
+    ('badge-check', 'Активных подписок', counters.subscriptions_active or 0, ''),
+  ] %}
+  {% for icon, label, value, endpoint in tiles %}
+  {% if endpoint %}<a href="{{ url_for('admin.' ~ endpoint) }}" class="tw-surface rounded-[var(--radius-card)] p-4 block today-tile">{% else %}<div class="tw-surface rounded-[var(--radius-card)] p-4">{% endif %}
+    <div class="flex items-center gap-2 text-[11px] tw-text-subtle2 uppercase tracking-wider">
+      <i data-lucide="{{ icon }}" class="w-3.5 h-3.5"></i> {{ label }}
+    </div>
+    <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2 whitespace-nowrap">{{ value }}</div>
+  {% if endpoint %}</a>{% else %}</div>{% endif %}
+  {% endfor %}
+</div>
+
+<div class="tw-surface rounded-[var(--radius-card)] p-5">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h2 class="text-[15px] font-semibold tw-text-base2">На сегодня</h2>
+      <p class="text-[12px] tw-text-muted2 mt-0.5">Что ждёт вашей руки. Пустая группа не показывается.</p>
+    </div>
+    {% if groups %}
+    <span class="um-pill is-warning">{{ today.total }} {{ 'дело' if today.total % 10 == 1 and today.total % 100 != 11 else ('дела' if today.total % 10 in (2, 3, 4) and today.total % 100 not in (12, 13, 14) else 'дел') }}</span>
+    {% endif %}
+  </div>
+
+  {% if not groups %}
+  <div class="py-8 text-center">
+    <i data-lucide="circle-check" class="w-7 h-7" style="color:#10b981;margin:0 auto"></i>
+    <div class="text-[14px] tw-text-base2 mt-2">Срочного нет</div>
+    <div class="text-[12px] tw-text-muted2 mt-1">Все оплаченные заказы уехали, парк на связи, подписки не кончаются.</div>
+  </div>
+  {% else %}
+  <div class="grid md:grid-cols-2 gap-3 mt-4">
+    {% for group in groups %}
+    {% set tone = {'danger': 'is-danger', 'warning': 'is-warning', 'info': 'is-info'}.get(group.tone, 'is-muted') %}
+    <div class="tw-surface-soft rounded-xl p-4">
+      <div class="flex items-center gap-2">
+        <span class="um-pill {{ tone }}">{{ group['items'] | length }}</span>
+        <div class="text-[13.5px] font-semibold tw-text-base2">{{ group.title }}</div>
+      </div>
+      <div class="text-[11.5px] tw-text-muted2 mt-1.5">{{ group.hint }}</div>
+      <ul class="mt-3 space-y-1">
+        {% for item in group['items'][:8] %}
+        {% set kind = item.link.kind %}
+        {% set allowed = (kind == 'order' and can_shop) or (kind == 'router' and can_fleet) or kind == 'client' %}
+        {% set href = link_of(kind, item.link.id) if allowed else '' %}
+        <li>
+          {% if href %}<a href="{{ href }}" class="today-row">{% else %}<div class="today-row">{% endif %}
+            {% if item.late %}<span class="tw-dot" style="background:#ef4444" title="опаздывает"></span>{% else %}<span class="tw-dot" style="background:var(--admin-bg-muted)"></span>{% endif %}
+            <span class="min-w-0">
+              <span class="block text-[13px] tw-text-base2 truncate {% if kind != 'client' %}font-mono{% endif %}">{{ item.title }}</span>
+              <span class="block text-[11.5px] tw-text-muted2 truncate">{{ item.sub }}</span>
+            </span>
+            {% if href %}<i data-lucide="chevron-right" class="w-4 h-4 tw-text-muted2 ml-auto shrink-0"></i>{% endif %}
+          {% if href %}</a>{% else %}</div>{% endif %}
+        </li>
+        {% endfor %}
+        {% if group['items'] | length > 8 %}
+        <li class="text-[11.5px] tw-text-muted2 pl-5">и ещё {{ group['items'] | length - 8 }}</li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+<style>
+  .today-row{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:10px}
+  a.today-row:hover{background:var(--admin-bg-muted)}
+  a.today-tile{transition:border-color .15s}
+  a.today-tile:hover{border-color:rgb(var(--admin-border-strong))}
+</style>

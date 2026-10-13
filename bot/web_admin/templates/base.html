@@ -450,6 +450,13 @@
         <button id="burgerBtn" type="button" onclick="tgSidebarToggle(event); return false;" class="tw-btn tw-btn-ghost tw-btn-icon-sm w-9 h-9 rounded-lg" aria-label="Меню" style="position:relative; z-index: 5;">
             <i data-lucide="menu" class="w-5 h-5" style="pointer-events:none;"></i>
         </button>
+        <div class="flex items-center gap-1">
+        {# Поиск под большой палец: в меню на телефоне до него два нажатия. #}
+        {% if moderator_can_see('users') %}
+        <a href="{{ url_for('admin.search') }}" class="tw-btn tw-btn-ghost tw-btn-icon-sm w-9 h-9 rounded-lg" aria-label="Поиск">
+            <i data-lucide="search" class="w-5 h-5"></i>
+        </a>
+        {% endif %}
         {% if current_user.is_authenticated and current_user.is_admin and news_feed_url %}
         <button type="button" onclick="openAppNotifModal()" class="tw-btn tw-btn-ghost tw-btn-icon-sm w-9 h-9 rounded-lg relative notif-bell-btn" aria-label="Уведомления" data-app-notif-btn>
             <span class="notif-bell-icon">
@@ -459,6 +466,7 @@
             <span class="notif-badge" data-app-notif-badge></span>
         </button>
         {% endif %}
+        </div>
     </header>
     {% endif %}
 
@@ -534,6 +542,27 @@
                модератор не откроет, ему и не показывается. Иконки — только из
                локального спрайта bot/web_admin/static/icons/lucide-sprite.svg,
                иначе пункт останется без картинки. #}
+
+            {# Один поиск на всю админку: номер заказа, кусок MAC, @логин,
+               телефон. Раньше у каждого раздела был свой, и с номером
+               телефона в руке было непонятно, в какой идти. #}
+            {% if moderator_can_see('users') %}
+            <form method="get" action="{{ url_for('admin.search') }}" class="tw-sidebar-label nav-search-form" role="search">
+                <label class="nav-search">
+                    <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                    <input type="search" name="q" placeholder="MAC, заказ, @логин, телефон"
+                           aria-label="Поиск по заказам, роутерам и клиентам"
+                           value="{{ request.args.get('q', '') if request.path == url_for('admin.search') else '' }}">
+                </label>
+            </form>
+            <style>
+              .nav-search-form{margin:4px 0 6px}
+              .nav-search{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;
+                background:var(--admin-bg-soft);border:1px solid rgb(var(--admin-border));color:var(--admin-text-muted)}
+              .nav-search:focus-within{border-color:var(--color-brand-500)}
+              .nav-search input{flex:1;min-width:0;background:transparent;border:0;outline:0;font-size:12.5px;color:var(--admin-text-base)}
+            </style>
+            {% endif %}
 
             {# Обзор #}
             {% if moderator_can_see('dashboard') or moderator_can_see('analytics') %}
@@ -705,6 +734,14 @@
                     <a href="{{ url_for('admin.settings_backup') }}" class="{% if request.path == url_for('admin.settings_backup') %}active{% endif %}"><i data-lucide="cloud-download" class="w-3.5 h-3.5"></i> Бэкап</a>
                 </div>
             </div>
+            {% endif %}
+            {% if moderator_can_see('devices') %}
+            {# Куда смотреть, когда «что-то сломалось»: каждое звено от базы
+               до роутеров, у сломанного — подсказка. #}
+            <a href="{{ url_for('admin.system_health') }}"
+               class="tw-nav-link {% if request.path == url_for('admin.system_health') %}active{% endif %}">
+                <i data-lucide="activity" class="w-4 h-4 tw-nav-icon"></i><span class="tw-sidebar-label">Состояние системы</span>
+            </a>
             {% endif %}
             {% if moderator_can_see('tools') %}
             <a href="{{ url_for('admin.services_page') }}"

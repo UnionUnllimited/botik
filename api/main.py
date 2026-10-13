@@ -31,6 +31,7 @@ from api.routes import (
     landing,
     lists_api,
     miniapp,
+    ops_api,
     panel_proxy,
     terminal,
     webhooks,
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(webhooks.router)
     app.include_router(fleet_api.router)
+    app.include_router(ops_api.router)
     app.include_router(catalog_api.router)
     app.include_router(lists_api.router)
     app.include_router(firmware_api.router)

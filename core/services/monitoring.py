@@ -84,7 +84,7 @@ class Digest:
         )
 
 
-def _last_seen(device: Device) -> dt.datetime | None:
+def last_seen(device: Device) -> dt.datetime | None:
     seen = (device.last_heartbeat_at, device.last_poll_at, device.frp_last_seen_at)
     # Приводим к UTC здесь, а не у каждого сравнения: часть драйверов отдаёт
     # дату без пояса, и сравнение с «сейчас» на такой падает целиком.
@@ -92,8 +92,19 @@ def _last_seen(device: Device) -> dt.datetime | None:
     return ensure_utc(latest) if latest is not None else None
 
 
-async def collect(session: AsyncSession, *, now: dt.datetime | None = None) -> Digest:
-    """Собирает сводку по парку. Ничего не меняет и никому не пишет."""
+async def collect(
+    session: AsyncSession,
+    *,
+    now: dt.datetime | None = None,
+    unshipped_hours: int = UNSHIPPED_HOURS,
+) -> Digest:
+    """Собирает сводку по парку. Ничего не меняет и никому не пишет.
+
+    `unshipped_hours` — с какого возраста оплаченный заказ попадает в список.
+    Утренней сводке нужны опаздывающие, главной странице админки — все, что
+    ждут отгрузки: это список дел, а не жалоба. Порог — параметр, а не вторая
+    копия подсчёта: разъехавшись, страница и сводка показывали бы разное.
+    """
     now = now or utcnow()
     digest = Digest()
 
@@ -105,7 +116,7 @@ async def collect(session: AsyncSession, *, now: dt.datetime | None = None) -> D
         .where(Device.activated_at.is_not(None), Device.frp_online.is_(False))
         .options(selectinload(Device.user))
     ):
-        seen = _last_seen(device)
+        seen = last_seen(device)
         if seen is None or seen < silent_since:
             digest.silent.append(device)
 
@@ -121,7 +132,7 @@ async def collect(session: AsyncSession, *, now: dt.datetime | None = None) -> D
         )
     ):
         device = await session.scalar(select(Device).where(Device.order_id == order.id))
-        if device is not None and device.activated_at is None and _last_seen(device) is None:
+        if device is not None and device.activated_at is None and last_seen(device) is None:
             digest.shipped_silent.append((order, device))
 
     # 3. Роутер у клиента на связи, а подписка так и не включилась.
@@ -148,7 +159,7 @@ async def collect(session: AsyncSession, *, now: dt.datetime | None = None) -> D
         )
         if device is None or device.activated_at is not None:
             continue
-        seen = _last_seen(device)
+        seen = last_seen(device)
         if seen is not None and seen >= silent_since:
             digest.stuck.append((order, device))
 
@@ -173,7 +184,7 @@ async def collect(session: AsyncSession, *, now: dt.datetime | None = None) -> D
     # «отгружен» не смотрел никто: заказ мог стоять неделями, потому что
     # цену доставки не назначили или счёт на неё не оплатили. Узнавали об
     # этом от клиента, который заплатил и ждёт.
-    unshipped_before = now - dt.timedelta(hours=UNSHIPPED_HOURS)
+    unshipped_before = now - dt.timedelta(hours=unshipped_hours)
     for order in await session.scalars(
         select(Order)
         .where(

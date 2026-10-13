@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Состояние системы — {{ super() }}{% endblock %}
+
+{% block content %}
+{# Одна страница, куда смотреть, когда «что-то сломалось»: каждое звено
+   названо, у сломанного — подсказка. Раньше для этого ходили по SSH на три
+   машины, а 4 октября час ушёл на то, чтобы понять, где именно рвётся. #}
+{% macro row(check) %}
+  {% set tone = {'ok': 'is-success', 'warn': 'is-warning', 'fail': 'is-danger'}.get(check.status, 'is-muted') %}
+  {% set word = {'ok': 'в порядке', 'warn': 'внимание', 'fail': 'не работает', 'off': 'не настроено'}.get(check.status, check.status) %}
+  <div class="sh-row">
+    <span class="um-pill {{ tone }} sh-pill">{{ word }}</span>
+    <div class="min-w-0">
+      <div class="text-[13.5px] font-semibold tw-text-base2">{{ check.title }}</div>
+      <div class="text-[12.5px] tw-text-muted2 mt-0.5">{{ check.detail }}</div>
+      {% if check.hint %}
+      <div class="text-[12px] mt-1.5 sh-hint">{{ check.hint }}</div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+<div class="tw-anim space-y-4">
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Состояние системы</h1>
+        {% if overall == 'ok' %}<span class="um-pill is-success">всё работает</span>
+        {% elif overall == 'warn' %}<span class="um-pill is-warning">есть замечания</span>
+        {% else %}<span class="um-pill is-danger">есть поломки</span>{% endif %}
+      </div>
+      <p class="text-[13px] tw-text-muted2 mt-1">Каждое звено, от базы до роутеров. Сломанное — сверху, с подсказкой, что делать.</p>
+    </div>
+    <a href="{{ url_for('admin.system_health') }}" class="tw-btn tw-btn-secondary tw-btn-sm">
+      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Проверить снова</span>
+    </a>
+  </div>
+
+  {% if health_error %}
+  <div class="tw-card p-4 text-[13px] flex items-start gap-2" style="border-color:rgba(239,68,68,.4)">
+    <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#ef4444"></i>
+    <div>
+      <div class="font-semibold tw-text-base2">Основное приложение не ответило</div>
+      <div class="tw-text-muted2 mt-0.5">{{ health_error }}</div>
+      <div class="sh-hint mt-1.5">cd /opt/router-shop && docker compose ps — и журнал: docker compose logs --tail 50 api</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Сломанное — сверху: страницу открывают, чтобы найти именно его. #}
+  {% set order = {'fail': 0, 'warn': 1, 'ok': 2, 'off': 3} %}
+  {% if checks %}
+  <div class="tw-card">
+    <div class="px-4 pt-4 pb-2 text-[12px] tw-text-subtle2 uppercase tracking-wider">Приложение, парк и оплата</div>
+    {% for weight in [0, 1, 2, 3] %}
+      {% for check in checks if order.get(check.status, 3) == weight %}
+        {{ row(check) }}
+      {% endfor %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="tw-card">
+    <div class="px-4 pt-4 pb-2 text-[12px] tw-text-subtle2 uppercase tracking-wider">Эта машина</div>
+    {% for weight in [0, 1, 2, 3] %}
+      {% for check in local if order.get(check.status, 3) == weight %}
+        {{ row(check) }}
+      {% endfor %}
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+  .sh-row{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-top:1px solid rgb(var(--admin-border))}
+  .sh-pill{min-width:104px;justify-content:center;white-space:nowrap;margin-top:1px}
+  .sh-hint{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--admin-text-base);background:var(--admin-bg-soft);padding:6px 8px;border-radius:8px;overflow-x:auto}
+  @media (max-width:639px){.sh-row{flex-direction:column;gap:8px}}
+</style>
+{% endblock %}

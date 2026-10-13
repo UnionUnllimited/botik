@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Поиск — {{ super() }}{% endblock %}
+
+{% block content %}
+{# Один поиск на всё. Одна находка открывается сразу (это делает маршрут),
+   сюда попадают, когда находок несколько или ни одной. #}
+{% set titles = {'router': ('Роутеры', 'wifi'), 'order': ('Заказы', 'clipboard-list'), 'client': ('Клиенты', 'users')} %}
+<div class="tw-anim space-y-4">
+  <div class="pt-1">
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Поиск</h1>
+    <p class="text-[13px] tw-text-muted2 mt-1">
+      Номер заказа, кусок MAC, @логин, телефон в любом написании, почта, Telegram-ID или имя.
+    </p>
+  </div>
+
+  <form method="get" action="{{ url_for('admin.search') }}" class="tw-card p-3 flex gap-2">
+    <input type="search" name="q" value="{{ query }}" class="tw-input flex-1" autofocus
+           placeholder="R-260811-0002, 5F:A8, @login, 900 123-45-67" aria-label="Что найти">
+    <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">
+      <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
+    </button>
+  </form>
+
+  {% if search_error %}
+  <div class="tw-card p-4 text-[13px]" style="border-color:rgba(239,68,68,.4)">{{ search_error }}</div>
+  {% elif query and not results %}
+  <div class="tw-card p-8 text-center">
+    <i data-lucide="search-x" class="w-6 h-6 tw-text-muted2" style="margin:0 auto"></i>
+    <div class="text-[14px] tw-text-base2 mt-2">По «{{ query }}» ничего</div>
+    <div class="text-[12px] tw-text-muted2 mt-1">MAC можно вводить кусками и в любом написании, телефон — без «+7».</div>
+  </div>
+  {% elif results %}
+  <div class="grid lg:grid-cols-3 gap-3 items-start">
+    {% for kind in ['router', 'order', 'client'] %}
+    {% set found = results | selectattr('kind', 'equalto', kind) | list %}
+    {% if found %}
+    {% set allowed = (kind == 'order' and moderator_can_see('shop')) or (kind == 'router' and moderator_can_see('devices')) or kind == 'client' %}
+    <div class="tw-card p-3">
+      <div class="flex items-center gap-2 px-2 pt-1 pb-2">
+        <i data-lucide="{{ titles[kind][1] }}" class="w-4 h-4 tw-text-muted2"></i>
+        <span class="text-[13.5px] font-semibold tw-text-base2">{{ titles[kind][0] }}</span>
+        <span class="um-pill is-muted ml-auto">{{ found | length }}</span>
+      </div>
+      {% for item in found %}
+      {% set href = link_of(kind, item.id) if allowed else '' %}
+      {% if href %}<a href="{{ href }}" class="sr-row">{% else %}<div class="sr-row">{% endif %}
+        <span class="min-w-0">
+          <span class="block text-[13px] tw-text-base2 truncate {% if kind != 'client' %}font-mono{% endif %}">{{ item.title }}</span>
+          {% if item.sub %}<span class="block text-[11.5px] tw-text-muted2 truncate">{{ item.sub }}</span>{% endif %}
+        </span>
+        {% if href %}<i data-lucide="chevron-right" class="w-4 h-4 tw-text-muted2 ml-auto shrink-0"></i>{% endif %}
+      {% if href %}</a>{% else %}</div>{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+<style>
+  .sr-row{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px}
+  a.sr-row:hover{background:var(--admin-bg-soft)}
+</style>
+{% endblock %}

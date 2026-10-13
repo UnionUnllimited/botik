@@ -58,6 +58,7 @@ ADMIN_ONLY = {
     "devices_stock": "devices",
     "orders_shop": "shop",
     "catalog_shop": "shop",
+    "system_health": "devices",
 }
 GUARD_PATHS = {
     "/routers": "devices",
@@ -66,6 +67,7 @@ GUARD_PATHS = {
     "/stock": "devices",
     "/orders": "shop",
     "/catalog": "shop",
+    "/system-health": "devices",
 }
 
 
@@ -189,3 +191,12 @@ class TestNoVendorTraces:
     def test_the_version_does_not_name_the_vendor_product(self):
         version = (ADMIN.parent / "version.txt").read_text(encoding="utf-8")
         assert "RM-Only" not in version
+
+
+def test_dashboard_has_no_phone_only_blocks():
+    """Источник регистрации после удаления сайта всегда «Telegram 100 %»,
+    топ трафика у роутеров всегда пуст. Вместо них — дела на сегодня."""
+    page = (TEMPLATES / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="registrationSourceList"' not in page
+    assert "dash-traffic-row" not in page.split("<script>")[0]
+    assert "admin.today_fragment" in page

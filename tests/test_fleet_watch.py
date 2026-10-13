@@ -12,7 +12,7 @@ import datetime as dt
 
 import pytest
 
-from worker.tasks.fleet_watch import (
+from core.services.fleet_watch import (
     CONFIRM_RUNS,
     FLEET,
     FRPS,
