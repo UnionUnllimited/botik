@@ -524,6 +524,10 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
                 "free": data.get("free", []),
                 "subscription": data.get("subscription", {}),
                 "panel_used_bytes": data.get("panel_used_bytes"),
+                # Заказы и контакты клиента: карточка собирает всё о человеке
+                # в одном месте. Со старой ручкой их нет — карточка это переживёт.
+                "orders": data.get("orders", []),
+                "client": data.get("client", {}),
             }
         )
 

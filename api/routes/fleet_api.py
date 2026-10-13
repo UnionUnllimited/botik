@@ -30,7 +30,7 @@ from api.deps import get_session, get_transaction
 from api.service_auth import require_token
 from core import texts
 from core.config import settings
-from core.dates import utcnow
+from core.dates import ensure_utc, utcnow
 from core.enums import DeviceStatus
 from core.errors import describe
 from core.models import (
@@ -227,7 +227,8 @@ def _days_left(expires_at: dt.datetime | None, *, now: dt.datetime) -> int | Non
     """
     if expires_at is None:
         return None
-    return (expires_at - now).days
+    # Часть драйверов отдаёт дату без пояса — сравнение с «сейчас» на такой падает.
+    return (ensure_utc(expires_at) - now).days
 
 
 ROUTERS_PAGE_SIZE = 50
@@ -1236,9 +1237,61 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
         except TimeoutError:
             log.warning("fleet.panel_timeout", tg_id=tg_id)
 
+    rows = []
+    for device in devices:
+        row = _client_router_row(device, now=now)
+        # Своя подписка у каждого роутера: одна подписка — один роутер. Общая
+        # «подписка клиента» у владельца двух роутеров говорила «активна»
+        # про оба, хотя доступ был только на одном.
+        own = await subscription_service.get_for_device(session, device.id)
+        row["subscription"] = {
+            "status": str(own.status) if own else "",
+            "label": _label(str(own.status), SUBSCRIPTION_LABELS) if own else "",
+            "until": _iso(own.expires_at) if own else None,
+            "days_left": _days_left(own.expires_at, now=now) if own else None,
+        }
+        rows.append(row)
+
+    # Заказы клиента — чтобы из его карточки было видно всё: что купил, что
+    # едет, что ждёт оплаты. Последние десять: старше нужны редко, а все они
+    # есть в «Заказах» поиском по номеру или телефону.
+    orders = (
+        list(
+            await session.scalars(
+                select(Order)
+                .where(Order.user_id == user.id)
+                .order_by(Order.id.desc())
+                .limit(CLIENT_ORDERS_LIMIT)
+            )
+        )
+        if user is not None
+        else []
+    )
+
     return {
         "has_client": user is not None,
-        "routers": [_client_router_row(device, now=now) for device in devices],
+        "client": {
+            "tg_id": user.tg_id or 0,
+            "username": user.username or "",
+            "telegram": user.telegram_name,
+            "name": user.display_name,
+            "phone": user.phone or "",
+        }
+        if user is not None
+        else {},
+        "routers": rows,
+        "orders": [
+            {
+                "id": order.id,
+                "number": order.public_number,
+                "status": str(order.status),
+                "status_label": texts.ORDER_STATUS_TITLES.get(order.status, str(order.status)),
+                "total": f"{order.total or 0:.2f}",
+                "paid": order.paid_at is not None,
+                "created_at": _iso(order.created_at),
+            }
+            for order in orders
+        ],
         "free": [{"mac": device.mac, "model": device.model or device.board or ""} for device in free],
         "subscription": {
             "status": str(current.status) if current else "",
@@ -1247,6 +1300,9 @@ async def client_routers(tg_id: int, session: AsyncSession = Depends(get_session
         },
         "panel_used_bytes": panel_used,
     }
+
+
+CLIENT_ORDERS_LIMIT = 10
 
 
 FREE_DEVICES_LIMIT = 50
