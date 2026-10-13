@@ -99,3 +99,88 @@ async def test_button_activation_is_still_called_so(monkeypatch):
 
     assert result.source == "manual"
     assert recorded["comment"] == "Ручная активация на 30 дн."
+
+
+@pytest.mark.parametrize("argv", [[], ["--apply"]])
+def test_the_script_starts(monkeypatch, argv):
+    """Запуск целиком, до первого похода в базу.
+
+    Логика выше проверялась, а сам `main()` — нет, и первый же запуск на
+    сервере упал на `configure_logging()` без имени службы."""
+    import sys
+
+    from scripts import adopt_panel_subscriptions as script
+
+    seen = {}
+
+    async def _run(apply):
+        seen["apply"] = apply
+        return 0
+
+    async def _dispose():
+        seen["disposed"] = True
+
+    monkeypatch.setattr(script, "run", _run)
+    monkeypatch.setattr(script, "dispose_engine", _dispose)
+    monkeypatch.setattr(sys, "argv", ["adopt_panel_subscriptions", *argv])
+    script.main()
+    assert seen == {"apply": argv == ["--apply"], "disposed": True}
+
+
+@pytest.mark.asyncio
+async def test_collect_on_a_real_database(monkeypatch):
+    """Сбор целиком: база в памяти, панель подменена. Роутер со своей
+    подпиской пропускается, с живой учёткой — подхватывается, без учётки —
+    так и называется."""
+    from sqlalchemy import BigInteger
+    from sqlalchemy.dialects.postgresql import JSONB
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.compiler import compiles
+
+    from core.models import Device, Plan, Subscription, User
+    from core.models.base import Base
+    from core.services.remnawave import RemnaUser
+    from scripts import adopt_panel_subscriptions as script
+
+    @compiles(JSONB, "sqlite")
+    def _jsonb(_type, _compiler, **_kwargs):
+        return "JSON"
+
+    @compiles(BigInteger, "sqlite")
+    def _bigint(_type, _compiler, **_kwargs):
+        return "INTEGER"
+
+    class _Panel:
+        async def users(self):
+            return [RemnaUser(uid="1", username="tg7_d40dab2ba4ee", expire_at="2026-12-21T00:00:00Z")]
+
+    monkeypatch.setattr(script.remnawave, "client", _Panel)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync: Base.metadata.create_all(
+                sync, tables=[User.__table__, Plan.__table__, Device.__table__, Subscription.__table__]
+            )
+        )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            user = User(tg_id=7, username="kelvin")
+            session.add(user)
+            await session.flush()
+            paid = Device(mac="D4:0D:AB:03:5F:A8", user_id=user.id)
+            panel_only = Device(mac="D4:0D:AB:2B:A4:EE", user_id=user.id)
+            nothing = Device(mac="D4:0D:AB:28:32:18", user_id=user.id)
+            session.add_all([paid, panel_only, nothing])
+            await session.flush()
+            session.add(Subscription(
+                user_id=user.id, device_id=paid.id, status=SubscriptionStatus.ACTIVE,
+                expires_at=NOW + dt.timedelta(days=60),
+            ))
+            await session.flush()
+            findings = await script.collect(session, NOW)
+        verdicts = {item.device.mac: item.verdict for item in findings}
+        assert verdicts == {"D4:0D:AB:2B:A4:EE": ADOPT, "D4:0D:AB:28:32:18": NO_ACCOUNT}
+    finally:
+        await engine.dispose()

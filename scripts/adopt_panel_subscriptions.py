@@ -33,7 +33,7 @@ from core.dates import to_display, utcnow
 from core.db import dispose_engine, session_scope
 from core.logging import configure_logging
 from core.models import Device, Subscription
-from core.services import activation
+from core.services import activation, remnawave
 from core.services import subscriptions as subscription_service
 
 ADOPT = "adopt"
@@ -93,6 +93,9 @@ async def _others(session, device: Device) -> str:
 
 async def collect(session, now: dt.datetime) -> list[Finding]:
     findings: list[Finding] = []
+    # Учётки — одним запросом на весь парк, а не по запросу на роутер;
+    # выбирает их то же правило, что активация и сверка сроков в парке.
+    accounts = await remnawave.client().users()
     devices = await session.scalars(
         select(Device)
         .where(Device.user_id.is_not(None))
@@ -102,7 +105,8 @@ async def collect(session, now: dt.datetime) -> list[Finding]:
     for device in devices:
         if await subscription_service.get_for_device(session, device.id) is not None:
             continue
-        account = await activation.panel_account_of(device)
+        mine = activation.pick_router_accounts(accounts, device.mac)
+        account = mine[0] if mine else None
         until = activation.panel_expiry_of(account)
         verdict = classify(until, has_account=account is not None, now=now)
         findings.append(Finding(device, verdict, until, await _others(session, device)))
@@ -121,7 +125,11 @@ async def run(apply: bool) -> int:
     now = utcnow()
     adopted = 0
     async with session_scope() as session:
-        findings = await collect(session, now)
+        try:
+            findings = await collect(session, now)
+        except remnawave.RemnawaveError as exc:
+            print(f"Панель не ответила, ничего не тронуто: {exc}")
+            return 0
         if not findings:
             print("Роутеров с клиентом и без своей подписки нет. Делать нечего.")
             return 0
@@ -161,7 +169,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--apply", action="store_true", help="записать, а не только показать")
     args = parser.parse_args()
-    configure_logging()
+    configure_logging("adopt_panel")
 
     async def _main() -> None:
         try:
