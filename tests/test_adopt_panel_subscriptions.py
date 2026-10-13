@@ -58,7 +58,7 @@ async def test_adopted_subscription_says_where_it_came_from(monkeypatch):
     def _record(subscription, event, **kwargs):
         recorded.update(kwargs)
 
-    monkeypatch.setattr(service, "get_for_device", _nothing)
+    monkeypatch.setattr(service, "device_subscription", _nothing)
     monkeypatch.setattr(service, "_record", _record)
 
     until = NOW + dt.timedelta(days=68, hours=5)
@@ -92,7 +92,7 @@ async def test_button_activation_is_still_called_so(monkeypatch):
     async def _nothing(_session, _device_id):
         return None
 
-    monkeypatch.setattr(service, "get_for_device", _nothing)
+    monkeypatch.setattr(service, "device_subscription", _nothing)
     monkeypatch.setattr(service, "_record", lambda _s, _e, **kw: recorded.update(kw))
 
     result = await service.grant_manual(session, user_id=3, device_id=9, days=30, now=NOW)

@@ -53,6 +53,9 @@ class Finding:
     verdict: str
     until: dt.datetime | None
     others: str
+    existing: Subscription | None = None
+    """Своя запись роутера, истёкшая или отменённая. Есть — продлеваем её,
+    а не заводим вторую рядом: одна подписка — один роутер."""
     """Остальные подписки клиента — чтобы увидеть, не ждёт ли где-то
     оплаченная, которую этот роутер должен был получить."""
 
@@ -109,7 +112,8 @@ async def collect(session, now: dt.datetime) -> list[Finding]:
         account = mine[0] if mine else None
         until = activation.panel_expiry_of(account)
         verdict = classify(until, has_account=account is not None, now=now)
-        findings.append(Finding(device, verdict, until, await _others(session, device)))
+        existing = await subscription_service.device_subscription(session, device.id)
+        findings.append(Finding(device, verdict, until, await _others(session, device), existing))
     return findings
 
 
@@ -136,10 +140,14 @@ async def run(apply: bool) -> int:
 
         for item in findings:
             client = item.device.user.telegram_name if item.device.user else "—"
-            print(
-                f"{item.device.mac}  {client:<22}  {TITLES[item.verdict]:<30}"
-                f"  панель до {_date(item.until)}"
-            )
+            title = TITLES[item.verdict]
+            if item.verdict == ADOPT:
+                title = (
+                    f"продлим #{item.existing.id} (было до {_date(item.existing.expires_at)})"
+                    if item.existing is not None
+                    else "заведём подписку"
+                )
+            print(f"{item.device.mac}  {client:<22}  {title:<38}  панель до {_date(item.until)}")
             print(f"    подписки клиента: {item.others}")
 
             if apply and item.verdict == ADOPT:

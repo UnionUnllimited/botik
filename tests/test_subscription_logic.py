@@ -492,7 +492,7 @@ class TestManualExtensionKeepsThePanelDate:
         async def _none(_session, _device_id):
             return None
 
-        monkeypatch.setattr(service, "get_for_device", _none)
+        monkeypatch.setattr(service, "device_subscription", _none)
         monkeypatch.setattr(service, "_record", lambda *a, **k: None)
 
         granted = await service.grant_manual(
@@ -510,3 +510,51 @@ class TestManualExtensionKeepsThePanelDate:
         body = body[: body.find("\nasync def ", 1)]
         assert "until=expire_at" in body
         assert ".days, 1)" not in body
+
+
+
+class TestExpiredRecordIsRevivedNotDuplicated:
+    """Продление роутера с истёкшей подпиской продлевает ту же запись.
+
+    `get_for_device` видит только действующие, и ручная активация у роутера
+    с истёкшей записью заводила вторую рядом. 13 октября 2026 это всплыло на
+    четырёх роутерах: в панели срок продлён до 2027, у нас запись истекла,
+    и подхват из панели завёл бы каждому вторую подписку.
+    """
+
+    @pytest.mark.asyncio
+    async def test_expired_one_is_extended(self, monkeypatch):
+        expired = Subscription(
+            id=9,
+            user_id=1,
+            device_id=42,
+            status=SubscriptionStatus.EXPIRED,
+            expires_at=dt.datetime(2026, 9, 28, tzinfo=dt.UTC),
+            last_reminder_day=-3,
+        )
+        added: list = []
+
+        class _Session:
+            def add(self, item):
+                added.append(item)
+
+            async def flush(self):
+                return None
+
+            async def scalar(self, _statement):
+                return expired
+
+        async def _no_live(_session, _device_id):
+            return None
+
+        monkeypatch.setattr(service, "get_for_device", _no_live)
+        monkeypatch.setattr(service, "_record", lambda *a, **k: None)
+
+        until = dt.datetime(2027, 9, 28, tzinfo=dt.UTC)
+        result = await service.grant_manual(_Session(), user_id=1, device_id=42, days=365, until=until)
+
+        assert result is expired
+        assert added == [], "вторая подписка на тот же роутер"
+        assert result.status is SubscriptionStatus.ACTIVE
+        assert result.expires_at == until
+        assert result.last_reminder_day is None, "напоминания пойдут заново, по новому сроку"

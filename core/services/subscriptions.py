@@ -119,6 +119,25 @@ async def get_for_device(session: AsyncSession, device_id: int) -> Subscription 
     )
 
 
+async def device_subscription(session: AsyncSession, device_id: int) -> Subscription | None:
+    """Запись подписки роутера — действующая, а если её нет, последняя.
+
+    `get_for_device` отвечает «есть ли у роутера доступ» и смотрит только
+    действующие. Для продления этого мало: у роутера с истёкшей записью
+    ручная активация заводила вторую рядом с ней, и правило «одна подписка —
+    один роутер» ломалось — отвязка и сброс на склад брали не ту запись.
+    """
+    live = await get_for_device(session, device_id)
+    if live is not None:
+        return live
+    return await session.scalar(
+        select(Subscription)
+        .where(Subscription.device_id == device_id)
+        .order_by(Subscription.expires_at.desc().nulls_last(), Subscription.id.desc())
+        .limit(1)
+    )
+
+
 async def grant_manual(
     session: AsyncSession,
     *,
@@ -153,7 +172,8 @@ async def grant_manual(
     «ручной активацией на N дней» — её никто не нажимал.
     """
     moment = now or utcnow()
-    subscription = await get_for_device(session, device_id)
+    # Истёкшая запись того же роутера продлевается, а не обрастает второй.
+    subscription = await device_subscription(session, device_id)
     old_expires_at = subscription.expires_at if subscription else None
 
     if subscription is None:
