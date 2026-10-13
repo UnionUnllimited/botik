@@ -1468,10 +1468,29 @@ async def stock_list(
             .offset((page - 1) * STOCK_PAGE_SIZE)
         )
     )
+    now = utcnow()
+    # Плитки — по всему складу, а не по странице: на них смотрят, чтобы
+    # понять, сколько коробок можно отдать, а «на этой странице» на такой
+    # вопрос не отвечает.
+    counts = {
+        str(state): int(number)
+        for state, number in await session.execute(
+            select(Device.status, func.count()).group_by(Device.status)
+        )
+    }
+    # Без клиента, а срок в панели живой — роутер продан за наличные и стоит
+    # у человека. На складе его нет, хотя клиента у него в системе тоже нет.
+    cash_in_use = await session.scalar(
+        select(func.count())
+        .select_from(Device)
+        .where(Device.user_id.is_(None), Device.panel_expires_at > now)
+    ) or 0
     return {
         "total": total,
         "page": page,
         "pages": max((total + STOCK_PAGE_SIZE - 1) // STOCK_PAGE_SIZE, 1),
+        "counts": counts,
+        "cash_in_use": int(cash_in_use),
         "statuses": [str(status) for status in DeviceStatus],
         "devices": [
             {
@@ -1481,6 +1500,11 @@ async def stock_list(
                 "serial": device.serial or "",
                 "status": str(device.status),
                 "client": device.user.display_name if device.user else "",
+                "client_tg_id": (device.user.tg_id or 0) if device.user else 0,
+                "online": device.frp_online
+                or device.is_online(threshold_min=settings.subscription.heartbeat_offline_min, now=now),
+                "panel_until": _iso(device.panel_expires_at),
+                "panel_days_left": _days_left(device.panel_expires_at, now=now),
                 "activated_at": _iso(device.activated_at),
                 "created_at": _iso(device.created_at),
                 "note": device.admin_note or "",

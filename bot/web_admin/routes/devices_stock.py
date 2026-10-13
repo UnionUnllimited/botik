@@ -43,6 +43,8 @@ def attach_devices_stock_routes(admin_bp_instance, query_db_func, execute_db_fun
             statuses=data.get("statuses", []),
             status_titles=STATUS_TITLES,
             total=data.get("total", 0),
+            counts=data.get("counts") or {},
+            cash_in_use=data.get("cash_in_use", 0),
             page=data.get("page", page),
             pages=data.get("pages", 1),
             query=query,

@@ -1,32 +1,22 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Склад — {{ super() }}{% endblock %}
 
 {% block content %}
+{{ ui.styles() }}
+{# Склад отвечает на вопрос «что можно положить в коробку». Те же роутеры,
+   что в парке, но взгляд другой: там показания и туннели, здесь — MAC,
+   серийник, состояние и заметка кладовщика. #}
+{% set state_tone = {'new': 'is-success', 'assigned': 'is-info', 'active': 'is-muted', 'revoked': 'is-warning', 'blocked': 'is-danger'} %}
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
     <div>
       <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Склад</h1>
       <p class="text-[13px] tw-text-muted2 mt-1">
-        Устройства появляются здесь сами, когда роутер впервые выходит на связь
-        через туннель. Форма ниже — на случай, когда MAC нужно завести заранее,
-        до включения. Показания и туннели — в разделе «Роутеры».
+        Роутер появляется здесь сам, когда впервые выходит на связь. Показания и туннели — в «Парке роутеров».
       </p>
     </div>
-    <form method="get" class="flex items-center gap-2 flex-wrap">
-      <input type="text" name="q" value="{{ query }}" placeholder="MAC, модель или серийник"
-             class="tw-input" style="min-width:240px">
-      {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
-      <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
-        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
-      </button>
-      {# Отгруженные по умолчанию скрыты: склад отвечает на вопрос «что можно
-         положить в коробку». Найти их по-прежнему можно поиском. #}
-      <a href="{{ url_for('admin.devices_stock', q=query or None, all=None if show_all else 1) }}"
-         class="tw-btn tw-btn-sm">
-        {{ 'Только на складе' if show_all else 'Показать отгруженные' }}
-      </a>
-    </form>
   </div>
 
   {% if stock_error %}
@@ -38,59 +28,91 @@
     </div>
   {% else %}
 
-  <form method="post" action="{{ url_for('admin.devices_stock_add') }}" class="tw-card p-5 space-y-4">
-    <div class="text-[13px] font-semibold tw-text-base2">Завести устройство</div>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div>
-        <label for="mac" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-          MAC <span style="color:#ef4444;">*</span>
-        </label>
-        <input type="text" id="mac" name="mac" required placeholder="A0:B1:C2:D3:E4:F5" class="tw-input">
-        <div class="text-[11px] tw-text-subtle2 mt-1">С наклейки на корпусе. Разделители любые.</div>
-      </div>
-      <div>
-        <label for="model" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Модель</label>
-        <input type="text" id="model" name="model" placeholder="AX3000" class="tw-input">
-      </div>
-      <div>
-        <label for="serial" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">Серийный номер</label>
-        <input type="text" id="serial" name="serial" class="tw-input">
-      </div>
+  {# Плитки — по всему складу. «Продан вне сайта» — роутеры без клиента, но
+     с живым сроком в панели: проданы за наличные и включены вручную. На
+     складе их нет, хотя клиента в системе у них тоже нет. #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <a href="{{ url_for('admin.devices_stock') }}" class="tw-card p-4 rt-tile {{ 'is-on' if not show_all and not query }}">
+      <div class="rt-tile-label">На складе</div>
+      <div class="rt-tile-value" style="color:#10b981">{{ counts.get('new', 0) }}</div>
+      <div class="rt-tile-sub">можно отдавать</div>
+    </a>
+    <div class="tw-card p-4">
+      <div class="rt-tile-label">Отгружено, в пути</div>
+      <div class="rt-tile-value">{{ counts.get('assigned', 0) }}</div>
     </div>
-    <input type="hidden" name="q" value="{{ query }}">
-    <input type="hidden" name="page" value="{{ page }}">
-    <div class="flex justify-end">
+    <div class="tw-card p-4">
+      <div class="rt-tile-label">Работают у клиентов</div>
+      <div class="rt-tile-value">{{ counts.get('active', 0) }}</div>
+    </div>
+    <div class="tw-card p-4">
+      <div class="rt-tile-label">Продан вне сайта</div>
+      <div class="rt-tile-value"{% if cash_in_use %} style="color:#3b82f6"{% endif %}>{{ cash_in_use }}</div>
+      <div class="rt-tile-sub">без клиента, доступ по панели</div>
+    </div>
+  </div>
+
+  <div class="tw-card p-3 flex items-center gap-2 flex-wrap">
+    <form method="get" class="flex items-center gap-2 flex-1" style="min-width:260px">
+      <input type="search" name="q" value="{{ query }}" placeholder="MAC целиком или куском, модель, серийник"
+             class="tw-input flex-1" aria-label="Поиск по складу">
+      {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
       <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-        <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Завести</span>
+        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти</span>
       </button>
-    </div>
-  </form>
+    </form>
+    {# Отгруженные по умолчанию скрыты: склад отвечает на «что положить
+       в коробку». При поиске показывается всё — ищут обычно как раз
+       отгруженный, чтобы понять, у кого он. #}
+    <a href="{{ url_for('admin.devices_stock', q=query or None, all=None if show_all else 1) }}"
+       class="tw-btn tw-btn-sm {{ 'tw-btn-secondary' if show_all }}">
+      <i data-lucide="{{ 'package' if show_all else 'layers' }}" class="w-3.5 h-3.5"></i>
+      <span>{{ 'Только на складе' if show_all else 'Показать все' }}</span>
+    </a>
+  </div>
 
   {% if devices %}
   <div class="tw-card overflow-x-auto">
     <table class="w-full text-[13px]">
       <thead>
         <tr class="tw-text-muted2 text-left">
-          <th class="px-3 py-2 font-medium">Устройство</th>
-          <th class="px-3 py-2 font-medium">Серийный</th>
-          <th class="px-3 py-2 font-medium">Клиент</th>
-          <th class="px-3 py-2 font-medium">Состояние</th>
-          <th class="px-3 py-2 font-medium">Заметка</th>
+          <th class="px-3 py-2.5 font-medium">Устройство</th>
+          <th class="px-3 py-2.5 font-medium">Серийный</th>
+          <th class="px-3 py-2.5 font-medium">Связь</th>
+          <th class="px-3 py-2.5 font-medium">Клиент</th>
+          <th class="px-3 py-2.5 font-medium">Состояние</th>
+          <th class="px-3 py-2.5 font-medium">Заметка</th>
         </tr>
       </thead>
       <tbody>
         {% for item in devices %}
-        <tr class="border-t align-top" style="border-color:var(--tw-line, #26262b)">
-          <td class="px-3 py-2">
-            <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono">{{ item.mac }}</a>
-            <div class="tw-text-muted2 text-[12px]">{{ item.model or '—' }}</div>
+        <tr class="rt-row align-top">
+          <td class="px-3 py-2.5">
+            <a href="{{ url_for('admin.router_card', device_id=item.id) }}" class="font-mono tw-text-base2">{{ item.mac }}</a>
+            <div class="tw-text-muted2 text-[12px]">{{ item.model or 'модель неизвестна' }}</div>
           </td>
-          <td class="px-3 py-2 font-mono tw-text-muted2">{{ item.serial or '—' }}</td>
-          <td class="px-3 py-2">{{ item.client or '—' }}</td>
-          <td class="px-3 py-2">
+          <td class="px-3 py-2.5 font-mono tw-text-muted2">{{ item.serial or '—' }}</td>
+          <td class="px-3 py-2.5 whitespace-nowrap">
+            {{ ui.link_pill(item.online) }}
+          </td>
+          <td class="px-3 py-2.5">
+            {% if item.client_tg_id %}
+              <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}" class="tw-text-base2">{{ item.client }}</a>
+            {% elif item.client %}
+              {{ item.client }}
+            {% elif item.panel_days_left is number and item.panel_days_left >= 0 %}
+              <span class="tw-text-base2">продан вне сайта</span>
+              <div class="mt-1">{{ ui.panel_pill(item.panel_days_left) }}</div>
+            {% else %}
+              <span class="tw-text-muted2">—</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2.5">
             <form method="post" action="{{ url_for('admin.devices_stock_status', device_id=item.id) }}"
                   class="flex items-center gap-2">
-              <select name="status" class="tw-select" style="min-width:150px">
+              <span class="um-pill {{ state_tone.get(item.status, 'is-muted') }}">{{ status_titles.get(item.status, item.status) }}</span>
+              <select name="status" class="tw-select" style="min-width:140px" aria-label="Сменить состояние"
+                      onchange="this.form.querySelector('[data-save]').hidden = false">
                 {% for status in statuses %}
                 <option value="{{ status }}" {% if item.status == status %}selected{% endif %}>
                   {{ status_titles.get(status, status) }}
@@ -99,20 +121,23 @@
               </select>
               <input type="hidden" name="q" value="{{ query }}">
               <input type="hidden" name="page" value="{{ page }}">
-              <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
+              {# Кнопка появляется, только когда выбрано другое состояние:
+                 пять кнопок «сохранить» в каждой строке — шум, на который жмут вслепую. #}
+              <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" data-save hidden title="Сохранить состояние">
                 <i data-lucide="check" class="w-3.5 h-3.5"></i>
               </button>
             </form>
           </td>
-          <td class="px-3 py-2">
+          <td class="px-3 py-2.5">
             <form method="post" action="{{ url_for('admin.devices_stock_note', device_id=item.id) }}"
                   class="flex items-center gap-2">
-              <input type="text" name="note" value="{{ item.note }}" placeholder="—"
-                     class="tw-input" style="min-width:200px">
+              <input type="text" name="note" value="{{ item.note }}" placeholder="заметка"
+                     class="tw-input" style="min-width:200px" aria-label="Заметка"
+                     oninput="this.form.querySelector('[data-save]').hidden = false">
               <input type="hidden" name="q" value="{{ query }}">
               <input type="hidden" name="page" value="{{ page }}">
-              <button type="submit" class="tw-btn tw-btn-secondary tw-btn-sm">
-                <i data-lucide="save" class="w-3.5 h-3.5"></i>
+              <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm" data-save hidden title="Сохранить заметку">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
               </button>
             </form>
           </td>
@@ -122,25 +147,74 @@
     </table>
   </div>
 
-  <div class="flex items-center justify-between gap-3 text-[13px] tw-text-muted2">
-    <div>Всего: {{ total }}</div>
-    {% if pages > 1 %}
-    <div class="flex items-center gap-3">
-      {% if page > 1 %}
-        <a href="{{ url_for('admin.devices_stock', q=query or None, page=page - 1) }}">← назад</a>
-      {% endif %}
-      <span>{{ page }} из {{ pages }}</span>
-      {% if page < pages %}
-        <a href="{{ url_for('admin.devices_stock', q=query or None, page=page + 1) }}">вперёд →</a>
-      {% endif %}
+  {% if pages > 1 %}
+  <nav class="flex justify-center pt-1">
+    <div class="flex items-center gap-1 flex-wrap">
+      <a href="{{ url_for('admin.devices_stock', q=query or None, all=1 if show_all else None, page=page - 1) }}"
+         class="pg-link {% if page == 1 %}is-disabled{% endif %}" aria-label="Предыдущая">
+        <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+      </a>
+      {% set ns = namespace(last_printed=0) %}
+      {% for p in range(1, pages + 1) %}
+        {% if p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+          {% if p > ns.last_printed + 1 %}<span class="pg-link is-disabled">…</span>{% endif %}
+          <a href="{{ url_for('admin.devices_stock', q=query or None, all=1 if show_all else None, page=p) }}"
+             class="pg-link {% if p == page %}is-active{% endif %}">{{ p }}</a>
+          {% set ns.last_printed = p %}
+        {% endif %}
+      {% endfor %}
+      <a href="{{ url_for('admin.devices_stock', q=query or None, all=1 if show_all else None, page=page + 1) }}"
+         class="pg-link {% if page == pages %}is-disabled{% endif %}" aria-label="Следующая">
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+      </a>
     </div>
+  </nav>
+  {% endif %}
+  <div class="text-center text-[12px] tw-text-muted2">В отборе: {{ total }}</div>
+  {% else %}
+  <div class="tw-card p-8 text-center">
+    <i data-lucide="package" class="w-7 h-7 tw-text-muted2" style="margin:0 auto"></i>
+    <div class="text-[14px] tw-text-base2 mt-2">
+      {% if query %}По запросу «{{ query }}» ничего{% else %}На складе пусто{% endif %}
+    </div>
+    {% if not query and not show_all %}
+    <div class="text-[12px] tw-text-muted2 mt-1">Все роутеры отгружены. Отгруженные — кнопкой «Показать все».</div>
     {% endif %}
   </div>
-  {% else %}
-  <div class="tw-card p-4 text-[13px] tw-text-muted2">
-    {% if query %}По запросу «{{ query }}» ничего не нашлось.{% else %}Склад пуст.{% endif %}
-  </div>
   {% endif %}
+
+  {# Заводят заранее редко — роутер появляется сам, когда выходит на связь.
+     Поэтому форма свёрнута вниз. #}
+  <details class="tw-card rt-fold">
+    <summary class="p-4 flex items-center gap-2">
+      <i data-lucide="plus" class="w-4 h-4 tw-text-muted2"></i>
+      <span class="rt-section-title">Завести устройство заранее</span>
+      <span class="text-[12px] tw-text-muted2 ml-auto">до первого включения</span>
+      <i data-lucide="chevron-down" class="w-4 h-4 tw-text-muted2 rt-fold-icon"></i>
+    </summary>
+    <form method="post" action="{{ url_for('admin.devices_stock_add') }}" class="px-4 pb-4 space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="ss-field">
+          <label for="mac">MAC <span style="color:#ef4444;">*</span></label>
+          <input type="text" id="mac" name="mac" required placeholder="A0:B1:C2:D3:E4:F5" class="tw-input font-mono">
+          <div class="hint">С наклейки на корпусе. Разделители любые.</div>
+        </div>
+        <div class="ss-field">
+          <label for="model">Модель</label>
+          <input type="text" id="model" name="model" placeholder="cudy,wr3000s-v1" class="tw-input">
+        </div>
+        <div class="ss-field">
+          <label for="serial">Серийный номер</label>
+          <input type="text" id="serial" name="serial" class="tw-input">
+        </div>
+      </div>
+      <input type="hidden" name="q" value="{{ query }}">
+      <input type="hidden" name="page" value="{{ page }}">
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Завести</span>
+      </button>
+    </form>
+  </details>
 
   {% endif %}
 </div>
