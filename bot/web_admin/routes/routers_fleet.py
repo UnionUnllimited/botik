@@ -354,16 +354,24 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
 
     # ── Списки доменов ────────────────────────────────────────────────────────
 
-    async def _render_lists(imported: dict | None = None):
+    async def _render_lists(imported: dict | None = None, query: str = ""):
         """Собирает страницу списков.
 
         `imported` — то, что приехало по ссылке и ещё не сохранено: его надо
         показать в поле, чтобы человек увидел, что именно заменит его правку.
+        `query` — поиск по собранным спискам: есть ли домен или IP и откуда.
         """
         data, error = await _get("/api/v1/fleet/lists")
         history = {}
+        lookup, lookup_error = {}, ""
+        if query:
+            lookup, lookup_error = await _get(f"/api/v1/fleet/lists/lookup?{urlencode({'q': query})}")
         if not error:
-            for kind in ("domain", "ip"):
+            # Виды — как их зовёт основное приложение. Здесь стояли «domain»
+            # и «ip» с тех пор, как списки переименовали (31 августа 2026):
+            # ручка отвечала «не найдено», и история правок не показывалась
+            # вовсе — а с ней и кнопка «Вернуть».
+            for kind in ("proxy_domain", "proxy_ip"):
                 got, _ = await _get(f"/api/v1/fleet/lists/manual/{kind}/history")
                 history[kind] = got.get("revisions") or []
         return await render_template(
@@ -377,6 +385,9 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             files=data.get("files") or [],
             config=data.get("config") or {},
             poll_intervals=data.get("poll_intervals") or [],
+            query=query,
+            lookup=lookup,
+            lookup_error=lookup_error,
         )
 
     @admin_bp_instance.route("/lists")
@@ -386,7 +397,29 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
         Всё считает основное приложение: сборка идёт в его worker'е, а списки
         отдаются с его домена. Здесь только экран.
         """
-        return await _render_lists()
+        return await _render_lists(query=(request.args.get("q") or "").strip()[:300])
+
+    @admin_bp_instance.route("/lists/own/<kind>/<action>", methods=["POST"])
+    async def domain_own_change(kind: str, action: str):
+        """Одна строка в свой список или из него — из результатов поиска.
+        Возвращаемся к тому же поиску: оператор смотрит, что вышло."""
+        from web_admin.run import current_user
+
+        form = await request.form
+        query = (form.get("q") or "").strip()
+        _, error = await _post(
+            f"/api/v1/fleet/lists/own/{kind}/{action}",
+            {"value": form.get("value") or "", "author": getattr(current_user, "username", "") or ""},
+        )
+        if error:
+            await flash(error, "danger")
+        else:
+            await flash(
+                ("Добавлено в свой список" if action == "add" else "Убрано из своего списка")
+                + " — в файл попадёт со следующей сборкой или по «Собрать сейчас».",
+                "success",
+            )
+        return redirect(url_for("admin.domain_lists_page", q=query) + "#lookup")
 
     @admin_bp_instance.route("/lists/sources", methods=["POST"])
     async def domain_source_add():

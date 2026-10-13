@@ -44,6 +44,107 @@
   </div>
   {% else %}
 
+  {# ── Поиск по спискам ─────────────────────────────────────────────────── #}
+  {# Что внутри собранных файлов: числа «2 037 строк» на вопрос «пойдёт ли
+     youtube.com через туннель» не отвечали, а «почему он там» — тем более.
+     Ответ на домен — сама запись или родитель (youtube.com ведёт и www.);
+     на IP — сеть, в которую он попадает. У каждой находки — откуда она. #}
+  <div class="tw-card p-4" id="lookup">
+    <form method="get" action="{{ url_for('admin.domain_lists_page') }}#lookup" class="flex gap-2 flex-wrap">
+      <div class="flex-1" style="min-width:240px">
+        <input type="search" name="q" value="{{ query }}" class="tw-input" autocomplete="off"
+               placeholder="Домен, ссылка или IP: youtube.com, https://t.me/…, 149.154.167.50, 10.0.0.0/8"
+               aria-label="Что найти в списках">
+      </div>
+      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+        <i data-lucide="search" class="w-3.5 h-3.5"></i><span>Найти в списках</span>
+      </button>
+    </form>
+
+    {% if lookup_error %}
+    <div class="text-[12.5px] text-rose-500 mt-3">{{ lookup_error }}</div>
+    {% elif query and lookup %}
+    {% set kind = lookup.kind %}
+    {% set what = 'домен' if kind == 'proxy_domain' else 'адрес' %}
+    {% macro origin(item) -%}
+      {% for name in item.origin %}<span class="um-pill {{ 'is-info' if name == 'свой список' else 'is-muted' }}">{{ name }}</span>{% endfor %}
+      {% if not item.origin %}<span class="um-pill is-muted" title="Источник станет известен после следующей сборки">источник неизвестен</span>{% endif %}
+    {%- endmacro %}
+    {% macro own_button(value, action, label, icon) -%}
+      <form method="post" action="{{ url_for('admin.domain_own_change', kind=kind, action=action) }}" class="inline">
+        <input type="hidden" name="value" value="{{ value }}">
+        <input type="hidden" name="q" value="{{ query }}">
+        <button type="submit" class="tw-btn tw-btn-sm"><i data-lucide="{{ icon }}" class="w-3.5 h-3.5"></i><span>{{ label }}</span></button>
+      </form>
+    {%- endmacro %}
+
+    <div class="mt-4 lk-verdict {{ 'is-yes' if lookup.covered else 'is-no' }}">
+      {% if lookup.covered %}
+      <i data-lucide="circle-check" class="w-5 h-5 shrink-0" style="color:#10b981"></i>
+      <div class="min-w-0">
+        <div class="text-[14px] font-semibold tw-text-base2">
+          <span class="font-mono">{{ lookup.value }}</span> идёт через туннель
+        </div>
+        <div class="text-[12px] tw-text-muted2 mt-0.5">
+          {% if kind == 'proxy_domain' %}Покрывает запись — сам домен или родитель: он ведёт и все поддомены.
+          {% else %}Адрес попадает в сеть из списка.{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0" style="color:#f59e0b"></i>
+      <div class="min-w-0 flex-1">
+        <div class="text-[14px] font-semibold tw-text-base2">
+          <span class="font-mono">{{ lookup.value }}</span> в списках нет
+        </div>
+        <div class="text-[12px] tw-text-muted2 mt-0.5">
+          Этот {{ what }} пойдёт по режиму по умолчанию, мимо туннеля.
+        </div>
+      </div>
+      {{ own_button(lookup.value, 'add', 'Добавить в свой список', 'plus') }}
+      {% endif %}
+    </div>
+
+    {% if lookup.covered_by %}
+    <div class="mt-3">
+      {% for item in lookup.covered_by %}
+      <div class="lk-row">
+        <span class="font-mono tw-text-base2">{{ item.entry }}</span>
+        <span class="flex gap-1 flex-wrap">{{ origin(item) }}</span>
+        {% if 'свой список' in item.origin %}<span class="ml-auto">{{ own_button(item.entry, 'remove', 'Убрать из своего', 'x') }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if lookup.matches %}
+    <div class="mt-4">
+      <div class="rt-tile-label mb-1">
+        Похожие записи — {{ lookup.total }}{% if lookup.total > lookup.matches | length %}, показаны первые {{ lookup.matches | length }}{% endif %}
+      </div>
+      {% for item in lookup.matches %}
+      <div class="lk-row">
+        <span class="font-mono tw-text-base2">{{ item.entry }}</span>
+        <span class="flex gap-1 flex-wrap">{{ origin(item) }}</span>
+        {% if 'свой список' in item.origin %}<span class="ml-auto">{{ own_button(item.entry, 'remove', 'Убрать из своего', 'x') }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% elif not lookup.covered %}
+    <div class="text-[12px] tw-text-muted2 mt-3">Похожих записей тоже нет.</div>
+    {% endif %}
+
+    {% if not lookup.snapshots_ready %}
+    <div class="text-[11.5px] tw-text-muted2 mt-3">
+      Из какого источника пришла запись, станет видно после следующей сборки — или нажмите «Собрать сейчас».
+    </div>
+    {% endif %}
+    {% elif not query %}
+    <div class="text-[11.5px] tw-text-muted2 mt-2">
+      Проверьте, пойдёт ли сайт через туннель, и откуда он в списке. Нет — добавьте в свой список прямо отсюда.
+    </div>
+    {% endif %}
+  </div>
+
   {# Два списка — два разных файла по разным адресам. Роутер берёт их порознь,
      и на странице они порознь: одна строка «доменов N, подсетей M» не давала
      ни ссылки, ни понимания, что это вообще два файла. #}
@@ -411,5 +512,9 @@
 </script>
 <style>
   [data-copy].is-copied{color:#10b981;border-color:#10b981}
+  .lk-verdict{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;flex-wrap:wrap}
+  .lk-verdict.is-yes{background:#10b9811a;border:1px solid #10b98140}
+  .lk-verdict.is-no{background:#f59e0b1a;border:1px solid #f59e0b40}
+  .lk-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 2px;border-top:1px solid rgb(var(--admin-border));font-size:13px}
 </style>
 {% endblock %}

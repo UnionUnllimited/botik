@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_session, get_transaction
 from api.service_auth import require_token
-from core.models import Device
-from core.services import activation, router_topics, search, system_health, today
+from core.models import Device, ListKind
+from core.services import activation, list_lookup, router_topics, search, system_health, today
 
 router = APIRouter(prefix="/api/v1/fleet", tags=["ops"], include_in_schema=False)
 
@@ -73,3 +73,28 @@ async def router_retry_activation(
     device = await _device(session, device_id)
     activated, reason = await activation.try_activate_shipped(session, device, respect_toggle=False)
     return {"ok": True, "activated": activated, "message": reason}
+
+
+# ── Поиск по спискам доменов ─────────────────────────────────────────────────
+
+
+@router.get("/lists/lookup", dependencies=[Depends(require_token)])
+async def lists_lookup(
+    q: str = Query("", max_length=300), session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Есть ли домен или IP в собранных списках и откуда он там."""
+    return await list_lookup.lookup(session, q)
+
+
+@router.post("/lists/own/{kind}/{action}", dependencies=[Depends(require_token)])
+async def lists_own_change(
+    kind: str, action: str, payload: dict, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    """Одна строка в свой список или из него — прямо из результатов поиска."""
+    if kind not in ListKind.ALL or action not in ("add", "remove"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    change = list_lookup.add_to_own if action == "add" else list_lookup.remove_from_own
+    error = await change(
+        session, kind, str(payload.get("value") or ""), author=str(payload.get("author") or "")
+    )
+    return {"ok": not error, "error": error}

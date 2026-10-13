@@ -279,6 +279,15 @@ PAGES = {
         },
         "imported": {},
         "poll_intervals": [5, 10, 15, 30, 60, 180, 360, 720, 1440],
+        "query": "www.youtube.com",
+        "lookup_error": "",
+        "lookup": {
+            "query": "www.youtube.com", "kind": "proxy_domain", "value": "www.youtube.com",
+            "covered": True,
+            "covered_by": [{"entry": "youtube.com", "origin": ["Россия целиком", "свой список"]}],
+            "matches": [{"entry": "youtube-nocookie.com", "origin": []}],
+            "total": 1, "in_own": False, "snapshots_ready": True, "list_size": 2037,
+        },
         "config": {
             "lists_auto_enabled": "1",
             "lists_poll_interval_min": "10",

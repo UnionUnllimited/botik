@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -240,6 +241,62 @@ def write_list(kind: str, values: list[str]) -> None:
     tmp.replace(target)
 
 
+SNAPSHOT_DIR = "sources"
+SNAPSHOT_INDEX = "index.json"
+
+
+def snapshots_dir() -> Path:
+    """Снимки источников последней опубликованной сборки.
+
+    Собранный файл — склейка, и по нему не сказать, откуда в нём домен.
+    Поиску по спискам это нужно: «почему youtube.com идёт через туннель»
+    отвечается названием источника. Снимок пишется вместе с публикацией,
+    поэтому всегда соответствует тому, что раздаётся роутерам.
+    """
+    return lists_dir() / SNAPSHOT_DIR
+
+
+def write_snapshots(sources: list[DomainSource], values: dict[int, list[str]]) -> None:
+    directory = snapshots_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    keep = set()
+    for source in sources:
+        name = f"{source.id}.lst"
+        keep.add(name)
+        (directory / name).write_text(_as_file(values[source.id]), encoding="utf-8")
+    index = {
+        "built_at": utcnow().isoformat(),
+        "sources": [
+            {"id": source.id, "title": source.title or source.url, "kind": source.kind}
+            for source in sources
+        ],
+    }
+    (directory / SNAPSHOT_INDEX).write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+    # Снимки выключенных и удалённых источников — прочь: их строк в списке
+    # больше нет, и поиск не должен приписывать им найденное.
+    for stale in directory.glob("*.lst"):
+        if stale.name not in keep:
+            stale.unlink(missing_ok=True)
+
+
+def read_snapshots() -> tuple[list[dict], dict[int, set[str]]]:
+    """Оглавление снимков и их содержимое. Пусто — сборки со снимками ещё не было."""
+    directory = snapshots_dir()
+    try:
+        index = json.loads((directory / SNAPSHOT_INDEX).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], {}
+    sources = [item for item in index.get("sources", []) if isinstance(item, dict)]
+    contents: dict[int, set[str]] = {}
+    for item in sources:
+        try:
+            body = (directory / f"{int(item['id'])}.lst").read_text(encoding="utf-8")
+        except (OSError, KeyError, TypeError, ValueError):
+            continue
+        contents[int(item["id"])] = {line for line in body.splitlines() if line}
+    return sources, contents
+
+
 async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
     """Пересобирает списки, если хоть один источник изменился.
 
@@ -334,12 +391,14 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
         )
 
     parts: dict[str, list[list[str]]] = {kind: [] for kind in ListKind.ALL}
+    snapshots: dict[int, list[str]] = {}
     for source in sources:
         body = bodies.get(source.id)
         if body is None:
             continue
         values = CLEANERS[source.kind](body)
         parts[source.kind].append(values)
+        snapshots[source.id] = values
         source.last_lines = len(values)
         source.last_error = ""
         source.last_ok_at = utcnow()
@@ -388,6 +447,7 @@ async def build(session: AsyncSession, *, force: bool = False) -> DomainBuild:
 
     for kind in ListKind.ALL:
         write_list(kind, built[kind])
+    write_snapshots([source for source in sources if source.id in snapshots], snapshots)
 
     conf = await config(session)
     # Копия на диск — до хранилища: она дешевле и нужнее, если рядом стоит
