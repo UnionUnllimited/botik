@@ -1,15 +1,25 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Каталог — {{ super() }}{% endblock %}
 
 {% block content %}
+{{ ui.styles() }}
+{# Модели, которые видит клиент. Товары и заказы живут в основном приложении —
+   здесь их карточки, цены и остатки. С фото: это витрина, и по картинке
+   модель узнают быстрее, чем по названию. #}
+{% set on_sale = products | selectattr('is_active') | list %}
+{% set out = [] %}
+{% for item in products %}
+  {% set left = item.stock_left if item.stock_left is not none else item.stock %}
+  {% if item.is_active and left <= 0 and not item.allow_preorder %}{% set _ = out.append(item) %}{% endif %}
+{% endfor %}
 <div class="tw-anim space-y-4">
 
   <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
     <div>
-      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Каталог</h1>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Модели</h1>
       <p class="text-[13px] tw-text-muted2 mt-1">
-        Роутеры, которые бот показывает клиентам. Товары и заказы живут
-        в основном приложении — здесь их карточки, цены и остатки.
+        Роутеры, которые бот и приложение показывают клиентам. Правка видна сразу, выкат не нужен.
       </p>
     </div>
     <a href="{{ url_for('admin.catalog_product_new') }}" class="tw-btn tw-btn-primary tw-btn-sm">
@@ -28,67 +38,112 @@
   {% endif %}
 
   {% if products %}
+  <div class="grid grid-cols-3 gap-3">
+    <div class="tw-card p-4">
+      <div class="rt-tile-label">Моделей</div>
+      <div class="rt-tile-value">{{ products | length }}</div>
+    </div>
+    <div class="tw-card p-4">
+      <div class="rt-tile-label">В продаже</div>
+      <div class="rt-tile-value" style="color:#10b981">{{ on_sale | length }}</div>
+    </div>
+    <div class="tw-card p-4">
+      <div class="rt-tile-label">Закончились</div>
+      <div class="rt-tile-value"{% if out %} style="color:#f59e0b"{% endif %}>{{ out | length }}</div>
+      {% if out %}<div class="rt-tile-sub">показываются, но заказать нельзя</div>{% endif %}
+    </div>
+  </div>
+
   <div class="tw-card overflow-x-auto">
     <table class="w-full text-[13px]">
       <thead>
         <tr class="tw-text-muted2 text-left">
-          <th class="px-3 py-2 font-medium">Модель</th>
-          <th class="px-3 py-2 font-medium">Цена</th>
-          <th class="px-3 py-2 font-medium">Остаток</th>
-          <th class="px-3 py-2 font-medium">В боте</th>
-          <th class="px-3 py-2 font-medium">Порядок</th>
+          <th class="px-3 py-2.5 font-medium">Модель</th>
+          <th class="px-3 py-2.5 font-medium">Цена</th>
+          <th class="px-3 py-2.5 font-medium">Остаток</th>
+          <th class="px-3 py-2.5 font-medium">В боте</th>
+          <th class="px-3 py-2.5 font-medium" title="Меньше — выше в каталоге">Порядок</th>
         </tr>
       </thead>
       <tbody>
         {% for item in products %}
-        <tr class="border-t" style="border-color:var(--tw-line, #26262b)">
-          <td class="px-3 py-2">
-            <a href="{{ url_for('admin.catalog_product_form', product_id=item.id) }}">{{ item.title }}</a>
-            <div class="tw-text-muted2 text-[12px] font-mono">{{ item.slug }}</div>
+        {% set href = url_for('admin.catalog_product_form', product_id=item.id) %}
+        <tr class="rt-row cursor-pointer" data-href="{{ href }}">
+          <td class="px-3 py-2.5">
+            <div class="flex items-center gap-3">
+              {% if item.photo_url %}
+              <img src="{{ item.photo_url }}" alt="" loading="lazy" class="cs-thumb">
+              {% else %}
+              <span class="cs-thumb cs-thumb-empty"><i data-lucide="image" class="w-4 h-4"></i></span>
+              {% endif %}
+              <div class="min-w-0">
+                <a href="{{ href }}" class="tw-text-base2 font-semibold">{{ item.title }}</a>
+                {% if item.subtitle %}<div class="tw-text-muted2 text-[12px] truncate">{{ item.subtitle }}</div>{% endif %}
+                <div class="tw-text-subtle2 text-[11px] font-mono">{{ item.slug }}</div>
+              </div>
+            </div>
           </td>
-          <td class="px-3 py-2">
-            {{ item.price|money }}
+          <td class="px-3 py-2.5 whitespace-nowrap">
+            <div class="tw-text-base2 font-semibold">{{ item.price|money }}</div>
             {% if item.old_price %}
-              <span class="tw-text-muted2 text-[12px]"><s>{{ item.old_price|money }}</s></span>
+              {% set off = (100 - (item.price|float) * 100 / (item.old_price|float)) | round | int if item.old_price|float > 0 else 0 %}
+              <div class="text-[12px] tw-text-muted2"><s>{{ item.old_price|money }}</s>
+                {% if off > 0 %}<span class="um-pill is-success ml-1">−{{ off }} %</span>{% endif %}</div>
             {% endif %}
           </td>
           {# Остаток — предел продаж, а не число на полке: он считается по
              живым заказам. Показывали второе, и товар, разобранный заказами,
              стоял «3 шт.», пока витрина писала «нет в наличии». #}
-          <td class="px-3 py-2">
+          <td class="px-3 py-2.5">
             {% set left = item.stock_left if item.stock_left is not none else item.stock %}
             {% if left > 0 %}
-              {{ left }} шт.
+              <span class="um-pill is-success">{{ left }} шт.</span>
               {% if item.stock_left is not none and item.stock > left %}
                 <span class="tw-text-muted2 text-[12px]">из {{ item.stock }}</span>
               {% endif %}
             {% elif item.allow_preorder %}
-              <span class="tw-text-muted2">под заказ</span>
+              <span class="um-pill is-info">под заказ</span>
             {% elif item.stock > 0 %}
-              <span style="color:#b91c1c">разобран</span>
+              <span class="um-pill is-warning">разобран</span>
               <span class="tw-text-muted2 text-[12px]">({{ item.stock }} на складе)</span>
             {% else %}
-              <span style="color:#b91c1c">нет</span>
+              <span class="um-pill is-danger">нет</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2">
+          <td class="px-3 py-2.5">
             {% if item.is_active %}
-              <span style="color:#16a34a">● показывается</span>
+              <span class="um-pill is-success"><span class="tw-dot" style="background:currentColor"></span>показывается</span>
             {% else %}
-              <span class="tw-text-muted2">○ скрыта</span>
+              <span class="um-pill is-muted">скрыта</span>
             {% endif %}
           </td>
-          <td class="px-3 py-2 tw-text-muted2">{{ item.sort_order }}</td>
+          <td class="px-3 py-2.5 tw-text-muted2 tabular-nums">{{ item.sort_order }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% elif not catalog_error %}
-  <div class="tw-card p-4 text-[13px] tw-text-muted2">
-    Моделей пока нет. Добавьте первую — она сразу появится в боте.
+  <div class="tw-card p-8 text-center">
+    <i data-lucide="package" class="w-7 h-7 tw-text-muted2" style="margin:0 auto"></i>
+    <div class="text-[14px] tw-text-base2 mt-2">Моделей пока нет</div>
+    <div class="text-[12px] tw-text-muted2 mt-1">Добавьте первую — она сразу появится в боте и в приложении.</div>
   </div>
   {% endif %}
 
 </div>
+<style>
+  .cs-thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;
+    background:var(--admin-bg-soft);border:1px solid rgb(var(--admin-border))}
+  .cs-thumb-empty{display:inline-flex;align-items:center;justify-content:center;color:var(--admin-text-muted)}
+</style>
+<script>
+  // Вся строка ведёт в карточку модели — как в парке роутеров.
+  document.querySelectorAll('tr[data-href]').forEach(function (row) {
+    row.addEventListener('click', function (event) {
+      if (event.target.closest('a, button, input, select')) return;
+      window.location.href = row.dataset.href;
+    });
+  });
+</script>
 {% endblock %}

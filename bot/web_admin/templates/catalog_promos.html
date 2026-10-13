@@ -1,32 +1,116 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Промокоды · {{ super() }}{% endblock %}
 {% block content %}
+{{ ui.styles() }}
 {# Скидки на железо: цену заказа считает основное приложение, промокод
    участвует в этом расчёте. У бота свои промокоды, на подписку, — это разные
    вещи, и сводить их в один список нельзя. #}
-<div class="tw-anim space-y-4 max-w-4xl">
+<div class="tw-anim space-y-4" style="max-width:1000px">
 
-  <div>
-    <h1 class="text-lg font-semibold tw-text-base">Промокоды каталога</h1>
+  <div class="pt-1">
+    <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Промокоды каталога</h1>
     <p class="text-[13px] tw-text-muted2 mt-1">
       Скидка на роутер при оформлении заказа. Промокоды на подписку — отдельно,
-      в разделе «Сотрудничество»: там дни к сроку, здесь рубли с посылки.
+      в «Сотрудничестве»: там дни к сроку, здесь рубли с посылки.
     </p>
   </div>
 
   {% if promo_error %}
-  <div class="tw-card p-4 text-[13px]" style="border-color: rgb(244 63 94 / .35);">
-    <i data-lucide="alert-triangle" class="w-4 h-4 inline-block align-text-bottom"></i>
-    {{ promo_error }}
+  <div class="tw-card p-4 text-[13px] flex items-start gap-2" style="border-color: rgb(244 63 94 / .35);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#f43f5e"></i>
+    <div>{{ promo_error }}</div>
   </div>
   {% else %}
 
+  {# Список выше формы: его смотрят чаще, чем заводят новый код. #}
   <div class="tw-card p-4">
+    <div class="rt-section-title mb-2">Действующие и выключенные</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-[12.5px]">
+        <thead>
+          <tr class="tw-text-muted2 text-left">
+            <th class="py-2 pr-3 font-medium">Код</th>
+            <th class="py-2 pr-3 font-medium">Скидка</th>
+            <th class="py-2 pr-3 font-medium">Применений</th>
+            <th class="py-2 pr-3 font-medium">Условия</th>
+            <th class="py-2 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in promos %}
+          <tr class="rt-row">
+            <td class="py-2.5 pr-3 align-top {% if not p.is_active %}opacity-60{% endif %}">
+              <div class="flex items-center gap-2">
+                <span class="font-mono font-semibold tw-text-base2">{{ p.code }}</span>
+                {% if p.is_active %}<span class="um-pill is-success">действует</span>
+                {% else %}<span class="um-pill is-muted">выключен</span>{% endif %}
+              </div>
+              {% if p.description %}
+              <div class="text-[11.5px] tw-text-muted2 mt-0.5">{{ p.description }}</div>
+              {% endif %}
+            </td>
+            <td class="py-2.5 pr-3 align-top">
+              <span class="text-[15px] font-semibold tw-text-base2 whitespace-nowrap">
+                {% if p.discount_type == 'percent' %}−{{ p.value|float|round|int }} %
+                {% else %}−{{ p.value|float|round|int }} ₽{% endif %}
+              </span>
+            </td>
+            <td class="py-2.5 pr-3 align-top" style="min-width:120px">
+              <div class="tabular-nums tw-text-base2">{{ p.used_count }}{% if p.max_uses %} из {{ p.max_uses }}{% endif %}</div>
+              {% if p.max_uses %}
+              {% set share = [p.used_count * 100 / p.max_uses, 100] | min %}
+              <span class="rt-meter mt-1" style="width:100px"><span style="width:{{ share }}%;background:{{ '#f59e0b' if share >= 80 else '#10b981' }}"></span></span>
+              {% endif %}
+            </td>
+            <td class="py-2.5 pr-3 align-top">
+              <div class="flex gap-1 flex-wrap">
+                {% if p.min_amount and p.min_amount|float > 0 %}<span class="um-pill is-muted">от {{ p.min_amount|float|round|int }} ₽</span>{% endif %}
+                {% if p.per_user_limit %}<span class="um-pill is-muted">по {{ p.per_user_limit }} на клиента</span>{% endif %}
+                {% if p.new_clients_only %}<span class="um-pill is-info">только новым</span>{% endif %}
+                {% if p.valid_until %}<span class="um-pill is-muted">до {{ p.valid_until[8:10] }}.{{ p.valid_until[5:7] }}.{{ p.valid_until[:4] }}</span>{% endif %}
+                {% if not (p.min_amount and p.min_amount|float > 0) and not p.per_user_limit and not p.new_clients_only and not p.valid_until %}
+                <span class="tw-text-muted2">без условий</span>{% endif %}
+              </div>
+            </td>
+            <td class="py-2.5 align-top rt-shrink text-right">
+              <form method="post" class="inline"
+                    action="{{ url_for('admin.catalog_promo_action', promo_id=p.id, action='toggle') }}">
+                <button type="submit" class="tw-btn tw-btn-sm">
+                  <i data-lucide="{{ 'pause' if p.is_active else 'play' }}" class="w-3.5 h-3.5"></i>
+                  <span>{{ 'Выключить' if p.is_active else 'Включить' }}</span>
+                </button>
+              </form>
+              {% if not p.used_count %}
+              <form method="post" class="inline"
+                    action="{{ url_for('admin.catalog_promo_action', promo_id=p.id, action='delete') }}"
+                    onsubmit="return confirm('Удалить промокод {{ p.code }}?');">
+                <button type="submit" class="tw-btn tw-btn-sm" title="Удалить">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="py-4 tw-text-muted2" colspan="5">Промокодов нет — заведите первый ниже.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-[11.5px] tw-text-muted2 mt-3">
+      Применённый код удалить нельзя — только выключить: на него ссылаются заказы,
+      и «почему здесь скидка» после удаления не восстановить.
+    </p>
+  </div>
+
+  <div class="tw-card p-5">
+    <div class="rt-section-title">Новый промокод</div>
     <form method="post" action="{{ url_for('admin.catalog_promo_create') }}"
-          class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
       <div class="ss-field">
         <label for="code">Код</label>
-        <input type="text" id="code" name="code" required maxlength="32" class="tw-input"
+        <input type="text" id="code" name="code" required maxlength="32" class="tw-input font-mono"
                placeholder="ROUTER10" style="text-transform: uppercase;">
         <div class="hint">Латиница, цифры, дефис. Регистр не важен.</div>
       </div>
@@ -37,12 +121,13 @@
             <option value="percent">процент</option>
             <option value="fixed">рублей</option>
           </select>
-          <input type="text" name="value" required class="tw-input" placeholder="10" style="max-width:90px">
+          <input type="text" name="value" required class="tw-input" placeholder="10" style="max-width:90px"
+                 aria-label="Размер скидки" inputmode="decimal">
         </div>
       </div>
       <div class="ss-field">
-        <label for="min_amount">Минимальная сумма</label>
-        <input type="text" id="min_amount" name="min_amount" value="0" class="tw-input">
+        <label for="min_amount">Минимальная сумма, ₽</label>
+        <input type="text" id="min_amount" name="min_amount" value="0" class="tw-input" inputmode="decimal">
         <div class="hint">0 — без условия.</div>
       </div>
       <div class="ss-field">
@@ -65,75 +150,14 @@
                placeholder="Рассылка на 12 августа">
       </div>
       <div class="flex items-end justify-between gap-2">
-        <label class="flex items-center gap-2 text-[12.5px] tw-text-base2">
-          <input type="checkbox" name="new_clients_only"> только новым
+        <label class="flex items-center gap-2 text-[12.5px] tw-text-base2 cursor-pointer select-none">
+          <input type="checkbox" name="new_clients_only" class="w-4 h-4"> только новым
         </label>
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Завести</button>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Завести</span>
+        </button>
       </div>
     </form>
-  </div>
-
-  <div class="tw-card p-4">
-    <div class="overflow-x-auto">
-      <table class="w-full text-[12.5px]">
-        <thead>
-          <tr class="tw-text-muted2 text-left">
-            <th class="py-2 pr-2 font-medium">Код</th>
-            <th class="py-2 pr-2 font-medium">Скидка</th>
-            <th class="py-2 pr-2 font-medium">Применений</th>
-            <th class="py-2 pr-2 font-medium">Условия</th>
-            <th class="py-2 font-medium"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in promos %}
-          <tr class="border-t" style="border-color: var(--admin-border);">
-            <td class="py-2 pr-2 align-top {% if not p.is_active %}opacity-50{% endif %}">
-              <b class="font-mono">{{ p.code }}</b>
-              {% if not p.is_active %}<span class="tw-kbd text-[10px] ml-1">выключен</span>{% endif %}
-              {% if p.description %}
-              <div class="text-[11px] tw-text-subtle2">{{ p.description }}</div>
-              {% endif %}
-            </td>
-            <td class="py-2 pr-2 align-top">
-              {% if p.discount_type == 'percent' %}{{ p.value|float|round|int }}%
-              {% else %}{{ p.value|float|round|int }} ₽{% endif %}
-            </td>
-            <td class="py-2 pr-2 align-top">
-              {{ p.used_count }}{% if p.max_uses %} из {{ p.max_uses }}{% endif %}
-            </td>
-            <td class="py-2 pr-2 align-top tw-text-subtle2 text-[11px]">
-              {% if p.min_amount and p.min_amount|float > 0 %}от {{ p.min_amount|float|round|int }} ₽<br>{% endif %}
-              {% if p.per_user_limit %}по {{ p.per_user_limit }} на клиента<br>{% endif %}
-              {% if p.new_clients_only %}только новым<br>{% endif %}
-              {% if p.valid_until %}до {{ p.valid_until[:10] }}{% endif %}
-            </td>
-            <td class="py-2 align-top whitespace-nowrap text-right">
-              <form method="post" class="inline"
-                    action="{{ url_for('admin.catalog_promo_action', promo_id=p.id, action='toggle') }}">
-                <button type="submit" class="tw-btn tw-btn-sm">
-                  {{ 'Выключить' if p.is_active else 'Включить' }}
-                </button>
-              </form>
-              {% if not p.used_count %}
-              <form method="post" class="inline"
-                    action="{{ url_for('admin.catalog_promo_action', promo_id=p.id, action='delete') }}"
-                    onsubmit="return confirm('Удалить промокод {{ p.code }}?');">
-                <button type="submit" class="tw-btn tw-btn-sm">Удалить</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% else %}
-          <tr><td class="py-3 tw-text-muted2" colspan="5">Промокодов нет.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p class="text-[11px] tw-text-subtle2 mt-3">
-      Применённый код удалить нельзя — только выключить: на него ссылаются заказы,
-      и «почему здесь скидка» после удаления не восстановить.
-    </p>
   </div>
 
   {% endif %}

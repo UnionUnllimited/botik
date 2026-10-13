@@ -1,106 +1,112 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Списки доменов · {{ super() }}{% endblock %}
 {% block content %}
+{{ ui.styles() }}
 {# Источники и свой список правятся здесь, а качает и склеивает основное
    приложение: списки отдаются с его домена, и разводить сборку по двум
-   процессам не за чем. Раньше всё это было массивом в скрипте на сервере. #}
-<div class="tw-anim space-y-4 max-w-4xl">
+   процессам незачем. Порядок на странице — по тому, как часто трогают:
+   свои списки и источники сверху, настройки обновления свёрнуты внизу. #}
+{% set kind_titles = {'proxy_domain': 'домены через туннель', 'proxy_ip': 'сети через туннель'} %}
+<div class="tw-anim space-y-4" style="max-width:1080px">
 
-  <div class="flex items-start justify-between gap-3 flex-wrap">
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
     <div class="min-w-0">
-      <h1 class="text-lg font-semibold tw-text-base">Списки доменов</h1>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Списки доменов</h1>
       <p class="text-[13px] tw-text-muted2 mt-1">
-        По ним роутер решает, что вести в туннель. Собираются из источников ниже
-        и вашего списка.
+        По ним роутер решает, что вести в туннель. Собираются из источников и ваших списков.
       </p>
     </div>
     {% if not fleet_error %}
-    <form method="post" action="{{ url_for('admin.domain_lists_build') }}">
-      <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
-        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Собрать сейчас</span>
-      </button>
-    </form>
+    <div class="flex items-center gap-2 flex-wrap">
+      {% if last_build %}
+        {% if last_build.failed_sources %}
+        <span class="um-pill is-warning" title="Источников не ответило: {{ last_build.failed_sources }}">
+          собрано {{ last_build.finished_at|msk_compact if last_build.finished_at }} · не ответило {{ last_build.failed_sources }}
+        </span>
+        {% else %}
+        <span class="um-pill is-success">собрано {{ last_build.finished_at|msk_compact if last_build.finished_at }}</span>
+        {% endif %}
+      {% endif %}
+      <form method="post" action="{{ url_for('admin.domain_lists_build') }}">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Собрать сейчас</span>
+        </button>
+      </form>
+    </div>
     {% endif %}
   </div>
 
   {% if fleet_error %}
-  <div class="tw-card p-4 text-[13px]" style="border-color: rgb(244 63 94 / .35);">
-    <i data-lucide="alert-triangle" class="w-4 h-4 inline-block align-text-bottom"></i>
-    {{ fleet_error }}
+  <div class="tw-card p-4 text-[13px] flex items-start gap-2" style="border-color: rgb(244 63 94 / .35);">
+    <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#f43f5e"></i>
+    <div>{{ fleet_error }}</div>
   </div>
   {% else %}
 
   {# Два списка — два разных файла по разным адресам. Роутер берёт их порознь,
-     и на странице они должны быть порознь: одна строка «доменов N, подсетей M»
-     не давала ни ссылки, ни понимания, что это вообще два файла. #}
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+     и на странице они порознь: одна строка «доменов N, подсетей M» не давала
+     ни ссылки, ни понимания, что это вообще два файла. #}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     {% for file in files %}
     <div class="tw-card p-4">
-      <div class="text-[12px] tw-text-muted2">{{ file.title }}</div>
-      <div class="text-[22px] font-semibold tw-text-base2">
+      <div class="rt-tile-label">{{ file.title }}</div>
+      <div class="rt-tile-value">
         {{ '{:,}'.format(file.lines).replace(',', ' ') }}
         <span class="text-[12px] tw-text-muted2 font-normal">строк</span>
       </div>
-      <a href="{{ file.url }}" target="_blank" rel="noopener"
-         class="text-[11.5px] font-mono break-all" style="color: rgb(var(--admin-accent))">
-        {{ file.name }}
-      </a>
       {# Куда этот адрес прописывается в прошивке. Перепутать местами
          chnlist_url и gfwlist_url — значит пустить банки через туннель,
          а заблокированное напрямую. #}
-      {% if file.setting %}
-      <div class="text-[11px] tw-text-subtle2 font-mono mt-0.5">{{ file.setting }}</div>
-      {% endif %}
+      {% if file.setting %}<span class="um-pill is-muted mt-1.5 font-mono">{{ file.setting }}</span>{% endif %}
+      <div class="flex items-center gap-2 mt-2">
+        <a href="{{ file.url }}" target="_blank" rel="noopener"
+           class="text-[11.5px] font-mono truncate tw-text-muted2" title="{{ file.url }}">{{ file.name }}</a>
+        <button type="button" class="tw-btn tw-btn-sm ml-auto" data-copy="{{ file.url }}" title="Скопировать адрес">
+          <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
       {% if not file.lines %}
-      <div class="text-[11px] text-amber-600 mt-1">
+      <div class="text-[11.5px] text-amber-500 mt-1.5">
         Пусто — сборки ещё не было или все источники этого вида выключены.
       </div>
       {% endif %}
     </div>
     {% endfor %}
   </div>
-
-  {% if last_build %}
-  <div class="tw-card p-3.5 text-[12.5px] tw-text-base2">
-    Последняя сборка{% if last_build.finished_at %}:
-    {{ last_build.finished_at|msk_compact }}{% endif %}.
-    {% if last_build.failed_sources %}
-      <span class="text-amber-600">Источников не ответило: {{ last_build.failed_sources }}.</span>
-    {% endif %}
-    {% if last_build.uploaded %}
-      <span class="tw-text-subtle2">Копия в хранилище обновлена.</span>
-    {% endif %}
-  </div>
+  {% if last_build and last_build.uploaded %}
+  <div class="text-[12px] tw-text-muted2 -mt-1">Копия в хранилище обновлена вместе с последней сборкой.</div>
   {% endif %}
 
-  {# ── Свой список ──────────────────────────────────────────────────────── #}
-  {# Оба списка ведут через туннель: один доменами, другой сетями.
-     Подпись у каждого поля говорит, куда попадёт то, что оператор впишет. #}
+  {# ── Свои списки ─────────────────────────────────────────────────────── #}
+  {# Оба ведут через туннель: один доменами, другой сетями. Рядом — чтобы
+     было видно, что их два и куда попадёт вписанное. #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
   {% for kind, label, hint in [
       ('proxy_domain', 'Свои домены через туннель',
-       'Пойдут через наш сервер. По домену на строку, схему и путь уберём сами.'),
+       'По домену на строку, схему и путь уберём сами.'),
       ('proxy_ip', 'Свои сети через туннель',
-       'Тоже через наш сервер. IPv4, с маской или без: 1.2.3.4 или 10.0.0.0/8.')] %}
+       'IPv4, с маской или без: 1.2.3.4 или 10.0.0.0/8.')] %}
   {% set row = manual.get(kind) or {} %}
   {% set log = history.get(kind) or [] %}
   <div class="tw-card p-4">
     <form method="post" action="{{ url_for('admin.domain_manual_save', kind=kind) }}">
       <div class="flex items-center justify-between gap-2 mb-2">
-        <label for="body_{{ kind }}" class="text-[13px] font-semibold tw-text-base2">{{ label }}</label>
-        <span class="text-[11px] tw-text-subtle2">
-          {%- if row.updated_at %}правил {{ row.updated_by or 'кто-то' }},
-            {{ row.updated_at|msk_compact }}{% endif -%}
-        </span>
+        <label for="body_{{ kind }}" class="rt-section-title">{{ label }}</label>
+        <span class="um-pill is-muted" data-lines-for="body_{{ kind }}">— строк</span>
       </div>
-      <textarea id="body_{{ kind }}" name="body" rows="8" class="tw-input"
-                style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical; font-family:ui-monospace,monospace;"
+      <textarea id="body_{{ kind }}" name="body" rows="9" class="tw-input" data-lines
+                style="height:auto; padding-top:8px; padding-bottom:8px; resize:vertical; font-family:ui-monospace,monospace; font-size:12.5px"
                 >{{ imported.get(kind, row.get('body', '')) }}</textarea>
       <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
-        <span class="text-[11px] tw-text-subtle2">{{ hint }}</span>
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">Сохранить</button>
+        <span class="text-[11.5px] tw-text-muted2">{{ hint }}
+          {%- if row.updated_at %} Правил {{ row.updated_by or 'кто-то' }}, {{ row.updated_at|msk_compact }}.{% endif %}</span>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить</span>
+        </button>
       </div>
       {% if imported.get(kind) %}
-      <div class="text-[11.5px] text-amber-600 mt-2">
+      <div class="text-[12px] text-amber-500 mt-2">
         Это загруженное по ссылке — оно ещё не сохранено. Нажмите «Сохранить»,
         если всё верно, или просто уйдите со страницы.
       </div>
@@ -109,34 +115,42 @@
 
     {# Перенос из файла: список лежал в репозитории, и переписывать его руками
        в поле — верный способ потерять пару строк. #}
-    <form method="post" action="{{ url_for('admin.domain_manual_import', kind=kind) }}"
-          class="flex gap-2 mt-3 pt-3 border-t" style="border-color: var(--admin-border);">
-      <input type="url" name="url" class="tw-input" placeholder="Перенести из файла по ссылке">
-      <button type="submit" class="tw-btn tw-btn-sm whitespace-nowrap">Загрузить</button>
-    </form>
-    <div class="text-[11px] tw-text-subtle2 mt-1">
-      Содержимое покажется в поле выше — сохранится только после нажатия «Сохранить».
-    </div>
+    <details class="rt-fold mt-3 pt-3" style="border-top:1px solid rgb(var(--admin-border))">
+      <summary class="flex items-center gap-2 text-[12.5px] tw-text-base2">
+        <i data-lucide="download" class="w-3.5 h-3.5 tw-text-muted2"></i>
+        Перенести из файла по ссылке
+        <i data-lucide="chevron-down" class="w-3.5 h-3.5 tw-text-muted2 rt-fold-icon ml-auto"></i>
+      </summary>
+      <form method="post" action="{{ url_for('admin.domain_manual_import', kind=kind) }}" class="flex gap-2 mt-2">
+        <input type="url" name="url" class="tw-input" placeholder="https://…/list.txt">
+        <button type="submit" class="tw-btn tw-btn-sm whitespace-nowrap">Загрузить</button>
+      </form>
+      <div class="text-[11px] tw-text-muted2 mt-1">
+        Содержимое покажется в поле выше — сохранится только после «Сохранить».
+      </div>
+    </details>
 
     {% if log %}
-    <details class="mt-3 pt-3 border-t" style="border-color: var(--admin-border);">
-      <summary class="text-[12px] tw-text-base2 cursor-pointer">
-        История правок — {{ log|length }}
+    <details class="rt-fold mt-3 pt-3" style="border-top:1px solid rgb(var(--admin-border))">
+      <summary class="flex items-center gap-2 text-[12.5px] tw-text-base2">
+        <i data-lucide="history" class="w-3.5 h-3.5 tw-text-muted2"></i>
+        История правок <span class="um-pill is-muted">{{ log|length }}</span>
+        <i data-lucide="chevron-down" class="w-3.5 h-3.5 tw-text-muted2 rt-fold-icon ml-auto"></i>
       </summary>
       <table class="w-full text-[12px] mt-2">
         <tbody>
           {% for item in log %}
-          <tr class="border-t" style="border-color: var(--admin-border);">
-            <td class="py-1.5 pr-2 tw-text-subtle2 whitespace-nowrap">
+          <tr class="rt-row">
+            <td class="py-1.5 pr-2 tw-text-muted2 rt-shrink">
               {{ item.created_at|msk_compact if item.created_at else '—' }}
             </td>
             <td class="py-1.5 pr-2">{{ item.author or '—' }}</td>
-            <td class="py-1.5 pr-2 whitespace-nowrap">
-              {% if item.added %}<span class="text-emerald-600">+{{ item.added }}</span>{% endif %}
-              {% if item.removed %}<span class="text-rose-500">−{{ item.removed }}</span>{% endif %}
-              {% if not item.added and not item.removed %}<span class="tw-text-subtle2">—</span>{% endif %}
+            <td class="py-1.5 pr-2 rt-shrink">
+              {% if item.added %}<span class="um-pill is-success">+{{ item.added }}</span>{% endif %}
+              {% if item.removed %}<span class="um-pill is-danger">−{{ item.removed }}</span>{% endif %}
+              {% if not item.added and not item.removed %}<span class="tw-text-muted2">—</span>{% endif %}
             </td>
-            <td class="py-1.5 text-right">
+            <td class="py-1.5 text-right rt-shrink">
               <form method="post" class="inline"
                     action="{{ url_for('admin.domain_manual_restore', kind=kind, revision_id=item.id) }}"
                     onsubmit="return confirm('Вернуть список к этой версии? Нынешний тоже попадёт в историю.');">
@@ -147,7 +161,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <p class="text-[11px] tw-text-subtle2 mt-2">
+      <p class="text-[11px] tw-text-muted2 mt-2">
         Считаются строки после чистки: переставленные и записанные иначе
         не считаются за изменение.
       </p>
@@ -155,172 +169,52 @@
     {% endif %}
   </div>
   {% endfor %}
-
-  {# ── Настройки ────────────────────────────────────────────────────────── #}
-  <div class="tw-card p-4">
-    <form method="post" action="{{ url_for('admin.domain_lists_config') }}" class="space-y-3">
-      <div class="text-[13px] font-semibold tw-text-base2">Обновление</div>
-
-      <label class="flex items-center gap-2.5 cursor-pointer select-none">
-        <input type="checkbox" name="lists_auto_enabled" class="w-4 h-4 cursor-pointer"
-               {% if config.get('lists_auto_enabled', '1') == '1' %}checked{% endif %}>
-        <span class="text-[13px] tw-text-base2">Обновлять само</span>
-      </label>
-      <div class="text-[11px] tw-text-subtle2">
-        Выключенный авторежим не отменяет кнопку «Собрать сейчас» — она
-        собирает списки напрямую.
-      </div>
-
-      <div class="ss-field" style="max-width: 260px;">
-        <label for="lists_poll_interval_min">Как часто</label>
-        {# Списком, а не полем: осмысленных значений десяток, а в поле вводят
-           «0» — и это круг без пауз по чужому GitHub, который отвечает на
-           такое запретом. #}
-        <select class="tw-input" id="lists_poll_interval_min" name="lists_poll_interval_min">
-          {% set current = config.get('lists_poll_interval_min', '10')|string %}
-          {% for option in poll_intervals %}
-          <option value="{{ option }}" {% if current == option|string %}selected{% endif %}>
-            {% if option < 60 %}каждые {{ option }} минут
-            {% elif option == 60 %}раз в час
-            {% elif option < 1440 %}раз в {{ option // 60 }} часа
-            {% else %}раз в сутки{% endif %}
-          </option>
-          {% endfor %}
-        </select>
-        <div class="hint">
-          Круг спрашивает источники по метке версии: неизменившиеся отвечают
-          без тела, поэтому частота почти ничего не стоит. Пересборка идёт
-          только когда хоть один изменился.
-        </div>
-      </div>
-
-      <div class="ss-field">
-        <label for="lists_local_dir">Каталог на диске</label>
-        <input type="text" class="tw-input" id="lists_local_dir" name="lists_local_dir"
-               value="{{ config.get('lists_local_dir', '') }}" placeholder="/var/www/lists">
-        <div class="hint">
-          Копия списков рядом, на диске — для домена, который отдаёт их своим
-          веб-сервером. Пока отгруженные роутеры ходят по старому адресу, файлы
-          там должны обновляться. Пусто — не класть.
-        </div>
-      </div>
-
-      {# Хранилище настраивают один раз и больше не трогают, а места оно
-         занимает больше всего остального. Поэтому свёрнуто. #}
-      <details class="pt-2 border-t" style="border-color: var(--admin-border);">
-        <summary class="text-[12.5px] font-semibold tw-text-base2 cursor-pointer">
-          Объектное хранилище
-          {% if config.get('lists_s3_bucket') %}
-            <span class="tw-kbd text-[10px] ml-1">{{ config.get('lists_s3_bucket') }}</span>
-          {% else %}
-            <span class="tw-kbd text-[10px] ml-1">выключено</span>
-          {% endif %}
-        </summary>
-
-      <div class="text-[12px] tw-text-subtle2 py-2">
-        Одно хранилище на списки и на прошивки — настраивается здесь, а
-        используется и на странице «Обновление роутеров».
-        <br>Списки роутеры и так забирают с нашего домена
-        (<code class="tw-kbd text-[11px]">/lists/proxy-domains.lst</code> и
-        <code class="tw-kbd text-[11px]">/lists/proxy-ip.lst</code>), копия нужна
-        на случай, когда наш сервер перезапускается выкатом, а парк приходит
-        за обновлением. Образ прошивки — другое дело: он весит до 54 МБ, и за
-        ним приходит весь парк разом. Настроено хранилище — манифест ведёт
-        роутеры туда, и этот трафик уходит с нашего канала.
-        <br>Пусто — выкладка выключена, всё раздаётся с нашего домена, как раньше.
-        <br>Yandex: <code class="tw-kbd text-[11px]">https://storage.yandexcloud.net</code> ·
-        VK: <code class="tw-kbd text-[11px]">https://hb.vkcs.cloud</code>
-        <br><b>Бакет должен быть публичным на чтение:</b> за файлом приходит
-        прошивка роутера, ключей у неё нет.
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div class="ss-field">
-          <label for="lists_s3_endpoint">Адрес хранилища</label>
-          <input type="text" class="tw-input" id="lists_s3_endpoint" name="lists_s3_endpoint"
-                 value="{{ config.get('lists_s3_endpoint', '') }}" placeholder="https://storage.yandexcloud.net">
-        </div>
-        <div class="ss-field">
-          <label for="lists_s3_bucket">Bucket</label>
-          <input type="text" class="tw-input" id="lists_s3_bucket" name="lists_s3_bucket"
-                 value="{{ config.get('lists_s3_bucket', '') }}">
-        </div>
-        <div class="ss-field">
-          <label for="lists_s3_region">Регион</label>
-          <input type="text" class="tw-input" id="lists_s3_region" name="lists_s3_region"
-                 value="{{ config.get('lists_s3_region', 'ru-central1') }}">
-        </div>
-        <div class="ss-field">
-          <label for="lists_s3_prefix">Префикс ключа</label>
-          <input type="text" class="tw-input" id="lists_s3_prefix" name="lists_s3_prefix"
-                 value="{{ config.get('lists_s3_prefix', 'lists/') }}">
-        </div>
-        <div class="ss-field sm:col-span-2">
-          <label for="lists_s3_public_url">Адрес раздачи <span class="tw-text-subtle2 font-normal">— если перед бакетом стоит CDN</span></label>
-          <input type="text" class="tw-input" id="lists_s3_public_url" name="lists_s3_public_url"
-                 value="{{ config.get('lists_s3_public_url', '') }}"
-                 placeholder="пусто — собираем из адреса хранилища и бакета">
-        </div>
-        <div class="ss-field">
-          <label for="lists_s3_access_key">Access key</label>
-          <input type="password" class="tw-input" id="lists_s3_access_key" name="lists_s3_access_key"
-                 autocomplete="new-password"
-                 placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_access_key') else 'не задан' }}">
-        </div>
-        <div class="ss-field">
-          <label for="lists_s3_secret_key">Secret key</label>
-          <input type="password" class="tw-input" id="lists_s3_secret_key" name="lists_s3_secret_key"
-                 autocomplete="new-password"
-                 placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_secret_key') else 'не задан' }}">
-        </div>
-      </div>
-
-      </details>
-
-      <div class="flex justify-end">
-        <button type="submit" class="tw-btn tw-btn-sm">Сохранить настройки</button>
-      </div>
-    </form>
   </div>
 
   {# ── Источники ────────────────────────────────────────────────────────── #}
   <div class="tw-card p-4">
-    <div class="text-[13px] font-semibold tw-text-base2 mb-1">Источники</div>
-    <p class="text-[11px] tw-text-subtle2 mb-3">
-      Выключенный источник остаётся в списке: категории включают сезонно,
-      а адрес файла через месяц не вспомнить.
-    </p>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <div class="rt-section-title">Источники</div>
+      <span class="text-[11.5px] tw-text-muted2">
+        Выключенный остаётся в списке: категории включают сезонно, а адрес через месяц не вспомнить.
+      </span>
+    </div>
 
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto mt-2">
       <table class="w-full text-[12.5px]">
         <tbody>
           {% for s in sources %}
-          <tr class="border-t" style="border-color: var(--admin-border);">
-            <td class="py-2 pr-2 align-top">
-              <div class="{% if not s.is_enabled %}opacity-50{% endif %}">
-                <b>{{ s.title or s.url }}</b>
-                <span class="tw-kbd text-[10px] ml-1">{{
-                  {'proxy_domain': 'домены через', 'proxy_ip': 'сети через'}.get(
-                    s.kind, s.kind) }}</span>
+          <tr class="rt-row">
+            <td class="py-2.5 pr-3 align-top">
+              <div class="flex items-center gap-2 flex-wrap {% if not s.is_enabled %}opacity-60{% endif %}">
+                <span class="font-semibold tw-text-base2">{{ s.title or s.url }}</span>
+                <span class="um-pill is-muted">{{ kind_titles.get(s.kind, s.kind) }}</span>
               </div>
-              <div class="text-[11px] tw-text-subtle2 break-all">{{ s.url }}</div>
-              {% if s.last_error %}
-                <div class="text-[11px] text-rose-500">{{ s.last_error }}</div>
-              {% elif s.last_ok_at %}
-                <div class="text-[11px] tw-text-subtle2">строк в прошлый раз: {{ s.last_lines }}</div>
+              <div class="text-[11px] tw-text-muted2 break-all mt-0.5">{{ s.url }}</div>
+            </td>
+            <td class="py-2.5 pr-3 align-top rt-shrink">
+              {% if not s.is_enabled %}<span class="um-pill is-muted">выключен</span>
+              {% elif s.last_error %}<span class="um-pill is-danger" title="{{ s.last_error }}">ошибка</span>
+              {% elif s.last_ok_at %}<span class="um-pill is-success">{{ s.last_lines }} строк</span>
+              {% else %}<span class="um-pill is-info">ещё не собирался</span>{% endif %}
+              {% if s.is_enabled and s.last_error %}
+              <div class="text-[11px] text-rose-500 mt-1" style="max-width:260px;white-space:normal">{{ s.last_error }}</div>
               {% endif %}
             </td>
-            <td class="py-2 align-top whitespace-nowrap text-right">
+            <td class="py-2.5 align-top rt-shrink text-right">
               <form method="post" class="inline"
                     action="{{ url_for('admin.domain_source_action', source_id=s.id, action='toggle') }}">
                 <button type="submit" class="tw-btn tw-btn-sm">
-                  {{ 'Выключить' if s.is_enabled else 'Включить' }}
+                  <i data-lucide="{{ 'pause' if s.is_enabled else 'play' }}" class="w-3.5 h-3.5"></i>
+                  <span>{{ 'Выключить' if s.is_enabled else 'Включить' }}</span>
                 </button>
               </form>
               <form method="post" class="inline"
                     action="{{ url_for('admin.domain_source_action', source_id=s.id, action='delete') }}"
                     onsubmit="return confirm('Удалить источник совсем? Чтобы временно убрать категорию, выключите его.');">
-                <button type="submit" class="tw-btn tw-btn-sm">Удалить</button>
+                <button type="submit" class="tw-btn tw-btn-sm" title="Удалить совсем">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
               </form>
             </td>
           </tr>
@@ -332,20 +226,190 @@
     </div>
 
     <form method="post" action="{{ url_for('admin.domain_source_add') }}"
-          class="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-4 pt-3 border-t"
-          style="border-color: var(--admin-border);">
-      <input type="url" name="url" required placeholder="https://…/list.lst" class="tw-input sm:col-span-2">
-      <input type="text" name="title" placeholder="Название" class="tw-input">
+          class="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end mt-3 pt-3"
+          style="border-top:1px solid rgb(var(--admin-border))">
+      <div class="ss-field sm:col-span-2">
+        <label for="src_url">Новый источник</label>
+        <input id="src_url" type="url" name="url" required placeholder="https://…/list.lst" class="tw-input">
+      </div>
+      <div class="ss-field">
+        <label for="src_title">Название</label>
+        <input id="src_title" type="text" name="title" placeholder="например, «Видео»" class="tw-input">
+      </div>
       <div class="flex gap-2">
-        <select name="kind" class="tw-input">
+        <select name="kind" class="tw-input" aria-label="Что в нём">
           <option value="proxy_domain">домены через туннель</option>
           <option value="proxy_ip">сети через туннель</option>
         </select>
-        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">Добавить</button>
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm whitespace-nowrap">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Добавить</span>
+        </button>
       </div>
     </form>
   </div>
 
+  {# ── Настройки обновления ─────────────────────────────────────────────── #}
+  {# Свёрнуты: их настраивают один раз. Открыты сразу, только если авто-
+     обновление выключено — это стоит видеть, не разворачивая. #}
+  {% set auto_on = config.get('lists_auto_enabled', '1') == '1' %}
+  <details class="tw-card rt-fold" {% if not auto_on %}open{% endif %}>
+    <summary class="p-4 flex items-center gap-2 flex-wrap">
+      <i data-lucide="settings" class="w-4 h-4 tw-text-muted2"></i>
+      <span class="rt-section-title">Обновление и хранилище</span>
+      <span class="um-pill {{ 'is-success' if auto_on else 'is-warning' }}">
+        {{ 'обновляется само' if auto_on else 'автообновление выключено' }}
+      </span>
+      <span class="um-pill is-muted">S3: {{ config.get('lists_s3_bucket') or 'выключено' }}</span>
+      <i data-lucide="chevron-down" class="w-4 h-4 tw-text-muted2 rt-fold-icon ml-auto"></i>
+    </summary>
+    <form method="post" action="{{ url_for('admin.domain_lists_config') }}" class="px-4 pb-4 space-y-3">
+      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+        <input type="checkbox" name="lists_auto_enabled" class="w-4 h-4 cursor-pointer"
+               {% if auto_on %}checked{% endif %}>
+        <span class="text-[13px] tw-text-base2">Обновлять само</span>
+      </label>
+      <div class="text-[11px] tw-text-subtle2">
+        Выключенный авторежим не отменяет кнопку «Собрать сейчас» — она собирает списки напрямую.
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="ss-field">
+          <label for="lists_poll_interval_min">Как часто</label>
+          {# Списком, а не полем: осмысленных значений десяток, а в поле вводят
+             «0» — и это круг без пауз по чужому GitHub, который отвечает на
+             такое запретом. #}
+          <select class="tw-input" id="lists_poll_interval_min" name="lists_poll_interval_min">
+            {% set current = config.get('lists_poll_interval_min', '10')|string %}
+            {% for option in poll_intervals %}
+            <option value="{{ option }}" {% if current == option|string %}selected{% endif %}>
+              {% if option < 60 %}каждые {{ option }} минут
+              {% elif option == 60 %}раз в час
+              {% elif option < 1440 %}раз в {{ option // 60 }} часа
+              {% else %}раз в сутки{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="hint">
+            Неизменившиеся источники отвечают без тела, поэтому частота почти ничего
+            не стоит. Пересборка — только когда хоть один изменился.
+          </div>
+        </div>
+        <div class="ss-field">
+          <label for="lists_local_dir">Каталог на диске</label>
+          <input type="text" class="tw-input" id="lists_local_dir" name="lists_local_dir"
+                 value="{{ config.get('lists_local_dir', '') }}" placeholder="/var/www/lists">
+          <div class="hint">
+            Копия рядом, на диске — для домена, который отдаёт списки своим веб-сервером.
+            Пусто — не класть.
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3" style="border-top:1px solid rgb(var(--admin-border))">
+        <div class="text-[13px] font-semibold tw-text-base2">Объектное хранилище</div>
+        <div class="text-[12px] tw-text-muted2 mt-1 space-y-1">
+          <div>Одно на списки и на прошивки — настраивается здесь, используется и на странице «Прошивка».
+            Образ весит до 54 МБ, и за ним приходит весь парк разом: с хранилищем этот трафик уходит с нашего канала.</div>
+          <div>Пусто — всё раздаётся с нашего домена, как раньше.
+            Yandex: <code class="tw-kbd text-[11px]">https://storage.yandexcloud.net</code> ·
+            VK: <code class="tw-kbd text-[11px]">https://hb.vkcs.cloud</code></div>
+          <div><b class="tw-text-base2">Бакет должен быть публичным на чтение:</b> за файлом приходит прошивка роутера, ключей у неё нет.</div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div class="ss-field">
+            <label for="lists_s3_endpoint">Адрес хранилища</label>
+            <input type="text" class="tw-input" id="lists_s3_endpoint" name="lists_s3_endpoint"
+                   value="{{ config.get('lists_s3_endpoint', '') }}" placeholder="https://storage.yandexcloud.net">
+          </div>
+          <div class="ss-field">
+            <label for="lists_s3_bucket">Bucket</label>
+            <input type="text" class="tw-input" id="lists_s3_bucket" name="lists_s3_bucket"
+                   value="{{ config.get('lists_s3_bucket', '') }}">
+          </div>
+          <div class="ss-field">
+            <label for="lists_s3_region">Регион</label>
+            <input type="text" class="tw-input" id="lists_s3_region" name="lists_s3_region"
+                   value="{{ config.get('lists_s3_region', 'ru-central1') }}">
+          </div>
+          <div class="ss-field">
+            <label for="lists_s3_prefix">Префикс ключа</label>
+            <input type="text" class="tw-input" id="lists_s3_prefix" name="lists_s3_prefix"
+                   value="{{ config.get('lists_s3_prefix', 'lists/') }}">
+          </div>
+          <div class="ss-field sm:col-span-2">
+            <label for="lists_s3_public_url">Адрес раздачи <span class="tw-text-subtle2 font-normal">— если перед бакетом стоит CDN</span></label>
+            <input type="text" class="tw-input" id="lists_s3_public_url" name="lists_s3_public_url"
+                   value="{{ config.get('lists_s3_public_url', '') }}"
+                   placeholder="пусто — собираем из адреса хранилища и бакета">
+          </div>
+          <div class="ss-field">
+            <label for="lists_s3_access_key">Access key</label>
+            <input type="password" class="tw-input" id="lists_s3_access_key" name="lists_s3_access_key"
+                   autocomplete="new-password"
+                   placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_access_key') else 'не задан' }}">
+          </div>
+          <div class="ss-field">
+            <label for="lists_s3_secret_key">Secret key</label>
+            <input type="password" class="tw-input" id="lists_s3_secret_key" name="lists_s3_secret_key"
+                   autocomplete="new-password"
+                   placeholder="{{ 'задан — пусто оставит прежний' if config.get('lists_s3_secret_key') else 'не задан' }}">
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i><span>Сохранить настройки</span>
+        </button>
+      </div>
+    </form>
+  </details>
+
   {% endif %}
 </div>
+
+<script>
+(function () {
+  // Счётчик строк у своих списков: сколько их, видно, пока пишешь, — а не
+  // после сохранения и сборки.
+  function count(area) {
+    return area.value.split('\n').map(function (line) { return line.trim(); })
+      .filter(function (line) { return line && line.charAt(0) !== '#'; }).length;
+  }
+  document.querySelectorAll('[data-lines]').forEach(function (area) {
+    var badge = document.querySelector('[data-lines-for="' + area.id + '"]');
+    if (!badge) return;
+    var word = function (n) {
+      var tail = n % 10, tens = n % 100;
+      if (tail === 1 && tens !== 11) return 'строка';
+      if (tail >= 2 && tail <= 4 && (tens < 12 || tens > 14)) return 'строки';
+      return 'строк';
+    };
+    var sync = function () { var n = count(area); badge.textContent = n + ' ' + word(n); };
+    area.addEventListener('input', sync);
+    sync();
+  });
+
+  // Адрес файла — в буфер: его вставляют в настройки прошивки, и перепечатывать
+  // длинный адрес руками — верный способ ошибиться в одном знаке.
+  document.querySelectorAll('[data-copy]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var text = button.getAttribute('data-copy');
+      var done = function () {
+        button.classList.add('is-copied');
+        button.title = 'Скопировано';
+        setTimeout(function () { button.classList.remove('is-copied'); button.title = 'Скопировать адрес'; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { window.prompt('Скопируйте адрес:', text); });
+      } else {
+        window.prompt('Скопируйте адрес:', text);
+      }
+    });
+  });
+})();
+</script>
+<style>
+  [data-copy].is-copied{color:#10b981;border-color:#10b981}
+</style>
 {% endblock %}

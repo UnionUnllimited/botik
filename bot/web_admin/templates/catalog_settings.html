@@ -1,182 +1,194 @@
 {% extends "base.html" %}
+{% import "_partials/router_ui.html" as ui %}
 {% block title %}Настройки каталога — {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="tw-anim space-y-4 max-w-4xl">
+{{ ui.styles() }}
+{# Одна форма и одна кнопка, как и раньше, но разложенная по темам: каталог
+   в боте, картинки, витрина, работа с заказами, роутер клиента. Длинный
+   столбец полей без заголовков не читался — искали глазами по подписям. #}
+{% macro image_preview(url, label) %}
+  {% if url %}
+  <img src="{{ url }}" alt="{{ label }}" class="cset-img" loading="lazy">
+  {% else %}
+  <span class="cset-img cset-img-empty"><i data-lucide="image" class="w-5 h-5"></i></span>
+  {% endif %}
+{% endmacro %}
+{% set images = landing_images or {} %}
+<div class="tw-anim space-y-4" style="max-width:980px">
 
   <div class="pt-1">
     <p class="text-[13px] tw-text-muted2 mb-1">
-      <a href="{{ url_for('admin.catalog_shop') }}">← Каталог</a>
+      <a href="{{ url_for('admin.catalog_shop') }}">← Модели</a>
     </p>
     <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Настройки каталога</h1>
-    <p class="text-[13px] tw-text-muted2 mt-1">Как каталог выглядит в боте.</p>
+    <p class="text-[13px] tw-text-muted2 mt-1">Как каталог выглядит в боте и на витрине, куда приходят заказы.</p>
   </div>
 
   {# enctype обязателен: без него браузер отправит только имя файла,
      а не сам файл, и загрузка молча ничего не сделает. #}
   <form method="post" action="{{ url_for('admin.catalog_settings_save') }}"
-        enctype="multipart/form-data" class="tw-card p-5 space-y-4">
-    <div class="text-[13px] font-semibold tw-text-base2">Настройки раздела в боте</div>
+        enctype="multipart/form-data" class="space-y-4">
 
-    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-      <input type="checkbox" name="catalog_enabled" {% if catalog_enabled %}checked{% endif %}
-             class="w-4 h-4 cursor-pointer">
-      <span class="text-[13px] tw-text-base2">Показывать каталог и «Мои заказы» в главном меню</span>
-    </label>
-
-    <div class="max-w-xs">
-      <label for="catalog_specs_limit" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Характеристик в карточке
+    <div class="tw-card p-5 space-y-4">
+      <div class="flex items-center gap-2">
+        <i data-lucide="package" class="w-4 h-4 tw-text-muted2"></i>
+        <span class="rt-section-title">Каталог в боте</span>
+        <span class="um-pill {{ 'is-success' if catalog_enabled else 'is-warning' }} ml-auto">
+          {{ 'показывается' if catalog_enabled else 'выключен' }}
+        </span>
+      </div>
+      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+        <input type="checkbox" name="catalog_enabled" {% if catalog_enabled %}checked{% endif %}
+               class="w-4 h-4 cursor-pointer">
+        <span class="text-[13px] tw-text-base2">Показывать каталог и «Мои заказы» в главном меню</span>
       </label>
-      <input type="number" id="catalog_specs_limit" name="catalog_specs_limit"
-             value="{{ specs_limit }}" min="1" max="30" class="tw-input">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Остальные не показываются: длинная карточка не помещается на экран телефона.
-      </div>
-    </div>
-
-    <div>
-      <label for="order_status_labels" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Подписи статусов заказа
-      </label>
-      <textarea id="order_status_labels" name="order_status_labels" rows="4"
-                class="tw-input font-mono text-[12px]"
-                placeholder="paid: ✓ Оплачен">{{ status_labels }}</textarea>
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        По строке «код: подпись», пусто — стандартные. Первый знак подписи
-        становится бейджем на кнопке заказа. Коды: new, awaiting_payment,
-        paid, packing, shipped, delivered, done, cancelled, refunded.
-      </div>
-    </div>
-
-    {# В боте картинка показывается ссылкой, а не файлом: главный экран
-       правится на месте, а превратить текстовое сообщение в сообщение
-       с фото Telegram не даёт — экран прыгал бы при каждом возврате.
-       Оператору про это знать незачем: он просто выбирает файл. #}
-    <div class="pt-2 border-t" style="border-color: rgb(var(--admin-border));">
-      <label class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Картинка над главным меню
-      </label>
-
-      {% if main_menu_photo_url %}
-      <div class="mb-2">
-        <img src="{{ main_menu_photo_url }}" alt="Баннер главного меню"
-             class="rounded max-h-40" style="border: 1px solid rgb(var(--admin-border));">
-      </div>
-      {% endif %}
-
-      <input type="file" id="main_menu_photo" name="main_menu_photo"
-             accept="image/jpeg,image/png,image/webp" class="tw-input">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        JPEG, PNG или WebP. Файл ложится на наш домен, адрес подставится сам.
-      </div>
-
-      <details class="mt-2">
-        <summary class="text-[11px] tw-text-subtle2 cursor-pointer">Или указать адрес вручную</summary>
-        <input type="url" id="main_menu_photo_url" name="main_menu_photo_url"
-               value="{{ main_menu_photo_url }}" class="tw-input mt-2"
-               placeholder="https://example.com/banner.jpg">
-        <div class="text-[11px] tw-text-subtle2 mt-1">
-          Картинку тянет Telegram, а не бот, — адрес должен открываться снаружи.
-          Пусто и без файла — картинки нет.
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="ss-field">
+          <label for="catalog_specs_limit">Характеристик в карточке</label>
+          <input type="number" id="catalog_specs_limit" name="catalog_specs_limit"
+                 value="{{ specs_limit }}" min="1" max="30" class="tw-input">
+          <div class="hint">Остальные не показываются: длинная карточка не помещается на экран телефона.</div>
         </div>
-      </details>
-    </div>
-
-    {# Знак витрины и значок вкладки: файлом, а не ссылкой. Чужой адрес
-       протухнет, а класть картинку рядом с товарами оператору некуда.
-       Адрес после загрузки прописывает основное приложение само. #}
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label for="landing_logo" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-          Логотип витрины
-        </label>
-        <input type="file" id="landing_logo" name="landing_logo" accept="image/*" class="tw-input">
-        <div class="text-[11px] tw-text-subtle2 mt-1">
-          Показывается в шапке рядом с названием — лучше только знак, без надписей:
-          в строке высотой 32 пикселя мелкое не читается.
-          {% if landing_images and landing_images.logo_url %}
-          <br>Сейчас: <span class="font-mono">{{ landing_images.logo_url }}</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div>
-        <label for="landing_favicon" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-          Значок вкладки
-        </label>
-        <input type="file" id="landing_favicon" name="landing_favicon" accept="image/*" class="tw-input">
-        <div class="text-[11px] tw-text-subtle2 mt-1">
-          Квадратная картинка для вкладки браузера — сюда подойдёт знак целиком.
-          {% if landing_images and landing_images.favicon_url %}
-          <br>Сейчас: <span class="font-mono">{{ landing_images.favicon_url }}</span>
-          {% endif %}
+        <div class="ss-field sm:col-span-2">
+          <label for="order_status_labels">Подписи статусов заказа</label>
+          <textarea id="order_status_labels" name="order_status_labels" rows="4"
+                    class="tw-input font-mono text-[12px]" style="height:auto"
+                    placeholder="paid: ✓ Оплачен">{{ status_labels }}</textarea>
+          <div class="hint">
+            По строке «код: подпись», пусто — стандартные. Первый знак подписи становится
+            бейджем на кнопке заказа. Коды: new, awaiting_payment, paid, packing, shipped,
+            delivered, done, cancelled, refunded.
+          </div>
         </div>
       </div>
     </div>
 
-    <div>
-      <label for="landing_hero" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Картинка на витрине
-      </label>
-      <input type="file" id="landing_hero" name="landing_hero" accept="image/*" class="tw-input">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Первый экран сайта. Поставьте ту же, что висит над главным меню бота, —
-        клиент придёт с витрины в чат и увидит то же изображение.
-        Пусто — возьмём фото первой модели.
-        {% if landing_images and landing_images.hero_image_url %}
-        <br>Сейчас: <span class="font-mono">{{ landing_images.hero_image_url }}</span>
-        {% endif %}
+    <div class="tw-card p-5 space-y-4">
+      <div class="flex items-center gap-2">
+        <i data-lucide="image" class="w-4 h-4 tw-text-muted2"></i>
+        <span class="rt-section-title">Картинки</span>
+        <span class="text-[11.5px] tw-text-muted2 ml-auto">JPEG, PNG или WebP — файл ложится на наш домен сам</span>
+      </div>
+
+      {# В боте картинка показывается ссылкой, а не файлом: главный экран
+         правится на месте, а превратить текстовое сообщение в сообщение
+         с фото Telegram не даёт — экран прыгал бы при каждом возврате.
+         Оператору про это знать незачем: он просто выбирает файл. #}
+      <div class="cset-row">
+        {{ image_preview(main_menu_photo_url, 'Баннер главного меню') }}
+        <div class="min-w-0 flex-1">
+          <label class="text-[13px] font-semibold tw-text-base2" for="main_menu_photo">Над главным меню бота</label>
+          <input type="file" id="main_menu_photo" name="main_menu_photo"
+                 accept="image/jpeg,image/png,image/webp" class="tw-input mt-1.5">
+          <details class="rt-fold mt-2">
+            <summary class="text-[11.5px] tw-text-muted2">или указать адрес вручную</summary>
+            <input type="url" id="main_menu_photo_url" name="main_menu_photo_url"
+                   value="{{ main_menu_photo_url }}" class="tw-input mt-2"
+                   placeholder="https://example.com/banner.jpg">
+            <div class="hint">
+              Картинку тянет Telegram, а не бот, — адрес должен открываться снаружи.
+              Пусто и без файла — картинки нет.
+            </div>
+          </details>
+        </div>
+      </div>
+
+      {# Знак витрины и значок вкладки: файлом, а не ссылкой. Чужой адрес
+         протухнет, а класть картинку рядом с товарами оператору некуда.
+         Адрес после загрузки прописывает основное приложение само. #}
+      <div class="cset-row">
+        {{ image_preview(images.hero_image_url, 'Картинка витрины') }}
+        <div class="min-w-0 flex-1">
+          <label class="text-[13px] font-semibold tw-text-base2" for="landing_hero">Первый экран витрины</label>
+          <input type="file" id="landing_hero" name="landing_hero" accept="image/*" class="tw-input mt-1.5">
+          <div class="hint">
+            Поставьте ту же, что над меню бота, — клиент придёт с витрины в чат и увидит
+            то же изображение. Пусто — возьмём фото первой модели.
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="cset-row">
+          {{ image_preview(images.logo_url, 'Логотип витрины') }}
+          <div class="min-w-0 flex-1">
+            <label class="text-[13px] font-semibold tw-text-base2" for="landing_logo">Логотип витрины</label>
+            <input type="file" id="landing_logo" name="landing_logo" accept="image/*" class="tw-input mt-1.5">
+            <div class="hint">Лучше только знак: в строке высотой 32 пикселя мелкое не читается.</div>
+          </div>
+        </div>
+        <div class="cset-row">
+          {{ image_preview(images.favicon_url, 'Значок вкладки') }}
+          <div class="min-w-0 flex-1">
+            <label class="text-[13px] font-semibold tw-text-base2" for="landing_favicon">Значок вкладки</label>
+            <input type="file" id="landing_favicon" name="landing_favicon" accept="image/*" class="tw-input mt-1.5">
+            <div class="hint">Квадратная картинка — сюда подойдёт знак целиком.</div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div>
-      <label for="landing_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Адрес витрины
-      </label>
-      <input type="text" id="landing_url" name="landing_url"
-             value="{{ landing_url }}" class="tw-input"
-             placeholder="{{ landing_url_default or 'https://…' }}">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Куда ведёт кнопка «Узнать о роутере». Пусто — берётся корень домена
-        основного приложения{% if landing_url_default %} ({{ landing_url_default }}){% endif %}.
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div class="tw-card p-5 space-y-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="globe" class="w-4 h-4 tw-text-muted2"></i>
+          <span class="rt-section-title">Витрина</span>
+        </div>
+        <div class="ss-field">
+          <label for="landing_url">Адрес витрины</label>
+          <input type="text" id="landing_url" name="landing_url"
+                 value="{{ landing_url }}" class="tw-input"
+                 placeholder="{{ landing_url_default or 'https://…' }}">
+          <div class="hint">
+            Куда ведёт кнопка «Узнать о роутере». Пусто — корень домена основного
+            приложения{% if landing_url_default %} ({{ landing_url_default }}){% endif %}.
+          </div>
+        </div>
+      </div>
+
+      <div class="tw-card p-5 space-y-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="wifi" class="w-4 h-4 tw-text-muted2"></i>
+          <span class="rt-section-title">Роутер клиента</span>
+        </div>
+        <div class="ss-field">
+          <label for="router_panel_url">Адрес админки роутера</label>
+          <input type="text" id="router_panel_url" name="router_panel_url"
+                 value="{{ router_panel_url }}" class="tw-input"
+                 placeholder="http://192.168.14.1/">
+          <div class="hint">Открывается из домашней сети клиента. Пусто — кнопки в «Моём роутере» нет.</div>
+        </div>
       </div>
     </div>
 
     {# Работа с заказами с телефона: у каждого заказа свой топик в чате,
        карточка с кнопками и ввод ответом в тот же топик. #}
-    <div>
-      <label for="orders_topic_chat_id" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Рабочий чат с топиками по заказам
-      </label>
-      <input type="text" id="orders_topic_chat_id" name="orders_topic_chat_id"
-             value="{{ orders_topic_chat_id }}" class="tw-input"
-             placeholder="-1001234567890">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Каждый заказ заводит себе топик: карточка с кнопками, трек-номер
-        и цена доставки — ответом в тот же топик. Группа должна быть
-        супергруппой с включёнными темами, а бот в ней — администратором
-        с правом «Управление темами». Адрес чата — число вида
-        <span class="font-mono">-1001234567890</span>. Пусто — топики выключены.
+    <div class="tw-card p-5 space-y-3">
+      <div class="flex items-center gap-2">
+        <i data-lucide="message-square-text" class="w-4 h-4 tw-text-muted2"></i>
+        <span class="rt-section-title">Заказы в рабочем чате</span>
+        <span class="um-pill {{ 'is-success' if orders_topic_chat_id else 'is-muted' }} ml-auto">
+          {{ 'включено' if orders_topic_chat_id else 'выключено' }}
+        </span>
+      </div>
+      <div class="ss-field" style="max-width:360px">
+        <label for="orders_topic_chat_id">Чат с топиками</label>
+        <input type="text" id="orders_topic_chat_id" name="orders_topic_chat_id"
+               value="{{ orders_topic_chat_id }}" class="tw-input font-mono"
+               placeholder="-1001234567890">
+      </div>
+      <div class="hint">
+        Каждый заказ заводит себе топик: карточка с кнопками, трек-номер и цена доставки —
+        ответом в тот же топик. Группа должна быть супергруппой с включёнными темами,
+        а бот в ней — администратором с правом «Управление темами».
+        Адрес — число вида <span class="font-mono">-1001234567890</span>. Пусто — топики выключены.
       </div>
     </div>
 
-    <div>
-      <label for="router_panel_url" class="block text-[12px] font-semibold tw-text-base2 mb-1.5">
-        Адрес админки роутера
-      </label>
-      <input type="text" id="router_panel_url" name="router_panel_url"
-             value="{{ router_panel_url }}" class="tw-input"
-             placeholder="http://192.168.14.1/">
-      <div class="text-[11px] tw-text-subtle2 mt-1">
-        Открывается из домашней сети клиента. Пусто — кнопки в «Моём роутере» нет.
-      </div>
-    </div>
-
-    <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t" style="border-color: rgb(var(--admin-border));">
-      <div class="text-[11px] tw-text-subtle2">
-        Тексты экранов каталога правятся в «Настройки → Тексты»,
-        группа «Каталог, заказы и роутер».
+    <div class="tw-card p-4 flex items-center justify-between gap-3 flex-wrap rt-actionbar">
+      <div class="text-[11.5px] tw-text-muted2">
+        Тексты экранов каталога — в «Настройки → Тексты», группа «Каталог, заказы и роутер».
       </div>
       <button type="submit" class="tw-btn tw-btn-primary tw-btn-sm">
         <i data-lucide="check" class="w-3.5 h-3.5"></i>
@@ -185,19 +197,28 @@
     </div>
   </form>
 
-  <div class="tw-card p-5 space-y-2">
-    <div class="text-[13px] font-semibold tw-text-base2">Сроки подписки</div>
-    <div class="text-[13px] tw-text-muted2">
-      Клиент выбирает срок вместе с роутером: от него зависит цена заказа и то,
-      на сколько включится подписка, когда роутер доедет. Отсчёт начинается
-      с первого выхода на связь — дни доставки не сгорают.
-    </div>
-    <div class="text-[13px]">
-      Сроки и цены задаются в разделе
-      <a href="{{ url_for('admin.tariffs_list') }}">«Тарифы»</a> — это единственное
-      место, где они правятся.
+  <div class="tw-card p-5 flex items-start gap-3">
+    <i data-lucide="tag" class="w-4 h-4 tw-text-muted2 mt-0.5"></i>
+    <div class="space-y-1.5">
+      <div class="rt-section-title">Сроки подписки</div>
+      <div class="text-[13px] tw-text-muted2">
+        Клиент выбирает срок вместе с роутером: от него зависит цена заказа и то,
+        на сколько включится подписка, когда роутер доедет. Отсчёт — с первого выхода
+        на связь, дни доставки не сгорают.
+      </div>
+      <div class="text-[13px]">
+        Сроки и цены задаются в разделе
+        <a href="{{ url_for('admin.tariffs_list') }}" class="underline">«Сроки подписки»</a> — единственное
+        место, где они правятся.
+      </div>
     </div>
   </div>
 
 </div>
+<style>
+  .cset-row{display:flex;align-items:flex-start;gap:14px}
+  .cset-img{width:88px;height:66px;border-radius:10px;object-fit:cover;flex-shrink:0;
+    background:var(--admin-bg-soft);border:1px solid rgb(var(--admin-border))}
+  .cset-img-empty{display:inline-flex;align-items:center;justify-content:center;color:var(--admin-text-muted)}
+</style>
 {% endblock %}
