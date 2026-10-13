@@ -23,6 +23,7 @@ from core.errors import describe
 from core.metrics import worker_job_errors_total, worker_job_seconds
 from worker.tasks import (
     domain_lists,
+    fleet_watch,
     frpc_config,
     maintenance,
     monitoring,
@@ -162,6 +163,16 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=5),
         id="watch_partner_callbacks",
         name="Сторож очереди чужих колбэков",
+    )
+    # Раз в две минуты: тревога — после двух кругов подряд, то есть через
+    # четыре минуты после поломки. 4 октября весь парк ушёл разом, и узнали
+    # мы об этом случайно. Стоит круг один запрос к frps и, если роутеры
+    # на нём есть, один-два — через туннель.
+    scheduler.add_job(
+        instrumented("watch_fleet", fleet_watch.watch_fleet),
+        IntervalTrigger(minutes=2),
+        id="watch_fleet",
+        name="Сторож парка: массовое падение",
     )
     # Раз в час: роутер, который держит брошенная корзина, не продаётся всё
     # это время, а спешить с отменой нельзя — сперва должна погаснуть ссылка.
