@@ -118,10 +118,38 @@ def attach_orders_shop_routes(admin_bp_instance, query_db_func, execute_db_func)
             query=query,
             total=data.get("total", 0),
             earned=data.get("earned", "0"),
+            counts=data.get("counts") or {},
             page=data.get("page", page),
             pages=data.get("pages", 1),
             payments_error=error,
         )
+
+    async def _admin_only() -> bool:
+        """Стирать платежи — работа админа: модератору с разделом «Платежи»
+        видеть их можно, удалять — нет."""
+        from web_admin.run import current_user
+
+        if getattr(current_user, "is_admin", False):
+            return True
+        await flash("Удалять платежи может только администратор.", "danger")
+        return False
+
+    @admin_bp_instance.route("/payments-shop/<int:payment_id>/delete", methods=["POST"])
+    async def payment_shop_delete(payment_id: int):
+        if await _admin_only():
+            _, error = await shop_api.delete_payment(payment_id)
+            await flash(error or "Платёж удалён.", "danger" if error else "success")
+        return redirect(url_for("admin.payments_shop", **dict(request.args)))
+
+    @admin_bp_instance.route("/payments-shop/delete-cancelled", methods=["POST"])
+    async def payments_shop_delete_cancelled():
+        if await _admin_only():
+            data, error = await shop_api.delete_cancelled_payments()
+            await flash(
+                error or f"Удалено отменённых и неудавшихся: {data.get('count', 0)}.",
+                "danger" if error else "success",
+            )
+        return redirect(url_for("admin.payments_shop"))
 
     @admin_bp_instance.route("/payments-shop/<int:payment_id>/cancel", methods=["POST"])
     async def payment_shop_cancel(payment_id: int):

@@ -2654,12 +2654,21 @@ async def manage_payments(
             Payment.status == PaymentStatus.SUCCEEDED
         )
     )
+    # Сколько в каждом состоянии — для плиток-отборов. По всем платежам, а не
+    # по отбору: плитка «Отменено 9» нужна, чтобы увидеть мусор, не ища его.
+    counts = {
+        str(state): int(number)
+        for state, number in await session.execute(
+            select(Payment.status, func.count()).group_by(Payment.status)
+        )
+    }
 
     return {
         "total": total,
         "page": page,
         "pages": max((total + PAYMENTS_PAGE_SIZE - 1) // PAYMENTS_PAGE_SIZE, 1),
         "earned": str(earned or 0),
+        "counts": counts,
         "statuses": [
             {"value": value, "title": title} for value, title in PAYMENT_LABELS.items()
         ],
@@ -2723,6 +2732,41 @@ async def manage_payment_cancel(
     payment.error_message = "Отменён оператором"
     log.info("catalog.payment_canceled", payment_id=payment.id)
     return {"ok": True}
+
+
+DELETABLE_PAYMENT_STATUSES = (PaymentStatus.CANCELED, PaymentStatus.FAILED)
+"""Какие платежи можно стереть: только те, по которым денег не было.
+
+Отменённая ссылка на оплату и неудавшаяся попытка — мусор в списке: из-за них
+единственный настоящий платёж терялся среди десятка «отменён». Оплаченный,
+ждущий и возвращённый не стираются никогда: за ними деньги, чек и сверка
+с провайдером. Ссылку на платёж держит только история подписки, и там она
+при удалении обнуляется (`ON DELETE SET NULL`), а не роняет удаление."""
+
+
+@router.post("/manage/payments/{payment_id}/delete")
+async def manage_payment_delete(
+    payment_id: int, session: AsyncSession = Depends(get_transaction)
+) -> dict:
+    payment = await session.get(Payment, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    if payment.status not in DELETABLE_PAYMENT_STATUSES:
+        return {"ok": False, "error": "Удалить можно только отменённый или неудавшийся платёж."}
+    await session.delete(payment)
+    log.info("catalog.payment_deleted", payment_id=payment_id, status=str(payment.status))
+    return {"ok": True}
+
+
+@router.post("/manage/payments/delete-cancelled")
+async def manage_payments_delete_cancelled(session: AsyncSession = Depends(get_transaction)) -> dict:
+    """Все отменённые и неудавшиеся разом — кнопкой над списком."""
+    result = await session.execute(
+        delete(Payment).where(Payment.status.in_(DELETABLE_PAYMENT_STATUSES))
+    )
+    count = result.rowcount or 0
+    log.info("catalog.payments_deleted_cancelled", count=count)
+    return {"ok": True, "count": count}
 
 
 DELETABLE_ORDER_STATUSES = (OrderStatus.NEW, OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED)

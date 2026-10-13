@@ -37,6 +37,20 @@
   {% endif %}
 {%- endmacro %}
 
+{% macro delete_button(item, size='') -%}
+  {# Стереть можно отменённый и неудавшийся — за ними нет денег. Оплаченный,
+     ждущий и возвращённый не стираются: основное приложение откажет и само. #}
+  {% if item.status in ('canceled', 'failed') and current_user.is_admin %}
+  <form method="post"
+        action="{{ url_for('admin.payment_shop_delete', payment_id=item.id, status=status_filter or None, q=query or None, page=page) }}">
+    <button type="submit" class="tw-btn tw-btn-sm {{ 'w-full' if size == 'wide' }}" title="Удалить платёж"
+            onclick="return confirm('Удалить отменённый платёж? Денег по нему не было, вернуть запись будет нельзя.')">
+      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>{% if size == 'wide' %}<span>Удалить</span>{% endif %}
+    </button>
+  </form>
+  {% endif %}
+{%- endmacro %}
+
 {% block content %}
 <div class="tw-anim space-y-4">
 
@@ -62,19 +76,54 @@
     </div>
   {% else %}
 
-  {# === Плитки === #}
-  {# Четыре колонки на две плитки — не описка: так плитка одного размера с
-     парком роутеров и карточкой роутера, где их по четыре. #}
+  {# === Плитки: деньги и состояния ===
+     Плитка состояния — она же отбор: «Отменено 9» — это вопрос «какие?»,
+     и ответ в одно нажатие. Отменённые и неудавшиеся отсюда же и стираются:
+     они хоронили в списке единственный настоящий платёж. #}
+  {% set paid_n = counts.get('succeeded', 0) %}
+  {% set wait_n = counts.get('pending', 0) + counts.get('waiting_for_capture', 0) %}
+  {% set dead_n = counts.get('canceled', 0) + counts.get('failed', 0) %}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
     <div class="tw-surface rounded-[var(--radius-card)] p-4">
       <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Принято всего</div>
       <div class="mt-1 text-[22px] font-semibold leading-none" style="color:#10b981">{{ earned|money }}</div>
     </div>
-    <div class="tw-surface rounded-[var(--radius-card)] p-4">
-      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Платежей в отборе</div>
-      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ total }}</div>
+    <a href="{{ url_for('admin.payments_shop', status='succeeded') }}"
+       class="tw-surface rounded-[var(--radius-card)] p-4 pay-tile {{ 'is-on' if status_filter == 'succeeded' }}">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Оплачено</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2">{{ paid_n }}</div>
+    </a>
+    <a href="{{ url_for('admin.payments_shop', status='pending') }}"
+       class="tw-surface rounded-[var(--radius-card)] p-4 pay-tile {{ 'is-on' if status_filter == 'pending' }}">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Ждут оплаты</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none" {% if wait_n %}style="color:#3b82f6"{% endif %}>{{ wait_n }}</div>
+    </a>
+    <div class="tw-surface rounded-[var(--radius-card)] p-4 pay-tile {{ 'is-on' if status_filter == 'canceled' }}">
+      <a href="{{ url_for('admin.payments_shop', status='canceled') }}" class="block">
+        <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Отменено и не прошло</div>
+        <div class="mt-1 text-[22px] font-semibold leading-none tw-text-muted2">{{ dead_n }}</div>
+      </a>
+      {% if dead_n and current_user.is_admin %}
+      <form method="post" action="{{ url_for('admin.payments_shop_delete_cancelled') }}" class="mt-2"
+            onsubmit="return confirm('Удалить все отменённые и неудавшиеся платежи ({{ dead_n }})? Денег по ним не было, вернуть записи будет нельзя.')">
+        <button type="submit" class="tw-btn tw-btn-sm">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Удалить все</span>
+        </button>
+      </form>
+      {% endif %}
     </div>
   </div>
+  {% if status_filter or query %}
+  <div class="text-[12px] tw-text-muted2 -mt-1">
+    В отборе: <b class="tw-text-base2">{{ total }}</b> ·
+    <a href="{{ url_for('admin.payments_shop') }}" class="underline">показать все</a>
+  </div>
+  {% endif %}
+  <style>
+    a.pay-tile, .pay-tile{display:block;transition:border-color .15s}
+    a.pay-tile:hover{border-color:rgb(var(--admin-border-strong))}
+    .pay-tile.is-on{border-color:var(--color-brand-500);box-shadow:0 0 0 1px var(--color-brand-500) inset}
+  </style>
 
   {# === Поиск + фильтр состояния === #}
   <div class="tw-surface rounded-[var(--radius-card)] p-3">
@@ -191,7 +240,7 @@
               <div class="text-[11px]" style="color:#10b981">оплачен {{ item.paid_at|msk_time }}</div>
               {% endif %}
             </td>
-            <td class="text-right">{{ cancel_button(item) }}</td>
+            <td class="text-right">{{ cancel_button(item) }}{{ delete_button(item) }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -252,6 +301,8 @@
 
       {% if item.status == 'pending' %}
       <div class="mt-2.5">{{ cancel_button(item, 'wide') }}</div>
+      {% elif item.status in ('canceled', 'failed') and current_user.is_admin %}
+      <div class="mt-2.5">{{ delete_button(item, 'wide') }}</div>
       {% endif %}
     </div>
     {% endfor %}

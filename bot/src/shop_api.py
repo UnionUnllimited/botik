@@ -498,6 +498,16 @@ async def cancel_payment(payment_id: int) -> tuple[dict, str]:
     return await post(f"/api/v1/catalog/manage/payments/{payment_id}/cancel", {})
 
 
+async def delete_payment(payment_id: int) -> tuple[dict, str]:
+    """Стирает отменённый или неудавшийся платёж. Прочие основное приложение не отдаст."""
+    return await post(f"/api/v1/catalog/manage/payments/{payment_id}/delete", {})
+
+
+async def delete_cancelled_payments() -> tuple[dict, str]:
+    """Все отменённые и неудавшиеся разом."""
+    return await post("/api/v1/catalog/manage/payments/delete-cancelled", {})
+
+
 async def export_orders(*, status: str = "", query: str = "") -> tuple[bytes, str]:
     """Выгрузка заказов в CSV — под теми же фильтрами, что и список."""
     return await download(
