@@ -127,6 +127,8 @@ async def grant_manual(
     days: int,
     now: dt.datetime | None = None,
     until: dt.datetime | None = None,
+    source: str = "manual",
+    comment: str | None = None,
 ) -> Subscription:
     """Подписка ручной активации: срок без тарифа, привязанная к роутеру.
 
@@ -145,6 +147,10 @@ async def grant_manual(
     заново по целым дням значит отстать от неё на часы: `days` отбрасывает
     остаток, и после каждого продления оператор видел один срок, а доступ
     отключался по другому.
+
+    `source` и `comment` — для записи, заведённой не кнопкой: срок,
+    подхваченный из панели, в истории подписки не должен называться
+    «ручной активацией на N дней» — её никто не нажимал.
     """
     moment = now or utcnow()
     subscription = await get_for_device(session, device_id)
@@ -156,7 +162,7 @@ async def grant_manual(
             device_id=device_id,
             status=SubscriptionStatus.ACTIVE,
             started_at=moment,
-            source="manual",
+            source=source,
         )
         session.add(subscription)
 
@@ -177,7 +183,7 @@ async def grant_manual(
         SubscriptionEventType.ACTIVATED,
         old_expires_at=old_expires_at,
         days_delta=days,
-        comment=f"Ручная активация на {days} дн.",
+        comment=comment or f"Ручная активация на {days} дн.",
     )
     log.info(
         "subscription.granted_manually",
