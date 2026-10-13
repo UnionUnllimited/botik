@@ -183,6 +183,14 @@ def create_scheduler() -> AsyncIOScheduler:
         id="watch_router_alerts",
         name="Роутеры в рабочем чате",
     )
+    # Срок учётки в панели у каждого роутера: им парк показывает доступ,
+    # когда своей подписки нет. Один запрос к панели на круг.
+    scheduler.add_job(
+        instrumented("sync_panel_expiries", routers.sync_panel_expiries),
+        IntervalTrigger(minutes=10),
+        id="sync_panel_expiries",
+        name="Сроки роутеров из панели",
+    )
     # Раз в час: роутер, который держит брошенная корзина, не продаётся всё
     # это время, а спешить с отменой нельзя — сперва должна погаснуть ссылка.
     scheduler.add_job(

@@ -444,6 +444,7 @@ PAGES = {
             "here": True,
         },
         "panel": {"username": "a0-b1-c2-d3-e4-f5", "until": None, "active": False},
+        "panel_cached": {"until": "2026-12-21T00:00:00+00:00", "days_left": 68},
         "events": [
             {"at": "2026-08-20T17:20:00+00:00", "level": "error", "message": "Туннель не поднялся"},
         ],
@@ -501,6 +502,8 @@ PAGES = {
                 "subscription_label": "активна",
                 "subscription_until": "2026-09-04T10:00:00+00:00",
                 "subscription_days_left": 40,
+                "panel_until": "2026-12-21T00:00:00+00:00",
+                "panel_days_left": 68,
                 "status_label": "работает",
                 "fw_version": "25.12.3",
                 "fw_build": 140,

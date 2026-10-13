@@ -247,6 +247,11 @@
                 <a href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}" class="tw-text-base2">{{ item.client }}</a>
               {% elif item.client %}
                 {{ item.client }}
+              {% elif item.panel_days_left is number and item.panel_days_left >= 0 %}
+                {# Клиента нет, а доступ в панели живой — роутер стоит у человека:
+                   продан за наличные и включён вручную. «На складе» про него — неправда. #}
+                <span class="tw-text-base2">продан вне сайта</span>
+                <div class="tw-text-muted2 text-[12px]">клиент не привязан</div>
               {% else %}
                 <span class="tw-text-muted2">{{ item.status_label or 'без клиента' }}</span>
               {% endif %}
@@ -259,9 +264,14 @@
                клиента на другом его роутере здесь не поминается — найти такие
                можно кнопкой «оплачен, но не включился». #}
             <td class="px-3 py-2.5 whitespace-nowrap align-top">
+              {% if not item.subscription_status and item.panel_until %}
+              {{ ui.panel_pill(item.panel_days_left) }}
+              <div class="text-[11px] tw-text-muted2 mt-1" title="Своей подписки нет — срок учётки в панели">до {{ item.panel_until|msk_date }} · по панели</div>
+              {% else %}
               {{ ui.sub_pill(item.subscription_status, item.subscription_label, item.subscription_days_left) }}
               {% if item.subscription_until and item.subscription_status != 'pending' %}
               <div class="text-[11px] tw-text-muted2 mt-1">до {{ item.subscription_until|msk_date }}</div>
+              {% endif %}
               {% endif %}
             </td>
             <td class="px-3 py-2.5 align-top">

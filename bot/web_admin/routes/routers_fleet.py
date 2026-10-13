@@ -231,6 +231,7 @@ def attach_routers_fleet_routes(admin_bp_instance, query_db_func, execute_db_fun
             # старая ручка его не присылает, и шаблон должен это пережить.
             order=data.get("order") or {},
             subscription=data.get("subscription", {}),
+            panel_cached=data.get("panel_cached") or {},
             panel=data.get("panel", {}),
             events=data.get("events", []),
             quick_commands=data.get("quick_commands", []),

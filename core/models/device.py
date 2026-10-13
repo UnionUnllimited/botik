@@ -116,6 +116,14 @@ class Device(IntPkMixin, TimestampMixin, Base):
     chat_alert_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     """Когда сказали — для «молчал 26 ч» в сообщении о возвращении."""
 
+    # --- срок в панели ---
+    panel_expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    """Срок учётки роутера в панели по последней сверке. Показывается, когда
+    своей подписки нет: роутер включён вручную до 27 августа 2026 или стоит
+    у человека без привязки к клиенту. Пусто — учётки в панели нет."""
+    panel_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    """Когда сверяли. Пусто — ещё ни разу: «нет учётки» и «не знаем» — разное."""
+
     ssh_password_enc: Mapped[str | None] = mapped_column(String(512))
     """AES-GCM(пароль SSH). Заполняется, только если у роутера он нестандартный."""
 

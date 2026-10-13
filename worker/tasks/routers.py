@@ -26,7 +26,7 @@ from core.config import settings
 from core.db import session_scope
 from core.errors import describe
 from core.models import Device, DeviceEvent, Heartbeat
-from core.services import activation
+from core.services import activation, remnawave
 from core.services import routers as router_service
 from core.services.frp import FrpError, RouterApi, dashboard
 
@@ -169,6 +169,27 @@ async def poll_router_stats() -> int:
 
     log.info("routers.stats_polled", asked=len(targets), polled=polled)
     return polled
+
+
+async def sync_panel_expiries() -> int:
+    """Срок учётки в панели — у каждого роутера, одним запросом на весь парк.
+
+    Парк писал «подписка: нет» у работающих роутеров: включённых вручную до
+    27 августа 2026 и стоящих у людей без привязки к клиенту. Срок у них есть,
+    но знает его только панель, а спрашивать её на каждую строку списка нельзя.
+    """
+    if not remnawave.client().is_configured:
+        return 0
+    try:
+        accounts = await remnawave.client().users()
+    except remnawave.RemnawaveError as exc:
+        log.warning("routers.panel_sync_failed", error=describe(exc))
+        return 0
+    async with session_scope() as session:
+        devices = list(await session.scalars(select(Device)))
+        found = activation.apply_panel_expiries(devices, accounts, now=dt.datetime.now(dt.UTC))
+    log.info("routers.panel_synced", devices=len(devices), with_panel=found)
+    return found
 
 
 async def cleanup_router_metrics() -> int:

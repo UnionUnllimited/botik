@@ -457,6 +457,11 @@ async def list_routers(
                 "subscription_days_left": _days_left(subscription.expires_at, now=now)
                 if subscription
                 else None,
+                # Срок учётки в панели — им строка говорит о доступе, когда
+                # своей подписки нет: роутеры, проданные за наличные и включённые
+                # вручную, и включённые до 27 августа 2026. Сверяется воркером.
+                "panel_until": _iso(device.panel_expires_at),
+                "panel_days_left": _days_left(device.panel_expires_at, now=now),
                 # Своей подписки нет, а у клиента есть — на другом его роутере.
                 # В строке это не пишется (одна подписка — один роутер, и чужая
                 # здесь читалась как «оплачен»), но отбору нужно: так находится
@@ -603,6 +608,12 @@ async def router_card(device_id: int, session: AsyncSession = Depends(get_sessio
             # Отдельной строкой, а не оттенком статуса: это факт про клиента,
             # а не про этот роутер. Он и объясняет, почему подписки тут нет.
             "elsewhere": subscription is None and _elsewhere(client_subscription, device),
+        },
+        "panel_cached": {
+            # Срок по сверке воркера: карточка показывает его в плитке
+            # «Подписка», когда своей нет. Ниже — живой ответ панели.
+            "until": _iso(device.panel_expires_at),
+            "days_left": _days_left(device.panel_expires_at, now=now),
         },
         "panel": {
             # Заведённое имя, если учётка есть; иначе то, каким она будет

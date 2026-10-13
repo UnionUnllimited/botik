@@ -518,17 +518,43 @@ async def _router_accounts(device: Device) -> list[remnawave.RemnaUser]:
     из карточки поверх клиентской), ссылку он получил от неё — она доставлена
     последней.
     """
-    accounts = [
-        account
-        for account in await remnawave.client().users()
-        if account_of_router(account.username, device.mac)
-    ]
-    manual = manual_username_for(device.mac).lower()
+    return pick_router_accounts(await remnawave.client().users(), device.mac)
+
+
+def pick_router_accounts(
+    accounts: list[remnawave.RemnaUser], mac: str
+) -> list[remnawave.RemnaUser]:
+    """Учётки роутера из готового списка панели, ручная — первой.
+
+    Отдельно от запроса, чтобы сверка сроков по всему парку шла одним
+    запросом к панели и выбирала учётку ровно так же, как активация.
+    """
+    found = [account for account in accounts if account_of_router(account.username, mac)]
+    manual = manual_username_for(mac).lower()
     # Сравниваем в нижнем регистре с обеих сторон: имена теперь заглавные,
     # а заведённые раньше остались строчными — сравнение как есть перестало
     # бы узнавать ручную учётку, и первой в списке вставала бы клиентская.
-    accounts.sort(key=lambda account: account.username.strip().lower() != manual)
-    return accounts
+    found.sort(key=lambda account: account.username.strip().lower() != manual)
+    return found
+
+
+def apply_panel_expiries(
+    devices: list[Device], accounts: list[remnawave.RemnaUser], *, now: dt.datetime
+) -> int:
+    """Раскладывает сроки учёток панели по роутерам. Возвращает, у скольких
+    срок есть.
+
+    Без сети и без базы: список учёток приходит одним запросом на весь парк,
+    а не запросом на роутер, — иначе страница парка ждала бы панель по разу
+    на строку. Учётку выбирает то же правило, что и активация.
+    """
+    found = 0
+    for device in devices:
+        mine = pick_router_accounts(accounts, device.mac)
+        device.panel_expires_at = panel_expiry_of(mine[0]) if mine else None
+        device.panel_synced_at = now
+        found += device.panel_expires_at is not None
+    return found
 
 
 async def panel_account_of(device: Device) -> remnawave.RemnaUser | None:

@@ -79,12 +79,19 @@
       </div>
       <div class="tw-card p-4">
         <div class="rt-tile-label">Подписка</div>
+        {% if not subscription.status and panel_cached.until %}
+        {# Своей подписки нет, а учётка в панели есть: продан за наличные или
+           включён до 27 августа 2026. Доступ есть, напоминаний клиенту — нет. #}
+        <div class="mt-1.5">{{ ui.panel_pill(panel_cached.days_left) }}</div>
+        <div class="rt-tile-sub">до {{ panel_cached.until|msk_date }} · по панели, записи у нас нет</div>
+        {% else %}
         <div class="mt-1.5">{{ ui.sub_pill(subscription.status, subscription.label, subscription.days_left) }}</div>
         <div class="rt-tile-sub">
           {% if subscription.until and subscription.status != 'pending' %}до {{ subscription.until|msk_date }}
           {% elif subscription.elsewhere %}<span class="text-amber-500">у клиента есть — на другом роутере</span>
           {% else %}—{% endif %}
         </div>
+        {% endif %}
       </div>
       <div class="tw-card p-4">
         <div class="rt-tile-label">Устройств в сети</div>
