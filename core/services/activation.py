@@ -350,6 +350,23 @@ async def _order_awaiting_router(session: AsyncSession, device: Device) -> Order
 async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> bool:
     """Активация отгруженного роутера, когда он впервые вышел на связь у клиента.
 
+    Тонкая обёртка над `try_activate_shipped`: обходу присутствия причина
+    отказа не нужна — он попробует снова через минуту.
+    """
+    activated, _reason = await try_activate_shipped(session, device)
+    return activated
+
+
+async def try_activate_shipped(
+    session: AsyncSession, device: Device, *, respect_toggle: bool = True
+) -> tuple[bool, str]:
+    """Активация отгруженного роутера — с причиной, если не вышло.
+
+    Причина нужна кнопке «Попробовать активировать» в рабочем чате: обход
+    откладывает попытку молча, и оператору, нажавшему кнопку, «не вышло»
+    без объяснения ничего не даёт. `respect_toggle=False` — нажал человек:
+    выключенная автоактивация запрещает обходу, а не ему.
+
     Срок берётся не из настройки, а из того, что человек купил: оплата заводит
     подписку в ожидании активации, и здесь она включается на свой тариф. Так
     «купил три месяца» и означает три месяца, а отсчёт начинается с момента,
@@ -365,16 +382,16 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
     Следующий обход попробует снова.
     """
     if device.activated_at is not None:
-        return False
-    if not await settings_service.get_bool(session, "activation.auto_enabled"):
-        return False
+        return False, "Роутер уже активирован."
+    if respect_toggle and not await settings_service.get_bool(session, "activation.auto_enabled"):
+        return False, "Автоактивация выключена."
 
     if device.order_id is None:
         # Заказ ищем сами: без него активация раньше молча не начиналась,
         # и роутер стоял на связи с неотданной подпиской неделями.
         found = await _order_awaiting_router(session, device)
         if found is None:
-            return False
+            return False, "У роутера нет отгруженного заказа — привяжите его к заказу клиента."
         device.order_id = found.id
         await session.flush()
         routers.add_event(
@@ -389,11 +406,11 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
 
     order = await order_service.load_for_status(session, device.order_id)
     if order is None or order.status not in SHIPPED_STATUSES:
-        return False
+        return False, "Заказ ещё не отгружен — до отгрузки роутер не активируется."
 
     user = await session.get(User, device.user_id or order.user_id)
     if user is None:
-        return False
+        return False, "У заказа нет клиента."
 
     try:
         # Тот же путь, которым активировался клиент сам: учётка на купленный
@@ -402,7 +419,7 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
         await activate(session, user=user, raw_mac=device.mac, rate_limited=False)
     except ActivationError as exc:
         log.info("activation.auto_postponed", mac=device.mac, error=describe(exc))
-        return False
+        return False, str(exc) or "Активация не прошла."
 
     routers.add_event(
         session,
@@ -412,7 +429,7 @@ async def auto_activate_if_shipped(session: AsyncSession, device: Device) -> boo
         message=f"Автоактивация после отгрузки, заказ {order.public_number}",
     )
     log.info("activation.auto_done", mac=device.mac, order=order.public_number)
-    return True
+    return True, f"Подписка включена по заказу {order.public_number}."
 
 
 async def extend_manually(session: AsyncSession, *, device: Device, days: int) -> dt.datetime:

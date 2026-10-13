@@ -30,6 +30,7 @@ from worker.tasks import (
     orders,
     outbox_watch,
     payments,
+    router_alerts,
     routers,
     subscriptions,
 )
@@ -173,6 +174,14 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=2),
         id="watch_fleet",
         name="Сторож парка: массовое падение",
+    )
+    # Роутеры в рабочем чате: карточка по поводу и «вернулся», когда он прошёл.
+    # Раз в десять минут — поводы считаются в часах, чаще незачем.
+    scheduler.add_job(
+        instrumented("watch_router_alerts", router_alerts.watch_router_alerts),
+        IntervalTrigger(minutes=10),
+        id="watch_router_alerts",
+        name="Роутеры в рабочем чате",
     )
     # Раз в час: роутер, который держит брошенная корзина, не продаётся всё
     # это время, а спешить с отменой нельзя — сперва должна погаснуть ссылка.

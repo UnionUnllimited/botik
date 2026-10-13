@@ -377,6 +377,15 @@ async def on_reply(message: Message) -> None:
     await _drop_prompt(message.bot, key[0], prompt_id)
 
     value = (message.text or "").strip()
+    if action == "rdm":
+        # Ответ клиенту роутера из топика «Роутеры»: ожидание кладёт туда
+        # router_topics, а сообщения группы приходят сюда — второй такой
+        # обработчик бот бы не вызвал.
+        from src import router_topics
+
+        error = await router_topics.send_to_client(message.bot, order_id, value)
+        await message.reply(f"Не вышло: {error}" if error else "Отправлено клиенту.")
+        return
     if action == "dm":
         # Ответ клиенту не меняет заказ, поэтому карточку не перерисовываем:
         # вместо неё отмечаем, что письмо ушло, — иначе оператор не поймёт,

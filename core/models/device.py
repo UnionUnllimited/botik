@@ -109,6 +109,13 @@ class Device(IntPkMixin, TimestampMixin, Base):
     frp_last_seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     last_poll_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # --- тревога в рабочем чате ---
+    chat_alert_kind: Mapped[str | None] = mapped_column(String(16))
+    """Что о роутере уже сказали в топике «Роутеры»: silent или stuck. Пусто —
+    ничего. Без этой отметки молчащий роутер слал бы карточку каждый круг."""
+    chat_alert_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    """Когда сказали — для «молчал 26 ч» в сообщении о возвращении."""
+
     ssh_password_enc: Mapped[str | None] = mapped_column(String(512))
     """AES-GCM(пароль SSH). Заполняется, только если у роутера он нестандартный."""
 

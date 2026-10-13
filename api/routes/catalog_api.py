@@ -73,6 +73,7 @@ from core.services import (
     remnawave,
     router_nodes,
     router_shell,
+    router_topics,
     settings_service,
 )
 from core.services import delivery as delivery_service
@@ -1411,6 +1412,9 @@ async def outbox_ack(
                 .where(Order.id == message.order_id, Order.tg_topic_id.is_(None))
                 .values(tg_topic_id=int(thread_id))
             )
+        # Топик «Роутеры» один на всех — его номер живёт в настройке.
+        if thread_id and message.kind == router_topics.KIND:
+            await router_topics.remember_topic(session, int(thread_id))
         return {"ok": True}
 
     message.attempts += 1

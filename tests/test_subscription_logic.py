@@ -234,13 +234,15 @@ class TestOneSubscriptionPerRouter:
     ).read_text(encoding="utf-8")
 
     def test_fleet_asks_by_device_not_by_client(self):
-        """Оба экрана роутера — список и карточка — берут подписку по устройству.
+        """Все экраны роутера берут подписку по устройству: список, карточка
+        роутера и роутеры в карточке клиента (с 13 октября 2026 — там тоже
+        у каждого своя, а не одна «подписка клиента» на всех).
 
         `get_current` отвечает про клиента; он остался там, где речь и правда
         о клиенте (его экран, привязка), но роутеру он отдаёт чужой срок.
         """
-        assert self.SOURCE.count("get_for_device(session, device.id)") == 2, (
-            "и список, и карточка роутера должны спрашивать подписку по устройству"
+        assert self.SOURCE.count("get_for_device(session, device.id)") == 3, (
+            "список, карточка роутера и карточка клиента должны спрашивать подписку по устройству"
         )
 
     def test_manual_activation_grants_a_subscription(self):

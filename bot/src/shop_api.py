@@ -121,7 +121,7 @@ async def _request(method: str, path: str, **kwargs: Any) -> tuple[dict, str]:
     if not base or not token:
         return {}, NO_CONFIG
 
-    timeout = READ_TIMEOUT_SEC if method == "GET" else WRITE_TIMEOUT_SEC
+    timeout = kwargs.pop("timeout", None) or (READ_TIMEOUT_SEC if method == "GET" else WRITE_TIMEOUT_SEC)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.request(
@@ -166,10 +166,13 @@ async def download(path: str, params: dict | None = None) -> tuple[bytes, str]:
     return response.content, ""
 
 
-async def post(path: str, payload: dict) -> tuple[dict, str]:
+async def post(path: str, payload: dict, *, timeout: float | None = None) -> tuple[dict, str]:
     """Отказ по делу отделяем от обрыва связи: текст в `error` уже написан
-    для человека, и добавлять к нему «сервис недоступен» неправильно."""
-    data, error = await _request("POST", path, json=payload)
+    для человека, и добавлять к нему «сервис недоступен» неправильно.
+
+    `timeout` — для действий, которые идут до самого роутера: активация
+    занимает до минуты, и обычные 25 секунд обрывали бы её на середине."""
+    data, error = await _request("POST", path, json=payload, timeout=timeout)
     if error:
         return {}, error
     if data.get("ok") is False:
@@ -616,6 +619,31 @@ async def order_topic_card(order_id: int) -> tuple[dict, str]:
 async def order_topic_push(order_id: int) -> tuple[dict, str]:
     """Отправить заказ в рабочий чат — для заказов старше самих топиков."""
     return await post(f"/api/v1/catalog/manage/orders/{order_id}/topic", {})
+
+
+# --- Роутеры в рабочем чате --------------------------------------------------
+#
+# Топик «Роутеры»: карточку собирает основное приложение, бот рисует её
+# и исполняет кнопки — тем же путём, что карточка заказа.
+
+
+async def router_topic_card(device_id: int) -> tuple[dict, str]:
+    """Свежий текст и кнопки карточки роутера."""
+    return await get(f"/api/v1/fleet/routers/{device_id}/chat-card")
+
+
+ROUTER_ACTION_TIMEOUT_SEC = 90
+"""Столько же, сколько у админки на действия с роутером: они идут по SSH
+через туннель, и активация занимает до минуты."""
+
+
+async def router_reboot(device_id: int) -> tuple[dict, str]:
+    return await post(f"/api/v1/fleet/routers/{device_id}/quick/reboot", {}, timeout=ROUTER_ACTION_TIMEOUT_SEC)
+
+
+async def router_retry_activation(device_id: int) -> tuple[dict, str]:
+    """Попробовать включить подписку сейчас. В ответе — причина, если не вышло."""
+    return await post(f"/api/v1/fleet/routers/{device_id}/retry-activation", {}, timeout=ROUTER_ACTION_TIMEOUT_SEC)
 
 
 # --- Обновление роутеров -----------------------------------------------------
