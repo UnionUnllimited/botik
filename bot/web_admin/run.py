@@ -510,6 +510,8 @@ async def _admin_auth_guard():
                 # Состояние системы — адреса серверов и подсказки по их починке:
                 # работа админа.
                 ('/system-health', 'devices'),
+                # Просьбы о сайтах правят списки всего парка — работа админа.
+                ('/care', 'devices'),
             ]
             req_section = None
             # path может быть /{admin_secret_path}/users — проверяем вхождение сегмента
@@ -1554,6 +1556,8 @@ attach_firmware_routes(admin_bp)
 
 from web_admin.routes.ops import attach_ops_routes
 attach_ops_routes(admin_bp)
+from web_admin.routes.care import attach_care_routes
+attach_care_routes(admin_bp)
         
 @admin_bp.route('/users__placeholder__moved/<int:telegram_id>/delete', methods=['POST'])
 @login_required

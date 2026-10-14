@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.routes import (
+    care_api,
     catalog_api,
     firmware_api,
     fleet_api,
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(fleet_api.router)
     app.include_router(ops_api.router)
     app.include_router(catalog_api.router)
+    app.include_router(care_api.router)
     app.include_router(lists_api.router)
     app.include_router(firmware_api.router)
     # Живой терминал — до панели: у той корневые пути, и она перехватила бы

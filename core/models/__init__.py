@@ -1,6 +1,7 @@
 """Все модели импортируются здесь: Alembic и relationship-строки видят полный реестр."""
 
 from core.models.base import Base
+from core.models.care import RouterReview, SiteRequest
 from core.models.catalog import Plan, Product
 from core.models.content import Article, Broadcast, BroadcastTarget
 from core.models.device import (
@@ -61,7 +62,9 @@ __all__ = [
     "PromoCode",
     "PromoUsage",
     "Referral",
+    "RouterReview",
     "Setting",
+    "SiteRequest",
     "Subscription",
     "SubscriptionAccessLog",
     "SubscriptionEvent",

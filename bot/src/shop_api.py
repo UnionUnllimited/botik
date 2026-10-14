@@ -94,6 +94,8 @@ def landing_url(configured: str = "") -> str:
 MISSING = {
     "/api/v1/catalog/products/": "Эта модель больше не продаётся.",
     "/api/v1/catalog/orders/": "Заказ не найден.",
+    "/api/v1/catalog/my-router/": "Роутер не найден среди ваших.",
+    "/api/v1/catalog/reviews/": "Эту оценку уже не принять.",
 }
 """Ручка с пустым токеном тоже отвечает 404 — отличить её от пропавшей записи
 по коду нельзя. Поэтому на путях к конкретной записи 404 читается как «нет
@@ -654,6 +656,98 @@ async def router_reboot(device_id: int) -> tuple[dict, str]:
 async def router_retry_activation(device_id: int) -> tuple[dict, str]:
     """Попробовать включить подписку сейчас. В ответе — причина, если не вышло."""
     return await post(f"/api/v1/fleet/routers/{device_id}/retry-activation", {}, timeout=ROUTER_ACTION_TIMEOUT_SEC)
+
+
+async def site_request_resolve(request_id: int, action: str, author: str) -> tuple[dict, str]:
+    """Решение оператора по просьбе о сайте. В ответе — текст и кнопки
+    сообщения после решения, чтобы перерисовать его на месте."""
+    return await post(
+        f"/api/v1/fleet/site-requests/{request_id}/resolve", {"action": action, "author": author}
+    )
+
+
+# --- Помощь клиенту с роутером -------------------------------------------------
+#
+# Сайт, Wi-Fi, устройства дома, отзыв. Ответы отдаются целиком, вместе
+# с `ok: False`: код отказа («offline», «too_often») и текст роутера нужны
+# экрану, а `post` свернул бы их в одну строку.
+
+ROUTER_READ_TIMEOUT_SEC = 40
+"""Чтение с роутера идёт по SSH через туннель: подключение до пятнадцати
+секунд, и проверка сайта ещё спрашивает его о переключателе."""
+
+
+def _with_device(tg_id: int, device_id: int, **extra: Any) -> dict:
+    payload: dict[str, Any] = {"tg_id": tg_id, **extra}
+    if device_id:
+        payload["device_id"] = device_id
+    return payload
+
+
+async def router_wifi(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
+    return await _request(
+        "GET", "/api/v1/catalog/my-router/wifi",
+        params=_with_device(tg_id, device_id), timeout=ROUTER_READ_TIMEOUT_SEC,
+    )
+
+
+async def router_wifi_change(
+    tg_id: int, device_id: int, password: str, *, check_only: bool = False
+) -> tuple[dict, str]:
+    return await _request(
+        "POST", "/api/v1/catalog/my-router/wifi",
+        json=_with_device(tg_id, device_id, password=password, check_only=check_only),
+        timeout=ROUTER_ACTION_TIMEOUT_SEC,
+    )
+
+
+async def router_devices(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
+    return await _request(
+        "GET", "/api/v1/catalog/my-router/devices",
+        params=_with_device(tg_id, device_id), timeout=ROUTER_READ_TIMEOUT_SEC,
+    )
+
+
+async def site_check(tg_id: int, device_id: int, site: str) -> tuple[dict, str]:
+    return await _request(
+        "POST", "/api/v1/catalog/my-router/site-check",
+        json=_with_device(tg_id, device_id, site=site), timeout=ROUTER_READ_TIMEOUT_SEC,
+    )
+
+
+async def site_request(tg_id: int, device_id: int, site: str, note: str = "") -> tuple[dict, str]:
+    return await _request(
+        "POST", "/api/v1/catalog/my-router/site-request",
+        json=_with_device(tg_id, device_id, site=site, note=note),
+    )
+
+
+async def client_reboot(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
+    """Перезагрузка своим роутером — та же, что кнопка в приложении."""
+    return await _request(
+        "POST", "/api/v1/catalog/my-router/reboot",
+        json=_with_device(tg_id, device_id), timeout=ROUTER_ACTION_TIMEOUT_SEC,
+    )
+
+
+async def client_service_on(tg_id: int, device_id: int = 0) -> tuple[dict, str]:
+    """Включить доступ на роутере — тот же переключатель, что в приложении."""
+    return await _request(
+        "POST", "/api/v1/catalog/my-router/service",
+        json=_with_device(tg_id, device_id, enabled=True), timeout=ROUTER_ACTION_TIMEOUT_SEC,
+    )
+
+
+async def review_rate(tg_id: int, review_id: int, rating: int) -> tuple[dict, str]:
+    return await _request(
+        "POST", f"/api/v1/catalog/reviews/{review_id}/rate", json={"tg_id": tg_id, "rating": rating}
+    )
+
+
+async def review_text(tg_id: int, review_id: int, text: str) -> tuple[dict, str]:
+    return await _request(
+        "POST", f"/api/v1/catalog/reviews/{review_id}/text", json={"tg_id": tg_id, "text": text}
+    )
 
 
 # --- Обновление роутеров -----------------------------------------------------

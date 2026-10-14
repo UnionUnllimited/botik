@@ -7,7 +7,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preload" as="font" type="font/woff2" crossorigin
       href="/static/fonts/rubik-cyrillic.woff2">
-<link rel="stylesheet" href="/static/miniapp/app.css?v=28">
+<link rel="stylesheet" href="/static/miniapp/app.css?v=29">
 </head>
 <body>
 
@@ -144,6 +144,63 @@
     <path d="M12 3.5v11"/><path d="M8 7.5 12 3.5l4 4"/>
     <path d="M5 13.5v4.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/>
   </symbol>
+
+  <!-- Помощь с роутером: сайт, Wi-Fi, устройства дома. -->
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="8.8"/><path d="M3.4 12h17.2"/>
+    <path d="M12 3.2a13.5 13.5 0 0 1 0 17.6a13.5 13.5 0 0 1 0-17.6z"/>
+  </symbol>
+
+  <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="7.8" cy="15.2" r="3.9"/><path d="M10.6 12.4 19.5 3.5"/>
+    <path d="M16.5 6.5l2.6 2.6M14.2 8.8l2.1 2.1"/>
+  </symbol>
+
+  <symbol id="i-devices" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2.8" y="4.5" width="13.5" height="9.5" rx="1.6"/><path d="M6.5 18h6"/>
+    <rect x="16.8" y="9" width="4.6" height="10.5" rx="1.2"/>
+  </symbol>
+
+  <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6.5" y="2.8" width="11" height="18.4" rx="2.4"/><path d="M11 17.6h2"/>
+  </symbol>
+
+  <symbol id="i-laptop" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4.5" y="5" width="15" height="10.5" rx="1.6"/><path d="M2.5 19h19"/>
+  </symbol>
+
+  <symbol id="i-tv" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2.8" y="6" width="18.4" height="12" rx="2"/><path d="M8.5 2.8 12 6l3.5-3.2M8 21h8"/>
+  </symbol>
+
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/>
+    <circle cx="12" cy="12" r="2.8"/>
+  </symbol>
+
+  <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.9 5.8A9.8 9.8 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4"/>
+    <path d="M6.3 7.4C3.9 9.1 2.5 12 2.5 12s3.5 6.5 9.5 6.5a9.6 9.6 0 0 0 4.4-1"/>
+    <path d="M10 10a2.8 2.8 0 0 0 4 4M3.5 3.5l17 17"/>
+  </symbol>
+
+  <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 3 10.5 13.5"/><path d="M21 3l-6.5 18-4-7.5-7.5-4z"/>
+  </symbol>
+
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10.8" cy="10.8" r="6.8"/><path d="m20.5 20.5-4.9-4.9"/>
+  </symbol>
 </svg>
 
 <!-- Заставка. Стоит в разметке, а не рисуется скриптом: между открытием
@@ -167,6 +224,6 @@
   <button data-tab="catalog"><span class="slot"><svg><use href="#i-box"/></svg></span>Каталог</button>
 </nav>
 
-<script src="/static/miniapp/app.js?v=28"></script>
+<script src="/static/miniapp/app.js?v=29"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
@@ -28,14 +29,49 @@ POLL_INTERVAL_SEC = 10
 BATCH = 20
 
 
-def _markup(buttons: list[dict]) -> InlineKeyboardMarkup | None:
-    """Только ссылки: callback обрабатывал бы наш код, а сообщение пришло извне."""
-    rows = [
-        [InlineKeyboardButton(text=item["text"], url=item["url"])]
-        for item in buttons
-        if item.get("text") and item.get("url")
-    ]
+_START = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _url_of(item: dict, username: str) -> str:
+    """Адрес кнопки. `start` — ссылка на нас же с командой: имя бота знаем
+    только мы, поэтому и ссылку собираем здесь, а не в очереди."""
+    if item.get("url"):
+        return str(item["url"])
+    payload = str(item.get("start") or "")
+    if payload and username and _START.match(payload):
+        return f"https://t.me/{username}?start={payload}"
+    return ""
+
+
+def _markup(buttons: list[dict], username: str = "") -> InlineKeyboardMarkup | None:
+    """Только ссылки: callback обрабатывал бы наш код, а сообщение пришло извне.
+
+    Кнопки с одинаковым `row` встают в один ряд (пять звёзд оценки), без
+    него каждая — отдельным рядом, как было всегда."""
+    rows: list[list[InlineKeyboardButton]] = []
+    by_row: dict[int, list[InlineKeyboardButton]] = {}
+    for item in buttons:
+        url = _url_of(item, username)
+        if not item.get("text") or not url:
+            continue
+        button = InlineKeyboardButton(text=item["text"], url=url)
+        row = item.get("row")
+        if isinstance(row, int):
+            if row not in by_row:
+                by_row[row] = []
+                rows.append(by_row[row])
+            by_row[row].append(button)
+        else:
+            rows.append([button])
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+async def _username(bot: Bot) -> str:
+    try:
+        return (await bot.me()).username or ""
+    except Exception as exc:  # noqa: BLE001 — без имени ждут только сообщения с кнопкой «открыть бота»
+        logger.warning(f"[OUTBOX] имя бота не получено: {exc}")
+        return ""
 
 
 async def deliver_once(bot: Bot) -> int:
@@ -46,11 +82,20 @@ async def deliver_once(bot: Bot) -> int:
         return 0
 
     sent = 0
+    username = await _username(bot) if data.get("messages") else ""
     for message in data.get("messages", []):
         message_id = message.get("id")
         # `chat_id` заполнен — это карточка заказа в рабочий чат, а не письмо
         # клиенту: там свой топик, свои кнопки и номер топика в отчёте.
         topic = 0
+        buttons = message.get("buttons") or []
+        if not username and not message.get("chat_id") and any(item.get("start") for item in buttons):
+            # Без своего имени ссылку «открыть бота» не собрать, и сообщение
+            # ушло бы без кнопок: звёзды оценки или «Продлить» пропали бы
+            # навсегда — повторно его никто не пришлёт. Не отчитываемся,
+            # и оно вернётся на следующем круге.
+            logger.warning(f"[OUTBOX] имя бота неизвестно — {message_id} ждёт следующего круга")
+            continue
         try:
             if message.get("chat_id"):
                 topic = await order_topics.send_card(bot, message)
@@ -58,7 +103,7 @@ async def deliver_once(bot: Bot) -> int:
                 await bot.send_message(
                     message["tg_id"],
                     message.get("text", ""),
-                    reply_markup=_markup(message.get("buttons") or []),
+                    reply_markup=_markup(buttons, username),
                     disable_web_page_preview=True,
                 )
         except TelegramForbiddenError:

@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_session, get_transaction
-from api.routes import catalog_api
+from api.routes import care_api, catalog_api
 from core.config import settings
 from core.services import landing as landing_service
 from core.services import settings_service
@@ -298,6 +298,61 @@ async def router_service(
 ) -> dict:
     """Включение и выключение сервиса доступа на своём роутере."""
     return await catalog_api.my_router_service(payload=_signed(payload, user), session=session)
+
+
+@router.get("/api/router/wifi")
+async def router_wifi(
+    response: Response,
+    device_id: int = 0,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Сети и пароль Wi-Fi своего роутера. Ответ с паролем не кэшируется
+    нигде по дороге: ни прокси, ни браузер Telegram не должны его хранить."""
+    response.headers["Cache-Control"] = "no-store"
+    return await care_api.my_router_wifi(tg_id=user.tg_id, device_id=device_id, session=session)
+
+
+@router.post("/api/router/wifi")
+async def router_wifi_change(
+    payload: dict,
+    response: Response,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Новый пароль Wi-Fi. Роутер ищется среди принадлежащих клиенту из подписи."""
+    response.headers["Cache-Control"] = "no-store"
+    return await care_api.my_router_wifi_change(payload=_signed(payload, user), session=session)
+
+
+@router.get("/api/router/devices")
+async def router_devices(
+    device_id: int = 0,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Кто сейчас в домашней сети."""
+    return await care_api.my_router_devices(tg_id=user.tg_id, device_id=device_id, session=session)
+
+
+@router.post("/api/router/site-check")
+async def router_site_check(
+    payload: dict,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Почему сайт может не открываться."""
+    return await care_api.my_router_site_check(payload=_signed(payload, user), session=session)
+
+
+@router.post("/api/router/site-request")
+async def router_site_request(
+    payload: dict,
+    user: TelegramUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Просьба разобраться с сайтом — уходит оператору."""
+    return await care_api.my_router_site_request(payload=_signed(payload, user), session=session)
 
 
 @router.get("/api/renew")

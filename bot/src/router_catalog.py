@@ -116,6 +116,28 @@ async def render_renew(query: CallbackQuery) -> None:
     await query.answer()
 
 
+async def send_renew(message: Message) -> None:
+    """Тот же экран продления, но новым сообщением — для `/start renew`
+    из кнопки под напоминанием: редактировать там нечего, напоминание
+    должно остаться в переписке как было."""
+    data, error = await shop_api.renew_state(message.from_user.id)
+    back = InlineKeyboardBuilder().row(btn("btn_back_to_main", callback_data="back_to_main")).as_markup()
+    if error:
+        await message.answer(
+            text("text_catalog_unavailable") + f"\n\n<i>{_esc(for_client(error))}</i>",
+            reply_markup=back,
+            link_preview_options=NO_PREVIEW,
+        )
+        return
+    periods = data.get("plans", [])
+    if not periods:
+        await message.answer(text("text_order_no_plans"), reply_markup=back)
+        return
+    await message.answer(
+        renew_text(data), reply_markup=renew_keyboard(periods), link_preview_options=NO_PREVIEW
+    )
+
+
 def catalog_enabled() -> bool:
     return str(app_conf.get("catalog_enabled", "1")) == "1"
 
@@ -718,6 +740,21 @@ def my_router_keyboard(data: dict) -> InlineKeyboardMarkup:
     else:
         # Продлевать приходят сюда чаще, чем в главное меню: тут виден срок.
         builder.row(btn("btn_renew_sub", callback_data="shop_renew"))
+
+    # Помощь — одним рядом под продлением. «Не открывается сайт» — самый
+    # частый вопрос, поэтому он сразу на экране; пароль Wi-Fi, «кто в сети»
+    # и перезагрузка — за второй кнопкой: четыре новых ряда растянули бы
+    # экран, на котором и так не видно главной кнопки (см. ссылки ниже).
+    #
+    # «Не открывается сайт» есть и у молчащего роутера: проверка честно
+    # скажет «роутер не на связи», и это тоже ответ. «Wi-Fi и сеть» — только
+    # у роутера на связи: всё за ней идёт к нему по туннелю.
+    suffix = f":{current}" if current else ":0"
+    if router is not None and router.get("activated"):
+        help_row = [btn("btn_care_site", callback_data=f"care_site{suffix}")]
+        if router.get("online"):
+            help_row.append(btn("btn_care_menu", callback_data=f"care_menu{suffix}"))
+        builder.row(*help_row)
 
     # Обновление прошивки — только пока роутер на связи: команда идёт к нему
     # по туннелю, и на молчащем ей некуда прийти. Кнопка у выключенного

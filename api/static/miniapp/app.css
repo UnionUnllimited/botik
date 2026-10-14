@@ -714,3 +714,80 @@ body.pushed { padding-bottom: 24px; }
   text-align: left;
 }
 .linkline svg { width: 16px; height: 16px; }
+
+/* --- Помощь с роутером ----------------------------------------------------
+
+   Ответ проверки сайта — не всплывающее окно, а карточка на месте: в ней
+   есть что делать дальше (перезагрузить, передать), и кнопки должны быть
+   рядом с объяснением, а не в чате. Цвет значка — смысл ответа: зелёный
+   «всё уже настроено», жёлтый «нужно ваше действие», красный «не работает». */
+
+.verdict {
+  background: var(--surface); border-radius: var(--r-lg); padding: var(--pad);
+  margin: 14px 0 12px; animation: pop-in .28s cubic-bezier(.2, .8, .2, 1);
+}
+.verdict .head { display: flex; gap: 13px; align-items: flex-start; }
+.verdict .badge {
+  width: 44px; height: 44px; flex: 0 0 44px; border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+}
+.verdict .badge svg { width: 22px; height: 22px; }
+.verdict.ok   .badge { color: var(--ok);        background: var(--ok-dim); }
+.verdict.warn .badge { color: var(--warn);      background: var(--warn-dim); }
+.verdict.bad  .badge { color: var(--err);       background: var(--err-dim); }
+.verdict.info .badge { color: var(--accent-on); background: var(--accent-dim); }
+.verdict h3 { margin: 1px 0 5px; font-size: 16.5px; font-weight: 650; letter-spacing: -.25px; }
+.verdict p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.verdict .site { font-family: 'Roboto Mono', ui-monospace, monospace; color: var(--text); overflow-wrap: anywhere; }
+.verdict .acts { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.985); } }
+
+/* Шаги «что помогает чаще всего» — номерами в кружках: читаются как порядок,
+   а не как перечень, и первый шаг человек делает первым. */
+.steps-list { list-style: none; margin: 13px 0 0; padding: 0; counter-reset: step; }
+.steps-list li {
+  counter-increment: step; display: flex; gap: 11px; align-items: flex-start;
+  padding: 6px 0; font-size: 13.5px; line-height: 1.45;
+}
+.steps-list li::before {
+  content: counter(step); flex: 0 0 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: var(--accent-on); background: var(--accent-dim);
+}
+
+/* Поле адреса со значком внутри: поиск узнаётся по лупе, а не по подписи. */
+.search-field { position: relative; }
+.search-field .input { padding-left: 42px; }
+.search-field svg {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; color: var(--subtle); pointer-events: none;
+}
+
+/* Пароль Wi-Fi: скрыт точками, глаз — показать, рядом — скопировать. */
+.ssid { font-size: 19px; font-weight: 700; letter-spacing: -.4px; overflow-wrap: anywhere; }
+.secret {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  background: var(--surface-2); border-radius: var(--r-md); padding: 8px 8px 8px 14px;
+}
+.secret .val {
+  flex: 1; min-width: 0; font-family: 'Roboto Mono', ui-monospace, monospace;
+  font-size: 16px; overflow-wrap: anywhere;
+}
+.secret .val.hidden { letter-spacing: 3px; color: var(--muted); }
+.icon-btn {
+  width: 38px; height: 38px; flex: 0 0 38px; border: 0; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  color: var(--accent-on); background: var(--accent-dim);
+}
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn:active { transform: scale(.95); }
+
+/* Сила нового пароля: полоска под полем — подсказка, а не запрет. */
+.pw-meter { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 9px; }
+.pw-meter i { display: block; height: 100%; width: 0; border-radius: inherit; transition: width .2s, background .2s; }
+
+/* Устройства дома: кто сейчас в сети — цветной значок, кто был — серый. */
+.dev .ic-box.on  { color: var(--ok);    background: var(--ok-dim); }
+.dev .ic-box.off { color: var(--subtle); background: rgba(168, 176, 186, .1); }
+.dev .meta { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.counter-big { font-size: 34px; font-weight: 750; letter-spacing: -1px; line-height: 1; }

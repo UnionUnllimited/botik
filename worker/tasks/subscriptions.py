@@ -14,7 +14,7 @@ from core.dates import days_left, days_phrase, utcnow
 from core.db import session_scope
 from core.enums import SubscriptionStatus
 from core.models import Subscription, User
-from core.notifications import notify_admins, send_message
+from core.notifications import bot_button, notify_admins, send_message
 from core.services import subscriptions as subscription_service
 from core.services.subscriptions import LIVE_STATUSES
 
@@ -41,6 +41,10 @@ async def refresh_statuses() -> int:
     if changed:
         log.info("subscriptions.statuses_refreshed", count=changed)
     return changed
+
+
+RENEW_PAYLOAD = "renew"
+"""`/start renew` — бот открывает экран продления сразу, минуя меню."""
 
 
 async def send_reminders() -> int:
@@ -94,11 +98,14 @@ async def send_reminders() -> int:
                 subscription.last_reminder_day = marker
                 continue
 
-            # Кнопки нет намеренно: кабинет на сайте удалён вместе с сайтом,
-            # а продление живёт в самом боте — клиент уже в нужном чате.
+            # Кнопка ведёт в бот же, на экран продления. Раньше её не было:
+            # «продлите» читали с уведомления, а где продлевают — искали
+            # по меню. Ссылка, а не callback: обработчик `/start renew`
+            # у бота один, и сообщение из очереди его не переживёт.
             delivered = await send_message(
                 user.tg_id,
                 text,
+                buttons=[bot_button(ru.RENEW_BUTTON, RENEW_PAYLOAD)],
                 session=session,
                 kind="reminder",
             )

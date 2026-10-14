@@ -23,8 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dates import ensure_utc, to_display, utcnow
 from core.enums import PaymentStatus, SubscriptionStatus
-from core.models import Device, Order, Payment, Subscription
-from core.services import monitoring
+from core.models import Device, Order, Payment, SiteRequest, Subscription
+from core.services import monitoring, site_help
 
 LATE_HOURS = monitoring.UNSHIPPED_HOURS
 """С какого возраста оплаченный заказ красный. Тот же порог, с которого
@@ -174,10 +174,52 @@ async def counters(session: AsyncSession, *, now: dt.datetime) -> dict[str, Any]
     }
 
 
+SITE_REQUESTS_SHOWN = 10
+
+
+async def site_requests(session: AsyncSession, *, now: dt.datetime) -> dict[str, Any] | None:
+    """Клиенты ждут ответа про сайт. Клиент нажал «передать» и ждёт —
+    это дело на сегодня, а не на «когда-нибудь загляну в раздел»."""
+    rows = list(
+        await session.scalars(
+            select(SiteRequest)
+            .where(SiteRequest.status == "new")
+            .order_by(SiteRequest.created_at)
+            .limit(SITE_REQUESTS_SHOWN)
+        )
+    )
+    if not rows:
+        return None
+    return {
+        "key": "site_requests",
+        "title": "Клиенты ждут ответа про сайт",
+        "hint": "Нажали «Не открывается сайт» и передали нам. Одно нажатие — сайт в своём "
+        "списке, и клиенту уходит «добавили».",
+        "tone": "info",
+        "items": [
+            _item(
+                site_help.shown(row.value),
+                ("уже в списках, но не открывается · " if row.covered else "")
+                + f"ждёт {ago(row.created_at, now)}",
+                "site",
+                row.id,
+                late=bool(row.created_at and ensure_utc(row.created_at) < now - dt.timedelta(days=1)),
+            )
+            for row in rows
+        ],
+    }
+
+
 async def build(session: AsyncSession, *, now: dt.datetime | None = None) -> dict[str, Any]:
     now = now or utcnow()
     digest = await monitoring.collect(session, now=now, unshipped_hours=0)
     found = groups(digest, now=now)
+    sites = await site_requests(session, now=now)
+    if sites is not None:
+        # Перед «кончается подпиской»: там напоминания уже ушли, а здесь
+        # человек ждёт именно нас.
+        tail = [group for group in found if group["key"] == "expiring"]
+        found = [group for group in found if group["key"] != "expiring"] + [sites] + tail
     return {
         "generated_at": now.isoformat(),
         "counters": await counters(session, now=now),

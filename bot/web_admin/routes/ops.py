@@ -81,6 +81,8 @@ def link_of(kind: str, ident: int) -> str:
         return url_for("admin.router_card", device_id=ident)
     if kind == "client" and ident:
         return url_for("admin.user_details", telegram_id=ident)
+    if kind == "site":
+        return url_for("admin.care_page")
     return ""
 
 

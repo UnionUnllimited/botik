@@ -1179,6 +1179,15 @@
     ]
   };
 
+  function helpRow(id, iconName, title, sub) {
+    return '<button class="item" id="' + id + '"><span class="ic-box">' + icon(iconName) + '</span>'
+      + '<span class="grow"><b>' + esc(title) + '</b>'
+      + '<span class="muted small" style="display:block;margin-top:2px">' + esc(sub) + '</span></span>'
+      + '<span class="chev">' + icon('chev-r') + '</span></button>';
+  }
+
+  var focusAccess = false;
+
   views.router = function (view) {
     var demo = !!(view && view.demo);
     var path = view && view.id ? '/router?device_id=' + view.id : '/router';
@@ -1277,6 +1286,23 @@
         + '<div class="muted tiny center" style="margin-top:12px">После перезагрузки роутер '
         + 'молчит около минуты. Обновление идёт в фоне и занимает несколько минут.</div>'
 
+        // Помощь — три самых частых вопроса в поддержку. Пароль и устройства
+        // читаются с самого роутера, поэтому у молчащего их нет; «сайт» есть
+        // всегда — проверка честно ответит «роутер не на связи».
+        + (r.activated !== false
+            ? '<div class="sec" style="margin-top:24px">Помощь</div>'
+              + '<div class="list leading">'
+              +   helpRow('care-site', 'globe', 'Не открывается сайт',
+                          'Проверим за пару секунд и подскажем, что делать')
+              +   (r.online
+                    ? helpRow('care-wifi', 'key', 'Wi-Fi и пароль', 'Посмотреть или сменить пароль')
+                      + helpRow('care-devices', 'devices', 'Кто в сети',
+                                r.clients ? 'Сейчас ' + r.clients + ' ' + plural(Number(r.clients),
+                                  ['устройство', 'устройства', 'устройств']) : 'Устройства дома по именам')
+                    : '')
+              + '</div>'
+            : '')
+
         // Пустое место под настройки сервиса: они читаются с самого роутера
         // и приезжают позже остального экрана.
         // Не пустое место, а заготовка: список едет с самого роутера, до
@@ -1340,6 +1366,13 @@
         });
       });
 
+      ['site', 'wifi', 'devices'].forEach(function (name) {
+        var row = screen.querySelector('#care-' + name);
+        if (row) {
+          row.addEventListener('click', function () { haptic(); go({ name: name, id: r.id }); });
+        }
+      });
+
       // Настройки сервиса — отдельным запросом, уже после отрисовки экрана.
       // Отказ здесь не ошибка: на прошивке без скрипта управления список
       // не читается вовсе, и блок просто не появляется. Показать вместо него
@@ -1347,8 +1380,14 @@
       // на экране, где у него всё работает.
       var slot = document.getElementById('access');
       api('/router/nodes?device_id=' + r.id).then(function (n) {
-        if (n && n.ok) { renderAccess(slot, n, r.id); } else { slot.remove(); }
-      }).catch(function () { slot.remove(); });
+        if (n && n.ok) {
+          renderAccess(slot, n, r.id);
+          // Пришли сюда из «Не открывается сайт» по кнопке «Сменить страну» —
+          // показываем сразу выбор сервера, а не верх экрана.
+          if (focusAccess) { slot.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        } else { slot.remove(); }
+        focusAccess = false;
+      }).catch(function () { slot.remove(); focusAccess = false; });
 
       var macBtn = screen.querySelector('#mac');
       if (macBtn) {
@@ -1424,6 +1463,432 @@
           btn.innerHTML = icon('download') + 'Обновить прошивку';
           tg.showAlert(err.message || String(err));
         });
+      });
+    });
+  };
+
+  /* --- Помощь с роутером --------------------------------------------------
+     Три самых частых вопроса в поддержку — «не открывается сайт», «какой
+     пароль от Wi-Fi», «кто это у меня в сети» — теперь решаются здесь.
+     Считает всё сервер (тот же ответ получает бот), экраны только рисуют. */
+
+  // Ответ проверки сайта: смысл, значок, цвет и что делать. Текст про сайт
+  // подставляется сюда, а не собирается сервером: слова у бота и у
+  // приложения разные, а вердикт — один.
+  var VERDICTS = {
+    covered: {
+      tone: 'ok', icon: 'check', title: 'Сайт уже идёт через защищённый канал',
+      text: 'Значит, дело не в списках. Обычно помогает одно из трёх:',
+      steps: [
+        'Перезагрузить роутер — займёт минуту.',
+        'Сменить страну сервера — на экране роутера.',
+        'Открыть сайт в режиме инкогнито или почистить кэш браузера.'
+      ]
+    },
+    direct: {
+      tone: 'info', icon: 'globe', title: 'Сайта нет в наших списках',
+      text: '{site} сейчас идёт напрямую. Если он закрыт для России, его нужно добавить — '
+        + 'передадим специалисту, обычно это занимает не больше дня.'
+    },
+    local: {
+      tone: 'info', icon: 'info', title: 'Это российский сайт',
+      text: '{site} всегда идёт напрямую, мимо защищённого канала. Если он не открывается — '
+        + 'скорее всего, сбой у самого сайта. Проверьте с мобильного интернета: открывается '
+        + 'только там — передайте нам, разберёмся.'
+    },
+    unknown: {
+      tone: 'info', icon: 'info', title: 'Проверим вручную',
+      text: 'Свериться со списками прямо сейчас не вышло. Передадим {site} специалисту — '
+        + 'он проверит и напишет вам.'
+    },
+    router_offline: {
+      tone: 'bad', icon: 'alert', title: 'Роутер не на связи',
+      text: 'Дело не в сайте: роутер сейчас не выходит на связь. Проверьте, что он включён '
+        + 'в розетку и интернет-кабель на месте.'
+    },
+    no_subscription: {
+      tone: 'warn', icon: 'clock', title: 'Подписка закончилась',
+      text: 'Поэтому зарубежные сайты сейчас и не открываются. Продлите — доступ включится '
+        + 'через пару минут, настраивать ничего не нужно.'
+    },
+    service_off: {
+      tone: 'warn', icon: 'power', title: 'Доступ выключен',
+      text: 'На роутере выключен доступ к зарубежным ресурсам — поэтому {site} и не открывается. '
+        + 'Включите его — это займёт несколько секунд.'
+    }
+  };
+
+  function verdictCard(v, site, actions) {
+    var body = esc(v.text).replace('{site}', '<span class="site">' + esc(site) + '</span>');
+    return '<div class="verdict ' + v.tone + '">'
+      + '<div class="head"><span class="badge">' + icon(v.icon) + '</span>'
+      + '<div class="grow"><h3>' + esc(v.title) + '</h3><p>' + body + '</p></div></div>'
+      + (v.steps ? '<ol class="steps-list">' + v.steps.map(function (step) {
+          return '<li><span>' + esc(step) + '</span></li>';
+        }).join('') + '</ol>' : '')
+      + (actions ? '<div class="acts">' + actions + '</div>' : '')
+      + '</div>';
+  }
+
+  views.site = function (view) {
+    var id = view.id || 0;
+    show('<h1>Не открывается сайт</h1>'
+      + '<p class="muted small" style="margin:-4px 2px 16px">Пришлите адрес — проверим, что с ним, '
+      + 'и подскажем, что делать.</p>'
+      + '<div class="search-field">' + icon('search')
+      +   '<input class="input" id="site" type="url" inputmode="url" enterkeyhint="go" '
+      +   'autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="300" '
+      +   'placeholder="youtube.com или ссылка целиком"></div>'
+      + '<button class="btn" id="next" style="margin-top:12px">' + icon('search') + 'Проверить</button>'
+      + '<div id="verdict"></div>');
+
+    var input = document.getElementById('site');
+    var check = document.getElementById('next');
+    var slot = document.getElementById('verdict');
+    var last = null;
+
+    function busy(btn, label) {
+      btn.disabled = true;
+      btn.dataset.label = btn.innerHTML;
+      btn.innerHTML = icon('refresh', 'ic spin') + esc(label);
+    }
+    function idle(btn) {
+      btn.disabled = false;
+      if (btn.dataset.label) { btn.innerHTML = btn.dataset.label; }
+    }
+
+    function sent(res) {
+      slot.innerHTML = verdictCard({
+        tone: 'ok', icon: 'send', title: res.created ? 'Передали специалисту' : 'Уже у специалиста',
+        text: res.created
+          ? 'Как только разберёмся с {site}, напишем вам в бот. Обычно это занимает не больше дня.'
+          : '{site} уже ждёт ответа специалиста — напишем в бот, как только разберёмся.'
+      }, res.site || (last && last.site) || '', '<button class="btn quiet" id="again">'
+        + icon('globe') + 'Проверить другой сайт</button>');
+      notify('success');
+      document.getElementById('again').addEventListener('click', function () {
+        haptic(); input.value = ''; slot.innerHTML = ''; input.focus();
+      });
+    }
+
+    function sendRequest(btn) {
+      haptic('medium');
+      busy(btn, 'Передаём…');
+      api('/router/site-request', {
+        method: 'POST', body: JSON.stringify({ device_id: id, site: last.value })
+      }).then(function (res) {
+        if (!res.ok) { throw new Error(reason(res)); }
+        sent(res);
+      }).catch(function (err) {
+        idle(btn);
+        tg.showAlert(err.message || String(err));
+      });
+    }
+
+    function render(res) {
+      last = res;
+      var v = VERDICTS[res.verdict] || VERDICTS.unknown;
+      var acts = '';
+      if (res.requested && ['covered', 'direct', 'local', 'unknown'].indexOf(res.verdict) >= 0) {
+        slot.innerHTML = verdictCard({
+          tone: 'info', icon: 'send', title: 'Уже у специалиста',
+          text: '{site} уже ждёт ответа — напишем в бот, как только разберёмся.'
+        }, res.site, '');
+        return;
+      }
+      if (res.verdict === 'covered') {
+        acts = '<button class="btn ghost" data-act="reboot">' + icon('power') + 'Перезагрузить роутер</button>'
+          + '<button class="btn ghost" data-act="country">' + icon('swap') + 'Сменить страну</button>'
+          + '<button class="btn quiet" data-act="send">' + icon('send') + 'Всё равно не работает</button>';
+      } else if (['direct', 'local', 'unknown'].indexOf(res.verdict) >= 0) {
+        acts = '<button class="btn ghost" data-act="send">' + icon('send') + 'Передать специалисту</button>';
+      } else if (res.verdict === 'no_subscription') {
+        acts = '<button class="btn ghost" data-act="renew">' + icon('refresh') + 'Продлить подписку</button>';
+      } else if (res.verdict === 'service_off') {
+        acts = '<button class="btn ghost" data-act="on">' + icon('power') + 'Включить доступ</button>';
+      }
+      slot.innerHTML = verdictCard(v, res.site, acts);
+      notify(v.tone === 'bad' ? 'error' : (v.tone === 'warn' ? 'warning' : 'success'));
+
+      slot.querySelectorAll('[data-act]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var act = btn.dataset.act;
+          if (act === 'send') { sendRequest(btn); return; }
+          if (act === 'renew') { haptic('medium'); go({ name: 'renew' }); return; }
+          if (act === 'country') { haptic(); focusAccess = true; back(); return; }
+          if (act === 'reboot') {
+            haptic('medium');
+            tg.showConfirm('Перезагрузить роутер? Интернет дома пропадёт примерно на минуту.',
+              function (yes) {
+                if (!yes) { return; }
+                busy(btn, 'Отправляем…');
+                api('/router/reboot', { method: 'POST', body: JSON.stringify({ device_id: id }) })
+                  .then(function (r) {
+                    if (!r.ok) { throw new Error(reason(r)); }
+                    btn.innerHTML = icon('check') + 'Перезагружается';
+                    notify('success');
+                    tg.showAlert('Команда ушла. Через минуту роутер вернётся — попробуйте открыть сайт снова.');
+                  })
+                  .catch(function (err) { idle(btn); tg.showAlert(err.message || String(err)); });
+              });
+            return;
+          }
+          if (act === 'on') {
+            haptic('medium');
+            busy(btn, 'Включаем…');
+            api('/router/service', { method: 'POST', body: JSON.stringify({ device_id: id, enabled: true }) })
+              .then(function (r) {
+                if (!r.ok) { throw new Error(reason(r)); }
+                slot.innerHTML = verdictCard({
+                  tone: 'ok', icon: 'check', title: 'Доступ включён',
+                  text: 'Подождите несколько секунд и откройте {site} снова.'
+                }, res.site, '');
+                notify('success');
+              })
+              .catch(function (err) { idle(btn); tg.showAlert(err.message || String(err)); });
+          }
+        });
+      });
+    }
+
+    function run() {
+      var value = input.value.trim();
+      if (!value) {
+        input.classList.add('bad');
+        input.focus();
+        notify('error');
+        return;
+      }
+      input.classList.remove('bad');
+      input.blur();
+      haptic('medium');
+      busy(check, 'Проверяем…');
+      slot.innerHTML = '<div class="verdict info"><div class="head"><span class="badge">'
+        + icon('refresh', 'ic spin') + '</span><div class="grow"><h3>Проверяем…</h3>'
+        + '<p>Сверяемся со списками и спрашиваем роутер. Это до пятнадцати секунд.</p></div></div></div>';
+      api('/router/site-check', {
+        method: 'POST', body: JSON.stringify({ device_id: id, site: value })
+      }).then(function (res) {
+        idle(check);
+        if (!res.ok) {
+          slot.innerHTML = '';
+          if (res.error === 'bad_site') { input.classList.add('bad'); }
+          notify('error');
+          tg.showAlert(reason(res));
+          return;
+        }
+        render(res);
+      }).catch(function (err) {
+        idle(check);
+        slot.innerHTML = '';
+        tg.showAlert(err.message || String(err));
+      });
+    }
+
+    check.addEventListener('click', run);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+    input.addEventListener('input', function () { input.classList.remove('bad'); });
+    window.setTimeout(function () { try { input.focus(); } catch (e) { /* без клавиатуры */ } }, 350);
+  };
+
+  // Пароль — то же правило, что на сервере (`core/services/router_wifi.py`):
+  // здесь оно только для подсказки по ходу ввода, решает всё равно сервер.
+  var WIFI_CHARS = /^[A-Za-z0-9!#$%&()*+,\-./:;<=>?@\[\]^_{|}~]*$/;
+
+  function wifiStrength(pw) {
+    if (pw.length < 8) { return 0; }
+    var kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(function (re) {
+      return re.test(pw);
+    }).length;
+    return Math.min(4, (pw.length >= 12 ? 2 : 1) + (kinds >= 3 ? 2 : kinds >= 2 ? 1 : 0));
+  }
+
+  function groupNetworks(list) {
+    var groups = [];
+    (list || []).forEach(function (n) {
+      var same = groups.filter(function (g) {
+        return g.ssid === n.ssid && g.password === n.password && g.open === n.open;
+      })[0];
+      if (same) {
+        if (n.band && same.bands.indexOf(n.band) < 0) { same.bands.push(n.band); }
+      } else {
+        groups.push({ ssid: n.ssid, password: n.password, open: n.open, bands: n.band ? [n.band] : [] });
+      }
+    });
+    return groups;
+  }
+
+  views.wifi = function (view) {
+    var id = view.id || 0;
+    return api('/router/wifi?device_id=' + id).then(function (d) {
+      if (!d.ok) {
+        show('<h1>Wi-Fi</h1>' + empty('wifi', 'Роутер не ответил', reason(d))
+          + '<button class="btn ghost" id="again">' + icon('refresh') + 'Ещё раз</button>');
+        document.getElementById('again').addEventListener('click', function () { go(current, true); });
+        return;
+      }
+      var groups = groupNetworks(d.networks);
+      var closed = groups.some(function (g) { return !g.open; });
+
+      function card(g, i) {
+        return '<div class="card">'
+          + '<div class="row" style="justify-content:flex-start"><span class="ic-box">' + icon('wifi') + '</span>'
+          + '<div class="grow"><div class="ssid">' + esc(g.ssid || 'Без имени') + '</div>'
+          + (g.bands.length ? '<div class="muted small">' + esc(g.bands.join(' и ')) + '</div>' : '')
+          + '</div></div>'
+          + (g.open
+              ? '<div class="muted small" style="margin-top:12px">Сеть без пароля</div>'
+              : '<div class="secret"><span class="val hidden" data-pw="' + i + '">••••••••</span>'
+                + '<button class="icon-btn" data-eye="' + i + '" aria-label="Показать пароль">' + icon('eye') + '</button>'
+                + '<button class="icon-btn" data-copy="' + i + '" aria-label="Скопировать пароль">' + icon('copy') + '</button>'
+                + '</div>')
+          + '</div>';
+      }
+
+      show('<h1>Wi-Fi</h1>'
+        + groups.map(card).join('')
+        + (closed
+            ? '<div class="sec">Сменить пароль</div>'
+              + '<div class="card"><label class="field"><span>Новый пароль</span>'
+              + '<input class="input mono" id="pw" type="text" autocomplete="new-password" '
+              + 'autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="63" '
+              + 'placeholder="от 8 символов"></label>'
+              + '<div class="pw-meter"><i id="pw-bar"></i></div>'
+              + '<div class="hint muted" id="pw-hint">Латинские буквы, цифры и знаки — от 8 до 63 символов.</div>'
+              + '</div>'
+              + '<button class="btn ghost" id="pw-save" disabled>' + icon('key') + 'Сменить пароль</button>'
+              + '<div class="muted tiny center" style="margin-top:10px">После смены все устройства дома '
+              + 'отключатся от Wi-Fi — подключите их заново с новым паролем.</div>'
+            : ''));
+
+      screen.querySelectorAll('[data-eye]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          haptic();
+          var g = groups[Number(btn.dataset.eye)];
+          var val = screen.querySelector('[data-pw="' + btn.dataset.eye + '"]');
+          var hidden = val.classList.toggle('hidden');
+          val.textContent = hidden ? '••••••••' : g.password;
+          btn.innerHTML = icon(hidden ? 'eye' : 'eye-off');
+        });
+      });
+      screen.querySelectorAll('[data-copy]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          haptic();
+          var g = groups[Number(btn.dataset.copy)];
+          copyText(g.password).then(function (done) {
+            if (done) { notify('success'); btn.innerHTML = icon('check'); }
+            else { tg.showAlert('Скопировать не вышло. Пароль: ' + g.password); }
+            window.setTimeout(function () { btn.innerHTML = icon('copy'); }, 1600);
+          });
+        });
+      });
+
+      var pw = document.getElementById('pw');
+      if (!pw) { return; }
+      var bar = document.getElementById('pw-bar');
+      var hint = document.getElementById('pw-hint');
+      var save = document.getElementById('pw-save');
+      var COLORS = ['var(--err)', 'var(--err)', 'var(--warn)', 'var(--ok)', 'var(--ok)'];
+      var WORDS = ['', 'Слабый — добавьте длины или знаков', 'Сойдёт', 'Хороший', 'Надёжный'];
+
+      function problem(value) {
+        if (!WIFI_CHARS.test(value)) { return 'Только латинские буквы, цифры и знаки — без пробелов, кавычек и кириллицы.'; }
+        if (value.length < 8) { return 'Ещё ' + (8 - value.length) + ' ' + plural(8 - value.length, ['символ', 'символа', 'символов']) + '.'; }
+        return '';
+      }
+
+      pw.addEventListener('input', function () {
+        var value = pw.value;
+        var bad = problem(value);
+        var score = bad ? 0 : wifiStrength(value);
+        bar.style.width = (value ? Math.max(score, 1) * 25 : 0) + '%';
+        bar.style.background = COLORS[score];
+        hint.textContent = value ? (bad || WORDS[score]) : 'Латинские буквы, цифры и знаки — от 8 до 63 символов.';
+        hint.className = 'hint ' + (bad && value ? 'err' : 'muted');
+        save.disabled = !!bad;
+      });
+
+      save.addEventListener('click', function () {
+        var value = pw.value;
+        haptic('medium');
+        tg.showConfirm('Сменить пароль Wi-Fi на «' + value + '»? Телефоны, телевизор и всё остальное '
+          + 'отключатся — их нужно будет подключить заново.', function (yes) {
+          if (!yes) { return; }
+          save.disabled = true;
+          save.innerHTML = icon('refresh', 'ic spin') + 'Меняем…';
+          api('/router/wifi', {
+            method: 'POST', body: JSON.stringify({ device_id: id, password: value })
+          }).then(function (res) {
+            if (!res.ok) { throw new Error(reason(res)); }
+            notify('success');
+            tg.showAlert('Пароль сменён. Подключите устройства заново с новым паролем.');
+            go(current, true);
+          }).catch(function (err) {
+            save.disabled = false;
+            save.innerHTML = icon('key') + 'Сменить пароль';
+            notify('error');
+            tg.showAlert(err.message || String(err));
+          });
+        });
+      });
+    });
+  };
+
+  var DEVICE_ICONS = { phone: 'phone', computer: 'laptop', tv: 'tv', other: 'wifi' };
+
+  views.devices = function (view) {
+    var id = view.id || 0;
+    return api('/router/devices?device_id=' + id).then(function (d) {
+      if (!d.ok) {
+        show('<h1>Кто в сети</h1>' + empty('devices', 'Роутер не ответил', reason(d))
+          + '<button class="btn ghost" id="again">' + icon('refresh') + 'Ещё раз</button>');
+        document.getElementById('again').addEventListener('click', function () { go(current, true); });
+        return;
+      }
+      var list = d.devices || [];
+      var active = list.filter(function (x) { return x.active; });
+      var recent = list.filter(function (x) { return !x.active; });
+
+      function row(x) {
+        var how = x.active ? (x.wifi === true ? 'Wi-Fi' : (x.wifi === false ? 'кабель' : '')) : '';
+        var meta = [x.ip, how, x.name ? '' : x.mac].filter(Boolean).join(' · ');
+        return '<div class="item dev"><span class="ic-box ' + (x.active ? 'on' : 'off') + '">'
+          + icon(DEVICE_ICONS[x.kind] || 'wifi') + '</span>'
+          + '<span class="grow"><b class="ellip" style="display:block">' + esc(x.name || 'Без имени') + '</b>'
+          + (meta ? '<span class="meta mono">' + esc(meta) + '</span>' : '') + '</span></div>';
+      }
+
+      if (!list.length) {
+        show('<h1>Кто в сети</h1>' + empty('devices', 'Никого не видно',
+          'Роутер сейчас не видит подключённых устройств. Обновите через минуту.')
+          + '<button class="btn ghost" id="again">' + icon('refresh') + 'Обновить</button>');
+        document.getElementById('again').addEventListener('click', function () { go(current, true); });
+        return;
+      }
+
+      show('<h1>Кто в сети</h1>'
+        + '<div class="card"><div class="row">'
+        +   '<div><div class="counter-big" data-count="' + active.length + '">' + active.length + '</div>'
+        +   '<div class="muted small" style="margin-top:6px">' + plural(active.length,
+              ['устройство', 'устройства', 'устройств']) + ' сейчас в сети</div></div>'
+        +   '<span class="ic-box" style="width:52px;height:52px;flex-basis:52px;border-radius:15px">'
+        +   icon('devices', 'ic-lg') + '</span>'
+        + '</div></div>'
+        + (active.length ? '<div class="sec">Сейчас в сети</div><div class="list leading">'
+            + active.map(row).join('') + '</div>' : '')
+        + (recent.length ? '<div class="sec">Были недавно</div><div class="list leading">'
+            + recent.map(row).join('') + '</div>' : '')
+        + '<div class="muted tiny" style="margin:4px 2px 0">Имена устройства сообщают роутеру сами. '
+        + 'Видите незнакомое — смените пароль Wi-Fi.</div>'
+        + '<div class="stack" style="margin-top:16px">'
+        +   '<button class="btn ghost" id="to-wifi">' + icon('key') + 'Wi-Fi и пароль</button>'
+        +   '<button class="btn quiet" id="again">' + icon('refresh') + 'Обновить</button>'
+        + '</div>');
+      document.getElementById('to-wifi').addEventListener('click', function () {
+        haptic(); go({ name: 'wifi', id: id });
+      });
+      document.getElementById('again').addEventListener('click', function () {
+        haptic(); go(current, true);
       });
     });
   };

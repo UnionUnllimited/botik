@@ -30,6 +30,7 @@ from core.config import settings
 from core.dates import ensure_utc, to_display, utcnow
 from core.enums import OrderStatus
 from core.models import Device, Notification, Order, User
+from core.notifications import notify_admins
 from core.services import monitoring, order_topics, settings_service
 from core.services import subscriptions as subscription_service
 from core.texts import ORDER_STATUS_TITLES
@@ -226,6 +227,35 @@ async def push(session: AsyncSession, device: Device, *, note: str = "") -> Noti
     session.add(message)
     log.info("router_topic.queued", device_id=device.id)
     return message
+
+
+async def post(
+    session: AsyncSession, text: str, buttons: list[dict], *, client_tg_id: int = 0
+) -> bool:
+    """Своё сообщение с кнопками в топик «Роутеры»: просьба о сайте, отзыв.
+
+    Топика ещё нет — заводим, а само сообщение уходит в общую ленту того же
+    чата: ждать круга, как у тревог, тут нельзя — это разовая просьба,
+    второго повода прислать её не будет. Кнопки работают и там: обработчик
+    узнаёт их по префиксу, а не по топику. Чат не задан — владельцу в личку,
+    уже без кнопок. Запись в админке есть в любом случае."""
+    chat = await order_topics.chat_id(session)
+    if not chat:
+        await notify_admins(text, session=session, kind=KIND)
+        return False
+    thread = await _ensure_topic(session, chat)
+    session.add(
+        Notification(
+            tg_id=client_tg_id,
+            text=text,
+            buttons=buttons,
+            kind=KIND,
+            chat_id=chat,
+            thread_id=thread or None,
+            topic_title="",
+        )
+    )
+    return bool(thread)
 
 
 async def say(session: AsyncSession, text: str) -> bool:

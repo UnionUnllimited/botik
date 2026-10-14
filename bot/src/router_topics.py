@@ -51,6 +51,8 @@ async def _refresh(query: CallbackQuery, device_id: int, note: str = "") -> None
 
 @router.callback_query(F.data.startswith(f"{PREFIX}:"))
 async def on_button(query: CallbackQuery) -> None:
+    if not await order_topics.from_work_chat(query):
+        return
     parts = (query.data or "").split(":")
     if len(parts) < 3:
         await query.answer()
@@ -129,6 +131,52 @@ async def on_button(query: CallbackQuery) -> None:
         return
 
     await query.answer()
+
+
+SITE_PREFIX = "site"
+SITE_ACTIONS = {"add": "Добавляю…", "no": "Отмечаю…", "done": "Отмечаю…"}
+
+
+@router.callback_query(F.data.startswith(f"{SITE_PREFIX}:"))
+async def on_site_button(query: CallbackQuery) -> None:
+    """Решение по просьбе клиента о сайте: `site:<просьба>:<add|no|done>`.
+
+    Сообщение перерисовывается ответом приложения: в нём уже строка
+    «добавлен, клиенту написали» и только те кнопки, что ещё имеют смысл, —
+    второй оператор не нажмёт «добавить» повторно.
+
+    Только из рабочего чата: иначе клиент, подделав данные кнопки у себя
+    в личке, сам «одобрил» бы свой домен в список всего парка."""
+    if not await order_topics.from_work_chat(query):
+        return
+    parts = (query.data or "").split(":")
+    if len(parts) != 3 or parts[2] not in SITE_ACTIONS:
+        await query.answer()
+        return
+    try:
+        request_id = int(parts[1])
+    except ValueError:
+        await query.answer()
+        return
+    await query.answer(SITE_ACTIONS[parts[2]])
+    who = query.from_user
+    author = f"@{who.username}" if who.username else (who.full_name or str(who.id))
+    data, error = await shop_api.site_request_resolve(request_id, parts[2], author)
+    if error:
+        try:
+            await query.message.reply(f"Не вышло: {error}")
+        except Exception as exc:  # noqa: BLE001 — причину видно в журнале
+            logger.warning(f"[ROUTER TOPICS] ответ о сайте не ушёл: {exc}")
+        return
+    try:
+        await query.message.edit_text(
+            data.get("text", ""),
+            reply_markup=order_topics.markup(data.get("buttons") or []),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — «message is not modified» и подобное
+        logger.debug(f"[ROUTER TOPICS] сообщение о сайте не изменилось: {exc}")
 
 
 async def send_to_client(bot: Bot, device_id: int, value: str) -> str:

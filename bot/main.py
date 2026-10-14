@@ -51,6 +51,8 @@ from tg_sender import get_bot_token
 from src.telegram_bot_factory import make_aiogram_bot, normalize_telegram_proxy_url
 from src.subscription_handlers import register_subscription_handlers, show_trial_progress, show_trial_progress_edit
 from src.router_catalog import register_router_catalog_handlers, remember_client
+from src.router_care import handle_start_payload as care_start_payload
+from src.router_care import register_router_care_handlers
 from src.shop_callbacks import start_partner_callbacks
 from src.shop_outbox import start_outbox
 from src.shop_sync import start_tariff_sync
@@ -230,13 +232,18 @@ async def apply_bot_session_from_settings(dispatcher: Dispatcher) -> None:
 _trial_grant_locks: Dict[int, asyncio.Lock] = {}
 
 from src.order_topics import PREFIX as ORDER_TOPIC_PREFIX
+from src.router_topics import PREFIX as ROUTER_TOPIC_PREFIX
+from src.router_topics import SITE_PREFIX as SITE_TOPIC_PREFIX
 
-_OPERATOR_CALLBACK = f"{ORDER_TOPIC_PREFIX}:"
+_OPERATOR_CALLBACK = (f"{ORDER_TOPIC_PREFIX}:", f"{ROUTER_TOPIC_PREFIX}:", f"{SITE_TOPIC_PREFIX}:")
 """Кнопки под карточкой заказа в рабочем чате. Их жмёт оператор, и обе
 клиентские проверки ниже ему не подходят: в таблице пользователей бота его
 может не быть вовсе, а разбор десятка заказов подряд упирается в лимит,
 рассчитанный на клиента. Префикс берём из модуля топиков — свой разошёлся бы
-с ним молча, и кнопки перестали бы работать без единой ошибки в журнале."""
+с ним молча, и кнопки перестали бы работать без единой ошибки в журнале.
+
+Пропуск здесь не значит «без проверки»: каждый из этих обработчиков первым
+делом сверяет, что нажатие пришло из рабочего чата (`order_topics.from_work_chat`)."""
 
 
 # --- Middleware для проверки существования пользователя в БД ---
@@ -1714,6 +1721,17 @@ async def handle_start(message: Message, state: FSMContext):
         logger.info(f"[HANDLER] handle_start: выход для заблокированного user_id={message.from_user.id}")
         return
     
+    # Команды из ссылок под нашими сообщениями: «Продлить» под напоминанием
+    # и звёзды оценки роутера. Только для тех, кто уже в базе бота: им
+    # и шлются эти сообщения, а новому человеку сперва нужен обычный вход —
+    # капча, подписка на канал, меню.
+    if message.text:
+        start_parts = message.text.strip().split()
+        if len(start_parts) > 1 and await db_helpers.get_user(message.from_user.id):
+            if await care_start_payload(message, state, start_parts[1]):
+                logger.info(f"[HANDLER] handle_start: команда {start_parts[1][:16]} для user_id={message.from_user.id}")
+                return
+
     # --- Реферальная система и партнёрская программа: обработка /start <ref> ---
     ref_id = None
     is_partner_ref = False
@@ -8122,6 +8140,8 @@ async def main():
     # Регистрируем обработчики расширения лимита устройств
     # Каталог роутеров и оформление заказа (товары и заказы — в основном приложении)
     register_router_catalog_handlers(dp, check_user_blocked, send_blocked_message)
+    # Помощь с роутером: «Не открывается сайт», Wi-Fi, кто в сети, отзыв.
+    register_router_care_handlers(dp, check_user_blocked, send_blocked_message)
     # Топики заказов в рабочем чате оператора: карточка с кнопками и ввод
     # ответом в тот же топик. Подключается последним — его обработчики ловят
     # только `ord:*` и текст внутри топика, чужого не перехватывают.

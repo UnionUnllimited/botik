@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import re
+
 import structlog
 from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,11 +55,34 @@ def _buttons_of(markup: InlineKeyboardMarkup | None) -> list[dict[str, str]]:
     ]
 
 
+START_PAYLOAD = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+"""Что Telegram пропускает в `?start=`: латиница, цифры, `_` и `-`, до 64."""
+
+
+def bot_button(text: str, payload: str, *, row: int | None = None) -> dict:
+    """Кнопка, открывающая наш же бот с командой: `t.me/<бот>?start=<payload>`.
+
+    Ссылку собирает бот при отправке — своё имя он знает точно, а у нас
+    оно лежит в настройке, которую легко забыть заполнить. Это всё ещё
+    ссылка, а не callback: нажатие придёт боту обычным `/start`, и обработчик
+    у него один на все версии.
+
+    `row` — номер ряда: пять звёзд оценки должны стоять в одном ряду, а не
+    столбиком на весь экран. Без номера каждая кнопка — свой ряд, как было."""
+    if not START_PAYLOAD.match(payload):
+        raise ValueError(f"bad start payload: {payload!r}")
+    button: dict = {"text": text, "start": payload}
+    if row is not None:
+        button["row"] = row
+    return button
+
+
 async def send_message(
     chat_id: int | None,
     text: str,
     *,
     reply_markup: InlineKeyboardMarkup | None = None,
+    buttons: list[dict] | None = None,
     session: AsyncSession | None = None,
     kind: str = "",
 ) -> bool:
@@ -79,7 +104,7 @@ async def send_message(
         Notification(
             tg_id=chat_id,
             text=text,
-            buttons=_buttons_of(reply_markup),
+            buttons=list(buttons) if buttons is not None else _buttons_of(reply_markup),
             kind=kind or "message",
         )
     )

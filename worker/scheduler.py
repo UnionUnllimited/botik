@@ -30,6 +30,7 @@ from worker.tasks import (
     orders,
     outbox_watch,
     payments,
+    reviews,
     router_alerts,
     routers,
     subscriptions,
@@ -182,6 +183,14 @@ def create_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=10),
         id="watch_router_alerts",
         name="Роутеры в рабочем чате",
+    )
+    # Отзыв через неделю после включения. Полчаса — чтобы дневное окно
+    # (11–20 по Москве) не проскакивалось; кого спрашивать, решает сервис.
+    scheduler.add_job(
+        instrumented("ask_for_reviews", reviews.ask_for_reviews),
+        IntervalTrigger(minutes=30),
+        id="ask_for_reviews",
+        name="Отзыв о роутере через неделю",
     )
     # Срок учётки в панели у каждого роутера: им парк показывает доступ,
     # когда своей подписки нет. Один запрос к панели на круг.

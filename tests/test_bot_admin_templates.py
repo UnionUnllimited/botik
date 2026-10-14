@@ -631,6 +631,34 @@ PAGES = {
         "search_error": "",
         "link_of": lambda kind, ident: f"/{kind}/{ident}",
     },
+    "care.html": {
+        "tab": "sites",
+        "status_filter": "",
+        "requests": [
+            {"id": 3, "value": "example.org", "site": "example.org", "kind": "proxy_domain",
+             "covered": False, "note": "не грузится видео", "status": "new", "status_title": "ждёт",
+             "created_at": "2026-10-14T09:00:00+00:00", "resolved_at": None, "resolved_by": "",
+             "client": "@kelvin", "client_tg_id": 7, "device_id": 9, "mac": "D4:0D:AB:03:5F:A8"},
+            {"id": 2, "value": "youtube.com", "site": "youtube.com", "kind": "proxy_domain",
+             "covered": True, "note": "", "status": "new", "status_title": "ждёт",
+             "created_at": "2026-10-14T08:00:00+00:00", "resolved_at": None, "resolved_by": "",
+             "client": "", "client_tg_id": 0, "device_id": 0, "mac": ""},
+            {"id": 1, "value": "xn--h1alffa9f.xn--p1ai", "site": "кинопоиск.рф", "kind": "proxy_domain",
+             "covered": False, "note": "", "status": "added", "status_title": "добавлен",
+             "created_at": "2026-10-13T08:00:00+00:00", "resolved_at": "2026-10-13T09:00:00+00:00",
+             "resolved_by": "@oper", "client": "@anna", "client_tg_id": 8, "device_id": 4, "mac": "AA:BB"},
+        ],
+        "counts": {"new": 2, "added": 1},
+        "reviews": [
+            {"id": 1, "rating": 5, "text": "Всё летает", "rated_at": "2026-10-14T10:00:00+00:00",
+             "client": "@kelvin", "client_tg_id": 7, "device_id": 9, "mac": "D4:0D:AB:03:5F:A8"},
+            {"id": 2, "rating": 2, "text": "", "rated_at": "2026-10-13T10:00:00+00:00",
+             "client": "", "client_tg_id": 0, "device_id": 4, "mac": "AA:BB"},
+        ],
+        "summary": {"asked": 4, "rated": 2, "average": 3.5, "low": 1,
+                    "by_rating": {"1": 0, "2": 1, "3": 0, "4": 0, "5": 1}},
+        "care_error": "",
+    },
 }
 
 
@@ -681,6 +709,7 @@ OURS = {
     "_partials/today.html",
     "system_health.html",
     "search.html",
+    "care.html",
 }
 """Страницы, написанные нами. Их рисуем строго: обращение к непереданной
 переменной должно падать в тесте, а не рисоваться пустотой у оператора.
@@ -707,3 +736,12 @@ def test_page_renders(env, name):
     # Метод вместо данных виден в выводе — так падение и выглядело.
     assert "built-in method" not in html
     assert "dict_items" not in html
+
+
+def test_care_reviews_tab(strict_env):
+    """Вторая вкладка той же страницы: средняя, раскладка по звёздам, отзывы."""
+    page = dict(PAGES["care.html"], tab="reviews")
+    html = strict_env.get_template("care.html").render(**page)
+    assert "Средняя оценка" in html
+    assert "3.5" in html
+    assert "Всё летает" in html

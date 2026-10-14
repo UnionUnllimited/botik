@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Просьбы и отзывы — {{ super() }}{% endblock %}
+
+{# Две вкладки одной заботы: что клиенты просят и что они говорят.
+   Просьбы о сайтах приходят и в топик «Роутеры» — здесь они же списком,
+   на случай, если сообщение в чате пролистали, и с историей решений. #}
+
+{% macro stars(n) -%}
+  <span class="cr-stars" aria-label="{{ n }} из 5">{% for i in range(1, 6) %}<span class="{{ 'on' if i <= n }}">★</span>{% endfor %}</span>
+{%- endmacro %}
+
+{% macro status_pill(item) -%}
+  {% set tone = {'new': 'cr-new', 'added': 'cr-ok', 'declined': 'cr-off', 'done': 'cr-done'}.get(item.status, 'cr-off') %}
+  <span class="cr-pill {{ tone }}">{{ item.status_title }}</span>
+{%- endmacro %}
+
+{% macro actions(item) -%}
+  {% if item.status == 'new' %}
+  <div class="flex flex-wrap gap-2">
+    {% if item.covered %}
+      <form method="post" action="{{ url_for('admin.care_site_resolve', request_id=item.id, action='done', status=status_filter or None) }}">
+        <input type="hidden" name="site" value="{{ item.site }}">
+        <button type="submit" class="tw-btn tw-btn-sm"><i data-lucide="check" class="w-3.5 h-3.5"></i><span>Разобрались</span></button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('admin.care_site_resolve', request_id=item.id, action='add', status=status_filter or None) }}">
+        <input type="hidden" name="site" value="{{ item.site }}">
+        <button type="submit" class="tw-btn tw-btn-sm tw-btn-primary"><i data-lucide="list-plus" class="w-3.5 h-3.5"></i><span>Добавить в свой список</span></button>
+      </form>
+      <form method="post" action="{{ url_for('admin.care_site_resolve', request_id=item.id, action='no', status=status_filter or None) }}"
+            onsubmit='return confirm({{ ("Не добавлять " ~ item.site ~ "? Клиенту уйдёт ответ, что дело не в маршруте.")|tojson }})'>
+        <input type="hidden" name="site" value="{{ item.site }}">
+        <button type="submit" class="tw-btn tw-btn-sm"><i data-lucide="x" class="w-3.5 h-3.5"></i><span>Не добавлять</span></button>
+      </form>
+    {% endif %}
+  </div>
+  {% else %}
+    <span class="text-[12px] tw-text-muted2">{{ item.resolved_at|msk_compact if item.resolved_at else '' }}{% if item.resolved_by %} · {{ item.resolved_by }}{% endif %}</span>
+  {% endif %}
+{%- endmacro %}
+
+{% block content %}
+<style>
+  .cr-tabs{display:inline-flex;gap:4px;padding:4px;border-radius:12px;background:var(--admin-bg-soft);border:1px solid var(--admin-border)}
+  .cr-tabs a{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:500;color:var(--admin-text-muted)}
+  .cr-tabs a.is-on{background:var(--admin-bg-elevated);color:var(--admin-text-base);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .cr-tabs .cr-count{margin-left:6px;font-size:11px;padding:1px 7px;border-radius:999px;background:#3b82f6;color:#fff}
+  .cr-tile{display:block;transition:transform .12s ease, box-shadow .12s ease}
+  .cr-tile:hover{transform:translateY(-1px)}
+  .cr-tile.is-on{box-shadow:0 0 0 2px #3b82f6 inset}
+  .cr-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap}
+  .cr-pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .cr-new{color:#2563eb;background:rgba(37,99,235,.1)}
+  .cr-ok{color:#059669;background:rgba(5,150,105,.1)}
+  .cr-done{color:#6b7280;background:rgba(107,114,128,.12)}
+  .cr-off{color:#b45309;background:rgba(180,83,9,.1)}
+  .cr-site{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;word-break:break-all}
+  .cr-tag{font-size:11px;padding:1px 7px;border-radius:6px;background:rgba(127,127,127,.12)}
+  .cr-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:16px;align-items:center;padding:14px 16px}
+  .cr-row + .cr-row{border-top:1px solid var(--admin-border)}
+  @media (max-width: 760px){ .cr-row{grid-template-columns:1fr;gap:8px} }
+  .cr-stars{letter-spacing:1px;font-size:15px;color:rgba(127,127,127,.35)}
+  .cr-stars .on{color:#f59e0b}
+  .cr-bar{height:6px;border-radius:999px;background:rgba(127,127,127,.15);overflow:hidden}
+  .cr-bar i{display:block;height:100%;background:#f59e0b;border-radius:999px}
+  .cr-quote{font-size:13px;line-height:1.5;padding:10px 12px;border-radius:10px;background:var(--admin-bg-soft);margin-top:8px;white-space:pre-line}
+  .cr-low{box-shadow:inset 3px 0 0 #ef4444}
+</style>
+
+<div class="tw-anim space-y-4">
+
+  <div class="flex items-end justify-between gap-3 flex-wrap pt-1">
+    <div>
+      <h1 class="text-[22px] font-semibold tracking-tight tw-text-base2">Просьбы и отзывы</h1>
+      <p class="text-[13px] tw-text-muted2 mt-1">
+        Что клиенты просят из «Не открывается сайт» и как оценивают роутер через неделю после включения.
+      </p>
+    </div>
+    {% set waiting = counts.get('new', 0) %}
+    <div class="cr-tabs">
+      <a href="{{ url_for('admin.care_page') }}" class="{{ 'is-on' if tab == 'sites' }}">Сайты{% if waiting %}<span class="cr-count">{{ waiting }}</span>{% endif %}</a>
+      <a href="{{ url_for('admin.care_page', tab='reviews') }}" class="{{ 'is-on' if tab == 'reviews' }}">Отзывы</a>
+    </div>
+  </div>
+
+  {% if care_error %}
+    <div class="tw-surface rounded-[var(--radius-card)] p-4 text-[13px]" style="border-color:#b91c1c">
+      <div class="flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5" style="color:#b91c1c"></i>
+        <div>{{ care_error }}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if tab == 'sites' %}
+  {# === Просьбы о сайтах === #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    {% for key, title, color in [('new', 'Ждут решения', '#2563eb'), ('added', 'Добавлено', '#059669'), ('declined', 'Не добавляем', '#b45309'), ('done', 'Разобрались', '')] %}
+    <a href="{{ url_for('admin.care_page', status=key if status_filter != key else None) }}"
+       class="tw-surface rounded-[var(--radius-card)] p-4 cr-tile {{ 'is-on' if status_filter == key }}">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">{{ title }}</div>
+      <div class="mt-1 text-[22px] font-semibold leading-none tw-text-base2" {% if color and counts.get(key, 0) %}style="color:{{ color }}"{% endif %}>{{ counts.get(key, 0) }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden">
+    {% for item in requests %}
+    <div class="cr-row">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <i data-lucide="globe" class="w-4 h-4 tw-text-muted2"></i>
+          <span class="cr-site">{{ item.site }}</span>
+          {{ status_pill(item) }}
+          {% if item.covered %}<span class="cr-tag" title="Сайт уже был в списках, когда клиент пожаловался — дело не в маршруте">уже в списках</span>{% endif %}
+        </div>
+        {% if item.note %}<div class="cr-quote">«{{ item.note }}»</div>{% endif %}
+      </div>
+      <div class="text-[13px] min-w-0">
+        <div class="truncate">
+          {% if item.client_tg_id %}
+            <a class="underline" href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">{{ item.client or item.client_tg_id }}</a>
+          {% else %}{{ item.client or '—' }}{% endif %}
+        </div>
+        <div class="tw-text-muted2 text-[12px] mt-0.5">
+          {% if item.device_id %}<a class="underline font-mono" href="{{ url_for('admin.router_card', device_id=item.device_id) }}">{{ item.mac }}</a> · {% endif %}{{ item.created_at|msk_compact if item.created_at else '' }}
+        </div>
+      </div>
+      <div>{{ actions(item) }}</div>
+    </div>
+    {% else %}
+    <div class="p-8 text-center">
+      <i data-lucide="inbox" class="w-6 h-6 mx-auto tw-text-muted2"></i>
+      <div class="mt-2 text-[14px] font-medium tw-text-base2">{{ 'В этом отборе пусто' if status_filter else 'Просьб пока нет' }}</div>
+      <div class="mt-1 text-[12px] tw-text-muted2">
+        Клиент нажимает «Не открывается сайт» в боте или приложении. Если сайта нет в списках,
+        просьба появится здесь и в топике «Роутеры».
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  {# === Отзывы === #}
+  {% set by = summary.get('by_rating') or {} %}
+  {% set rated = summary.get('rated') or 0 %}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div class="tw-surface rounded-[var(--radius-card)] p-4">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider">Средняя оценка</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="font-semibold leading-none tw-text-base2" style="font-size:28px">{{ summary.get('average') if summary.get('average') is not none else '—' }}</span>
+        {% if summary.get('average') is not none %}{{ stars((summary.get('average') or 0)|round|int) }}{% endif %}
+      </div>
+      <div class="mt-2 text-[12px] tw-text-muted2">ответили {{ rated }} из {{ summary.get('asked') or 0 }} спрошенных</div>
+    </div>
+    <div class="tw-surface rounded-[var(--radius-card)] p-4 md:col-span-2">
+      <div class="text-[11px] tw-text-subtle2 uppercase tracking-wider mb-2">Как оценивают</div>
+      {% for n in [5, 4, 3, 2, 1] %}
+        {% set c = by.get(n|string, by.get(n, 0)) %}
+        <div class="flex items-center gap-3 text-[12px] mt-1.5">
+          <span class="w-8 tw-text-muted2">{{ n }} ★</span>
+          <div class="cr-bar flex-1"><i style="width:{{ (c * 100 / rated)|round|int if rated else 0 }}%;{{ 'background:#ef4444' if n <= 3 }}"></i></div>
+          <span class="w-6 text-right tw-text-base2">{{ c }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="tw-surface rounded-[var(--radius-card)] overflow-hidden">
+    {% for item in reviews %}
+    <div class="cr-row {{ 'cr-low' if item.rating and item.rating <= 3 }}">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">{{ stars(item.rating or 0) }}<span class="text-[12px] tw-text-muted2">{{ item.rated_at|msk_compact if item.rated_at else '' }}</span></div>
+        {% if item.text %}<div class="cr-quote">«{{ item.text }}»</div>{% else %}<div class="text-[12px] tw-text-muted2 mt-1">без текста</div>{% endif %}
+      </div>
+      <div class="text-[13px] min-w-0">
+        <div class="truncate">
+          {% if item.client_tg_id %}
+            <a class="underline" href="{{ url_for('admin.user_details', telegram_id=item.client_tg_id) }}">{{ item.client or item.client_tg_id }}</a>
+          {% else %}{{ item.client or '—' }}{% endif %}
+        </div>
+        {% if item.device_id %}<div class="text-[12px] mt-0.5"><a class="underline font-mono tw-text-muted2" href="{{ url_for('admin.router_card', device_id=item.device_id) }}">{{ item.mac }}</a></div>{% endif %}
+      </div>
+      <div></div>
+    </div>
+    {% else %}
+    <div class="p-8 text-center">
+      <i data-lucide="star" class="w-6 h-6 mx-auto tw-text-muted2"></i>
+      <div class="mt-2 text-[14px] font-medium tw-text-base2">Оценок пока нет</div>
+      <div class="mt-1 text-[12px] tw-text-muted2">
+        Через неделю после включения роутера бот просит клиента оценить его от 1 до 5 —
+        днём, раз на роутер. Низкие оценки сразу приходят в топик «Роутеры».
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

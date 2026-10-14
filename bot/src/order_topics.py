@@ -41,6 +41,52 @@ PENDING_TTL_SEC = 30 * 60
 оператор давно забыл, что нажимал, и его следующее сообщение в топике
 уехало бы в поле, которого он не ждал."""
 
+WORK_CHAT_TTL_SEC = 60
+"""Сколько помнить номер рабочего чата. Меняют его раз в жизни, а спрашивать
+основное приложение на каждое нажатие — лишняя секунда под пальцем."""
+
+_work_chat: dict[str, float] = {"id": 0, "at": 0.0}
+
+
+async def work_chat_id() -> int:
+    """Рабочий чат из настроек основного приложения. Ноль — не задан.
+
+    Не ответило — берём последний известный: кнопки не должны отваливаться
+    из-за минутного обрыва, а пустить из чужого чата это всё равно не может."""
+    now = time.monotonic()
+    if _work_chat["at"] and now - _work_chat["at"] < WORK_CHAT_TTL_SEC:
+        return int(_work_chat["id"])
+    data, error = await shop_api.order_topics_settings()
+    if error:
+        return int(_work_chat["id"])
+    try:
+        chat = int(str(data.get("chat_id") or "0").strip() or 0)
+    except ValueError:
+        chat = 0
+    _work_chat.update(id=chat, at=now)
+    return chat
+
+
+async def from_work_chat(query: CallbackQuery) -> bool:
+    """Нажатие пришло из рабочего чата, а не откуда-то ещё.
+
+    Кнопки оператора — это смена статуса заказа, перезагрузка роутера,
+    добавление сайта в список всего парка. Telegram не подписывает данные
+    кнопки: клиент своим MTProto-клиентом может прислать `site:<id>:add`
+    на любое сообщение бота у себя в личке. Номер чата у сообщения ставит
+    сам Telegram, подделать его нельзя — по нему и отличаем оператора."""
+    chat = await work_chat_id()
+    message = query.message
+    if chat and message is not None and message.chat.id == chat:
+        return True
+    logger.warning(
+        f"[TOPICS] кнопка оператора {str(query.data)[:40]} не из рабочего чата: "
+        f"от {query.from_user.id}"
+    )
+    await query.answer("Эта кнопка работает только в рабочем чате.", show_alert=True)
+    return False
+
+
 _pending: dict[tuple[int, int], tuple[str, int, float, int, int]] = {}
 """(чат, топик) → (действие, заказ, когда попросили, подсказка, карточка).
 
@@ -169,6 +215,8 @@ async def _refresh(query: CallbackQuery, order_id: int, note: str = "") -> None:
 @router.callback_query(F.data.startswith(f"{PREFIX}:"))
 async def on_button(query: CallbackQuery) -> None:
     """Нажатие под карточкой заказа."""
+    if not await from_work_chat(query):
+        return
     parts = (query.data or "").split(":")
     if len(parts) < 3:
         await query.answer()

@@ -213,12 +213,19 @@ async def run(
     command: str,
     *,
     timeout: float | None = None,  # noqa: ASYNC109 — предел задаёт вызывающий, сессия своя на команду
+    stdin: str | None = None,
 ) -> CommandResult:
-    """Выполняет одну команду и возвращает её вывод."""
+    """Выполняет одну команду и возвращает её вывод.
+
+    `stdin` — для значений от клиента, которые нельзя вписывать в саму
+    команду: пароль Wi-Fi в командной строке попал бы и в журнал ниже,
+    и в оболочку роутера как текст, который она разбирает. Со входа его
+    читает `read`, и оболочка его не толкует.
+    """
     limit = timeout or settings.frp.ssh_timeout_sec
     connection = await connect(device, timeout=limit)
     try:
-        result = await connection.run(command, check=False, timeout=limit)
+        result = await connection.run(command, check=False, timeout=limit, input=stdin)
     except (TimeoutError, asyncssh.Error, OSError) as exc:
         raise ShellError(f"Не удалось выполнить команду: {exc}") from exc
     finally:

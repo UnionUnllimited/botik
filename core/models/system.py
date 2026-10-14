@@ -75,7 +75,10 @@ class Notification(BigIntPkMixin, Base):
     tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     buttons: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
-    """Клиенту — только ссылки: [{"text": "...", "url": "..."}]. Callback
+    """Клиенту — только ссылки: [{"text": "...", "url": "..."}] или ссылка на
+    наш же бот [{"text": "...", "start": "renew"}] — её адрес собирает бот своим
+    именем (`notifications.bot_button`). `row` — номер ряда: кнопки с одним
+    номером встают рядом (пять звёзд оценки). Callback
     обрабатывает бот, а он сменный — кнопка с уехавшим обработчиком молча
     перестала бы работать, и человек остался бы с мёртвым экраном.
 

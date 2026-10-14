@@ -58,7 +58,7 @@
       <ul class="mt-3 space-y-1">
         {% for item in group['items'][:8] %}
         {% set kind = item.link.kind %}
-        {% set allowed = (kind == 'order' and can_shop) or (kind == 'router' and can_fleet) or kind == 'client' %}
+        {% set allowed = (kind == 'order' and can_shop) or (kind in ('router', 'site') and can_fleet) or kind == 'client' %}
         {% set href = link_of(kind, item.link.id) if allowed else '' %}
         <li>
           {% if href %}<a href="{{ href }}" class="today-row">{% else %}<div class="today-row">{% endif %}

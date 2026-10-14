@@ -43,6 +43,7 @@ from core.models import (
     ManualList,
     ManualListRevision,
     Order,
+    RouterReview,
     User,
 )
 from core.security import normalize_mac
@@ -748,6 +749,9 @@ async def reset_router(device_id: int, session: AsyncSession = Depends(get_trans
     returned = outcome == "pending"
 
     was_order = device.order_id
+    # Отзыв спрашивается раз на роутер. После сброса у роутера будет новый
+    # владелец — или тот же путь проверки заново, — и вопрос должен прийти.
+    await session.execute(delete(RouterReview).where(RouterReview.device_id == device.id))
     device.user_id = None
     device.order_id = None
     device.activated_at = None

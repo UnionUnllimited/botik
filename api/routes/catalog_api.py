@@ -1419,7 +1419,12 @@ async def outbox_ack(
 
     message.attempts += 1
     message.last_error = str(payload.get("error", ""))[:500]
-    if payload.get("blocked"):
+    # Отказ из рабочего чата (бота выгнали из группы) — не «клиент закрылся
+    # от бота»: в карточке роутера `tg_id` — клиент, о котором она, и пометить
+    # его заблокировавшим значило бы перестать писать ему напоминания.
+    if payload.get("blocked") and message.chat_id:
+        message.attempts = OUTBOX_MAX_ATTEMPTS
+    elif payload.get("blocked"):
         message.attempts = OUTBOX_MAX_ATTEMPTS
         await session.execute(
             update(User)
